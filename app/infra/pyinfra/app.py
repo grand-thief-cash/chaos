@@ -1,58 +1,40 @@
-# pyinfra/app.py
-from typing import Optional
+# app/infra/pyinfra/app.py
 from config.loader import load_config, merge_env_vars
-from components.logging.factory import create_and_register_logging
+from config.schema import AppConfig
 from core.lifecycle import LifecycleManager
-from core.container import Container
+from components.logging.factory import create_and_register_logging
+from components.fastapi_server.factory import create_and_register_fastapi_server
+import logging
 
 class PyAPP:
-    def __init__(self, config_path: Optional[str] = None, app_name: str = "pyinfra-app"):
+    def __init__(self, config_path: str, app_name: str):
+        self.config_path = config_path
         self.app_name = app_name
-        self.config_data = {}
-        self._initialized = False
-
-        if config_path:
-            self.config_data = load_config(config_path)
-            self.config_data = merge_env_vars(self.config_data)
+        self.config_dict = {}
+        self.config = None
 
     def initialize(self):
-        """初始化应用基础设施"""
-        if self._initialized:
-            return
+        """初始化应用"""
+        # 加载配置
+        self.config_dict = load_config(self.config_path)
+        self.config_dict = merge_env_vars(self.config_dict)
 
-        self._init_logging()
-        self._import_hooks()
-        self._init_components()
-        self._initialized = True
+        # 先创建和注册组件（不进行配置验证）
+        create_and_register_logging(self.config_dict, self.app_name)
+        create_and_register_fastapi_server(self.config_dict, self.app_name)
 
-    def _init_logging(self):
-        """初始化日志组件"""
-        logging_component = create_and_register_logging(
-            self.config_data,
-            self.app_name
-        )
-        logging_component.start()
-
-    def _import_hooks(self):
-        """导入所有钩子模块"""
-        import hooks
-
-    def _init_components(self):
-        """初始化其他组件"""
-        pass
+        # 组件初始化后再获取logger
+        logger = logging.getLogger(__name__)
+        # logger.info("Application infrastructure initialized")
 
     def run(self):
-        """启动应用"""
-        if not self._initialized:
-            self.initialize()
-
+        """运行应用"""
+        # 启动所有组件
         LifecycleManager.start_all()
+
+        # 等待关闭信号
         LifecycleManager.wait_for_shutdown()
 
     def stop(self):
-        """手动停止应用"""
+        """停止应用"""
         LifecycleManager.stop_all()
-
-    def get_component(self, name: str):
-        """获取组件实例"""
-        return Container.resolve(name)
