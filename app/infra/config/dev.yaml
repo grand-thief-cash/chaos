@@ -1,0 +1,6 @@
+mysql:
+  user: dev_user
+  password: dev_pass
+
+app:
+  port: 8080
