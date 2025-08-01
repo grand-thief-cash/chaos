@@ -2,6 +2,9 @@
 v0.3.2
 
 #Changelog
+- v0.3.3
+  - Added pylon proto
+  - Added depenencies in requirements.txt
 - v0.3.2
   - Finished a basic structure for py_poc
 - v0.3.1
