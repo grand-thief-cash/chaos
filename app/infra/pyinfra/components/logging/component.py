@@ -3,9 +3,10 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Optional
+from components.logging.schema import LoggingConfig  # 使用统一的配置类
+from components.logging.context_filter import LoggingContextFilter
 from core.component import BaseComponent
-from .schema import LoggingConfig  # 使用统一的配置类
-from .context_filter import LoggingContextFilter
+
 
 class LoggingComponent(BaseComponent):
     def __init__(self, config: LoggingConfig):

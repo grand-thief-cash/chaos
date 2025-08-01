@@ -36,3 +36,13 @@
 
 
 ```
+
+# 开发模式安装（推荐开发时使用）
+cd app/infra/pyinfra
+pip install -e .
+
+# 或者直接安装
+pip install app/infra/
+
+# 如果发布到 PyPI
+pip install pyinfra

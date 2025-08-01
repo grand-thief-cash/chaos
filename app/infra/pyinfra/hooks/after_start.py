@@ -1,5 +1,5 @@
 # pyinfra/hooks/after_start.py
-from . import register_hook
+from hooks import register_hook
 import logging
 
 logger = logging.getLogger(__name__)

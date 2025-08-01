@@ -1,7 +1,7 @@
-# components/logging/factory.py
+# pyinfra/components/logging/factory.py
 from typing import Dict
-from config.schema import LoggingConfig
-from .component import LoggingComponent
+from components.logging.component import LoggingComponent
+from components.logging.schema import LoggingConfig
 from core.container import Container
 
 def create_and_register_logging(config: Dict, app_name: str) -> LoggingComponent:

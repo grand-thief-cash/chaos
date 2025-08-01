@@ -1,6 +1,6 @@
 # pyinfra/hooks/before_start.py
-from ..core.container import Container
-from . import register_hook
+from core.container import Container
+from hooks import register_hook
 import logging
 
 logger = logging.getLogger(__name__)
