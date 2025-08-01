@@ -1,7 +1,9 @@
 # VERSION
-v0.3.1
+v0.3.2
 
 #Changelog
+- v0.3.2
+  - Finished a basic structure for py_poc
 - v0.3.1
   - Added basic structure for py_poc
   - remove cron-job from app folder
