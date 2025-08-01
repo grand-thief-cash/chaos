@@ -1,7 +1,11 @@
 # VERSION
-v0.3.0
+v0.3.1
 
 #Changelog
+- v0.3.1
+  - Added basic structure for py_poc
+  - remove cron-job from app folder
+
 - v0.3.0
   - Added fastapi component
   - Added python poc app
