@@ -13,6 +13,7 @@ grpcio-tools==1.73.0
 nacos-sdk-python==1.0.0
 fastapi==0.115.12
 pydantic==2.11.7
-opentelemetry-api
-opentelemetry-sdk
-python-json-logger
+opentelemetry-api==1.35.0
+opentelemetry-sdk==1.35.0
+python-json-logger==3.3.0
+uvicorn==0.35.0
