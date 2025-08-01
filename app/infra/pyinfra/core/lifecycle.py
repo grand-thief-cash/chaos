@@ -50,8 +50,8 @@ class LifecycleManager:
         cls.run_hooks('before_start')
 
         for comp in cls._components:
-            logger.info(f"Starting component: {type(comp).__name__}")
             comp.start()
+            logger.info(f"Started component: {type(comp).__name__}")
 
         cls.run_hooks('after_start')
 

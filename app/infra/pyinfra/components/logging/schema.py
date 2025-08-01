@@ -10,3 +10,4 @@ class LoggingConfig(ComponentConfig):
     interval: int = 1
     backup_count: int = 15
     app_name: str
+    suffix: str = "%Y%m%d"

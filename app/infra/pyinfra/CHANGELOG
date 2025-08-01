@@ -1,0 +1,14 @@
+# VERSION
+v0.3.0
+
+#Changelog
+- v0.3.0
+  - Added fastapi component
+  - Added python poc app
+
+- v0.2.0
+  - Added logging component
+
+- v0.1.0
+  - Initial release with basic functionality for managing infrastructure using pyinfra.
+
