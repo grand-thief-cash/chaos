@@ -2,10 +2,13 @@
 import signal
 import threading
 import logging
-from typing import List, Callable, Dict, Type
-from .component import BaseComponent
+import atexit
+import sys
+from typing import List, Callable, Dict
+from core.component import BaseComponent
 
 logger = logging.getLogger(__name__)
+
 
 class LifecycleManager:
     _components: List[BaseComponent] = []
@@ -16,6 +19,7 @@ class LifecycleManager:
         'after_shutdown': [],
     }
     _stop_event = threading.Event()
+    _shutdown_called = False
 
     @classmethod
     def register_component(cls, component: BaseComponent):
@@ -54,6 +58,12 @@ class LifecycleManager:
     @classmethod
     def stop_all(cls):
         """停止所有组件"""
+        if cls._shutdown_called:
+            return
+
+        cls._shutdown_called = True
+        logger.info("Initiating shutdown sequence...")
+
         cls.run_hooks('before_shutdown')
 
         for comp in reversed(cls._components):
@@ -64,17 +74,48 @@ class LifecycleManager:
                 logger.error(f"Error stopping {type(comp).__name__}: {str(e)}")
 
         cls.run_hooks('after_shutdown')
+        logger.info("Shutdown sequence completed")
+
+    @classmethod
+    def _signal_handler(cls, sig, frame):
+        """信号处理器"""
+        logger.info(f"Received signal {sig}, shutting down...")
+        cls._stop_event.set()
+
+    @classmethod
+    def _atexit_handler(cls):
+        """程序退出时的清理处理器"""
+        logger.info("Application exiting, performing cleanup...")
+        cls.stop_all()
+
+    @classmethod
+    def setup_signal_handlers(cls):
+        """设置信号处理器"""
+        # 注册 atexit 处理器（处理所有退出场景）
+        atexit.register(cls._atexit_handler)
+
+        # 注册信号处理器
+        if hasattr(signal, 'SIGINT'):
+            signal.signal(signal.SIGINT, cls._signal_handler)
+
+        if hasattr(signal, 'SIGTERM'):
+            signal.signal(signal.SIGTERM, cls._signal_handler)
+
+        # Windows 特殊处理
+        if sys.platform == "win32":
+            if hasattr(signal, 'SIGBREAK'):
+                signal.signal(signal.SIGBREAK, cls._signal_handler)
 
     @classmethod
     def wait_for_shutdown(cls):
         """等待关闭信号"""
-        def _signal_handler(sig, frame):
-            logger.info(f"Received signal {sig}, shutting down...")
-            cls._stop_event.set()
-
-        signal.signal(signal.SIGINT, _signal_handler)
-        signal.signal(signal.SIGTERM, _signal_handler)
+        cls.setup_signal_handlers()
 
         logger.info("Application running, waiting for shutdown signal...")
-        cls._stop_event.wait()
-        cls.stop_all()
+
+        try:
+            cls._stop_event.wait()
+        except KeyboardInterrupt:
+            logger.info("Received KeyboardInterrupt")
+        finally:
+            cls.stop_all()

@@ -1,4 +1,5 @@
 # components/logging/schema.py
+# pyinfra/components/logging/schema.py
 from core.component import ComponentConfig
 
 class LoggingConfig(ComponentConfig):
@@ -8,4 +9,4 @@ class LoggingConfig(ComponentConfig):
     when: str = "MIDNIGHT"
     interval: int = 1
     backup_count: int = 15
-    app_name: str  # 新增必填字段
+    app_name: str

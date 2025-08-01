@@ -1,9 +1,12 @@
 from pydantic import BaseModel, Field
 from typing import Optional
 
-class LoggingConfig(BaseModel):
-    level: str = Field(default="INFO", description="Logging level")
-    format: str = Field(default="[%(asctime)s] [%(levelname)s] %(message)s")
+from components.logging.schema import LoggingConfig
+
+
+# class LoggingConfig(BaseModel):
+#     level: str = Field(default="INFO", description="Logging level")
+#     format: str = Field(default="[%(asctime)s] [%(levelname)s] %(message)s")
 
 class MySQLConfig(BaseModel):
     host: str
