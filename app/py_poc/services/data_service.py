@@ -14,6 +14,9 @@ class DataService(BaseService):
     def __init__(self):
         super().__init__()
         self.data_dao = DataDAO()
+        # 获取GRPC客户端
+        # self.user_service_stub = get_grpc_stub("user_service", UserServiceStub)
+
 
     async def fetch_data(self) -> Dict[str, Any]:
         """获取数据"""
