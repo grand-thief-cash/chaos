@@ -1,0 +1,14 @@
+# config.yaml
+logging:
+  enabled: true
+  level: "INFO"
+  format: "json"  # json 或 console
+  output: "file"  # stdout, stderr, file
+  file_config:
+    dir: "./logs"
+    filename: "app_name"  # 会生成 app_name.log, app_name.log.20231201 等
+  rotate_config:
+    enabled: true
+    rotate_daily: true
+    max_age: 360h  # 15天 (15 * 24h)
+    cleanup_enabled: true
