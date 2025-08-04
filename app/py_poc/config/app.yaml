@@ -22,10 +22,24 @@ fastapi_server:
   cors_headers: ["*"]
   access_log: true
 
-# 未来可扩展其他组件配置
-mysql:
-  host: "localhost"
-  port: 3306
-  user: "root"
-  password: "password"
-  database: "mydb"
+grpc_clients:
+  enabled: true
+  default_timeout: 30
+  enable_health_check: true
+  health_check_interval: 60
+  clients:
+    pylon:
+      enabled: true
+      host: "192.168.31.142"
+      port: 50051
+      secure: false
+      timeout: 30
+      max_receive_message_length: 4194304  # 4MB
+      max_send_message_length: 4194304     # 4MB
+      keepalive_options:
+        grpc.keepalive_time_ms: 30000
+        grpc.keepalive_timeout_ms: 5000
+        grpc.keepalive_permit_without_calls: true
+        grpc.http2.max_pings_without_data: 0
+        grpc.http2.min_time_between_pings_ms: 10000
+

@@ -49,6 +49,13 @@ def setup_business_controllers():
     else:
         logger.warning("FastAPI server component not found")
 
+    # 检查GRPC客户端是否可用
+    grpc_component = Container.resolve("grpc_clients")
+    if grpc_component:
+        logger.info(f"GRPC clients available: {list(grpc_component.clients.keys())}")
+    else:
+        logger.warning("GRPC clients component not found")
+
 
 if __name__ == "__main__":
     main()

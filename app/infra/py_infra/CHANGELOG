@@ -1,10 +1,14 @@
 # VERSION
-v0.3.2
+v0.3.4
 
 #Changelog
+- v0.3.4 (Untested)
+  - Added python generated code
+  - Added heartbeats grpc clients
+  - Added heartbeats service in py_poc
 - v0.3.3
   - Added pylon proto
-  - Added depenencies in requirements.txt
+  - Added dependencies in requirements.txt
 - v0.3.2
   - Finished a basic structure for py_poc
 - v0.3.1
