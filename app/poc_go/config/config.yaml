@@ -12,3 +12,21 @@ logging:
     rotate_daily: true
     max_age: 360h  # 15天 (15 * 24h)
     cleanup_enabled: true
+
+
+grpc_clients:
+  enabled: true
+  default_timeout: 30s
+  enable_health_check: true
+  health_check_interval: 60s
+  clients:
+    user_service:
+      host: "localhost"
+      port: 50051
+      secure: false
+      timeout: 10s
+    order_service:
+      host: "order.example.com"
+      port: 50052
+      secure: true
+      credentials_path: "/path/to/cert.pem"
