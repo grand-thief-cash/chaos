@@ -3,7 +3,6 @@ package grpc_client
 
 import (
 	"time"
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/core"
 )
 
 // GRPCClientConfig 单个GRPC客户端配置
@@ -23,16 +22,16 @@ type GRPCClientConfig struct {
 
 // GRPCClientsConfig 多GRPC客户端配置
 type GRPCClientsConfig struct {
-	Enabled              bool                          `yaml:"enabled" json:"enabled"`
-	Clients              map[string]*GRPCClientConfig  `yaml:"clients" json:"clients"`
-	DefaultTimeout       time.Duration                 `yaml:"default_timeout" json:"default_timeout"`
-	EnableHealthCheck    bool                          `yaml:"enable_health_check" json:"enable_health_check"`
-	HealthCheckInterval  time.Duration                 `yaml:"health_check_interval" json:"health_check_interval"`
+	Enabled             bool                         `yaml:"enabled" json:"enabled"`
+	Clients             map[string]*GRPCClientConfig `yaml:"clients" json:"clients"`
+	DefaultTimeout      time.Duration                `yaml:"default_timeout" json:"default_timeout"`
+	EnableHealthCheck   bool                         `yaml:"enable_health_check" json:"enable_health_check"`
+	HealthCheckInterval time.Duration                `yaml:"health_check_interval" json:"health_check_interval"`
 }
 
 // RetryPolicy 重试策略配置
 type RetryPolicy struct {
-	MaxRetries  int           `yaml:"max_retries" json:"max_retries"`
+	MaxRetries   int           `yaml:"max_retries" json:"max_retries"`
 	InitialDelay time.Duration `yaml:"initial_delay" json:"initial_delay"`
 	MaxDelay     time.Duration `yaml:"max_delay" json:"max_delay"`
 	Multiplier   float64       `yaml:"multiplier" json:"multiplier"`
