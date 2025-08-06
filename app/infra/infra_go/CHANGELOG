@@ -1,8 +1,10 @@
 # VERSION
-
-v0.1.0
+v0.1.1
 
 # Changelog
+- v0.1.1
+  - Reconstructed the infra_go module for better modularity and maintainability.
+  - update go.mod and go.sum to include latest dependencies.
 - v0.1.0
   - Initial release of the infra_go module.
   - Added basic infrastructure setup for Go applications.
