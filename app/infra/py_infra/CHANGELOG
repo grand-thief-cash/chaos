@@ -1,7 +1,9 @@
 # VERSION
-v0.3.4
+v0.3.5
 
 #Changelog
+- v0.3.5 (Untested)
+  - Re-constructed the infra-go
 - v0.3.4 (Untested)
   - Added python generated code
   - Added heartbeats grpc clients
