@@ -1,0 +1,11 @@
+# VERSION
+
+v0.1.0
+
+# Changelog
+- v0.1.0
+  - Initial release of the infra_go module.
+  - Added basic infrastructure setup for Go applications.
+  - Included example configurations for common use cases.
+  - Implemented logging and error handling utilities.
+  - Added poc_go for testing infra_go functionalities.
