@@ -1,4 +1,4 @@
-module github.com/grand-thief-cash/chaos/app/infra/infra_go
+module github.com/grand-thief-cash/chaos/app/infra/application
 
 go 1.23.0
 
