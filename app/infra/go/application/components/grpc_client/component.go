@@ -15,27 +15,27 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/core"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
 // GRPCClientComponent GRPC客户端管理组件
 type GRPCClientComponent struct {
 	*core.BaseComponent
-	config             *GRPCClientsConfig
-	clients            map[string]*grpc.ClientConn
-	clientConfigs      map[string]*GRPCClientConfig
-	healthCheckTicker  *time.Ticker
-	healthCheckStop    chan struct{}
-	mutex              sync.RWMutex
+	config            *GRPCClientsConfig
+	clients           map[string]*grpc.ClientConn
+	clientConfigs     map[string]*GRPCClientConfig
+	healthCheckTicker *time.Ticker
+	healthCheckStop   chan struct{}
+	mutex             sync.RWMutex
 }
 
 // NewGRPCClientComponent 创建新的GRPC客户端组件
 func NewGRPCClientComponent(config *GRPCClientsConfig) *GRPCClientComponent {
 	return &GRPCClientComponent{
-		BaseComponent: core.NewBaseComponent("grpc_clients"),
-		config:        config,
-		clients:       make(map[string]*grpc.ClientConn),
-		clientConfigs: make(map[string]*GRPCClientConfig),
+		BaseComponent:   core.NewBaseComponent("grpc_clients"),
+		config:          config,
+		clients:         make(map[string]*grpc.ClientConn),
+		clientConfigs:   make(map[string]*GRPCClientConfig),
 		healthCheckStop: make(chan struct{}),
 	}
 }

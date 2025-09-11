@@ -14,60 +14,35 @@ func NewValidator() *Validator {
 }
 
 // Validate 验证配置
-func (v *Validator) Validate(config *AppConfig) error {
+func (v *Validator) ValidateAppConfig(config *AppConfig) error {
 	if config == nil {
 		return fmt.Errorf("config cannot be nil")
 	}
-
-	// 验证数据库配置
-	if err := v.validateDatabase(&config.Database); err != nil {
-		return fmt.Errorf("database config validation failed: %w", err)
-	}
-
-	// 验证服务器配置
-	if err := v.validateServer(&config.Server); err != nil {
-		return fmt.Errorf("server config validation failed: %w", err)
-	}
-
 	return nil
 }
 
-// validateDatabase 验证数据库配置
-func (v *Validator) validateDatabase(config *DatabaseConfig) error {
-	if config.MySQL != nil && config.MySQL.Enabled {
-		if config.MySQL.Host == "" {
-			return fmt.Errorf("mysql host cannot be empty")
-		}
-		if config.MySQL.Port <= 0 || config.MySQL.Port > 65535 {
-			return fmt.Errorf("mysql port must be between 1 and 65535")
-		}
+func (v *Validator) validateConfigFilePath(env string, path string) error {
+	if path == "" {
+		return fmt.Errorf("config file path cannot be empty")
+	}
+	if len(path) > 255 {
+		return fmt.Errorf("config file path is too long")
+	}
+	if path[0] != '/' {
+		return fmt.Errorf("config file path must be absolute")
+	}
+	// 验证config file 存在
+	if !fileExists(path) {
+		return fmt.Errorf("config file does not exist: %s", path)
 	}
 
-	if config.Redis != nil && config.Redis.Enabled {
-		if config.Redis.Host == "" {
-			return fmt.Errorf("redis host cannot be empty")
-		}
-		if config.Redis.Port <= 0 || config.Redis.Port > 65535 {
-			return fmt.Errorf("redis port must be between 1 and 65535")
-		}
+	if v.validateEnv() != nil {
+		return fmt.Errorf("Running environment is not valid: %s", env)
 	}
-
 	return nil
 }
 
-// validateServer 验证服务器配置
-func (v *Validator) validateServer(config *ServerConfig) error {
-	if config.Gin != nil && config.Gin.Enabled {
-		if config.Gin.Port <= 0 || config.Gin.Port > 65535 {
-			return fmt.Errorf("gin port must be between 1 and 65535")
-		}
-	}
-
-	if config.GRPC != nil && config.GRPC.Enabled {
-		if config.GRPC.Port <= 0 || config.GRPC.Port > 65535 {
-			return fmt.Errorf("grpc port must be between 1 and 65535")
-		}
-	}
-
+// This is a placeholder for environment validation logic
+func (v *Validator) validateEnv() error {
 	return nil
 }

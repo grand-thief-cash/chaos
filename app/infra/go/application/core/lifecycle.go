@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/hooks"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 )
 
 // LifecycleManager 生命周期管理器

@@ -4,15 +4,16 @@ package logging
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/core"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
 const (
