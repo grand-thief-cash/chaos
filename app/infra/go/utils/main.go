@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	pl "github.com/grand-thief-cash/chaos/app/infra/utils_go/pipeline"
+	pl "github.com/grand-thief-cash/chaos/app/infra/go/utils/pipeline"
 	_ "time"
 )
 

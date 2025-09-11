@@ -1,7 +1,7 @@
 package pipeline
 
 import (
-	"github.com/grand-thief-cash/chaos/app/infra/utils_go/channels"
+	"github.com/grand-thief-cash/chaos/app/infra/go/utils/channels"
 	"sync"
 )
 
