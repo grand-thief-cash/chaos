@@ -1,5 +1,5 @@
 // app.go
-package infra_go
+package application
 
 import (
 	"context"
@@ -8,56 +8,64 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/components/logging"
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/config"
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/core"
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/hooks"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 )
 
 // App 应用程序实例
 type App struct {
 	container        *core.Container
 	lifecycleManager *core.LifecycleManager
-	config           *config.AppConfig
-	configLoader     *config.Loader
-	configValidator  *config.Validator
+	configManager    *config.ConfigManager
 	logger           logging.Logger
 }
 
 // NewApp 创建新的应用实例
 func NewApp() *App {
+	configManager, err := config.NewConfigManager("", "")
+	if err != nil {
+		panic(fmt.Errorf("New application create failed：%w", err))
+	}
 	container := core.NewContainer()
 	lifecycleManager := core.NewLifecycleManager(container)
 
 	return &App{
 		container:        container,
 		lifecycleManager: lifecycleManager,
-		configLoader:     config.NewLoader("GOINFRA_"),
-		configValidator:  config.NewValidator(),
+		configManager:    configManager,
 	}
 }
 
-// LoadConfig 加载配置文件
-func (app *App) LoadConfig(configPath string) error {
-	cfg, err := app.configLoader.LoadConfig(configPath)
+func (app *App) run() {
+	err := app.configManager.LoadConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		panic(fmt.Errorf("new application booting failed：%w", err))
 	}
 
-	if err := app.configValidator.Validate(cfg); err != nil {
-		return fmt.Errorf("config validation failed: %w", err)
-	}
-
-	app.config = cfg
-	log.Printf("Configuration loaded successfully from %s", configPath)
-
-	// 如果配置中启用了日志组件，自动注册
-	if err := app.autoRegisterLoggingComponent(); err != nil {
-		return fmt.Errorf("failed to register logging component: %w", err)
-	}
-
-	return nil
 }
+
+//func (app *App) LoadConfig(configPath string) error {
+//	cfg, err := app.configLoader.LoadConfig(configPath)
+//	if err != nil {
+//		return fmt.Errorf("failed to load config: %w", err)
+//	}
+//
+//	if err := app.configValidator.Validate(cfg); err != nil {
+//		return fmt.Errorf("config validation failed: %w", err)
+//	}
+//
+//	app.config = cfg
+//	log.Printf("Configuration loaded successfully from %s", configPath)
+//
+//	// 如果配置中启用了日志组件，自动注册
+//	if err := app.autoRegisterLoggingComponent(); err != nil {
+//		return fmt.Errorf("failed to register logging component: %w", err)
+//	}
+//
+//	return nil
+//}
 
 // autoRegisterLoggingComponent 自动注册日志组件
 func (app *App) autoRegisterLoggingComponent() error {

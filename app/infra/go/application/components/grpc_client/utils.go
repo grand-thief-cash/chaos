@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/core"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
 // GetGRPCClient 从容器中获取GRPC客户端连接

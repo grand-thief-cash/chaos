@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/core"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
 // Factory 日志组件工厂

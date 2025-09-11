@@ -8,37 +8,40 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"gopkg.in/yaml.v3"
 )
 
 // Loader 配置加载器
 type Loader struct {
-	envPrefix string
+	env        string
+	configPath string
 }
 
 // NewLoader 创建配置加载器
-func NewLoader(envPrefix string) *Loader {
-	if envPrefix == "" {
-		envPrefix = "GOINFRA_"
+func NewLoader(env string, configPath string) *Loader {
+	if env == "" {
+		env = consts.ENV_DEVELOPMENT
+	}
+	if configPath == "" {
+		configPath = consts.DEFAULT_CONFIG_PATH
 	}
 	return &Loader{
-		envPrefix: envPrefix,
+		env:        env,
+		configPath: configPath,
 	}
 }
 
 // LoadConfig 加载配置文件
-func (l *Loader) LoadConfig(path string) (*AppConfig, error) {
-	if !fileExists(path) {
-		return nil, fmt.Errorf("config file not found: %s", path)
-	}
+func (l *Loader) LoadConfig() (*AppConfig, error) {
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(l.configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	var config AppConfig
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := strings.ToLower(filepath.Ext(l.configPath))
 
 	switch ext {
 	case ".yaml", ".yml":
@@ -64,14 +67,10 @@ func (l *Loader) mergeEnvVars(config *AppConfig) {
 	// 这里可以实现环境变量覆盖逻辑
 	// 例如：GOINFRA_DATABASE_MYSQL_HOST 覆盖 config.Database.MySQL.Host
 
-	if val := os.Getenv(l.envPrefix + "DATABASE_MYSQL_HOST"); val != "" && config.Database.MySQL != nil {
-		config.Database.MySQL.Host = val
-	}
-
-	if val := os.Getenv(l.envPrefix + "SERVER_GIN_PORT"); val != "" && config.Server.Gin != nil {
-		// 这里需要字符串转换为int，简化示例
-		// config.Server.Gin.Port = stringToInt(val)
-	}
+	//if val := os.Getenv(l.envPrefix + "SERVER_GIN_PORT"); val != "" && config.Server.Gin != nil {
+	//	// 这里需要字符串转换为int，简化示例
+	//	// config.Server.Gin.Port = stringToInt(val)
+	//}
 
 	// 可以继续添加更多环境变量覆盖逻辑
 }
