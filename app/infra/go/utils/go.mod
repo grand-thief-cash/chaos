@@ -1,3 +1,3 @@
-module github.com/grand-thief-cash/chaos/app/infra/utils_go
+module github.com/grand-thief-cash/chaos/app/infra/go/utils
 
 go 1.23.0

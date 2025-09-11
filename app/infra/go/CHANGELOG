@@ -1,7 +1,9 @@
 # VERSION
-v0.1.1
+v0.1.2
 
 # Changelog
+- v0.1.2[Unfinished]
+  - Refactored codebase for improved performance and readability.
 - v0.1.1
   - Reconstructed the infra_go module for better modularity and maintainability.
   - update go.mod and go.sum to include latest dependencies.

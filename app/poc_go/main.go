@@ -8,8 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go"
-	"github.com/grand-thief-cash/chaos/app/infra/infra_go/hooks"
+	"github.com/grand-thief-cash/chaos/app/infra/application"
+	"github.com/grand-thief-cash/chaos/app/infra/application/hooks"
 )
 
 func main() {
