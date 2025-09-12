@@ -1,7 +1,9 @@
 # VERSION
-v0.2.0
+v0.2.1
 
 # Changelog
+- v0.2.1
+  - Added logging component to support global logging across the application(Except core).
 - v0.2.0
   - A basic version of application module has beed added.
   - Added initial setup for application module.
