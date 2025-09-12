@@ -28,9 +28,7 @@ func (v *Validator) validateConfigFilePath(env string, path string) error {
 	if len(path) > 255 {
 		return fmt.Errorf("config file path is too long")
 	}
-	if path[0] != '/' {
-		return fmt.Errorf("config file path must be absolute")
-	}
+
 	// 验证config file 存在
 	if !fileExists(path) {
 		return fmt.Errorf("config file does not exist: %s", path)

@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"sync"
 	"time"
 
@@ -26,17 +26,23 @@ type GRPCClientComponent struct {
 	clientConfigs     map[string]*GRPCClientConfig
 	healthCheckTicker *time.Ticker
 	healthCheckStop   chan struct{}
+	logger            logging.Logger
 	mutex             sync.RWMutex
 }
 
 // NewGRPCClientComponent 创建新的GRPC客户端组件
-func NewGRPCClientComponent(config *GRPCClientsConfig) *GRPCClientComponent {
+func NewGRPCClientComponent(config *GRPCClientsConfig, logger logging.Logger) *GRPCClientComponent {
+	deps := []string{}
+	if logger != nil {
+		deps = append(deps, "logger")
+	}
 	return &GRPCClientComponent{
-		BaseComponent:   core.NewBaseComponent("grpc_clients"),
+		BaseComponent:   core.NewBaseComponent("grpc_clients", deps...),
 		config:          config,
 		clients:         make(map[string]*grpc.ClientConn),
 		clientConfigs:   make(map[string]*GRPCClientConfig),
 		healthCheckStop: make(chan struct{}),
+		logger:          logger,
 	}
 }
 
@@ -46,7 +52,7 @@ func (gc *GRPCClientComponent) Start(ctx context.Context) error {
 		return err
 	}
 
-	log.Println("Starting GRPC clients...")
+	gc.logger.Info(ctx, "Starting GRPC clients...")
 
 	// 创建所有客户端连接
 	for name, clientConfig := range gc.config.Clients {
@@ -61,13 +67,13 @@ func (gc *GRPCClientComponent) Start(ctx context.Context) error {
 		gc.startHealthCheck()
 	}
 
-	log.Printf("GRPC clients started, total: %d", len(gc.clients))
+	gc.logger.Info(ctx, fmt.Sprintf("GRPC clients started, total: %d", len(gc.clients)))
 	return nil
 }
 
 // Stop 停止GRPC客户端组件
 func (gc *GRPCClientComponent) Stop(ctx context.Context) error {
-	log.Println("Stopping GRPC clients...")
+	gc.logger.Info(ctx, "Stopping GRPC clients...")
 
 	// 停止健康检查
 	if gc.healthCheckTicker != nil {
@@ -78,7 +84,7 @@ func (gc *GRPCClientComponent) Stop(ctx context.Context) error {
 	// 关闭所有客户端连接
 	gc.closeAllClients()
 
-	log.Println("GRPC clients stopped")
+	gc.logger.Info(ctx, "GRPC clients stopped")
 	return gc.BaseComponent.Stop(ctx)
 }
 
@@ -101,7 +107,7 @@ func (gc *GRPCClientComponent) HealthCheck() error {
 		if state == connectivity.Ready || state == connectivity.Idle {
 			healthyClients++
 		} else {
-			log.Printf("GRPC client %s is not healthy, state: %v", name, state)
+			gc.logger.Info(context.Background(), fmt.Sprintf("GRPC client %s is not healthy, state: %v", name, state))
 		}
 	}
 
@@ -114,7 +120,7 @@ func (gc *GRPCClientComponent) HealthCheck() error {
 
 // createClient 创建单个GRPC客户端
 func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfig) error {
-	log.Printf("Creating GRPC client: %s -> %s:%d", name, config.Host, config.Port)
+	gc.logger.Info(context.Background(), fmt.Sprintf("Creating GRPC client: %s -> %s:%d", name, config.Host, config.Port))
 
 	// 设置默认值
 	gc.setConfigDefaults(config)
@@ -162,7 +168,7 @@ func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfi
 	gc.clientConfigs[name] = config
 	gc.mutex.Unlock()
 
-	log.Printf("GRPC client created successfully: %s", name)
+	gc.logger.Info(context.Background(), fmt.Sprintf("GRPC client created successfully: %s", name))
 	return nil
 }
 
@@ -218,7 +224,7 @@ func (gc *GRPCClientComponent) AddClient(name string, config *GRPCClientConfig) 
 
 	// 如果客户端已存在，先关闭它
 	if existingConn, exists := gc.clients[name]; exists {
-		log.Printf("GRPC client %s already exists, replacing...", name)
+		gc.logger.Info(context.Background(), fmt.Sprintf("GRPC client %s already exists, replacing...", name))
 		existingConn.Close()
 	}
 
@@ -236,13 +242,13 @@ func (gc *GRPCClientComponent) RemoveClient(name string) error {
 	}
 
 	if err := conn.Close(); err != nil {
-		log.Printf("Error closing GRPC client %s: %v", name, err)
+		gc.logger.Error(context.Background(), fmt.Sprintf("Error closing GRPC client %s: %v", name, err))
 	}
 
 	delete(gc.clients, name)
 	delete(gc.clientConfigs, name)
 
-	log.Printf("GRPC client removed: %s", name)
+	gc.logger.Info(context.Background(), fmt.Sprintf("GRPC client removed: %s", name))
 	return nil
 }
 
@@ -256,13 +262,13 @@ func (gc *GRPCClientComponent) startHealthCheck() {
 	gc.healthCheckTicker = time.NewTicker(interval)
 
 	go func() {
-		log.Println("GRPC health check started")
+		gc.logger.Info(context.Background(), "GRPC health check started")
 		for {
 			select {
 			case <-gc.healthCheckTicker.C:
 				gc.performHealthCheck()
 			case <-gc.healthCheckStop:
-				log.Println("GRPC health check stopped")
+				gc.logger.Info(context.Background(), "GRPC health check stopped")
 				return
 			}
 		}
@@ -281,7 +287,7 @@ func (gc *GRPCClientComponent) performHealthCheck() {
 	for name, conn := range clients {
 		state := conn.GetState()
 		if state == connectivity.TransientFailure || state == connectivity.Shutdown {
-			log.Printf("GRPC client %s connection issue: %v", name, state)
+			gc.logger.Info(context.Background(), fmt.Sprintf("GRPC client %s connection issue: %v", name, state))
 			// 这里可以实现重连逻辑
 		}
 	}
@@ -293,9 +299,9 @@ func (gc *GRPCClientComponent) closeAllClients() {
 	defer gc.mutex.Unlock()
 
 	for name, conn := range gc.clients {
-		log.Printf("Closing GRPC client: %s", name)
+		gc.logger.Info(context.Background(), fmt.Sprintf("Closing GRPC client: %s", name))
 		if err := conn.Close(); err != nil {
-			log.Printf("Error closing GRPC client %s: %v", name, err)
+			gc.logger.Info(context.Background(), fmt.Sprintf("Error closing GRPC client %s: %v", name, err))
 		}
 	}
 

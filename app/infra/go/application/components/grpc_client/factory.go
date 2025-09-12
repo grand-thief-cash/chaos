@@ -1,39 +1,34 @@
-// components/grpc_client/factory.go
+// app/infra/go/application/components/grpc_client/factory.go
 package grpc_client
 
 import (
 	"fmt"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
-// Factory GRPC客户端组件工厂
-type Factory struct{}
-
-// NewFactory 创建GRPC客户端组件工厂
-func NewFactory() *Factory {
-	return &Factory{}
+type Factory struct {
+	logger logging.Logger
 }
 
-// Create 创建GRPC客户端组件实例
+func NewFactory(logger logging.Logger) *Factory {
+	return &Factory{logger: logger}
+}
+
 func (f *Factory) Create(cfg interface{}) (core.Component, error) {
 	grpcConfig, ok := cfg.(*GRPCClientsConfig)
 	if !ok {
 		return nil, fmt.Errorf("invalid config type for GRPC clients component, expected *GRPCClientsConfig")
 	}
-
 	if !grpcConfig.Enabled {
 		return nil, fmt.Errorf("GRPC clients component is disabled")
 	}
-
-	// 设置默认值
 	f.setDefaults(grpcConfig)
-
-	return NewGRPCClientComponent(grpcConfig), nil
+	return NewGRPCClientComponent(grpcConfig, f.logger), nil
 }
 
-// setDefaults 设置默认配置值
 func (f *Factory) setDefaults(cfg *GRPCClientsConfig) {
 	if cfg.DefaultTimeout == 0 {
 		cfg.DefaultTimeout = 30 * time.Second
@@ -41,8 +36,6 @@ func (f *Factory) setDefaults(cfg *GRPCClientsConfig) {
 	if cfg.HealthCheckInterval == 0 {
 		cfg.HealthCheckInterval = 60 * time.Second
 	}
-
-	// 为每个客户端设置默认值
 	for name, clientConfig := range cfg.Clients {
 		if clientConfig.Name == "" {
 			clientConfig.Name = name

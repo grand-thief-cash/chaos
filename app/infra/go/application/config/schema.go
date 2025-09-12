@@ -8,6 +8,6 @@ import (
 
 // AppConfig 应用程序配置结构
 type AppConfig struct {
-	Logging     logging.LoggingConfig         `yaml:"logging" json:"logging"`
-	GRPCClients grpc_client.GRPCClientsConfig `yaml:"grpc_clients" json:"grpc_clients"`
+	Logging     *logging.LoggingConfig         `yaml:"logging" json:"logging"`
+	GRPCClients *grpc_client.GRPCClientsConfig `yaml:"grpc_clients" json:"grpc_clients"`
 }
