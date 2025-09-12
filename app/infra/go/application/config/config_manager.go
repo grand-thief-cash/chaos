@@ -11,6 +11,11 @@ func (cf *ConfigManager) GetConfig() *AppConfig {
 }
 
 func (cf *ConfigManager) LoadConfig() error {
+
+	if err := cf.validator.validateConfigFilePath(cf.configLoader.env, cf.configLoader.configPath); err != nil {
+		return err
+	}
+
 	config, err := cf.configLoader.LoadConfig()
 	if err != nil {
 		return err
@@ -24,16 +29,12 @@ func (cf *ConfigManager) LoadConfig() error {
 	return nil
 }
 
-func NewConfigManager(env string, configPath string) (*ConfigManager, error) {
+func NewConfigManager(env string, configPath string) *ConfigManager {
 	validator := NewValidator()
 	loader := NewLoader(env, configPath)
-
-	if err := validator.validateConfigFilePath(env, configPath); err != nil {
-		return nil, err
-	}
 
 	return &ConfigManager{
 		configLoader: loader,
 		validator:    validator,
-	}, nil
+	}
 }

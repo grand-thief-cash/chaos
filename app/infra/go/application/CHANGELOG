@@ -1,7 +1,12 @@
 # VERSION
-v0.1.2
+v0.2.0
 
 # Changelog
+- v0.2.0
+  - A basic version of application module has beed added.
+  - Added initial setup for application module.
+  - Available commands: start, stop
+  - Integrated logging and configuration management.
 - v0.1.2[Unfinished]
   - Refactored codebase for improved performance and readability.
 - v0.1.1
