@@ -4,7 +4,7 @@ logging:
   enabled: true
   level: "INFO"
   format: "json"  # json 或 console
-  output: "file"  # stdout, stderr, file
+  output: "stdout"  # stdout, stderr, file
   file_config:
     dir: "./logs"
     filename: "poc_go"  # 会生成 app_name.log, app_name.log.20231201 等

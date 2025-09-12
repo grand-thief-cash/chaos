@@ -78,13 +78,14 @@ func (lc *ZapLoggerComponent) Start(ctx context.Context) error {
 		zap.String("output", lc.config.Output),
 	)
 
+	SetGlobalLogger(lc)
 	return nil
 }
 
 // Stop 停止日志组件
 func (lc *ZapLoggerComponent) Stop(ctx context.Context) error {
 	if lc.zapLogger != nil {
-		lc.zapLogger.Info("Zap logger component stopping")
+		Info(ctx, "Zap logger component stopping")
 		_ = lc.zapLogger.Sync()
 	}
 	return lc.BaseComponent.Stop(ctx)
