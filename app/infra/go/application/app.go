@@ -19,7 +19,6 @@ type App struct {
 	container        *core.Container
 	lifecycleManager *core.LifecycleManager
 	configManager    *config.ConfigManager
-	logger           logging.Logger
 
 	bootOnce sync.Once
 	bootErr  error
@@ -39,21 +38,6 @@ func NewApp(env string, configPath string) *App {
 		container:        container,
 		lifecycleManager: core.NewLifecycleManager(container), // will overwrite container below
 	}
-}
-
-func (app *App) Boot() error {
-	app.bootOnce.Do(func() {
-		if err := app.configManager.LoadConfig(); err != nil {
-			app.bootErr = fmt.Errorf("load config failed: %w", err)
-			return
-		}
-		if err := app.registerComponents(); err != nil {
-			app.bootErr = fmt.Errorf("register components failed: %w", err)
-			return
-		}
-		app.booted = true
-	})
-	return app.bootErr
 }
 
 func (app *App) registerComponents() error {
@@ -76,13 +60,7 @@ func (app *App) registerComponents() error {
 
 	// grpc clients (inject logger if present)
 	if cfg.GRPCClients != nil && cfg.GRPCClients.Enabled {
-		var injected logging.Logger
-		if lg := app.GetLogger(); lg == nil {
-			panic("logger component must be registered before grpc clients")
-		} else {
-			injected = lg
-		}
-		grpcFactory := grpc_client.NewFactory(injected)
+		grpcFactory := grpc_client.NewFactory()
 		grpcComp, err := grpcFactory.Create(cfg.GRPCClients)
 		if err != nil {
 			return fmt.Errorf("create grpc clients component failed: %w", err)
@@ -93,22 +71,6 @@ func (app *App) registerComponents() error {
 	}
 
 	return nil
-}
-
-func (app *App) GetLogger() logging.Logger {
-	if app.logger != nil {
-		return app.logger
-	}
-	component, err := app.container.Resolve("logger")
-	if err != nil {
-		return nil
-	}
-	zapComp, ok := component.(*logging.ZapLoggerComponent)
-	if !ok {
-		return nil
-	}
-	app.logger = zapComp.GetLogger()
-	return app.logger
 }
 
 func (app *App) GetComponent(name string) (core.Component, error) {
@@ -127,6 +89,21 @@ func (app *App) AddHook(name string, phase hooks.Phase, fn hooks.HookFunc, prior
 }
 
 func (app *App) Run() error {
+	app.bootOnce.Do(func() {
+		if err := app.configManager.LoadConfig(); err != nil {
+			app.bootErr = fmt.Errorf("load config failed: %w", err)
+			return
+		}
+		if err := app.registerComponents(); err != nil {
+			app.bootErr = fmt.Errorf("register components failed: %w", err)
+			return
+		}
+		app.booted = true
+	})
+	if app.bootErr != nil {
+		return app.bootErr
+	}
+
 	return app.RunWithContext(context.Background())
 }
 
