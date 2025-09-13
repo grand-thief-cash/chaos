@@ -1,4 +1,4 @@
-// components/grpc_client/component.go
+// components/grpc_client/mysql_component.go
 package grpc_client
 
 import (

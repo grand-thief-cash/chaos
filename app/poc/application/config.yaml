@@ -31,3 +31,21 @@ grpc_clients:
       port: 50052
       secure: true
       credentials_path: "/path/to/cert.pem"
+
+mysql:
+  enabled: true
+  data_sources:
+    primary:
+      host: 192.168.31.35
+      port: 3306
+      user: root
+      password: 123456
+      database: quant_product
+      max_open_conns: 3
+      max_idle_conns: 2
+      ping_on_start: true
+#    analytics:
+#      dsn: user:pwd@tcp(analytics-mysql:3306)/analytics?parseTime=true&charset=utf8mb4
+#      max_open_conns: 30
+#      max_idle_conns: 5
+#      ping_on_start: true

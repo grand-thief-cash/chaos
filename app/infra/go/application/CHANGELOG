@@ -1,7 +1,10 @@
 # VERSION
-v0.2.2
+v0.3.0
 
 # Changelog
+- v0.3.0
+  - Fixed logging callerSkip, not the caller in log is correct.
+  - Added Mysql components
 - v0.2.2
   - Replaced go log before init logging component.
 - v0.2.1

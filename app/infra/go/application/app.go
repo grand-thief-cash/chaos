@@ -4,6 +4,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
 	"path/filepath"
 	"sync"
 
@@ -67,6 +68,18 @@ func (app *App) registerComponents() error {
 		}
 		if err = app.container.Register("grpc_clients", grpcComp); err != nil {
 			return fmt.Errorf("register grpc clients component failed: %w", err)
+		}
+	}
+
+	// mysql
+	if cfg.MySQL != nil && cfg.MySQL.Enabled {
+		mysqlFactory := mysql.NewFactory()
+		mysqlComp, err := mysqlFactory.Create(cfg.MySQL)
+		if err != nil {
+			return fmt.Errorf("create mysql component failed: %w", err)
+		}
+		if err = app.container.Register("mysql", mysqlComp); err != nil {
+			return fmt.Errorf("register mysql component failed: %w", err)
 		}
 	}
 
