@@ -31,7 +31,7 @@ func main() {
 	}()
 
 	// Demo: stop after 5 seconds
-	time.Sleep(2 * time.Second)
+	time.Sleep(20 * time.Second)
 	logging.Info(ctx, "Application started!!!")
 	app.Shutdown(ctx)
 }

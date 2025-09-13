@@ -18,6 +18,10 @@ import (
 
 const (
 	TraceIDKey = "trace_id"
+	// 根据实际包装层数调整:
+	// 典型: 3 (全局函数 + 组件方法 + logWithContext)
+	// 如果仍显示在 logging 包内, 改成 4 试试
+	callerSkip = 3
 )
 
 // Logger 日志记录器接口
@@ -53,23 +57,24 @@ func (lc *ZapLoggerComponent) Start(ctx context.Context) error {
 		return err
 	}
 
-	// 创建编码器
 	encoder := lc.buildEncoder()
 
-	// 创建写入器
 	writeSyncer, err := lc.buildWriteSyncer()
 	if err != nil {
 		return fmt.Errorf("failed to create write syncer: %w", err)
 	}
 
-	// 解析日志级别
 	level := lc.parseLevel(lc.config.Level)
 
-	// 创建core
 	core := zapcore.NewCore(encoder, writeSyncer, level)
 
-	// 创建logger
-	lc.zapLogger = zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+	// 添加 AddCallerSkip 以跳过包装层
+	lc.zapLogger = zap.New(
+		core,
+		zap.AddCaller(),
+		zap.AddCallerSkip(callerSkip),
+		zap.AddStacktrace(zapcore.ErrorLevel),
+	)
 	lc.sugar = lc.zapLogger.Sugar()
 
 	lc.zapLogger.Info("Zap logger component started",
