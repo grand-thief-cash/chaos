@@ -5,16 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
 type Factory struct {
-	logger logging.Logger
 }
 
-func NewFactory(logger logging.Logger) *Factory {
-	return &Factory{logger: logger}
+func NewFactory() *Factory {
+	return &Factory{}
 }
 
 func (f *Factory) Create(cfg interface{}) (core.Component, error) {
@@ -26,7 +24,7 @@ func (f *Factory) Create(cfg interface{}) (core.Component, error) {
 		return nil, fmt.Errorf("GRPC clients component is disabled")
 	}
 	f.setDefaults(grpcConfig)
-	return NewGRPCClientComponent(grpcConfig, f.logger), nil
+	return NewGRPCClientComponent(grpcConfig), nil
 }
 
 func (f *Factory) setDefaults(cfg *GRPCClientsConfig) {

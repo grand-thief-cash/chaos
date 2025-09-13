@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 )
 
 func main() {
@@ -18,19 +18,15 @@ func main() {
 	app := application.NewApp("development", "C:\\Users\\gaoc3\\projects\\chaos\\app\\poc\\application\\config.yaml")
 
 	// Optional custom hook
-	_ = app.AddHook("custom_after_start", hooks.AfterStart, func(ctx context.Context) error {
-		logging.Info(ctx, "Custom after_start hook executed")
-		return nil
-	}, 200)
-
-	if err := app.Boot(); err != nil {
-		logging.Fatalf(ctx, "boot failed: %v", err)
-	}
+	//_ = app.AddHook("custom_after_start", hooks.AfterStart, func(ctx context.Context) error {
+	//	logging.Info(ctx, "Custom after_start hook executed")
+	//	return nil
+	//}, 200)
 
 	// Run in a separate goroutine so we can simulate shutdown
 	go func() {
 		if err := app.Run(); err != nil {
-			logging.Fatalf(ctx, "run failed: %v", err)
+			log.Fatalf("run failed: %v", err)
 		}
 	}()
 
