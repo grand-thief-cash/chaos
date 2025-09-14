@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	TraceIDKey = "trace_id"
+	TraceIDKey = "traceID"
 	// 根据实际包装层数调整:
 	// 典型: 3 (全局函数 + 组件方法 + logWithContext)
 	// 如果仍显示在 logging 包内, 改成 4 试试

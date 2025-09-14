@@ -1,21 +1,22 @@
-// app.go
 package application
 
 import (
 	"context"
 	"fmt"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
+	"os"
+	"os/signal"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 )
 
-// App 应用程序实例
 type App struct {
 	container        *core.Container
 	lifecycleManager *core.LifecycleManager
@@ -27,18 +28,31 @@ type App struct {
 }
 
 func NewApp(env string, configPath string) *App {
-
 	abs := configPath
 	if p, err := filepath.Abs(configPath); err == nil {
 		abs = p
 	}
-
 	container := core.NewContainer()
 	return &App{
 		configManager:    config.NewConfigManager(env, abs),
 		container:        container,
-		lifecycleManager: core.NewLifecycleManager(container), // will overwrite container below
+		lifecycleManager: core.NewLifecycleManager(container),
 	}
+}
+
+func (app *App) boot() error {
+	app.bootOnce.Do(func() {
+		if err := app.configManager.LoadConfig(); err != nil {
+			app.bootErr = fmt.Errorf("load config failed: %w", err)
+			return
+		}
+		if err := app.registerComponents(); err != nil {
+			app.bootErr = fmt.Errorf("register components failed: %w", err)
+			return
+		}
+		app.booted = true
+	})
+	return app.bootErr
 }
 
 func (app *App) registerComponents() error {
@@ -47,7 +61,6 @@ func (app *App) registerComponents() error {
 		return fmt.Errorf("config not loaded")
 	}
 
-	// logging
 	if cfg.Logging != nil && cfg.Logging.Enabled {
 		logFactory := logging.NewFactory()
 		logComp, err := logFactory.Create(cfg.Logging)
@@ -59,7 +72,6 @@ func (app *App) registerComponents() error {
 		}
 	}
 
-	// grpc clients (inject logger if present)
 	if cfg.GRPCClients != nil && cfg.GRPCClients.Enabled {
 		grpcFactory := grpc_client.NewFactory()
 		grpcComp, err := grpcFactory.Create(cfg.GRPCClients)
@@ -71,7 +83,6 @@ func (app *App) registerComponents() error {
 		}
 	}
 
-	// mysql
 	if cfg.MySQL != nil && cfg.MySQL.Enabled {
 		mysqlFactory := mysql.NewFactory()
 		mysqlComp, err := mysqlFactory.Create(cfg.MySQL)
@@ -101,30 +112,29 @@ func (app *App) AddHook(name string, phase hooks.Phase, fn hooks.HookFunc, prior
 	return app.lifecycleManager.AddHook(name, phase, fn, priority)
 }
 
+// Run sets up an OS signal context and blocks until SIGINT/SIGTERM.
 func (app *App) Run() error {
-	app.bootOnce.Do(func() {
-		if err := app.configManager.LoadConfig(); err != nil {
-			app.bootErr = fmt.Errorf("load config failed: %w", err)
-			return
-		}
-		if err := app.registerComponents(); err != nil {
-			app.bootErr = fmt.Errorf("register components failed: %w", err)
-			return
-		}
-		app.booted = true
-	})
-	if app.bootErr != nil {
-		return app.bootErr
-	}
-
-	return app.RunWithContext(context.Background())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGTERM)
+	defer stop()
+	return app.RunWithContext(ctx)
 }
 
+// RunWithContext starts components and blocks until context done,
+// then performs graceful shutdown.
 func (app *App) RunWithContext(ctx context.Context) error {
+	if err := app.boot(); err != nil {
+		return err
+	}
+
 	if err := app.lifecycleManager.StartAll(ctx); err != nil {
 		return err
 	}
-	app.lifecycleManager.WaitForShutdown(ctx)
+
+	// Block until context canceled.
+	<-ctx.Done()
+
+	// Graceful shutdown.
+	app.lifecycleManager.StopAll(context.Background())
 	return nil
 }
 
