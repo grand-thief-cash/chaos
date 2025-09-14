@@ -1,7 +1,10 @@
 # VERSION
-v0.3.0
+v0.4.0
 
 # Changelog
+- v0.4.0
+  - Added http server component (Init version and non-testable).
+  - RunWithContext() blocks until the provided context is done and on context cancellation it triggers graceful shutdown.
 - v0.3.0
   - Fixed logging callerSkip, not the caller in log is correct.
   - Added Mysql components
