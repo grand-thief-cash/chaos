@@ -3,8 +3,6 @@ package application
 import (
 	"context"
 	"fmt"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -12,9 +10,12 @@ import (
 	"syscall"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 )
@@ -93,6 +94,17 @@ func (app *App) registerComponents() error {
 		}
 		if err = app.container.Register(consts.COMPONENT_MYSQL, mysqlComp); err != nil {
 			return fmt.Errorf("register mysql component failed: %w", err)
+		}
+	}
+
+	if cfg.Redis != nil && cfg.Redis.Enabled {
+		redisFactory := redis.NewFactory()
+		redisComp, err := redisFactory.Create(cfg.Redis)
+		if err != nil {
+			return fmt.Errorf("create redis component failed: %w", err)
+		}
+		if err = app.container.Register(consts.COMPONENT_REDIS, redisComp); err != nil {
+			return fmt.Errorf("register redis component failed: %w", err)
 		}
 	}
 

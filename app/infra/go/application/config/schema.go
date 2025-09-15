@@ -6,6 +6,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
 )
 
 // AppConfig 应用程序配置结构
@@ -15,6 +16,7 @@ type AppConfig struct {
 	GRPCClients *grpc_client.GRPCClientsConfig `yaml:"grpc_clients" json:"grpc_clients"`
 	MySQL       *mysql.MySQLConfig             `yaml:"mysql" json:"mysql"`
 	HTTPServer  *http_server.HTTPServerConfig  `yaml:"http_server" json:"http_server"`
+	Redis       *redis.Config                  `yaml:"redis" json:"redis"`
 }
 
 type APPInfo struct {
