@@ -54,7 +54,7 @@ class FastAPIServerComponent(BaseComponent):
     def _setup_logging_middleware(self):
         """设置日志中间件"""
 
-        @self.app.middleware("http")
+        @self.app.middleware("http_server")
         async def logging_middleware(request: Request, call_next):
             # 生成追踪ID
             trace_id = str(uuid.uuid4())
@@ -155,7 +155,7 @@ class FastAPIServerComponent(BaseComponent):
 
         if self.server.started:
             super().start()
-            logger.info(f"FastAPI server started successfully on http://{self.config.host}:{self.config.port}")
+            logger.info(f"FastAPI server started successfully on http_server://{self.config.host}:{self.config.port}")
         else:
             raise RuntimeError("Failed to start FastAPI server within timeout")
 

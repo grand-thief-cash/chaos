@@ -30,7 +30,7 @@ func (f *Factory) Create(cfg interface{}) (core.Component, error) {
 	// 设置默认值
 	f.setDefaults(loggingConfig)
 
-	return NewZapLoggerComponent(loggingConfig), nil
+	return NewLoggerComponent(loggingConfig), nil
 }
 
 // setDefaults 设置默认配置值

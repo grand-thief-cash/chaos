@@ -1,4 +1,4 @@
-package http
+package http_server
 
 import (
 	"github.com/go-chi/chi/v5"
@@ -14,7 +14,7 @@ var (
 	registrars []RouteRegisterFunc
 )
 
-// RegisterRoutes (global) - simple style; call from controller init() or a setup function.
+// RegisterRoutes (global) - simple style; call from controllers init() or a setup function.
 func RegisterRoutes(fn RouteRegisterFunc) {
 	if fn == nil {
 		return

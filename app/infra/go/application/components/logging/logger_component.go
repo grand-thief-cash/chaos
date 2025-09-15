@@ -1,9 +1,10 @@
-// components/logging/zap_logger.go
+// components/logging/logger_component.go
 package logging
 
 import (
 	"context"
 	"fmt"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,24 +36,24 @@ type Logger interface {
 	Sync() error
 }
 
-// ZapLoggerComponent Zap日志组件
-type ZapLoggerComponent struct {
+// LoggerComponent Zap日志组件
+type LoggerComponent struct {
 	*core.BaseComponent
 	config    *LoggingConfig
 	zapLogger *zap.Logger
 	sugar     *zap.SugaredLogger
 }
 
-// NewZapLoggerComponent 创建新的Zap日志组件
-func NewZapLoggerComponent(cfg *LoggingConfig) *ZapLoggerComponent {
-	return &ZapLoggerComponent{
-		BaseComponent: core.NewBaseComponent("zap_logger"),
+// NewLoggerComponent 创建新的Zap日志组件
+func NewLoggerComponent(cfg *LoggingConfig) *LoggerComponent {
+	return &LoggerComponent{
+		BaseComponent: core.NewBaseComponent(consts.COMPONENT_LOGGING),
 		config:        cfg,
 	}
 }
 
 // Start 启动日志组件
-func (lc *ZapLoggerComponent) Start(ctx context.Context) error {
+func (lc *LoggerComponent) Start(ctx context.Context) error {
 	if err := lc.BaseComponent.Start(ctx); err != nil {
 		return err
 	}
@@ -66,11 +67,9 @@ func (lc *ZapLoggerComponent) Start(ctx context.Context) error {
 
 	level := lc.parseLevel(lc.config.Level)
 
-	core := zapcore.NewCore(encoder, writeSyncer, level)
-
 	// 添加 AddCallerSkip 以跳过包装层
 	lc.zapLogger = zap.New(
-		core,
+		zapcore.NewCore(encoder, writeSyncer, level),
 		zap.AddCaller(),
 		zap.AddCallerSkip(callerSkip),
 		zap.AddStacktrace(zapcore.ErrorLevel),
@@ -88,16 +87,16 @@ func (lc *ZapLoggerComponent) Start(ctx context.Context) error {
 }
 
 // Stop 停止日志组件
-func (lc *ZapLoggerComponent) Stop(ctx context.Context) error {
+func (lc *LoggerComponent) Stop(ctx context.Context) error {
 	if lc.zapLogger != nil {
-		Info(ctx, "Zap logger component stopping")
+		Info(ctx, "logger component stopping")
 		_ = lc.zapLogger.Sync()
 	}
 	return lc.BaseComponent.Stop(ctx)
 }
 
 // HealthCheck 健康检查
-func (lc *ZapLoggerComponent) HealthCheck() error {
+func (lc *LoggerComponent) HealthCheck() error {
 	if err := lc.BaseComponent.HealthCheck(); err != nil {
 		return err
 	}
@@ -108,7 +107,7 @@ func (lc *ZapLoggerComponent) HealthCheck() error {
 }
 
 // buildEncoder 构建编码器
-func (lc *ZapLoggerComponent) buildEncoder() zapcore.Encoder {
+func (lc *LoggerComponent) buildEncoder() zapcore.Encoder {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "timestamp",
 		LevelKey:       "level",
@@ -131,7 +130,7 @@ func (lc *ZapLoggerComponent) buildEncoder() zapcore.Encoder {
 }
 
 // buildWriteSyncer 构建写入器
-func (lc *ZapLoggerComponent) buildWriteSyncer() (zapcore.WriteSyncer, error) {
+func (lc *LoggerComponent) buildWriteSyncer() (zapcore.WriteSyncer, error) {
 	switch strings.ToLower(lc.config.Output) {
 	case "stdout", "":
 		return zapcore.AddSync(os.Stdout), nil
@@ -146,7 +145,7 @@ func (lc *ZapLoggerComponent) buildWriteSyncer() (zapcore.WriteSyncer, error) {
 }
 
 // buildFileWriteSyncer 构建文件写入器（使用配置的文件设置）
-func (lc *ZapLoggerComponent) buildFileWriteSyncer() (zapcore.WriteSyncer, error) {
+func (lc *LoggerComponent) buildFileWriteSyncer() (zapcore.WriteSyncer, error) {
 	if lc.config.FileConfig == nil {
 		return nil, fmt.Errorf("file config is required when output is 'file'")
 	}
@@ -180,7 +179,7 @@ func (lc *ZapLoggerComponent) buildFileWriteSyncer() (zapcore.WriteSyncer, error
 }
 
 // buildCustomFileWriteSyncer 构建自定义文件写入器
-func (lc *ZapLoggerComponent) buildCustomFileWriteSyncer(filePath string) (zapcore.WriteSyncer, error) {
+func (lc *LoggerComponent) buildCustomFileWriteSyncer(filePath string) (zapcore.WriteSyncer, error) {
 	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
@@ -189,7 +188,7 @@ func (lc *ZapLoggerComponent) buildCustomFileWriteSyncer(filePath string) (zapco
 }
 
 // parseLevel 解析日志级别
-func (lc *ZapLoggerComponent) parseLevel(level string) zapcore.Level {
+func (lc *LoggerComponent) parseLevel(level string) zapcore.Level {
 	switch strings.ToUpper(level) {
 	case "DEBUG":
 		return zapcore.DebugLevel
@@ -207,34 +206,34 @@ func (lc *ZapLoggerComponent) parseLevel(level string) zapcore.Level {
 }
 
 // Debug 记录调试日志
-func (lc *ZapLoggerComponent) Debug(ctx context.Context, msg string, fields ...zap.Field) {
+func (lc *LoggerComponent) Debug(ctx context.Context, msg string, fields ...zap.Field) {
 	lc.logWithContext(ctx, zapcore.DebugLevel, msg, fields...)
 }
 
 // Info 记录信息日志
-func (lc *ZapLoggerComponent) Info(ctx context.Context, msg string, fields ...zap.Field) {
+func (lc *LoggerComponent) Info(ctx context.Context, msg string, fields ...zap.Field) {
 	lc.logWithContext(ctx, zapcore.InfoLevel, msg, fields...)
 }
 
 // Warn 记录警告日志
-func (lc *ZapLoggerComponent) Warn(ctx context.Context, msg string, fields ...zap.Field) {
+func (lc *LoggerComponent) Warn(ctx context.Context, msg string, fields ...zap.Field) {
 	lc.logWithContext(ctx, zapcore.WarnLevel, msg, fields...)
 }
 
 // Error 记录错误日志
-func (lc *ZapLoggerComponent) Error(ctx context.Context, msg string, fields ...zap.Field) {
+func (lc *LoggerComponent) Error(ctx context.Context, msg string, fields ...zap.Field) {
 	lc.logWithContext(ctx, zapcore.ErrorLevel, msg, fields...)
 }
 
 // Fatal 记录致命错误日志
-func (lc *ZapLoggerComponent) Fatal(ctx context.Context, msg string, fields ...zap.Field) {
+func (lc *LoggerComponent) Fatal(ctx context.Context, msg string, fields ...zap.Field) {
 	lc.logWithContext(ctx, zapcore.FatalLevel, msg, fields...)
 	os.Exit(1)
 }
 
 // With 创建带有附加字段的新logger
-func (lc *ZapLoggerComponent) With(fields ...zap.Field) Logger {
-	return &ZapLoggerComponent{
+func (lc *LoggerComponent) With(fields ...zap.Field) Logger {
+	return &LoggerComponent{
 		BaseComponent: lc.BaseComponent,
 		config:        lc.config,
 		zapLogger:     lc.zapLogger.With(fields...),
@@ -243,7 +242,7 @@ func (lc *ZapLoggerComponent) With(fields ...zap.Field) Logger {
 }
 
 // Sync 同步日志
-func (lc *ZapLoggerComponent) Sync() error {
+func (lc *LoggerComponent) Sync() error {
 	if lc.zapLogger != nil {
 		return lc.zapLogger.Sync()
 	}
@@ -251,7 +250,7 @@ func (lc *ZapLoggerComponent) Sync() error {
 }
 
 // logWithContext 带上下文的日志记录
-func (lc *ZapLoggerComponent) logWithContext(ctx context.Context, level zapcore.Level, msg string, fields ...zap.Field) {
+func (lc *LoggerComponent) logWithContext(ctx context.Context, level zapcore.Level, msg string, fields ...zap.Field) {
 	if lc.zapLogger == nil {
 		return
 	}
@@ -275,7 +274,7 @@ func (lc *ZapLoggerComponent) logWithContext(ctx context.Context, level zapcore.
 }
 
 // getOrGenerateTraceID 从context中获取或生成trace_id
-func (lc *ZapLoggerComponent) getOrGenerateTraceID(ctx context.Context) string {
+func (lc *LoggerComponent) getOrGenerateTraceID(ctx context.Context) string {
 	if ctx == nil {
 		return lc.generateTraceID()
 	}
@@ -302,21 +301,21 @@ func (lc *ZapLoggerComponent) getOrGenerateTraceID(ctx context.Context) string {
 }
 
 // generateTraceID 生成新的trace_id
-func (lc *ZapLoggerComponent) generateTraceID() string {
+func (lc *LoggerComponent) generateTraceID() string {
 	return uuid.New().String()
 }
 
 // GetLogger 获取Logger接口
-func (lc *ZapLoggerComponent) GetLogger() Logger {
+func (lc *LoggerComponent) GetLogger() Logger {
 	return lc
 }
 
 // GetZapLogger 获取原始的zap.Logger
-func (lc *ZapLoggerComponent) GetZapLogger() *zap.Logger {
+func (lc *LoggerComponent) GetZapLogger() *zap.Logger {
 	return lc.zapLogger
 }
 
 // GetSugar 获取zap.SugaredLogger
-func (lc *ZapLoggerComponent) GetSugar() *zap.SugaredLogger {
+func (lc *LoggerComponent) GetSugar() *zap.SugaredLogger {
 	return lc.sugar
 }

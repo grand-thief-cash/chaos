@@ -1,7 +1,12 @@
 # VERSION
-v0.4.0
+v0.4.1
 
 # Changelog
+- v0.4.1
+  - Added customized dependencies in each component.
+  - Replaced component name using consts.
+  - Simplified register process handler func to http server
+  - Removed "Register http handler func after run", this violates the whole booting process.
 - v0.4.0
   - Added http server component (Init version and non-testable).
   - RunWithContext() blocks until the provided context is done and on context cancellation it triggers graceful shutdown.

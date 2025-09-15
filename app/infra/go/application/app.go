@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"fmt"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -67,7 +69,7 @@ func (app *App) registerComponents() error {
 		if err != nil {
 			return fmt.Errorf("create logging component failed: %w", err)
 		}
-		if err = app.container.Register("logger", logComp); err != nil {
+		if err = app.container.Register(consts.COMPONENT_LOGGING, logComp); err != nil {
 			return fmt.Errorf("register logging component failed: %w", err)
 		}
 	}
@@ -89,8 +91,19 @@ func (app *App) registerComponents() error {
 		if err != nil {
 			return fmt.Errorf("create mysql component failed: %w", err)
 		}
-		if err = app.container.Register("mysql", mysqlComp); err != nil {
+		if err = app.container.Register(consts.COMPONENT_MYSQL, mysqlComp); err != nil {
 			return fmt.Errorf("register mysql component failed: %w", err)
+		}
+	}
+
+	if cfg.HTTPServer != nil && cfg.HTTPServer.Enabled {
+		httpFactory := http_server.NewFactory(app.container)
+		httpServer, err := httpFactory.Create(cfg.HTTPServer)
+		if err != nil {
+			return fmt.Errorf("create http_server component failed: %w", err)
+		}
+		if err = app.container.Register(consts.COMPONENT_HTTP_SERVER, httpServer); err != nil {
+			return fmt.Errorf("register http_server component failed: %w", err)
 		}
 	}
 
