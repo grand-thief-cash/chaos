@@ -1,6 +1,4 @@
 # config.yaml
-
-
 app:
   name: "poc_go"
   mode: "development"  # development, production
@@ -64,3 +62,27 @@ http_server:
   idle_timeout: 60s
   graceful_timeout: 10s
   enable_health: true
+
+
+redis:
+  enabled: true
+  mode: single          # single | cluster | sentinel
+  addresses:
+    - 127.0.0.1:6379
+  username: ""
+  password: ""
+  db: 0
+  pool_size: 20
+  min_idle_conns: 5
+  conn_max_lifetime: 0s      # 0 = no limit
+  conn_max_idle_time: 300s
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+  # For sentinel mode:
+  # mode: sentinel
+  # addresses: [127.0.0.1:26379,127.0.0.1:26380]
+  # sentinel_master: mymaster
+  # For cluster mode:
+  # mode: cluster
+  # addresses: [127.0.0.1:7000,127.0.0.1:7001,127.0.0.1:7002]
