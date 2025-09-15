@@ -69,7 +69,7 @@ func Fatalf(ctx context.Context, format string, args ...interface{}) {
 
 // Optional: expose underlying *zap.Logger when available.
 func UnderlyingZap() *zap.Logger {
-	if zc, ok := L().(*ZapLoggerComponent); ok {
+	if zc, ok := L().(*LoggerComponent); ok {
 		return zc.GetZapLogger()
 	}
 	return nil

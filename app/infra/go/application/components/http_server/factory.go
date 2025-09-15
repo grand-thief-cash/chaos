@@ -1,4 +1,4 @@
-package http
+package http_server
 
 import (
 	"fmt"
@@ -13,12 +13,12 @@ type Factory struct {
 func NewFactory(c *core.Container) *Factory { return &Factory{container: c} }
 
 func (f *Factory) Create(cfg interface{}) (core.Component, error) {
-	httpCfg, ok := cfg.(*HTTPConfig)
+	httpCfg, ok := cfg.(*HTTPServerConfig)
 	if !ok {
-		return nil, fmt.Errorf("invalid config type for http component (need *HTTPConfig)")
+		return nil, fmt.Errorf("invalid config type for http_server component (need *HTTPServerConfig)")
 	}
 	if !httpCfg.Enabled {
-		return nil, fmt.Errorf("http component disabled")
+		return nil, fmt.Errorf("http_server component disabled")
 	}
-	return NewHTTPComponent(httpCfg, f.container), nil
+	return NewHTTPServerComponent(httpCfg, f.container), nil
 }

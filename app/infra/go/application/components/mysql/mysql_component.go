@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"net/url"
 	"sort"
 	"strings"
@@ -26,7 +27,7 @@ type MysqlComponent struct {
 
 func NewMySQLComponent(cfg *MySQLConfig) *MysqlComponent {
 	return &MysqlComponent{
-		BaseComponent: core.NewBaseComponent("mysql"),
+		BaseComponent: core.NewBaseComponent(consts.COMPONENT_MYSQL),
 		cfg:           cfg,
 		databases:     make(map[string]*sql.DB),
 	}

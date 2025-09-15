@@ -1,5 +1,10 @@
 # config.yaml
 
+
+app:
+  name: "poc_go"
+  mode: "development"  # development, production
+
 logging:
   enabled: true
   level: "INFO"
@@ -33,7 +38,7 @@ grpc_clients:
       credentials_path: "/path/to/cert.pem"
 
 mysql:
-  enabled: true
+  enabled: false
   data_sources:
     primary:
       host: 192.168.31.35
@@ -49,3 +54,13 @@ mysql:
 #      max_open_conns: 30
 #      max_idle_conns: 5
 #      ping_on_start: true
+
+
+http_server:
+  enabled: true
+  address: ":9999"
+  read_timeout: 10s
+  write_timeout: 10s
+  idle_timeout: 60s
+  graceful_timeout: 10s
+  enable_health: true

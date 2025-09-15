@@ -1,9 +1,11 @@
-package http
+package http_server
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+	"go.uber.org/zap"
 	"net/http"
 	"time"
 
@@ -14,9 +16,9 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
-type HTTPComponent struct {
+type HTTPServerComponent struct {
 	*core.BaseComponent
-	cfg       *HTTPConfig
+	cfg       *HTTPServerConfig
 	container *core.Container
 	router    chi.Router
 	server    *http.Server
@@ -24,30 +26,34 @@ type HTTPComponent struct {
 	started   bool
 }
 
-// NewHTTPComponent creates the component (dependencies: logger, mysql optional).
-func NewHTTPComponent(cfg *HTTPConfig, c *core.Container) *HTTPComponent {
-	return &HTTPComponent{
-		BaseComponent: core.NewBaseComponent("http_server", "logger", "mysql"),
+// NewHTTPServerComponent creates the component (dependencies: logger, mysql optional).
+func NewHTTPServerComponent(cfg *HTTPServerConfig, c *core.Container) *HTTPServerComponent {
+	return &HTTPServerComponent{
+		BaseComponent: core.NewBaseComponent(consts.COMPONENT_HTTP_SERVER, consts.COMPONENT_LOGGING),
 		cfg:           cfg,
 		container:     c,
 	}
 }
 
-func (hc *HTTPComponent) AddRouteRegistrar(fn RouteRegisterFunc) {
+func (hc *HTTPServerComponent) AddRouteRegistrar(fn RouteRegisterFunc) error {
 	if fn == nil {
-		return
+		return nil
+	}
+	if hc.started {
+		return fmt.Errorf("cannot register route: http_server already started (use BeforeStart hook)")
 	}
 	hc.extras = append(hc.extras, fn)
+	return nil
 }
 
-func (hc *HTTPComponent) Router() chi.Router { return hc.router }
+func (hc *HTTPServerComponent) Router() chi.Router { return hc.router }
 
-func (hc *HTTPComponent) Start(ctx context.Context) error {
+func (hc *HTTPServerComponent) Start(ctx context.Context) error {
 	if err := hc.BaseComponent.Start(ctx); err != nil {
 		return err
 	}
 	if hc.cfg == nil || !hc.cfg.Enabled {
-		return errors.New("http component enabled flag mismatch")
+		return errors.New("http_server component enabled flag mismatch")
 	}
 
 	hc.applyDefaults()
@@ -55,43 +61,33 @@ func (hc *HTTPComponent) Start(ctx context.Context) error {
 	hc.router = chi.NewRouter()
 	hc.setupMiddlewares()
 
-	// Built-in endpoints
 	if hc.cfg.EnableHealth {
 		hc.router.Get("/healthz", hc.healthHandler)
 	}
 
-	// Global + hook route registrars
-	for _, fn := range snapshot() { // global registry
-		if err := fn(hc.router, hc.container); err != nil {
-			return fmt.Errorf("global route register failed: %w", err)
-		}
-	}
-	for _, fn := range hc.extras { // hook injected
-		if err := fn(hc.router, hc.container); err != nil {
-			return fmt.Errorf("hook route register failed: %w", err)
-		}
+	if err := hc.registerAllRoutes(); err != nil {
+		return err
 	}
 
 	hc.server = &http.Server{
 		Addr:         hc.cfg.Address,
-		Handler:      hc.router,
 		ReadTimeout:  hc.cfg.ReadTimeout,
 		WriteTimeout: hc.cfg.WriteTimeout,
 		IdleTimeout:  hc.cfg.IdleTimeout,
+		Handler:      hc.router,
 	}
 
 	go func() {
-		logging.Infof(ctx, "[http] listening on %s", hc.cfg.Address)
+		logging.Infof(ctx, "http_server listening on %s", hc.cfg.Address)
 		if err := hc.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logging.Errorf(ctx, "[http] server error: %v", err)
+			logging.Errorf(ctx, "http_server server error: %v", err)
 		}
 	}()
 
 	hc.started = true
 	return nil
 }
-
-func (hc *HTTPComponent) Stop(ctx context.Context) error {
+func (hc *HTTPServerComponent) Stop(ctx context.Context) error {
 	defer hc.BaseComponent.Stop(ctx)
 	if !hc.started || hc.server == nil {
 		return nil
@@ -103,61 +99,60 @@ func (hc *HTTPComponent) Stop(ctx context.Context) error {
 	stopCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := hc.server.Shutdown(stopCtx); err != nil {
-		return fmt.Errorf("http graceful shutdown failed: %w", err)
+		return fmt.Errorf("http_server graceful shutdown failed: %w", err)
 	}
-	logging.Infof(ctx, "[http] server stopped")
+	logging.Infof(ctx, "http_server server stopped")
 	return nil
 }
 
-func (hc *HTTPComponent) HealthCheck() error {
+func (hc *HTTPServerComponent) HealthCheck() error {
 	if err := hc.BaseComponent.HealthCheck(); err != nil {
 		return err
 	}
 	if !hc.started {
-		return fmt.Errorf("http server not started")
+		return fmt.Errorf("http_server server not started")
 	}
 	return nil
 }
 
-func (hc *HTTPComponent) healthHandler(w http.ResponseWriter, r *http.Request) {
+func (hc *HTTPServerComponent) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
 
-func (hc *HTTPComponent) setupMiddlewares() {
+func (hc *HTTPServerComponent) setupMiddlewares() {
 	hc.router.Use(middleware.RequestID)
 	hc.router.Use(middleware.RealIP)
 	hc.router.Use(middleware.Recoverer)
 	hc.router.Use(middleware.Timeout(60 * time.Second))
-	// Custom logging middleware
 	hc.router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			ctx := context.WithValue(r.Context(), logging.TraceIDKey, middleware.GetReqID(r.Context()))
 			next.ServeHTTP(w, r.WithContext(ctx))
+			elapsed := time.Since(start)
 			logging.Info(ctx, "http_access",
-				zapString("method", r.Method),
-				zapString("path", r.URL.Path),
-				zapString("remote", r.RemoteAddr),
-				zapString("dur", time.Since(start).String()))
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+				zap.String("remote", r.RemoteAddr),
+				zap.Duration("dur", elapsed),
+			)
 		})
 	})
 }
 
-// Helper to wrap simple string fields without importing zap in this file excessively.
-func zapString(k, v string) loggingField {
-	return loggingField{Key: k, Value: v}
+func (hc *HTTPServerComponent) registerAllRoutes() error {
+	registrars := append(snapshot(), hc.extras...)
+	for _, fn := range registrars {
+		if err := fn(hc.router, hc.container); err != nil {
+			return fmt.Errorf("route register failed: %w", err)
+		}
+	}
+	return nil
 }
-
-// minimal adapter so we can pass fields through existing logger interface without exposing zap.Field directly here
-type loggingField struct {
-	Key, Value string
-}
-
-func (f loggingField) toZap() interface{} { return f }
 
 // applyDefaults sets defaults.
-func (hc *HTTPComponent) applyDefaults() {
+func (hc *HTTPServerComponent) applyDefaults() {
 	if hc.cfg.Address == "" {
 		hc.cfg.Address = ":8080"
 	}
