@@ -3,13 +3,14 @@ package application
 import (
 	"context"
 	"fmt"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_server"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sync"
 	"syscall"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
@@ -75,17 +76,6 @@ func (app *App) registerComponents() error {
 		}
 	}
 
-	if cfg.GRPCClients != nil && cfg.GRPCClients.Enabled {
-		grpcFactory := grpc_client.NewFactory()
-		grpcComp, err := grpcFactory.Create(cfg.GRPCClients)
-		if err != nil {
-			return fmt.Errorf("create grpc clients component failed: %w", err)
-		}
-		if err = app.container.Register("grpc_clients", grpcComp); err != nil {
-			return fmt.Errorf("register grpc clients component failed: %w", err)
-		}
-	}
-
 	if cfg.MySQL != nil && cfg.MySQL.Enabled {
 		mysqlFactory := mysql.NewFactory()
 		mysqlComp, err := mysqlFactory.Create(cfg.MySQL)
@@ -116,6 +106,28 @@ func (app *App) registerComponents() error {
 		}
 		if err = app.container.Register(consts.COMPONENT_HTTP_SERVER, httpServer); err != nil {
 			return fmt.Errorf("register http_server component failed: %w", err)
+		}
+	}
+
+	if cfg.GRPCClients != nil && cfg.GRPCClients.Enabled {
+		grpcFactory := grpc_client.NewFactory()
+		grpcComp, err := grpcFactory.Create(cfg.GRPCClients)
+		if err != nil {
+			return fmt.Errorf("create grpc clients component failed: %w", err)
+		}
+		if err = app.container.Register("grpc_clients", grpcComp); err != nil {
+			return fmt.Errorf("register grpc clients component failed: %w", err)
+		}
+	}
+
+	if cfg.GRPCServer != nil && cfg.GRPCServer.Enabled {
+		grpcSrvFactory := grpc_server.NewFactory(app.container)
+		grpcSrvComp, err := grpcSrvFactory.Create(cfg.GRPCServer)
+		if err != nil {
+			return fmt.Errorf("create grpc_server component failed: %w", err)
+		}
+		if err = app.container.Register(consts.COMPONENT_GRPC_SERVER, grpcSrvComp); err != nil {
+			return fmt.Errorf("register grpc_server component failed: %w", err)
 		}
 	}
 

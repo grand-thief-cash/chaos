@@ -1,4 +1,4 @@
-package pipeline
+package pipelines
 
 type Pipeline struct {
 	Nodes    []*Node

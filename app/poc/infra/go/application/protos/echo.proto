@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package echo;
+
+option go_package = "/;poc";
+
+message EchoRequest {
+  string message = 1;
+}
+
+message EchoReply {
+  string message = 1;
+  string trace_id = 2;
+}
+
+service EchoService {
+  rpc Say(EchoRequest) returns (EchoReply);
+}
