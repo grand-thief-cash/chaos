@@ -35,6 +35,15 @@ grpc_clients:
       secure: true
       credentials_path: "/path/to/cert.pem"
 
+grpc_server:
+  enabled: true
+  address: ":50051"
+  max_recv_msg_size: 4194304
+  max_send_msg_size: 4194304
+  graceful_timeout: 10s
+  enable_reflection: true
+  enable_health: true
+
 mysql:
   enabled: false
   data_sources:
@@ -65,7 +74,7 @@ http_server:
 
 
 redis:
-  enabled: true
+  enabled: false
   mode: single          # single | cluster | sentinel
   addresses:
     - 127.0.0.1:6379

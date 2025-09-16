@@ -1,8 +1,8 @@
-package main
+package utils
 
 import (
 	"fmt"
-	pl "github.com/grand-thief-cash/chaos/app/infra/go/utils/pipeline"
+	pl "github.com/grand-thief-cash/chaos/app/infra/go/common/utils/pipelines"
 	_ "time"
 )
 

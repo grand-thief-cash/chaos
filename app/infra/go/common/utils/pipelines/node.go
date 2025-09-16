@@ -1,4 +1,4 @@
-package pipeline
+package pipelines
 
 import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/utils/channels"
