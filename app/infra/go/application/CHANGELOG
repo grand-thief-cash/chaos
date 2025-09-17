@@ -1,7 +1,9 @@
 # VERSION
-v0.6.1
+v0.6.2
 
 # Changelog
+- v0.6.2
+  - poc/application: Added mysql, redis dependencies[Not tested].
 - v0.6.1
   - Tested GRPC server component.
   - In application poc, craeted echo service and registered to GRPC server.
