@@ -1,7 +1,13 @@
 # VERSION
-v0.6.0
+v0.6.1
 
 # Changelog
+- v0.6.1
+  - Tested GRPC server component.
+  - In application poc, craeted echo service and registered to GRPC server.
+  - Added a client in poc to test GRPC server and it works.
+  - Adjusted order of imports in some files.
+  - Added replace in infra/common/go.mod to make local import work.
 - v0.6.0
   - Added GRPC server component.
   - Refactored poc structure to makes it more consistent with the structure of the infra.

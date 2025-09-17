@@ -45,7 +45,7 @@ grpc_server:
   enable_health: true
 
 mysql:
-  enabled: false
+  enabled: true
   data_sources:
     primary:
       host: 192.168.31.35
@@ -74,12 +74,12 @@ http_server:
 
 
 redis:
-  enabled: false
+  enabled: true
   mode: single          # single | cluster | sentinel
   addresses:
-    - 127.0.0.1:6379
+    - 192.168.31.35:6379
   username: ""
-  password: ""
+  password: "123456"
   db: 0
   pool_size: 20
   min_idle_conns: 5

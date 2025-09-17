@@ -2,21 +2,21 @@ package main
 
 import (
 	"context"
-	"github.com/go-chi/chi/v5"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"log"
 	"net/http"
+	"os"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
-
+	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
+	_ "github.com/grand-thief-cash/chaos/app/poc/infra/go/application/services"
 )
 
 func main() {
-	app := application.NewApp(consts.ENV_DEVELOPMENT, "C:\\Users\\gaoc3\\projects\\chaos\\app\\poc\\infra\\go\\application\\config\\config.yaml")
+	app := application.NewApp(os.Args[1], os.Args[2])
 
 	// Optional custom hook
 	_ = app.AddHook("custom_after_start", hooks.AfterStart, func(ctx context.Context) error {

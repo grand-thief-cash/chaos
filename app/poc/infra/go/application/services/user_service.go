@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )

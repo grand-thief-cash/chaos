@@ -3,14 +3,14 @@ package application
 import (
 	"context"
 	"fmt"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_server"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sync"
 	"syscall"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
