@@ -1,8 +1,9 @@
 package pipelines
 
 import (
-	"github.com/grand-thief-cash/chaos/app/infra/go/utils/channels"
 	"sync"
+
+	"github.com/grand-thief-cash/chaos/app/infra/go/common/utils/channels"
 )
 
 type Node struct {
