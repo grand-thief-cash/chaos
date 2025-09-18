@@ -18,6 +18,7 @@ type GRPCClientConfig struct {
 	Timeout                 time.Duration     `yaml:"timeout" json:"timeout"`
 	RetryPolicy             *RetryPolicy      `yaml:"retry_policy,omitempty" json:"retry_policy,omitempty"`
 	KeepaliveOptions        *KeepaliveOptions `yaml:"keepalive_options,omitempty" json:"keepalive_options,omitempty"`
+	ConnectOnStart          bool              `yaml:"connect_on_start" json:"connect_on_start"`
 }
 
 // GRPCClientsConfig 多GRPC客户端配置

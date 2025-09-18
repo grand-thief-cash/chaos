@@ -1,14 +1,12 @@
-// components/grpc_client/mysql_component.go
 package grpc_client
 
 import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"google.golang.org/grpc/metadata"
 	"sync"
 	"time"
-
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -16,10 +14,18 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
-// GRPCClientComponent GRPC客户端管理组件
+// (NEW) Add field to config (put this in config struct file if modifying there):
+// type GRPCClientConfig struct {
+//     ...
+//     ConnectOnStart bool `yaml:"connect_on_start" json:"connect_on_start"`
+// }
+
+// GRPCClientComponent manages multiple gRPC client connections.
 type GRPCClientComponent struct {
 	*core.BaseComponent
 	config            *GRPCClientsConfig
@@ -30,12 +36,11 @@ type GRPCClientComponent struct {
 	mutex             sync.RWMutex
 }
 
-// NewGRPCClientComponent 创建新的GRPC客户端组件
+// NewGRPCClientComponent creates a new component.
+// Added dependency on logging to ensure logger is initialized first.
 func NewGRPCClientComponent(config *GRPCClientsConfig) *GRPCClientComponent {
-	deps := []string{}
-
 	return &GRPCClientComponent{
-		BaseComponent:   core.NewBaseComponent("grpc_clients", deps...),
+		BaseComponent:   core.NewBaseComponent("grpc_clients", consts.COMPONENT_LOGGING),
 		config:          config,
 		clients:         make(map[string]*grpc.ClientConn),
 		clientConfigs:   make(map[string]*GRPCClientConfig),
@@ -43,89 +48,135 @@ func NewGRPCClientComponent(config *GRPCClientsConfig) *GRPCClientComponent {
 	}
 }
 
-// Start 启动GRPC客户端组件
 func (gc *GRPCClientComponent) Start(ctx context.Context) error {
 	if err := gc.BaseComponent.Start(ctx); err != nil {
 		return err
 	}
+	logging.Info(ctx, "starting grpc clients")
 
-	logging.Info(ctx, "Starting GRPC clients...")
-
-	// 创建所有客户端连接
 	for name, clientConfig := range gc.config.Clients {
+		gc.setConfigDefaults(clientConfig)
+		gc.mutex.Lock()
+		gc.clientConfigs[name] = clientConfig
+		// Respect ConnectOnStart (default true)
+		if !clientConfig.ConnectOnStart {
+			logging.Info(ctx, fmt.Sprintf("grpc client %s deferred (lazy)", name))
+			gc.mutex.Unlock()
+			continue
+		}
+		gc.mutex.Unlock()
+
 		if err := gc.createClient(name, clientConfig); err != nil {
 			gc.closeAllClients()
 			return fmt.Errorf("failed to create client %s: %w", name, err)
 		}
 	}
 
-	// 启动健康检查
 	if gc.config.EnableHealthCheck {
 		gc.startHealthCheck()
 	}
 
-	logging.Info(ctx, fmt.Sprintf("GRPC clients started, total: %d", len(gc.clients)))
+	logging.Info(ctx, fmt.Sprintf("grpc clients started, total connections: %d", len(gc.clients)))
 	return nil
 }
 
-// Stop 停止GRPC客户端组件
 func (gc *GRPCClientComponent) Stop(ctx context.Context) error {
-	logging.Info(ctx, "Stopping GRPC clients...")
-
-	// 停止健康检查
+	logging.Info(ctx, "stopping grpc clients")
 	if gc.healthCheckTicker != nil {
 		gc.healthCheckTicker.Stop()
 		close(gc.healthCheckStop)
 	}
-
-	// 关闭所有客户端连接
 	gc.closeAllClients()
-
-	logging.Info(ctx, "GRPC clients stopped")
 	return gc.BaseComponent.Stop(ctx)
 }
 
-// HealthCheck 健康检查
 func (gc *GRPCClientComponent) HealthCheck() error {
 	if err := gc.BaseComponent.HealthCheck(); err != nil {
 		return err
 	}
-
 	gc.mutex.RLock()
 	defer gc.mutex.RUnlock()
 
-	if len(gc.clients) == 0 {
-		return nil // 没有客户端时也认为是健康的
-	}
-
-	healthyClients := 0
 	for name, conn := range gc.clients {
 		state := conn.GetState()
-		if state == connectivity.Ready || state == connectivity.Idle {
-			healthyClients++
-		} else {
-			logging.Info(context.Background(), fmt.Sprintf("GRPC client %s is not healthy, state: %v", name, state))
+		if !(state == connectivity.Ready || state == connectivity.Idle) {
+			return fmt.Errorf("grpc client %s not healthy: %v", name, state)
 		}
 	}
-
-	if healthyClients == 0 {
-		return fmt.Errorf("no healthy GRPC clients available")
-	}
-
 	return nil
 }
 
-// createClient 创建单个GRPC客户端
-func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfig) error {
-	logging.Info(context.Background(), fmt.Sprintf("Creating GRPC client: %s -> %s:%d", name, config.Host, config.Port))
+// GetClient returns (and if necessary lazily creates) the named client connection.
+func (gc *GRPCClientComponent) GetClient(name string) (*grpc.ClientConn, error) {
+	if !gc.IsActive() {
+		return nil, fmt.Errorf("grpc_clients component not active")
+	}
 
-	// 设置默认值
+	gc.mutex.RLock()
+	conn, exists := gc.clients[name]
+	cfg, cfgExists := gc.clientConfigs[name]
+	gc.mutex.RUnlock()
+
+	if exists && conn != nil {
+		state := conn.GetState()
+		if state == connectivity.Shutdown || state == connectivity.TransientFailure {
+			return nil, fmt.Errorf("grpc client %s unavailable state=%v", name, state)
+		}
+		return conn, nil
+	}
+
+	if !cfgExists {
+		return nil, fmt.Errorf("grpc client config not found: %s", name)
+	}
+
+	// Lazily create (double-checked locking)
+	gc.mutex.Lock()
+	defer gc.mutex.Unlock()
+	if c2, ok := gc.clients[name]; ok && c2 != nil {
+		return c2, nil
+	}
+	if err := gc.createClient(name, cfg); err != nil {
+		return nil, err
+	}
+	return gc.clients[name], nil
+}
+
+// AddClient dynamically adds or replaces a client.
+func (gc *GRPCClientComponent) AddClient(name string, config *GRPCClientConfig) error {
 	gc.setConfigDefaults(config)
+	gc.mutex.Lock()
+	gc.clientConfigs[name] = config
+	if existingConn, exists := gc.clients[name]; exists {
+		existingConn.Close()
+		delete(gc.clients, name)
+	}
+	gc.mutex.Unlock()
+	if config.ConnectOnStart {
+		return gc.createClient(name, config)
+	}
+	logging.Info(context.Background(), fmt.Sprintf("grpc client %s added (lazy, not connected yet)", name))
+	return nil
+}
 
-	// 构建连接地址
+func (gc *GRPCClientComponent) RemoveClient(name string) error {
+	gc.mutex.Lock()
+	defer gc.mutex.Unlock()
+	conn, exists := gc.clients[name]
+	if !exists {
+		delete(gc.clientConfigs, name)
+		return fmt.Errorf("grpc client not found: %s", name)
+	}
+	conn.Close()
+	delete(gc.clients, name)
+	delete(gc.clientConfigs, name)
+	logging.Info(context.Background(), fmt.Sprintf("grpc client removed: %s", name))
+	return nil
+}
+
+func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfig) error {
+	logging.Info(context.Background(), fmt.Sprintf("dialing grpc client %s -> %s:%d", name, config.Host, config.Port))
 	target := fmt.Sprintf("%s:%d", config.Host, config.Port)
 
-	// 设置连接选项
 	opts := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(config.MaxReceiveMessageLength),
@@ -133,7 +184,6 @@ func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfi
 		),
 	}
 
-	// 添加keepalive选项
 	if config.KeepaliveOptions != nil {
 		kacp := keepalive.ClientParameters{
 			Time:                config.KeepaliveOptions.Time,
@@ -143,165 +193,114 @@ func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfi
 		opts = append(opts, grpc.WithKeepaliveParams(kacp))
 	}
 
-	// 设置凭据
 	if config.Secure {
 		creds, err := gc.buildCredentials(config)
 		if err != nil {
-			return fmt.Errorf("failed to build credentials: %w", err)
+			return fmt.Errorf("build credentials: %w", err)
 		}
 		opts = append(opts, grpc.WithTransportCredentials(creds))
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
+	opts = append(opts, grpc.WithChainUnaryInterceptor(gc.traceUnaryInterceptor()))
 
-	// 创建连接
 	conn, err := grpc.Dial(target, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to dial %s: %w", target, err)
+		return fmt.Errorf("dial %s: %w", target, err)
 	}
 
 	gc.mutex.Lock()
 	gc.clients[name] = conn
-	gc.clientConfigs[name] = config
 	gc.mutex.Unlock()
 
-	logging.Info(context.Background(), fmt.Sprintf("GRPC client created successfully: %s", name))
+	logging.Info(context.Background(), fmt.Sprintf("grpc client %s connected", name))
 	return nil
 }
 
-// setConfigDefaults 设置配置默认值
 func (gc *GRPCClientComponent) setConfigDefaults(config *GRPCClientConfig) {
 	if config.MaxReceiveMessageLength == 0 {
-		config.MaxReceiveMessageLength = 4 * 1024 * 1024 // 4MB
+		config.MaxReceiveMessageLength = 4 * 1024 * 1024
 	}
 	if config.MaxSendMessageLength == 0 {
-		config.MaxSendMessageLength = 4 * 1024 * 1024 // 4MB
+		config.MaxSendMessageLength = 4 * 1024 * 1024
 	}
 	if config.Timeout == 0 {
-		config.Timeout = gc.config.DefaultTimeout
-	}
-	if config.Timeout == 0 {
-		config.Timeout = 30 * time.Second
+		if gc.config.DefaultTimeout > 0 {
+			config.Timeout = gc.config.DefaultTimeout
+		} else {
+			config.Timeout = 30 * time.Second
+		}
 	}
 }
 
-// buildCredentials 构建安全凭据
 func (gc *GRPCClientComponent) buildCredentials(config *GRPCClientConfig) (credentials.TransportCredentials, error) {
 	if config.CredentialsPath != "" {
 		return credentials.NewClientTLSFromFile(config.CredentialsPath, "")
 	}
-	return credentials.NewTLS(&tls.Config{
-		ServerName: config.Host,
-	}), nil
+	return credentials.NewTLS(&tls.Config{ServerName: config.Host}), nil
 }
 
-// GetClient 获取指定名称的GRPC客户端连接
-func (gc *GRPCClientComponent) GetClient(name string) (*grpc.ClientConn, error) {
-	gc.mutex.RLock()
-	defer gc.mutex.RUnlock()
-
-	conn, exists := gc.clients[name]
-	if !exists {
-		return nil, fmt.Errorf("GRPC client not found: %s", name)
-	}
-
-	// 检查连接状态
-	state := conn.GetState()
-	if state == connectivity.Shutdown || state == connectivity.TransientFailure {
-		return nil, fmt.Errorf("GRPC client %s is not available, state: %v", name, state)
-	}
-
-	return conn, nil
-}
-
-// AddClient 动态添加GRPC客户端
-func (gc *GRPCClientComponent) AddClient(name string, config *GRPCClientConfig) error {
-	gc.mutex.Lock()
-	defer gc.mutex.Unlock()
-
-	// 如果客户端已存在，先关闭它
-	if existingConn, exists := gc.clients[name]; exists {
-		logging.Info(context.Background(), fmt.Sprintf("GRPC client %s already exists, replacing...", name))
-		existingConn.Close()
-	}
-
-	return gc.createClient(name, config)
-}
-
-// RemoveClient 移除GRPC客户端
-func (gc *GRPCClientComponent) RemoveClient(name string) error {
-	gc.mutex.Lock()
-	defer gc.mutex.Unlock()
-
-	conn, exists := gc.clients[name]
-	if !exists {
-		return fmt.Errorf("GRPC client not found: %s", name)
-	}
-
-	if err := conn.Close(); err != nil {
-		logging.Error(context.Background(), fmt.Sprintf("Error closing GRPC client %s: %v", name, err))
-	}
-
-	delete(gc.clients, name)
-	delete(gc.clientConfigs, name)
-
-	logging.Info(context.Background(), fmt.Sprintf("GRPC client removed: %s", name))
-	return nil
-}
-
-// startHealthCheck 启动健康检查
 func (gc *GRPCClientComponent) startHealthCheck() {
 	interval := gc.config.HealthCheckInterval
 	if interval == 0 {
 		interval = 60 * time.Second
 	}
-
 	gc.healthCheckTicker = time.NewTicker(interval)
-
 	go func() {
-		logging.Info(context.Background(), "GRPC health check started")
+		logging.Info(context.Background(), "grpc health check started")
 		for {
 			select {
 			case <-gc.healthCheckTicker.C:
 				gc.performHealthCheck()
 			case <-gc.healthCheckStop:
-				logging.Info(context.Background(), "GRPC health check stopped")
+				logging.Info(context.Background(), "grpc health check stopped")
 				return
 			}
 		}
 	}()
 }
 
-// performHealthCheck 执行健康检查
 func (gc *GRPCClientComponent) performHealthCheck() {
 	gc.mutex.RLock()
-	clients := make(map[string]*grpc.ClientConn)
-	for name, conn := range gc.clients {
-		clients[name] = conn
+	snapshot := make(map[string]*grpc.ClientConn, len(gc.clients))
+	for k, v := range gc.clients {
+		snapshot[k] = v
 	}
 	gc.mutex.RUnlock()
 
-	for name, conn := range clients {
+	for name, conn := range snapshot {
 		state := conn.GetState()
 		if state == connectivity.TransientFailure || state == connectivity.Shutdown {
-			logging.Info(context.Background(), fmt.Sprintf("GRPC client %s connection issue: %v", name, state))
-			// 这里可以实现重连逻辑
+			logging.Warn(context.Background(), fmt.Sprintf("grpc client %s state=%v", name, state))
 		}
 	}
 }
 
-// closeAllClients 关闭所有客户端连接
 func (gc *GRPCClientComponent) closeAllClients() {
 	gc.mutex.Lock()
 	defer gc.mutex.Unlock()
-
 	for name, conn := range gc.clients {
-		logging.Info(context.Background(), fmt.Sprintf("Closing GRPC client: %s", name))
-		if err := conn.Close(); err != nil {
-			logging.Info(context.Background(), fmt.Sprintf("Error closing GRPC client %s: %v", name, err))
-		}
+		_ = conn.Close()
+		logging.Info(context.Background(), fmt.Sprintf("closed grpc client: %s", name))
 	}
-
 	gc.clients = make(map[string]*grpc.ClientConn)
-	gc.clientConfigs = make(map[string]*GRPCClientConfig)
+}
+
+// ADD method (place near other methods):
+func (gc *GRPCClientComponent) traceUnaryInterceptor() grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{},
+		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+
+		if traceID, ok := ctx.Value(logging.TraceIDKey).(string); ok && traceID != "" {
+			md, has := metadata.FromOutgoingContext(ctx)
+			if !has {
+				md = metadata.New(nil)
+			} else {
+				md = md.Copy()
+			}
+			md.Set("trace-id", traceID)
+			ctx = metadata.NewOutgoingContext(ctx, md)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
