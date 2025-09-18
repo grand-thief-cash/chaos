@@ -1,0 +1,23 @@
+logging:
+  enabled: true
+  level: INFO
+  format: json
+  output: stdout
+
+grpc_server:
+  enabled: false
+  address: ":50051"
+  enable_reflection: true
+  enable_health: true
+
+grpc_clients:
+  enabled: true
+  default_timeout: 3s
+  enable_health_check: true
+  health_check_interval: 30s
+  clients:
+    echo:
+      host: 127.0.0.1
+      port: 50051
+      secure: false
+      connect_on_start: true

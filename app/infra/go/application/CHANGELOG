@@ -1,7 +1,12 @@
 # VERSION
-v0.6.2
+v0.6.3
 
 # Changelog
+- v0.6.3
+  - Refined grpc client component, added "ConnectOnStart" option to control whether to connect when starting the component.
+  - Verified grpc client component in poc client.
+  - Versified grpc server component in poc application.
+  - Added Unusable go mod scripts in scripts folder.
 - v0.6.2
   - poc/application: Added mysql, redis dependencies[Not tested].
 - v0.6.1

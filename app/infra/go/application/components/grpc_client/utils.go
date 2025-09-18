@@ -4,15 +4,34 @@ package grpc_client
 import (
 	"context"
 	"fmt"
+	"google.golang.org/grpc/metadata"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
+
+//Details:
+//GetGRPCClient: Thin convenience wrapper around resolving grpc_clients and calling GetClient(name). Adds little value; current code already does the explicit steps.
+//CreateMetadata: Partially overlaps with the trace interceptor (trace-id injection). The extra keys (user-agent, client-version) are not consumed anywhere. Redundant now.
+//CallWithRetry / CallWithRetryPolicy: Not used; they bypass generated stubs and call conn.Invoke directly. If you later adopt gRPC service config based retries or interceptor-based retries, these helpers are superseded.
+
+//Remove if:
+//You prefer lean code and there is no immediate plan for dynamic generic method invocation or custom metadata standardization.
+
+//Keep (optional) if:
+//You expect future generic RPC calls without generated stubs.
+//You want a central place to evolve metadata (add auth tokens, locale, etc.).
+//You will extend retry logic before adopting gRPC service config.
+//How to confirm before deleting:
+//
+//
+//Run: go build ./... (ensures no hidden references).
+//If using vendoring (go mod vendor), remove the file from both the main path and any vendored copy (app/poc/infra/go/client/vendor/...) to avoid confusion.
+//If you decide to delete: remove app/infra/go/application/components/grpc_client/utils.go.
 
 // GetGRPCClient 从容器中获取GRPC客户端连接
 func GetGRPCClient(container *core.Container, clientName string) (*grpc.ClientConn, error) {
@@ -27,6 +46,16 @@ func GetGRPCClient(container *core.Container, clientName string) (*grpc.ClientCo
 	}
 
 	return grpcComponent.GetClient(clientName)
+}
+
+// CreateMetadata 创建GRPC元数据
+func CreateMetadata(traceID string) metadata.MD {
+	md := metadata.New(map[string]string{
+		"trace-id":       traceID,
+		"user-agent":     "go-infra-grpc-client/1.0",
+		"client-version": "1.0.0",
+	})
+	return md
 }
 
 // CallWithRetry 带重试的GRPC调用
@@ -96,19 +125,4 @@ func shouldRetry(err error) bool {
 	default:
 		return false
 	}
-}
-
-// CreateMetadata 创建GRPC元数据
-func CreateMetadata(traceID string) metadata.MD {
-	md := metadata.New(map[string]string{
-		"trace-id":       traceID,
-		"user-agent":     "go-infra-grpc-client/1.0",
-		"client-version": "1.0.0",
-	})
-	return md
-}
-
-// WithMetadata 为context添加元数据
-func WithMetadata(ctx context.Context, md metadata.MD) context.Context {
-	return metadata.NewOutgoingContext(ctx, md)
 }

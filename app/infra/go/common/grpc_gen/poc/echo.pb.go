@@ -68,7 +68,6 @@ func (x *EchoRequest) GetMessage() string {
 type EchoReply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	TraceId       string                 `protobuf:"bytes,2,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -110,23 +109,15 @@ func (x *EchoReply) GetMessage() string {
 	return ""
 }
 
-func (x *EchoReply) GetTraceId() string {
-	if x != nil {
-		return x.TraceId
-	}
-	return ""
-}
-
 var File_protos_echo_proto protoreflect.FileDescriptor
 
 const file_protos_echo_proto_rawDesc = "" +
 	"\n" +
 	"\x11protos/echo.proto\x12\x04echo\"'\n" +
 	"\vEchoRequest\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\"@\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\"%\n" +
 	"\tEchoReply\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\x12\x19\n" +
-	"\btrace_id\x18\x02 \x01(\tR\atraceId28\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage28\n" +
 	"\vEchoService\x12)\n" +
 	"\x03Say\x12\x11.echo.EchoRequest\x1a\x0f.echo.EchoReplyB\aZ\x05/;pocb\x06proto3"
 

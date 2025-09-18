@@ -10,7 +10,6 @@ message EchoRequest {
 
 message EchoReply {
   string message = 1;
-  string trace_id = 2;
 }
 
 service EchoService {
