@@ -3,10 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 	"log"
 	"os"
 	"time"
@@ -14,6 +10,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 	pb "github.com/grand-thief-cash/chaos/app/infra/go/common/grpc_gen/poc"
 )
 
