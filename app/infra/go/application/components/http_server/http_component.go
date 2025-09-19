@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
-	"go.uber.org/zap"
 	"net/http"
 	"time"
+
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+	"go.uber.org/zap"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -128,7 +129,7 @@ func (hc *HTTPServerComponent) setupMiddlewares() {
 	hc.router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			ctx := context.WithValue(r.Context(), logging.TraceIDKey, middleware.GetReqID(r.Context()))
+			ctx := context.WithValue(r.Context(), consts.KEY_TraceID, middleware.GetReqID(r.Context()))
 			next.ServeHTTP(w, r.WithContext(ctx))
 			elapsed := time.Since(start)
 			logging.Info(ctx, "http_access",

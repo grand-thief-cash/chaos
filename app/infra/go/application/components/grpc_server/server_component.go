@@ -151,7 +151,7 @@ func (gc *GRPCServerComponent) traceInterceptor() grpc.UnaryServerInterceptor {
 		}
 
 		// Inject into context for logging component.
-		ctx = context.WithValue(ctx, logging.TraceIDKey, traceID)
+		ctx = context.WithValue(ctx, consts.KEY_TraceID, traceID)
 
 		// (Optional) return the trace-id to caller in response headers.
 		_ = grpc.SetHeader(ctx, metadata.Pairs("trace-id", traceID))

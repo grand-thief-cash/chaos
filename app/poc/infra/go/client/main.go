@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 	pb "github.com/grand-thief-cash/chaos/app/infra/go/common/grpc_gen/poc"
 )
@@ -29,7 +29,7 @@ func main() {
 		go func() {
 			// Prepare trace context; interceptor will add it to outgoing metadata.
 			traceID := "trace-client-demo-123"
-			traceCtx := context.WithValue(context.Background(), logging.TraceIDKey, traceID)
+			traceCtx := context.WithValue(context.Background(), consts.KEY_TraceID, traceID)
 			// Optional per-RPC timeout.
 			rpcCtx, cancel := context.WithTimeout(traceCtx, 3*time.Second)
 			defer cancel()
