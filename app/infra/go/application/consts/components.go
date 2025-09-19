@@ -6,4 +6,5 @@ const (
 	COMPONENT_MYSQL       = "mysql"
 	COMPONENT_REDIS       = "redis"
 	COMPONENT_GRPC_SERVER = "grpc_server"
+	COMPONENT_PROMETHEUS  = "prometheus"
 )

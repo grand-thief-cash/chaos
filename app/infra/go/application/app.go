@@ -14,6 +14,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/prometheus"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
@@ -128,6 +129,17 @@ func (app *App) registerComponents() error {
 		}
 		if err = app.container.Register(consts.COMPONENT_GRPC_SERVER, grpcSrvComp); err != nil {
 			return fmt.Errorf("register grpc_server component failed: %w", err)
+		}
+	}
+
+	if cfg.Prometheus != nil && cfg.Prometheus.Enabled {
+		promFactory := prometheus.NewFactory()
+		promComp, err := promFactory.Create(cfg.Prometheus)
+		if err != nil {
+			return fmt.Errorf("create prometheus component failed: %w", err)
+		}
+		if err = app.container.Register(consts.COMPONENT_PROMETHEUS, promComp); err != nil {
+			return fmt.Errorf("register prometheus component failed: %w", err)
 		}
 	}
 
