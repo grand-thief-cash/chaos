@@ -4,10 +4,11 @@ package logging
 import (
 	"context"
 	"fmt"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -18,7 +19,6 @@ import (
 )
 
 const (
-	TraceIDKey = "traceID"
 	// 根据实际包装层数调整:
 	// 典型: 3 (全局函数 + 组件方法 + logWithContext)
 	// 如果仍显示在 logging 包内, 改成 4 试试
@@ -257,7 +257,7 @@ func (lc *LoggerComponent) logWithContext(ctx context.Context, level zapcore.Lev
 
 	// 从context中获取或生成trace_id
 	traceID := lc.getOrGenerateTraceID(ctx)
-	allFields := append([]zap.Field{zap.String(TraceIDKey, traceID)}, fields...)
+	allFields := append([]zap.Field{zap.String(consts.KEY_TraceID, traceID)}, fields...)
 
 	switch level {
 	case zapcore.DebugLevel:
@@ -280,14 +280,14 @@ func (lc *LoggerComponent) getOrGenerateTraceID(ctx context.Context) string {
 	}
 
 	// 尝试从context中获取trace_id
-	if traceID := ctx.Value(TraceIDKey); traceID != nil {
+	if traceID := ctx.Value(consts.KEY_TraceID); traceID != nil {
 		if id, ok := traceID.(string); ok && id != "" {
 			return id
 		}
 	}
 
 	// 尝试从context中获取其他可能的trace key
-	traceKeys := []string{"traceId", "trace-id", "x-trace-id", "request-id"}
+	traceKeys := []string{"traceId", "trace-id", "x-trace-id", "request-id", "traceID"}
 	for _, key := range traceKeys {
 		if traceID := ctx.Value(key); traceID != nil {
 			if id, ok := traceID.(string); ok && id != "" {

@@ -1,7 +1,10 @@
 # VERSION
-v0.6.4
+v0.6.5
 
 # Changelog
+- v0.6.5
+  - Adjusted traceid key to "trace-id" and added it in consts file.
+  - Adjusted the tidy_go.bat script.
 - v0.6.4
   - Added the go mod tidy script in scripts folder.
   - Adjusted the order of imports in some files.

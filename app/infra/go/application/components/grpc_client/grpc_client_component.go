@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"google.golang.org/grpc/metadata"
 	"sync"
 	"time"
 
@@ -13,17 +12,12 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
-
-// (NEW) Add field to config (put this in config struct file if modifying there):
-// type GRPCClientConfig struct {
-//     ...
-//     ConnectOnStart bool `yaml:"connect_on_start" json:"connect_on_start"`
-// }
 
 // GRPCClientComponent manages multiple gRPC client connections.
 type GRPCClientComponent struct {
@@ -204,7 +198,7 @@ func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfi
 	}
 	opts = append(opts, grpc.WithChainUnaryInterceptor(gc.traceUnaryInterceptor()))
 
-	conn, err := grpc.Dial(target, opts...)
+	conn, err := grpc.NewClient(target, opts...)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", target, err)
 	}
@@ -291,7 +285,7 @@ func (gc *GRPCClientComponent) traceUnaryInterceptor() grpc.UnaryClientIntercept
 	return func(ctx context.Context, method string, req, reply interface{},
 		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 
-		if traceID, ok := ctx.Value(logging.TraceIDKey).(string); ok && traceID != "" {
+		if traceID, ok := ctx.Value(consts.KEY_TraceID).(string); ok && traceID != "" {
 			md, has := metadata.FromOutgoingContext(ctx)
 			if !has {
 				md = metadata.New(nil)

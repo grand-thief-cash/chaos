@@ -6,4 +6,6 @@ const (
 	ENV_TEST        = "test"
 
 	DEFAULT_CONFIG_PATH = "config.yaml"
+
+	KEY_TraceID = "trace-id"
 )
