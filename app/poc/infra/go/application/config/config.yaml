@@ -95,3 +95,12 @@ redis:
   # For cluster mode:
   # mode: cluster
   # addresses: [127.0.0.1:7000,127.0.0.1:7001,127.0.0.1:7002]
+
+prometheus:
+  enabled: true
+  address: ":9090"
+  path: /metrics
+  namespace: myapp
+  subsystem: core
+  collect_go_metrics: true
+  collect_process: true

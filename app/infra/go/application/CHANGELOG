@@ -1,7 +1,10 @@
 # VERSION
-v0.6.5
+v0.7.0
 
 # Changelog
+- v0.7.0
+  - Added prometheus metrics component.
+  - Added docments for prometheus metrics component.
 - v0.6.5
   - Adjusted traceid key to "trace-id" and added it in consts file.
   - Adjusted the tidy_go.bat script.

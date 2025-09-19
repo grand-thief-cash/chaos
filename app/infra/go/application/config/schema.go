@@ -7,6 +7,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/prometheus"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
 )
 
@@ -19,6 +20,7 @@ type AppConfig struct {
 	MySQL       *mysql.MySQLConfig             `yaml:"mysql" json:"mysql"`
 	HTTPServer  *http_server.HTTPServerConfig  `yaml:"http_server" json:"http_server"`
 	Redis       *redis.Config                  `yaml:"redis" json:"redis"`
+	Prometheus  *prometheus.Config             `yaml:"prometheus" json:"prometheus"`
 }
 
 type APPInfo struct {
