@@ -1,5 +1,4 @@
 // go
-// file: app/infra/go/application/components/grpc_server/server_component.go
 package grpc_server
 
 import (
@@ -7,12 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes" // OTel status codes
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
+	grpcCodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
@@ -35,9 +38,13 @@ type GRPCServerComponent struct {
 
 func NewGRPCServerComponent(cfg *Config, c *core.Container) *GRPCServerComponent {
 	return &GRPCServerComponent{
-		BaseComponent: core.NewBaseComponent(consts.COMPONENT_GRPC_SERVER, consts.COMPONENT_LOGGING),
-		cfg:           cfg,
-		container:     c,
+		BaseComponent: core.NewBaseComponent(
+			consts.COMPONENT_GRPC_SERVER,
+			consts.COMPONENT_LOGGING,
+			consts.COMPONENT_TELEMETRY,
+		),
+		cfg:       cfg,
+		container: c,
 	}
 }
 
@@ -50,7 +57,7 @@ func (gc *GRPCServerComponent) Start(ctx context.Context) error {
 	}
 
 	unaryInts := []grpc.UnaryServerInterceptor{
-		gc.traceInterceptor(),
+		gc.otelTracingInterceptor(),
 		gc.loggingInterceptor(),
 		gc.recoveryInterceptor(),
 	}
@@ -71,7 +78,6 @@ func (gc *GRPCServerComponent) Start(ctx context.Context) error {
 		reflection.Register(gc.server)
 	}
 
-	// Register user services
 	for _, r := range snapshot() {
 		if err := r(gc.server, gc.container); err != nil {
 			return fmt.Errorf("grpc service register failed: %w", err)
@@ -128,37 +134,40 @@ func (gc *GRPCServerComponent) HealthCheck() error {
 	return nil
 }
 
-// Interceptors
-func (gc *GRPCServerComponent) traceInterceptor() grpc.UnaryServerInterceptor {
-	traceMetaKeys := []string{
-		"trace-id", "trace_id", "traceid", "x-trace-id", "request-id",
-	}
+// OpenTelemetry tracing interceptor.
+func (gc *GRPCServerComponent) otelTracingInterceptor() grpc.UnaryServerInterceptor {
+	propagator := otel.GetTextMapPropagator()
+	tracer := otel.Tracer("grpc.server")
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		var traceID string
-
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			for _, k := range traceMetaKeys {
-				if vals := md.Get(k); len(vals) > 0 && vals[0] != "" {
-					traceID = vals[0]
-					break
-				}
-			}
+			ctx = propagator.Extract(ctx, metadataCarrier{md})
 		}
 
-		if traceID == "" {
-			traceID = uuid.New().String()
+		service, method := splitFullMethod(info.FullMethod)
+		ctx, span := tracer.Start(ctx, info.FullMethod, trace.WithSpanKind(trace.SpanKindServer))
+		span.SetAttributes(
+			semconv.RPCSystemGRPC,
+			semconv.RPCService(service),
+			semconv.RPCMethod(method),
+		)
+		defer span.End()
+
+		resp, err := handler(ctx, req)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		} else {
+			span.SetStatus(codes.Ok, "OK")
 		}
 
-		// Inject into context for logging component.
-		ctx = context.WithValue(ctx, consts.KEY_TraceID, traceID)
-
-		// (Optional) return the trace-id to caller in response headers.
+		traceID := span.SpanContext().TraceID().String()
 		_ = grpc.SetHeader(ctx, metadata.Pairs("trace-id", traceID))
 
-		return handler(ctx, req)
+		return resp, err
 	}
 }
+
 func (gc *GRPCServerComponent) loggingInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
 		start := time.Now()
@@ -185,9 +194,39 @@ func (gc *GRPCServerComponent) recoveryInterceptor() grpc.UnaryServerInterceptor
 		defer func() {
 			if r := recover(); r != nil {
 				logging.Error(ctx, "panic recovered", zap.Any("panic", r), zap.String("method", info.FullMethod))
-				err = status.Errorf(codes.Internal, "internal error")
+				err = status.Errorf(grpcCodes.Internal, "internal error")
 			}
 		}()
 		return handler(ctx, req)
 	}
+}
+
+type metadataCarrier struct{ metadata.MD }
+
+func (mc metadataCarrier) Get(key string) string {
+	values := mc.MD.Get(key)
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+func (mc metadataCarrier) Set(key, value string) { mc.MD.Set(key, value) }
+func (mc metadataCarrier) Keys() []string {
+	keys := make([]string, 0, len(mc.MD))
+	for k := range mc.MD {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func splitFullMethod(full string) (service, method string) {
+	if full == "" {
+		return "", ""
+	}
+	s := strings.TrimPrefix(full, "/")
+	parts := strings.SplitN(s, "/", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return s, ""
 }

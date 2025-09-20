@@ -3,8 +3,6 @@ package grpc_client
 
 import (
 	"context"
-	"fmt"
-	"google.golang.org/grpc/metadata"
 	"time"
 
 	"google.golang.org/grpc"
@@ -37,28 +35,15 @@ import (
 func GetGRPCClient(container *core.Container, clientName string) (*grpc.ClientConn, error) {
 	component, err := container.Resolve("grpc_clients")
 	if err != nil {
-		return nil, fmt.Errorf("GRPC clients component not found: %w", err)
+		return nil, err
 	}
-
 	grpcComponent, ok := component.(*GRPCClientComponent)
 	if !ok {
-		return nil, fmt.Errorf("invalid GRPC clients component type")
+		return nil, err
 	}
-
 	return grpcComponent.GetClient(clientName)
 }
 
-// CreateMetadata 创建GRPC元数据
-func CreateMetadata(traceID string) metadata.MD {
-	md := metadata.New(map[string]string{
-		"trace-id":       traceID,
-		"user-agent":     "go-infra-grpc-client/1.0",
-		"client-version": "1.0.0",
-	})
-	return md
-}
-
-// CallWithRetry 带重试的GRPC调用
 func CallWithRetry(ctx context.Context, conn *grpc.ClientConn, method string, req interface{}, resp interface{}, opts ...grpc.CallOption) error {
 	policy := &RetryPolicy{
 		MaxRetries:   3,
@@ -66,7 +51,6 @@ func CallWithRetry(ctx context.Context, conn *grpc.ClientConn, method string, re
 		MaxDelay:     10 * time.Second,
 		Multiplier:   2.0,
 	}
-
 	return CallWithRetryPolicy(ctx, conn, method, req, resp, policy, opts...)
 }
 
@@ -74,51 +58,38 @@ func CallWithRetry(ctx context.Context, conn *grpc.ClientConn, method string, re
 func CallWithRetryPolicy(ctx context.Context, conn *grpc.ClientConn, method string, req interface{}, resp interface{}, policy *RetryPolicy, opts ...grpc.CallOption) error {
 	var lastErr error
 	delay := policy.InitialDelay
-
 	for attempt := 0; attempt <= policy.MaxRetries; attempt++ {
 		if attempt > 0 {
-			// 等待重试延迟
 			select {
 			case <-time.After(delay):
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-
-			// 计算下次延迟
 			delay = time.Duration(float64(delay) * policy.Multiplier)
 			if delay > policy.MaxDelay {
 				delay = policy.MaxDelay
 			}
 		}
-
-		// 执行GRPC调用
 		err := conn.Invoke(ctx, method, req, resp, opts...)
 		if err == nil {
 			return nil
 		}
-
 		lastErr = err
-
-		// 检查是否应该重试
 		if !shouldRetry(err) || attempt == policy.MaxRetries {
 			break
 		}
 	}
-
 	return lastErr
 }
 
-// shouldRetry 判断错误是否应该重试
 func shouldRetry(err error) bool {
 	if err == nil {
 		return false
 	}
-
 	st, ok := status.FromError(err)
 	if !ok {
 		return false
 	}
-
 	switch st.Code() {
 	case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted, codes.Aborted:
 		return true

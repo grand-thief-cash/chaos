@@ -1,7 +1,9 @@
 # VERSION
-v0.8.0
+v0.8.1
 
 # Changelog
+- v0.8.1
+  - GRPC server/client component switched to use open telemetry.
 - v0.8.0
   - Added open telemetry component.
   - Modified http server component to use open telemetry and removed manual traceid handling.
