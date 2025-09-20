@@ -16,6 +16,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/prometheus"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/telemetry"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -75,6 +76,11 @@ func (app *App) registerComponents() error {
 		if err = app.container.Register(consts.COMPONENT_LOGGING, logComp); err != nil {
 			return fmt.Errorf("register logging component failed: %w", err)
 		}
+	}
+
+	if cfg.Telemetry != nil && cfg.Telemetry.Enabled {
+		telComp := telemetry.NewTelemetryComponent(cfg.Telemetry)
+		_ = app.container.Register(consts.COMPONENT_TELEMETRY, telComp)
 	}
 
 	if cfg.MySQL != nil && cfg.MySQL.Enabled {

@@ -1,3 +1,4 @@
+// file: app/infra/go/application/components/http_server/http_component.go
 package http_server
 
 import (
@@ -7,13 +8,15 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
-	"go.uber.org/zap"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/riandyrn/otelchi"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
@@ -23,16 +26,19 @@ type HTTPServerComponent struct {
 	container *core.Container
 	router    chi.Router
 	server    *http.Server
-	extras    []RouteRegisterFunc // hook style registrations
+	extras    []RouteRegisterFunc
 	started   bool
 }
 
-// NewHTTPServerComponent creates the component (dependencies: logger, mysql optional).
 func NewHTTPServerComponent(cfg *HTTPServerConfig, c *core.Container) *HTTPServerComponent {
 	return &HTTPServerComponent{
-		BaseComponent: core.NewBaseComponent(consts.COMPONENT_HTTP_SERVER, consts.COMPONENT_LOGGING),
-		cfg:           cfg,
-		container:     c,
+		BaseComponent: core.NewBaseComponent(
+			consts.COMPONENT_HTTP_SERVER,
+			consts.COMPONENT_LOGGING,
+			consts.COMPONENT_TELEMETRY,
+		),
+		cfg:       cfg,
+		container: c,
 	}
 }
 
@@ -88,6 +94,7 @@ func (hc *HTTPServerComponent) Start(ctx context.Context) error {
 	hc.started = true
 	return nil
 }
+
 func (hc *HTTPServerComponent) Stop(ctx context.Context) error {
 	defer hc.BaseComponent.Stop(ctx)
 	if !hc.started || hc.server == nil {
@@ -116,30 +123,62 @@ func (hc *HTTPServerComponent) HealthCheck() error {
 	return nil
 }
 
-func (hc *HTTPServerComponent) healthHandler(w http.ResponseWriter, r *http.Request) {
+func (hc *HTTPServerComponent) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
 
 func (hc *HTTPServerComponent) setupMiddlewares() {
-	hc.router.Use(middleware.RequestID)
 	hc.router.Use(middleware.RealIP)
 	hc.router.Use(middleware.Recoverer)
 	hc.router.Use(middleware.Timeout(60 * time.Second))
+
+	// OTel middleware: extracts W3C traceparent / tracestate and starts a server span.
+	// Use service name if available; fallback to address.
+	serviceName := hc.cfg.Address
+	if tp := otel.GetTracerProvider(); tp != nil {
+		// no-op: kept for clarity; otelchi will use global provider
+	}
+	hc.router.Use(otelchi.Middleware(serviceName))
+
+	// Access log with status + trace id (if present). No manual trace id creation.
 	hc.router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			ctx := context.WithValue(r.Context(), consts.KEY_TraceID, middleware.GetReqID(r.Context()))
-			next.ServeHTTP(w, r.WithContext(ctx))
+			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+
+			// Optional: echo W3C traceparent back (NOT required, only if you want client visibility)
+			if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+				w.Header().Set("traceparent",
+					fmt.Sprintf("00-%s-%s-01", sc.TraceID().String(), sc.SpanID().String()))
+			}
+
+			next.ServeHTTP(sw, r)
 			elapsed := time.Since(start)
-			logging.Info(ctx, "http_access",
+
+			fields := []zap.Field{
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.String("remote", r.RemoteAddr),
+				zap.Int("status", sw.status),
 				zap.Duration("dur", elapsed),
-			)
+			}
+			if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+				fields = append(fields, zap.String("trace_id", sc.TraceID().String()), zap.String("span_id", sc.SpanID().String()))
+			}
+			logging.Info(r.Context(), "http_access", fields...)
 		})
 	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
 }
 
 func (hc *HTTPServerComponent) registerAllRoutes() error {
@@ -152,7 +191,6 @@ func (hc *HTTPServerComponent) registerAllRoutes() error {
 	return nil
 }
 
-// applyDefaults sets defaults.
 func (hc *HTTPServerComponent) applyDefaults() {
 	if hc.cfg.Address == "" {
 		hc.cfg.Address = ":8080"

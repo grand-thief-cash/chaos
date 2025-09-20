@@ -97,10 +97,22 @@ redis:
   # addresses: [127.0.0.1:7000,127.0.0.1:7001,127.0.0.1:7002]
 
 prometheus:
-  enabled: true
+  enabled: false
   address: ":9090"
   path: /metrics
   namespace: myapp
   subsystem: core
   collect_go_metrics: true
   collect_process: true
+
+telemetry:
+  enabled: true
+  service_name: demo-service
+  exporter: stdout         # stdout|otlp
+  sample_ratio: 1.0        # 0~1; adjust for sampling
+  stdout_pretty: false     # false keeps exporter output compact
+  stdout_file: ./logs/telemetry.log  # separate file; omit to print to stdout
+  # otlp:
+  #   endpoint: 127.0.0.1:4317
+  #   insecure: true
+  #   timeout: 5s
