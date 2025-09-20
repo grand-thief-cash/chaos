@@ -25,7 +25,7 @@ func main() {
 	app := application.NewApp(os.Args[1], os.Args[2])
 
 	// AfterStart hook: perform one Echo RPC via grpc client component then shutdown.
-	_ = app.AddHook("invoke_echo", hooks.AfterStart, func(ctx context.Context) error {
+	_ = app.AddHook("invoke_grpc_echo", hooks.AfterStart, func(ctx context.Context) error {
 		go func() {
 			// Prepare trace context; interceptor will add it to outgoing metadata.
 			traceID := "trace-client-demo-123"

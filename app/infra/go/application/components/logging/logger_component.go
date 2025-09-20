@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
-
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
@@ -250,53 +250,71 @@ func (lc *LoggerComponent) Sync() error {
 }
 
 // logWithContext 带上下文的日志记录
+// 新增辅助函数（可放在文件任意非方法位置）
+func hasTraceField(fields []zap.Field) bool {
+	for _, f := range fields {
+		switch f.Key {
+		case "trace_id", "trace-id":
+			return true
+		}
+	}
+	return false
+}
+
+// 修改 logWithContext
 func (lc *LoggerComponent) logWithContext(ctx context.Context, level zapcore.Level, msg string, fields ...zap.Field) {
 	if lc.zapLogger == nil {
 		return
 	}
-
-	// 从context中获取或生成trace_id
-	traceID := lc.getOrGenerateTraceID(ctx)
-	allFields := append([]zap.Field{zap.String(consts.KEY_TraceID, traceID)}, fields...)
+	traceID := lc.extractTraceID(ctx)
+	if traceID != "" && !hasTraceField(fields) {
+		fields = append([]zap.Field{zap.String(consts.KEY_TraceID, traceID)}, fields...)
+	}
 
 	switch level {
 	case zapcore.DebugLevel:
-		lc.zapLogger.Debug(msg, allFields...)
+		lc.zapLogger.Debug(msg, fields...)
 	case zapcore.InfoLevel:
-		lc.zapLogger.Info(msg, allFields...)
+		lc.zapLogger.Info(msg, fields...)
 	case zapcore.WarnLevel:
-		lc.zapLogger.Warn(msg, allFields...)
+		lc.zapLogger.Warn(msg, fields...)
 	case zapcore.ErrorLevel:
-		lc.zapLogger.Error(msg, allFields...)
+		lc.zapLogger.Error(msg, fields...)
 	case zapcore.FatalLevel:
-		lc.zapLogger.Fatal(msg, allFields...)
+		lc.zapLogger.Fatal(msg, fields...)
 	}
 }
 
 // getOrGenerateTraceID 从context中获取或生成trace_id
+// getOrGenerateTraceID 优化：优先 OTel span trace id
 func (lc *LoggerComponent) getOrGenerateTraceID(ctx context.Context) string {
 	if ctx == nil {
 		return lc.generateTraceID()
 	}
 
-	// 尝试从context中获取trace_id
-	if traceID := ctx.Value(consts.KEY_TraceID); traceID != nil {
-		if id, ok := traceID.(string); ok && id != "" {
+	// 1. OpenTelemetry SpanContext
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() && sc.TraceID().IsValid() {
+		return sc.TraceID().String()
+	}
+
+	// 2. 兼容旧 key（保持回退能力）
+	if v := ctx.Value(consts.KEY_TraceID); v != nil {
+		if id, ok := v.(string); ok && id != "" {
 			return id
 		}
 	}
 
-	// 尝试从context中获取其他可能的trace key
-	traceKeys := []string{"traceId", "trace-id", "x-trace-id", "request-id", "traceID"}
-	for _, key := range traceKeys {
-		if traceID := ctx.Value(key); traceID != nil {
-			if id, ok := traceID.(string); ok && id != "" {
+	// 3. 兼容其他可能 keys
+	keys := []string{"traceId", "trace-id", "x-trace-id", "request-id", "traceID"}
+	for _, k := range keys {
+		if v := ctx.Value(k); v != nil {
+			if id, ok := v.(string); ok && id != "" {
 				return id
 			}
 		}
 	}
 
-	// 如果context中没有找到trace_id，生成一个新的
+	// 4. 兜底
 	return lc.generateTraceID()
 }
 
@@ -318,4 +336,16 @@ func (lc *LoggerComponent) GetZapLogger() *zap.Logger {
 // GetSugar 获取zap.SugaredLogger
 func (lc *LoggerComponent) GetSugar() *zap.SugaredLogger {
 	return lc.sugar
+}
+
+// extractTraceID: only use existing OTel trace id; do not synthesize a new distributed id.
+// (Optional) If you still want a local fallback, add a generated UUID, but mark it clearly.
+func (lc *LoggerComponent) extractTraceID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() && sc.TraceID().IsValid() {
+		return sc.TraceID().String()
+	}
+	return ""
 }
