@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -24,14 +24,12 @@ func main() {
 
 	app := application.NewApp(os.Args[1], os.Args[2])
 
-	// AfterStart hook: perform one Echo RPC via grpc client component then shutdown.
 	_ = app.AddHook("invoke_grpc_echo", hooks.AfterStart, func(ctx context.Context) error {
 		go func() {
-			// Prepare trace context; interceptor will add it to outgoing metadata.
-			traceID := "trace-client-demo-123"
-			traceCtx := context.WithValue(context.Background(), consts.KEY_TraceID, traceID)
-			// Optional per-RPC timeout.
-			rpcCtx, cancel := context.WithTimeout(traceCtx, 3*time.Second)
+			// Start a span (optional) so trace propagates through OTel interceptors.
+			ctx, span := otel.Tracer("poc.client").Start(context.Background(), "EchoRPC")
+			defer span.End()
+			rpcCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
 
 			comp, err := app.GetComponent("grpc_clients")
@@ -63,7 +61,6 @@ func main() {
 				}
 			}
 
-			// Give a moment for logs to flush.
 			time.Sleep(300 * time.Millisecond)
 			app.Shutdown(context.Background())
 		}()
@@ -75,7 +72,7 @@ func main() {
 	}
 }
 
-// Send a gRPC request to the server with custom trace-id in metadata
+// testGRPCServer demonstrates a direct dial with OTel interceptors already applied in component code.
 func testGRPCServer() {
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -85,17 +82,12 @@ func testGRPCServer() {
 
 	c := pb.NewEchoServiceClient(conn)
 
-	// self defined trace-id
-	clientTraceID := "trace-demo-12345"
+	ctx, span := otel.Tracer("poc.client").Start(context.Background(), "EchoDirect")
+	defer span.End()
 
-	// 出站 metadata
-	md := metadata.New(map[string]string{
-		"trace-id": clientTraceID,
-	})
-	ctx, cancel := context.WithTimeout(metadata.NewOutgoingContext(context.Background(), md), time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 
-	// 捕获服务端返回的 header（包含服务器确认/生成的 trace-id）
 	var headerMD metadata.MD
 	resp, err := c.Say(ctx, &pb.EchoRequest{Message: "hello grpc"}, grpc.Header(&headerMD))
 	if err != nil {
@@ -103,8 +95,6 @@ func testGRPCServer() {
 	}
 
 	fmt.Printf("响应: %s\n", resp.Message)
-
-	// read trace-id
 	if vals := headerMD.Get("trace-id"); len(vals) > 0 {
 		fmt.Printf("服务器返回 trace-id: %s\n", vals[0])
 	} else {

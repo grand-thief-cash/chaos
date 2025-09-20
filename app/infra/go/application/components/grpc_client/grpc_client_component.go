@@ -7,19 +7,17 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
-// GRPCClientComponent manages multiple gRPC client connections.
 type GRPCClientComponent struct {
 	*core.BaseComponent
 	config            *GRPCClientsConfig
@@ -30,8 +28,6 @@ type GRPCClientComponent struct {
 	mutex             sync.RWMutex
 }
 
-// NewGRPCClientComponent creates a new component.
-// Added dependency on logging to ensure logger is initialized first.
 func NewGRPCClientComponent(config *GRPCClientsConfig) *GRPCClientComponent {
 	return &GRPCClientComponent{
 		BaseComponent:   core.NewBaseComponent("grpc_clients", consts.COMPONENT_LOGGING),
@@ -52,7 +48,6 @@ func (gc *GRPCClientComponent) Start(ctx context.Context) error {
 		gc.setConfigDefaults(clientConfig)
 		gc.mutex.Lock()
 		gc.clientConfigs[name] = clientConfig
-		// Respect ConnectOnStart (default true)
 		if !clientConfig.ConnectOnStart {
 			logging.Info(ctx, fmt.Sprintf("grpc client %s deferred (lazy)", name))
 			gc.mutex.Unlock()
@@ -90,7 +85,6 @@ func (gc *GRPCClientComponent) HealthCheck() error {
 	}
 	gc.mutex.RLock()
 	defer gc.mutex.RUnlock()
-
 	for name, conn := range gc.clients {
 		state := conn.GetState()
 		if !(state == connectivity.Ready || state == connectivity.Idle) {
@@ -100,12 +94,10 @@ func (gc *GRPCClientComponent) HealthCheck() error {
 	return nil
 }
 
-// GetClient returns (and if necessary lazily creates) the named client connection.
 func (gc *GRPCClientComponent) GetClient(name string) (*grpc.ClientConn, error) {
 	if !gc.IsActive() {
 		return nil, fmt.Errorf("grpc_clients component not active")
 	}
-
 	gc.mutex.RLock()
 	conn, exists := gc.clients[name]
 	cfg, cfgExists := gc.clientConfigs[name]
@@ -118,12 +110,10 @@ func (gc *GRPCClientComponent) GetClient(name string) (*grpc.ClientConn, error) 
 		}
 		return conn, nil
 	}
-
 	if !cfgExists {
 		return nil, fmt.Errorf("grpc client config not found: %s", name)
 	}
 
-	// Lazily create (double-checked locking)
 	gc.mutex.Lock()
 	defer gc.mutex.Unlock()
 	if c2, ok := gc.clients[name]; ok && c2 != nil {
@@ -135,7 +125,6 @@ func (gc *GRPCClientComponent) GetClient(name string) (*grpc.ClientConn, error) 
 	return gc.clients[name], nil
 }
 
-// AddClient dynamically adds or replaces a client.
 func (gc *GRPCClientComponent) AddClient(name string, config *GRPCClientConfig) error {
 	gc.setConfigDefaults(config)
 	gc.mutex.Lock()
@@ -176,15 +165,17 @@ func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfi
 			grpc.MaxCallRecvMsgSize(config.MaxReceiveMessageLength),
 			grpc.MaxCallSendMsgSize(config.MaxSendMessageLength),
 		),
+		// OpenTelemetry: use stats handler (covers tracing + metrics + propagation)
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	}
 
+	// (keepalive, security, compression, timeout handling unchanged)
 	if config.KeepaliveOptions != nil {
-		kacp := keepalive.ClientParameters{
+		opts = append(opts, grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                config.KeepaliveOptions.Time,
 			Timeout:             config.KeepaliveOptions.Timeout,
 			PermitWithoutStream: config.KeepaliveOptions.PermitWithoutStream,
-		}
-		opts = append(opts, grpc.WithKeepaliveParams(kacp))
+		}))
 	}
 
 	if config.Secure {
@@ -194,23 +185,32 @@ func (gc *GRPCClientComponent) createClient(name string, config *GRPCClientConfi
 		}
 		opts = append(opts, grpc.WithTransportCredentials(creds))
 	} else {
-		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	}
-	opts = append(opts, grpc.WithChainUnaryInterceptor(gc.traceUnaryInterceptor()))
-
-	conn, err := grpc.NewClient(target, opts...)
-	if err != nil {
-		return fmt.Errorf("dial %s: %w", target, err)
+		opts = append(opts, grpc.WithInsecure())
 	}
 
-	gc.mutex.Lock()
-	gc.clients[name] = conn
-	gc.mutex.Unlock()
+	if config.Timeout > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), config.Timeout)
+		defer cancel()
+		conn, err := grpc.DialContext(ctx, target, opts...)
+		if err != nil {
+			return fmt.Errorf("grpc dial (timeout): %w", err)
+		}
+		gc.mutex.Lock()
+		gc.clients[name] = conn
+		gc.mutex.Unlock()
+	} else {
+		conn, err := grpc.Dial(target, opts...)
+		if err != nil {
+			return fmt.Errorf("grpc dial: %w", err)
+		}
+		gc.mutex.Lock()
+		gc.clients[name] = conn
+		gc.mutex.Unlock()
+	}
 
 	logging.Info(context.Background(), fmt.Sprintf("grpc client %s connected", name))
 	return nil
 }
-
 func (gc *GRPCClientComponent) setConfigDefaults(config *GRPCClientConfig) {
 	if config.MaxReceiveMessageLength == 0 {
 		config.MaxReceiveMessageLength = 4 * 1024 * 1024
@@ -278,23 +278,4 @@ func (gc *GRPCClientComponent) closeAllClients() {
 		logging.Info(context.Background(), fmt.Sprintf("closed grpc client: %s", name))
 	}
 	gc.clients = make(map[string]*grpc.ClientConn)
-}
-
-// ADD method (place near other methods):
-func (gc *GRPCClientComponent) traceUnaryInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{},
-		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-
-		if traceID, ok := ctx.Value(consts.KEY_TraceID).(string); ok && traceID != "" {
-			md, has := metadata.FromOutgoingContext(ctx)
-			if !has {
-				md = metadata.New(nil)
-			} else {
-				md = md.Copy()
-			}
-			md.Set("trace-id", traceID)
-			ctx = metadata.NewOutgoingContext(ctx, md)
-		}
-		return invoker(ctx, method, req, reply, cc, opts...)
-	}
 }

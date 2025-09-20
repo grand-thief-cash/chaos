@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -73,11 +74,15 @@ func (tc *TelemetryComponent) Start(ctx context.Context) error {
 
 	otel.SetTracerProvider(tc.tp)
 	otel.SetMeterProvider(tc.mp)
+	// Register W3C TraceContext + Baggage propagators for inbound/outbound context propagation.
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
 
 	tc.started = true
 	return nil
 }
-
 func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Resource) error {
 	var (
 		exp sdktrace.SpanExporter
