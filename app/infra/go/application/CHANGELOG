@@ -1,7 +1,10 @@
 # VERSION
-v0.8.1
+v0.9.0
 
 # Changelog
+- v0.9.0
+  - Added GORM component.
+  - Replaced some const value in grpc client component
 - v0.8.1
   - GRPC server/client component switched to use open telemetry.
 - v0.8.0

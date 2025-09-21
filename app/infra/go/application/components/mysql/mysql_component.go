@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"net/url"
 	"sort"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 

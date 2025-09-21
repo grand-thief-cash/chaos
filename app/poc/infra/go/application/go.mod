@@ -24,6 +24,8 @@ require (
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
+	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
@@ -55,6 +57,8 @@ require (
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	gorm.io/driver/mysql v1.6.0 // indirect
+	gorm.io/gorm v1.31.0 // indirect
 )
 
 replace github.com/grand-thief-cash/chaos/app/infra/go/application => ./../../../../infra/go/application

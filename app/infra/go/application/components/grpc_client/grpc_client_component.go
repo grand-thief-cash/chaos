@@ -30,7 +30,7 @@ type GRPCClientComponent struct {
 
 func NewGRPCClientComponent(config *GRPCClientsConfig) *GRPCClientComponent {
 	return &GRPCClientComponent{
-		BaseComponent:   core.NewBaseComponent("grpc_clients", consts.COMPONENT_LOGGING),
+		BaseComponent:   core.NewBaseComponent(consts.COMPONENT_GRPC_CLIENTS, consts.COMPONENT_LOGGING),
 		config:          config,
 		clients:         make(map[string]*grpc.ClientConn),
 		clientConfigs:   make(map[string]*GRPCClientConfig),

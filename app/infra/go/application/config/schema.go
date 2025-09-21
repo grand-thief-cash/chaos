@@ -19,11 +19,11 @@ type AppConfig struct {
 	GRPCClients *grpc_client.GRPCClientsConfig `yaml:"grpc_clients" json:"grpc_clients"`
 	GRPCServer  *grpc_server.Config            `yaml:"grpc_server" json:"grpc_server"`
 	MySQL       *mysql.MySQLConfig             `yaml:"mysql" json:"mysql"`
+	MySQLGORM   *mysql.MySQLConfig             `yaml:"mysql_gorm" json:"mysql_gorm"`
 	HTTPServer  *http_server.HTTPServerConfig  `yaml:"http_server" json:"http_server"`
 	Redis       *redis.Config                  `yaml:"redis" json:"redis"`
 	Prometheus  *prometheus.Config             `yaml:"prometheus" json:"prometheus"`
-	Telemetry   *telemetry.Config              `yaml:"telemetry" json:"telemetry"` // NEW
-
+	Telemetry   *telemetry.Config              `yaml:"telemetry" json:"telemetry"`
 }
 
 type APPInfo struct {
