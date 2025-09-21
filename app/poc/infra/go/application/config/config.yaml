@@ -85,6 +85,40 @@ http_server:
   graceful_timeout: 10s
   enable_health: true
 
+http_clients:
+  enabled: true
+  default: default
+  clients:
+    default:
+      base_url: "https://api.example.com"
+      timeout: 5s                  # per request total timeout
+      max_idle_conns: 200
+      max_idle_conns_per_host: 100
+      idle_conn_timeout: 90s
+      default_headers:
+        User-Agent: "my-service/1.0"
+        Accept: "application/json"
+      retry:
+        enabled: true
+        max_attempts: 3
+        initial_backoff: 100ms
+        max_backoff: 2s
+        backoff_multiplier: 2
+    auth:
+      base_url: "https://auth.example.com"
+      timeout: 3s
+      max_idle_conns: 100
+      max_idle_conns_per_host: 50
+      idle_conn_timeout: 60s
+      default_headers:
+        Accept: "application/json"
+      retry:
+        enabled: true
+        max_attempts: 4
+        initial_backoff: 150ms
+        max_backoff: 3s
+        backoff_multiplier: 2
+
 
 redis:
   enabled: false

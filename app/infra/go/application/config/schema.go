@@ -4,6 +4,7 @@ package config
 import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_server"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_client"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
@@ -21,6 +22,7 @@ type AppConfig struct {
 	MySQL       *mysql.MySQLConfig             `yaml:"mysql" json:"mysql"`
 	MySQLGORM   *mysql.MySQLConfig             `yaml:"mysql_gorm" json:"mysql_gorm"`
 	HTTPServer  *http_server.HTTPServerConfig  `yaml:"http_server" json:"http_server"`
+	HTTPClient  *http_client.HTTPClientsConfig `yaml:"http_clients" json:"http_clients"`
 	Redis       *redis.Config                  `yaml:"redis" json:"redis"`
 	Prometheus  *prometheus.Config             `yaml:"prometheus" json:"prometheus"`
 	Telemetry   *telemetry.Config              `yaml:"telemetry" json:"telemetry"`
