@@ -11,6 +11,7 @@ import (
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_server"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_client"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
@@ -158,6 +159,17 @@ func (app *App) registerComponents() error {
 		}
 		if err = app.container.Register(consts.COMPONENT_PROMETHEUS, promComp); err != nil {
 			return fmt.Errorf("register prometheus component failed: %w", err)
+		}
+	}
+
+	if cfg.HTTPClient != nil && cfg.HTTPClient.Enabled {
+		httpClientsFactory := http_client.NewFactory()
+		httpClientsComp, err := httpClientsFactory.Create(cfg.HTTPClient)
+		if err != nil {
+			return fmt.Errorf("create http_clients component failed: %w", err)
+		}
+		if err = app.container.Register(consts.COMPONENT_HTTP_CLIENTS, httpClientsComp); err != nil {
+			return fmt.Errorf("register http_clients component failed: %w", err)
 		}
 	}
 
