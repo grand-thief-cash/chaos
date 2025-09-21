@@ -8,6 +8,6 @@ const (
 	COMPONENT_GRPC_SERVER  = "grpc_server"
 	COMPONENT_GRPC_CLIENTS = "grpc_clients"
 	COMPONENT_PROMETHEUS   = "prometheus"
-	COMPONENT_TELEMETRY    = "telemetry" // NEW
-
+	COMPONENT_TELEMETRY    = "telemetry"
+	COMPONENT_MYSQL_GORM   = "mysql_gorm"
 )

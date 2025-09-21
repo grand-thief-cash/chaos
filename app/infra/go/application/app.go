@@ -14,6 +14,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/prometheus"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/telemetry"
@@ -91,6 +92,17 @@ func (app *App) registerComponents() error {
 		}
 		if err = app.container.Register(consts.COMPONENT_MYSQL, mysqlComp); err != nil {
 			return fmt.Errorf("register mysql component failed: %w", err)
+		}
+	}
+
+	if cfg.MySQLGORM != nil && cfg.MySQLGORM.Enabled {
+		gormFactory := mysqlgorm.NewFactory()
+		gormComp, err := gormFactory.Create(cfg.MySQLGORM)
+		if err != nil {
+			return fmt.Errorf("create mysql_gorm component failed: %w", err)
+		}
+		if err = app.container.Register(consts.COMPONENT_MYSQL_GORM, gormComp); err != nil {
+			return fmt.Errorf("register mysql_gorm component failed: %w", err)
 		}
 	}
 

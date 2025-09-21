@@ -49,7 +49,7 @@ func main() {
 
 			client := pb.NewEchoServiceClient(conn)
 			var headerMD metadata.MD
-			resp, err := client.Say(rpcCtx, &pb.EchoRequest{Message: "hello via component"}, grpc.Header(&headerMD))
+			resp, err := client.Say(rpcCtx, &pb.EchoRequest{Message: "hello via rpc client"}, grpc.Header(&headerMD))
 			if err != nil {
 				log.Printf("Echo RPC failed: %v", err)
 			} else {
