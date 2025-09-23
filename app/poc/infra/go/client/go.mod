@@ -1,9 +1,9 @@
 // app/poc_go/go.mod
 module github.com/grand-thief-cash/chaos/app/poc/infra/go/client
 
-go 1.24.0
+go 1.23.0
 
-toolchain go1.24.4
+toolchain go1.23.0
 
 require (
 	github.com/grand-thief-cash/chaos/app/infra/go/application v0.0.0
