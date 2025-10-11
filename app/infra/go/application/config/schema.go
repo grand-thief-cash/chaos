@@ -8,6 +8,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/prometheus"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/telemetry"
@@ -20,7 +21,7 @@ type AppConfig struct {
 	GRPCClients *grpc_client.GRPCClientsConfig `yaml:"grpc_clients" json:"grpc_clients"`
 	GRPCServer  *grpc_server.Config            `yaml:"grpc_server" json:"grpc_server"`
 	MySQL       *mysql.MySQLConfig             `yaml:"mysql" json:"mysql"`
-	MySQLGORM   *mysql.MySQLConfig             `yaml:"mysql_gorm" json:"mysql_gorm"`
+	MySQLGORM   *mysqlgorm.Config              `yaml:"mysql_gorm" json:"mysql_gorm"`
 	HTTPServer  *http_server.HTTPServerConfig  `yaml:"http_server" json:"http_server"`
 	HTTPClient  *http_client.HTTPClientsConfig `yaml:"http_clients" json:"http_clients"`
 	Redis       *redis.Config                  `yaml:"redis" json:"redis"`

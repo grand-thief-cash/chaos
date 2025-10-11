@@ -16,7 +16,6 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
-	mysqlComp "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
@@ -24,19 +23,19 @@ import (
 // GormComponent manages one GORM *gorm.DB per datasource (single underlying sql.DB pool).
 type GormComponent struct {
 	*core.BaseComponent
-	cfg   *mysqlComp.MySQLConfig
+	cfg   *Config
 	dbs   map[string]*gorm.DB
 	mutex sync.RWMutex
 	log   logger.Interface
 }
 
-func NewGormComponent(cfg *mysqlComp.MySQLConfig) *GormComponent {
+func NewGormComponent(cfg *Config) *GormComponent {
 	gc := &GormComponent{
 		BaseComponent: core.NewBaseComponent(consts.COMPONENT_MYSQL_GORM),
 		cfg:           cfg,
 		dbs:           make(map[string]*gorm.DB),
 	}
-	gc.log = newGormLogger()
+	gc.log = newGormLogger(cfg)
 	return gc
 }
 
@@ -62,8 +61,8 @@ func (c *GormComponent) Start(ctx context.Context) error {
 
 		gormDB, err := gorm.Open(mysqlDriver.New(mysqlDriver.Config{DSN: dsn}), &gorm.Config{
 			Logger:                                   c.log,
-			SkipDefaultTransaction:                   true,
-			PrepareStmt:                              true,
+			SkipDefaultTransaction:                   ds.SkipDefaultTransaction,
+			PrepareStmt:                              ds.PrepareStmt,
 			DisableForeignKeyConstraintWhenMigrating: true,
 		})
 		if err != nil {
@@ -116,7 +115,8 @@ func (c *GormComponent) Start(ctx context.Context) error {
 }
 
 func (c *GormComponent) Stop(ctx context.Context) error {
-	defer c.BaseComponent.Stop(ctx)
+	// BaseComponent.Stop 目前总返回 nil，这里显式调用并忽略返回以避免 lint 警告。
+	defer func() { _ = c.BaseComponent.Stop(ctx) }()
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	for name, gdb := range c.dbs {
@@ -172,8 +172,8 @@ func (c *GormComponent) listNames() []string {
 	return names
 }
 
-// buildDSN replicates logic from raw mysql component.
-func buildDSN(ds *mysqlComp.MySQLDataSourceConfig) (string, error) {
+// buildDSN builds DSN from datasource pieces if DSN not provided.
+func buildDSN(ds *DataSourceConfig) (string, error) {
 	if strings.TrimSpace(ds.DSN) != "" {
 		return ds.DSN, nil
 	}
@@ -195,13 +195,35 @@ func buildDSN(ds *mysqlComp.MySQLDataSourceConfig) (string, error) {
 }
 
 // GORM logger implementation
+
 type gormLogger struct {
 	logLevel      logger.LogLevel
 	slowThreshold time.Duration
 }
 
-func newGormLogger() logger.Interface {
-	return &gormLogger{logLevel: logger.Info, slowThreshold: 200 * time.Millisecond}
+func newGormLogger(cfg *Config) logger.Interface {
+	lvl := logger.Info
+	slow := 200 * time.Millisecond
+	if cfg != nil {
+		if cfg.LogLevel != "" {
+			switch strings.ToLower(cfg.LogLevel) {
+			case "silent":
+				lvl = logger.Silent
+			case "error":
+				lvl = logger.Error
+			case "warn", "warning":
+				lvl = logger.Warn
+			case "info":
+				lvl = logger.Info
+			case "debug":
+				lvl = logger.Info // GORM doesn't have debug separate; use Info and we map to Debugf in Trace path.
+			}
+		}
+		if cfg.SlowThreshold > 0 {
+			slow = cfg.SlowThreshold
+		}
+	}
+	return &gormLogger{logLevel: lvl, slowThreshold: slow}
 }
 
 func (l *gormLogger) LogMode(level logger.LogLevel) logger.Interface {
