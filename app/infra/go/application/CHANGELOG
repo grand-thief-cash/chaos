@@ -1,7 +1,9 @@
 # VERSION
-v0.10.4
+v0.11.0
 
 # Changelog
+- v0.11.0
+    - Added doc: "Infrastructure of Go"
 - v0.10.4
   - Refactored the components registration logic in app.go
   - Updated shutdown Run() logic to support different platforms.
