@@ -5,34 +5,40 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 )
 
 // LifecycleManager 生命周期管理器
+// Removed internal OS signal handling to centralize at App level; lifecycle now purely orchestrates component start/stop & hooks.
 type LifecycleManager struct {
 	container      *Container
 	hookManager    *hooks.Manager
-	shutdownChan   chan os.Signal
-	stopEvent      chan struct{}
 	mutex          sync.RWMutex
 	shutdownCalled bool
 	timeout        time.Duration
 }
 
-// NewLifecycleManager 创建新的生命周期管理器
+// NewLifecycleManager 创建新的生命周期管理器（使用新的空 hook manager）
 func NewLifecycleManager(container *Container) *LifecycleManager {
 	return &LifecycleManager{
-		container:    container,
-		hookManager:  hooks.NewManager(),
-		shutdownChan: make(chan os.Signal, 1),
-		stopEvent:    make(chan struct{}),
-		timeout:      30 * time.Second,
+		container:   container,
+		hookManager: hooks.NewManager(),
+		timeout:     30 * time.Second,
+	}
+}
+
+// NewLifecycleManagerWithManager 允许注入已有的 hook manager（用于复用全局默认 hooks）
+func NewLifecycleManagerWithManager(container *Container, hm *hooks.Manager) *LifecycleManager {
+	if hm == nil {
+		hm = hooks.NewManager()
+	}
+	return &LifecycleManager{
+		container:   container,
+		hookManager: hm,
+		timeout:     30 * time.Second,
 	}
 }
 
@@ -70,6 +76,11 @@ func (lm *LifecycleManager) StartAll(ctx context.Context) error {
 
 		if err != nil {
 			log.Printf("Failed to start component %s: %v", comp.Name(), err)
+			// Attempt to cleanup the failed component itself if it became active partially.
+			if comp.IsActive() {
+				_ = comp.Stop(context.Background())
+			}
+			// Stop previously started components.
 			lm.stopStartedComponents(context.Background(), components, comp.Name())
 			return fmt.Errorf("failed to start component %s: %w", comp.Name(), err)
 		}
@@ -135,7 +146,7 @@ func (lm *LifecycleManager) stopStartedComponents(ctx context.Context, component
 	for i := len(components) - 1; i >= 0; i-- {
 		comp := components[i]
 		if comp.Name() == failedComponentName {
-			break
+			continue // skip failed component (already attempted cleanup above)
 		}
 		if comp.IsActive() {
 			stopCtx, cancel := context.WithTimeout(ctx, lm.timeout)
@@ -145,32 +156,4 @@ func (lm *LifecycleManager) stopStartedComponents(ctx context.Context, component
 			cancel()
 		}
 	}
-}
-
-func (lm *LifecycleManager) setupSignalHandlers() {
-	signal.Notify(lm.shutdownChan, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		sig := <-lm.shutdownChan
-		log.Printf("Received signal %v, shutting down...", sig)
-		close(lm.stopEvent)
-	}()
-}
-
-func (lm *LifecycleManager) WaitForShutdown(ctx context.Context) {
-	lm.setupSignalHandlers()
-
-	log.Println("Application running, waiting for shutdown signal...")
-
-	select {
-	case <-lm.stopEvent:
-		log.Println("Shutdown signal received")
-	case <-ctx.Done():
-		log.Println("Context cancelled")
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), lm.timeout)
-	defer cancel()
-
-	lm.StopAll(shutdownCtx)
 }

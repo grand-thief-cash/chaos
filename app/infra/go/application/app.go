@@ -41,10 +41,12 @@ func NewApp(env string, configPath string) *App {
 		abs = p
 	}
 	container := core.NewContainer()
+	// Use global hook manager so default hooks (registered in hooks/default.go) are effective.
+	lm := core.NewLifecycleManagerWithManager(container, hooks.GetGlobalHookManager())
 	return &App{
 		configManager:    config.NewConfigManager(env, abs),
 		container:        container,
-		lifecycleManager: core.NewLifecycleManager(container),
+		lifecycleManager: lm,
 	}
 }
 
@@ -82,7 +84,9 @@ func (app *App) registerComponents() error {
 
 	if cfg.Telemetry != nil && cfg.Telemetry.Enabled {
 		telComp := telemetry.NewTelemetryComponent(cfg.Telemetry)
-		_ = app.container.Register(consts.COMPONENT_TELEMETRY, telComp)
+		if err := app.container.Register(consts.COMPONENT_TELEMETRY, telComp); err != nil { // handle error instead of ignoring
+			return fmt.Errorf("register telemetry component failed: %w", err)
+		}
 	}
 
 	if cfg.MySQL != nil && cfg.MySQL.Enabled {
@@ -135,7 +139,7 @@ func (app *App) registerComponents() error {
 		if err != nil {
 			return fmt.Errorf("create grpc clients component failed: %w", err)
 		}
-		if err = app.container.Register("grpc_clients", grpcComp); err != nil {
+		if err = app.container.Register(consts.COMPONENT_GRPC_CLIENTS, grpcComp); err != nil { // use constant
 			return fmt.Errorf("register grpc clients component failed: %w", err)
 		}
 	}
@@ -193,7 +197,8 @@ func (app *App) AddHook(name string, phase hooks.Phase, fn hooks.HookFunc, prior
 
 // Run sets up an OS signal context and blocks until SIGINT/SIGTERM.
 func (app *App) Run() error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGTERM)
+	// Only listen to os.Interrupt (which covers SIGINT) and SIGTERM once.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return app.RunWithContext(ctx)
 }

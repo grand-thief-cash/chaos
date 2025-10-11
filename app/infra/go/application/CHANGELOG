@@ -1,7 +1,14 @@
 # VERSION
-v0.10.2
+v0.10.3
 
 # Changelog
+- v0.10.3
+  - Fixed unused global hook manager
+  - Replace hard code consts "grpc_clients" in component registration with consts in consts package.
+  - Added err check in Telemetry registration.
+  - Fixed repeated signal management code in application.
+  - Provided gorm component an individual config rather than using mysql config.
+  - Updated logic in starting failure handling.
 - v0.10.2
   - Updated go mod version
 - v0.10.1
