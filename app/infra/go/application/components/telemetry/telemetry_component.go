@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -81,6 +82,7 @@ func (tc *TelemetryComponent) Start(ctx context.Context) error {
 	))
 
 	tc.started = true
+	logging.Info(ctx, "telemetry component started")
 	return nil
 }
 func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Resource) error {
