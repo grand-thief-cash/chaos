@@ -162,7 +162,7 @@ func (gc *GRPCServerComponent) otelTracingInterceptor() grpc.UnaryServerIntercep
 		}
 
 		traceID := span.SpanContext().TraceID().String()
-		_ = grpc.SetHeader(ctx, metadata.Pairs("trace-id", traceID))
+		_ = grpc.SetHeader(ctx, metadata.Pairs("trace_id", traceID))
 
 		return resp, err
 	}

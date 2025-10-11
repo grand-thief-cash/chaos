@@ -27,6 +27,7 @@ type Config struct {
 }
 
 func (c *Config) applyDefaults() {
+	// ServiceName no longer auto-defaulted; must be provided upstream (e.g., from APPInfo.APPName)
 	if c.SampleRatio <= 0 || c.SampleRatio > 1 {
 		c.SampleRatio = 1.0
 	}

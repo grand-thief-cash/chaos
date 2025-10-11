@@ -14,7 +14,7 @@ import (
 
 //Details:
 //GetGRPCClient: Thin convenience wrapper around resolving grpc_clients and calling GetClient(name). Adds little value; current code already does the explicit steps.
-//CreateMetadata: Partially overlaps with the trace interceptor (trace-id injection). The extra keys (user-agent, client-version) are not consumed anywhere. Redundant now.
+//CreateMetadata: Partially overlaps with the trace interceptor (trace_id injection). The extra keys (user-agent, client-version) are not consumed anywhere. Redundant now.
 //CallWithRetry / CallWithRetryPolicy: Not used; they bypass generated stubs and call conn.Invoke directly. If you later adopt gRPC service config based retries or interceptor-based retries, these helpers are superseded.
 
 //Remove if:

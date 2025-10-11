@@ -7,7 +7,6 @@ toolchain go1.24.7
 require (
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-sql-driver/mysql v1.9.3
-	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.14.0
 	github.com/riandyrn/otelchi v0.12.2
@@ -38,6 +37,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect

@@ -7,5 +7,5 @@ const (
 
 	DEFAULT_CONFIG_PATH = "config.yaml"
 
-	KEY_TraceID = "trace-id"
+	KEY_TraceID = "trace_id"
 )

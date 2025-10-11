@@ -1,6 +1,6 @@
 # config.yaml
 app:
-  name: "poc_go"
+  name: "go_poc_server"
   mode: "development"  # development, production
 
 logging:
@@ -13,9 +13,9 @@ logging:
     filename: "poc_go"  # 会生成 app_name.log, app_name.log.20231201 等
   rotate_config:
     enabled: true
-    rotate_daily: true
     max_age: 360h  # 15天 (15 * 24h)
     cleanup_enabled: true
+    rotate_interval: 24h
 
 
 grpc_clients:
@@ -58,7 +58,7 @@ mysql:
       ping_on_start: true
 
 mysql_gorm:
-  enabled: true
+  enabled: false
   data_sources:
     primary:
       host: 192.168.31.35

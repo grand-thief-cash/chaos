@@ -1,7 +1,11 @@
 # VERSION
-v0.11.0
+v0.11.1
 
 # Changelog
+- v0.11.1
+    - Design of "TraceID" changed to industry in logging component.
+    - Added "span_id" in logging component.
+    - Renamed filename such as "*_component.go" in each component folder to "component.go" to keep it unified.
 - v0.11.0
     - Added doc: "Infrastructure of Go"
 - v0.10.4
