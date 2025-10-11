@@ -64,9 +64,10 @@ func (lm *LifecycleManager) StartAll(ctx context.Context) error {
 		return fmt.Errorf("before_start hooks failed: %w", err)
 	}
 
-	components, err := lm.container.SortComponentsByDependencies()
+	// 新增：先验证依赖完整性（含环、缺失）
+	components, err := lm.container.ValidateDependencies()
 	if err != nil {
-		return fmt.Errorf("failed to sort components: %w", err)
+		return fmt.Errorf("dependency validation failed: %w", err)
 	}
 
 	for _, comp := range components {

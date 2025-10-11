@@ -3,26 +3,20 @@ package application
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_server"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_client"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/prometheus"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/telemetry"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
 )
 
 type App struct {
@@ -33,6 +27,8 @@ type App struct {
 	bootOnce sync.Once
 	bootErr  error
 	booted   bool
+
+	shutdownTimeout time.Duration
 }
 
 func NewApp(env string, configPath string) *App {
@@ -47,8 +43,12 @@ func NewApp(env string, configPath string) *App {
 		configManager:    config.NewConfigManager(env, abs),
 		container:        container,
 		lifecycleManager: lm,
+		shutdownTimeout:  30 * time.Second,
 	}
 }
+
+// SetShutdownTimeout allows customizing graceful shutdown timeout.
+func (app *App) SetShutdownTimeout(d time.Duration) { app.shutdownTimeout = d }
 
 func (app *App) boot() error {
 	app.bootOnce.Do(func() {
@@ -71,112 +71,10 @@ func (app *App) registerComponents() error {
 		return fmt.Errorf("config not loaded")
 	}
 
-	if cfg.Logging != nil && cfg.Logging.Enabled {
-		logFactory := logging.NewFactory()
-		logComp, err := logFactory.Create(cfg.Logging)
-		if err != nil {
-			return fmt.Errorf("create logging component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_LOGGING, logComp); err != nil {
-			return fmt.Errorf("register logging component failed: %w", err)
-		}
+	// New unified registration via registry. Each component self-registers its builder in its registry/*.go init().
+	if err := registry.BuildAndRegisterAll(cfg, app.container); err != nil {
+		return err
 	}
-
-	if cfg.Telemetry != nil && cfg.Telemetry.Enabled {
-		telComp := telemetry.NewTelemetryComponent(cfg.Telemetry)
-		if err := app.container.Register(consts.COMPONENT_TELEMETRY, telComp); err != nil { // handle error instead of ignoring
-			return fmt.Errorf("register telemetry component failed: %w", err)
-		}
-	}
-
-	if cfg.MySQL != nil && cfg.MySQL.Enabled {
-		mysqlFactory := mysql.NewFactory()
-		mysqlComp, err := mysqlFactory.Create(cfg.MySQL)
-		if err != nil {
-			return fmt.Errorf("create mysql component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_MYSQL, mysqlComp); err != nil {
-			return fmt.Errorf("register mysql component failed: %w", err)
-		}
-	}
-
-	if cfg.MySQLGORM != nil && cfg.MySQLGORM.Enabled {
-		gormFactory := mysqlgorm.NewFactory()
-		gormComp, err := gormFactory.Create(cfg.MySQLGORM)
-		if err != nil {
-			return fmt.Errorf("create mysql_gorm component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_MYSQL_GORM, gormComp); err != nil {
-			return fmt.Errorf("register mysql_gorm component failed: %w", err)
-		}
-	}
-
-	if cfg.Redis != nil && cfg.Redis.Enabled {
-		redisFactory := redis.NewFactory()
-		redisComp, err := redisFactory.Create(cfg.Redis)
-		if err != nil {
-			return fmt.Errorf("create redis component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_REDIS, redisComp); err != nil {
-			return fmt.Errorf("register redis component failed: %w", err)
-		}
-	}
-
-	if cfg.HTTPServer != nil && cfg.HTTPServer.Enabled {
-		httpFactory := http_server.NewFactory(app.container)
-		httpServer, err := httpFactory.Create(cfg.HTTPServer)
-		if err != nil {
-			return fmt.Errorf("create http_server component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_HTTP_SERVER, httpServer); err != nil {
-			return fmt.Errorf("register http_server component failed: %w", err)
-		}
-	}
-
-	if cfg.GRPCClients != nil && cfg.GRPCClients.Enabled {
-		grpcFactory := grpc_client.NewFactory()
-		grpcComp, err := grpcFactory.Create(cfg.GRPCClients)
-		if err != nil {
-			return fmt.Errorf("create grpc clients component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_GRPC_CLIENTS, grpcComp); err != nil { // use constant
-			return fmt.Errorf("register grpc clients component failed: %w", err)
-		}
-	}
-
-	if cfg.GRPCServer != nil && cfg.GRPCServer.Enabled {
-		grpcSrvFactory := grpc_server.NewFactory(app.container)
-		grpcSrvComp, err := grpcSrvFactory.Create(cfg.GRPCServer)
-		if err != nil {
-			return fmt.Errorf("create grpc_server component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_GRPC_SERVER, grpcSrvComp); err != nil {
-			return fmt.Errorf("register grpc_server component failed: %w", err)
-		}
-	}
-
-	if cfg.Prometheus != nil && cfg.Prometheus.Enabled {
-		promFactory := prometheus.NewFactory()
-		promComp, err := promFactory.Create(cfg.Prometheus)
-		if err != nil {
-			return fmt.Errorf("create prometheus component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_PROMETHEUS, promComp); err != nil {
-			return fmt.Errorf("register prometheus component failed: %w", err)
-		}
-	}
-
-	if cfg.HTTPClient != nil && cfg.HTTPClient.Enabled {
-		httpClientsFactory := http_client.NewFactory()
-		httpClientsComp, err := httpClientsFactory.Create(cfg.HTTPClient)
-		if err != nil {
-			return fmt.Errorf("create http_clients component failed: %w", err)
-		}
-		if err = app.container.Register(consts.COMPONENT_HTTP_CLIENTS, httpClientsComp); err != nil {
-			return fmt.Errorf("register http_clients component failed: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -195,12 +93,104 @@ func (app *App) AddHook(name string, phase hooks.Phase, fn hooks.HookFunc, prior
 	return app.lifecycleManager.AddHook(name, phase, fn, priority)
 }
 
-// Run sets up an OS signal context and blocks until SIGINT/SIGTERM.
+// Run 根据平台与环境变量自动选择基础或增强（双信号 + 超时 + Windows 控制事件）模式。
+// 选择策略：
+//  1. 若设置 GOINFRA_DISABLE_ENHANCED=1 -> 使用基础模式
+//  2. 若设置 GOINFRA_FORCE_ENHANCED=1  -> 使用增强模式
+//  3. 默认：Windows 上使用增强模式，其它平台基础模式
+//
+// 环境变量（增强模式下可用）：
+//
+//	GOINFRA_DISABLE_FORCE_EXIT=1   禁用超时/第二信号强制退出
+//	GOINFRA_FORCE_EXIT_CODE=<int>  自定义强制退出码（默认 1）
 func (app *App) Run() error {
-	// Only listen to os.Interrupt (which covers SIGINT) and SIGTERM once.
+	if app.shouldUseEnhanced() {
+		return app.runEnhanced()
+	}
+	return app.runBasic()
+}
+
+// runBasic == 旧 Run 行为：简单监听 SIGINT/SIGTERM。
+func (app *App) runBasic() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return app.RunWithContext(ctx)
+}
+
+// runEnhanced == 原 RunInGoland 逻辑（双信号 + 超时 + 可控强退 + Windows 控制台事件）。
+func (app *App) runEnhanced() error {
+	sigCh := make(chan os.Signal, 2)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+	}()
+
+	installPlatformControlHandler(cancel, app.shutdownTimeout)
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- app.RunWithContext(ctx) }()
+
+	forceExit := func(reason string) {
+		if _, disable := os.LookupEnv("GOINFRA_DISABLE_FORCE_EXIT"); disable {
+			log.Printf("[graceful] force exit suppressed (%s)", reason)
+			return
+		}
+		exitCode := 1
+		if v := os.Getenv("GOINFRA_FORCE_EXIT_CODE"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				exitCode = n
+			}
+		}
+		log.Printf("[graceful] forcing process exit (code=%d) reason=%s", exitCode, reason)
+		os.Exit(exitCode)
+	}
+
+	for {
+		select {
+		case sig := <-sigCh:
+			if sig == nil {
+				return <-errCh
+			}
+			log.Printf("Received signal %s, initiating graceful shutdown (timeout %s)...", sig, app.shutdownTimeout)
+			// 超时强退计时器
+			go func() {
+				select {
+				case <-time.After(app.shutdownTimeout):
+					forceExit("graceful-timeout")
+				}
+			}()
+			// 第二信号强制退出
+			go func() {
+				second := <-sigCh
+				if second != nil {
+					forceExit("second-signal")
+				}
+			}()
+			cancel()
+		case err := <-errCh:
+			return err
+		}
+	}
+}
+
+func (app *App) shouldUseEnhanced() bool {
+	if _, off := os.LookupEnv("GOINFRA_DISABLE_ENHANCED"); off {
+		return false
+	}
+	if _, on := os.LookupEnv("GOINFRA_FORCE_ENHANCED"); on {
+		return true
+	}
+	return runtime.GOOS == "windows" // 默认仅 Windows 使用增强模式
+}
+
+// installPlatformControlHandler 在 Windows 安装控制台事件处理，其它平台 no-op。
+func installPlatformControlHandler(cancel context.CancelFunc, timeout time.Duration) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	core.InstallWindowsCtrlHandler(cancel, timeout)
 }
 
 // RunWithContext starts components and blocks until context done,

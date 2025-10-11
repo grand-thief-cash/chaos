@@ -1,7 +1,10 @@
 # VERSION
-v0.10.3
+v0.10.4
 
 # Changelog
+- v0.10.4
+  - Refactored the components registration logic in app.go
+  - Updated shutdown Run() logic to support different platforms.
 - v0.10.3
   - Fixed unused global hook manager
   - Replace hard code consts "grpc_clients" in component registration with consts in consts package.

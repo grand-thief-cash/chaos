@@ -4,6 +4,7 @@ package core
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -128,4 +129,47 @@ func (c *Container) SortComponentsByDependencies() ([]Component, error) {
 	}
 
 	return result, nil
+}
+
+// Replace 替换已注册但未激活的组件（主要用于测试）
+func (c *Container) Replace(name string, component Component) error {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	existing, exists := c.components[name]
+	if !exists {
+		return fmt.Errorf("component %s not registered", name)
+	}
+	if existing.IsActive() {
+		return fmt.Errorf("component %s is active; cannot replace", name)
+	}
+	c.components[name] = component
+	return nil
+}
+
+// ValidateDependencies 检查所有组件声明的依赖是否都已注册；返回拓扑排序结果（不启动）
+func (c *Container) ValidateDependencies() ([]Component, error) {
+	c.mutex.RLock()
+	missing := make(map[string][]string)
+	for name, comp := range c.components {
+		for _, dep := range comp.Dependencies() {
+			if _, ok := c.components[dep]; !ok {
+				missing[name] = append(missing[name], dep)
+			}
+		}
+	}
+	c.mutex.RUnlock()
+	if len(missing) > 0 {
+		var parts []string
+		for k, v := range missing {
+			parts = append(parts, fmt.Sprintf("%s -> [%s]", k, strings.Join(v, ",")))
+		}
+		return nil, fmt.Errorf("missing component dependencies: %s", strings.Join(parts, "; "))
+	}
+	// 借用现有拓扑排序做环检测
+	ordered, err := c.SortComponentsByDependencies()
+	if err != nil {
+		return nil, err
+	}
+	return ordered, nil
 }
