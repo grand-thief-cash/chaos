@@ -29,6 +29,13 @@ type App struct {
 	booted   bool
 
 	shutdownTimeout time.Duration
+
+	// runCtx / cancelFn hold the context controlling RunWithContext so that an internal
+	// programmatic shutdown (via app.Shutdown) can also unblock RunWithContext without
+	// requiring an OS signal. Without this, calling app.Shutdown only stops components
+	// while the RunWithContext goroutine still blocks on ctx.Done(), keeping the process alive.
+	runCtx   context.Context
+	cancelFn context.CancelFunc
 }
 
 func NewApp(env string, configPath string) *App {
@@ -113,6 +120,9 @@ func (app *App) Run() error {
 // runBasic == 旧 Run 行为：简单监听 SIGINT/SIGTERM。
 func (app *App) runBasic() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// store for internal cancellation
+	app.runCtx = ctx
+	app.cancelFn = stop
 	defer stop()
 	return app.RunWithContext(ctx)
 }
@@ -122,6 +132,9 @@ func (app *App) runEnhanced() error {
 	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	ctx, cancel := context.WithCancel(context.Background())
+	// store
+	app.runCtx = ctx
+	app.cancelFn = cancel
 	defer func() {
 		signal.Stop(sigCh)
 		close(sigCh)
@@ -212,6 +225,15 @@ func (app *App) RunWithContext(ctx context.Context) error {
 	return nil
 }
 
+// Shutdown 仅触发取消，实际组件停止统一在 RunWithContext 里执行，
+// 防止与并行 RunWithContext 返回竞态导致还未完成 StopAll 主 goroutine 就已退出（丢失日志 / 未完成清理）。
+// 这样：
+//
+//	外部调用 Shutdown -> cancel()
+//	RunWithContext <- ctx.Done() -> StopAll() -> 完整输出所有停止日志
 func (app *App) Shutdown(ctx context.Context) {
-	app.lifecycleManager.StopAll(ctx)
+	if app.cancelFn != nil {
+		app.cancelFn()
+	}
+	// 不在这里直接调用 StopAll，避免竞态；若需要在未 Run 的测试里调用，可扩展一个 ForceStop()。
 }

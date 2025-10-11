@@ -1,7 +1,9 @@
 # VERSION
-v0.11.1
+v0.11.2
 
 # Changelog
+- v0.11.2
+    - Fixed bug of cannot stopAll(); App.Shutdown will not call stopAll() when need to shutdown.
 - v0.11.1
     - Design of "TraceID" changed to industry in logging component.
     - Added "span_id" in logging component.
