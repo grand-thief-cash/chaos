@@ -54,8 +54,8 @@ func main() {
 				log.Printf("Echo RPC failed: %v", err)
 			} else {
 				fmt.Printf("Echo response: %s\n", resp.GetMessage())
-				if vals := headerMD.Get("trace-id"); len(vals) > 0 {
-					fmt.Printf("Returned trace-id: %s\n", vals[0])
+				if vals := headerMD.Get("trace_id"); len(vals) > 0 {
+					fmt.Printf("Returned trace_id: %s\n", vals[0])
 				} else {
 					fmt.Println("No trace-id returned")
 				}

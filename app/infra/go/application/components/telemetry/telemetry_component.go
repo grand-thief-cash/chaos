@@ -9,7 +9,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -21,8 +20,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
@@ -50,7 +51,36 @@ func (tc *TelemetryComponent) Start(ctx context.Context) error {
 	if tc.cfg == nil || !tc.cfg.Enabled {
 		return errors.New("telemetry disabled or missing config")
 	}
-	tc.cfg.applyDefaults()
+
+	beforeRatio := tc.cfg.SampleRatio
+	beforeExporter := tc.cfg.Exporter
+
+	// apply defaults (no auto service name)
+	cCopy := *tc.cfg
+	_tcName := tc.cfg.ServiceName // keep for logging only
+	cCopy.applyDefaults()
+	// copy back mutated fields except service name (service name immutable here)
+	tc.cfg.SampleRatio = cCopy.SampleRatio
+	if tc.cfg.Exporter == "" {
+		tc.cfg.Exporter = cCopy.Exporter
+	}
+	if tc.cfg.OTLP != nil && cCopy.OTLP != nil {
+		tc.cfg.OTLP.Timeout = cCopy.OTLP.Timeout
+	}
+
+	if beforeRatio != tc.cfg.SampleRatio || beforeExporter != tc.cfg.Exporter {
+		logging.Info(ctx, "telemetry config normalized",
+			zap.Float64("sample_ratio_before", beforeRatio),
+			zap.Float64("sample_ratio_after", tc.cfg.SampleRatio),
+			zap.String("exporter_before", string(beforeExporter)),
+			zap.String("exporter_after", string(tc.cfg.Exporter)),
+			zap.String("service_name", _tcName),
+		)
+	}
+
+	if tc.cfg.ServiceName == "" {
+		return errors.New("telemetry service_name must be set (injected from APPInfo.app_name)")
+	}
 
 	res, err := resource.New(
 		ctx,
@@ -58,9 +88,7 @@ func (tc *TelemetryComponent) Start(ctx context.Context) error {
 		resource.WithProcess(),
 		resource.WithOS(),
 		resource.WithHost(),
-		resource.WithAttributes(
-			semconv.ServiceName(tc.cfg.ServiceName),
-		),
+		resource.WithAttributes(semconv.ServiceName(tc.cfg.ServiceName)),
 	)
 	if err != nil {
 		return fmt.Errorf("resource init: %w", err)
@@ -75,14 +103,17 @@ func (tc *TelemetryComponent) Start(ctx context.Context) error {
 
 	otel.SetTracerProvider(tc.tp)
 	otel.SetMeterProvider(tc.mp)
-	// Register W3C TraceContext + Baggage propagators for inbound/outbound context propagation.
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
 
 	tc.started = true
-	logging.Info(ctx, "telemetry component started")
+	logging.Info(ctx, "telemetry component started",
+		zap.String("exporter", string(tc.cfg.Exporter)),
+		zap.Float64("sample_ratio", tc.cfg.SampleRatio),
+		zap.String("service_name", tc.cfg.ServiceName),
+	)
 	return nil
 }
 func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Resource) error {
@@ -206,14 +237,24 @@ func (tc *TelemetryComponent) stdoutWriter() (io.Writer, error) {
 }
 
 func (tc *TelemetryComponent) Stop(ctx context.Context) error {
-	defer tc.BaseComponent.Stop(ctx)
 	if !tc.started {
 		return nil
 	}
+	var errs []error
 	for i := len(tc.shutdownFuncs) - 1; i >= 0; i-- {
-		_ = tc.shutdownFuncs[i](ctx)
+		if err := tc.shutdownFuncs[i](ctx); err != nil {
+			errs = append(errs, err)
+			logging.Warn(ctx, "telemetry shutdown func error", zap.Error(err))
+		}
+	}
+	if err := tc.BaseComponent.Stop(ctx); err != nil {
+		errs = append(errs, err)
+		logging.Warn(ctx, "telemetry base stop error", zap.Error(err))
 	}
 	tc.started = false
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
 	return nil
 }
 

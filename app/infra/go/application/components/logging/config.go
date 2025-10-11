@@ -22,7 +22,7 @@ type FileConfig struct {
 // RotateConfig 日志轮转配置
 type RotateConfig struct {
 	Enabled        bool          `yaml:"enabled" json:"enabled"`                 // 是否启用轮转
-	RotateDaily    bool          `yaml:"rotate_daily" json:"rotate_daily"`       // 每日轮转
+	RotateInterval time.Duration `yaml:"rotate_interval" json:"rotate_interval"` // 轮转时间间隔 (必须 >0 当 Enabled=true)
 	MaxAge         time.Duration `yaml:"max_age" json:"max_age"`                 // 日志保留时间
 	CleanupEnabled bool          `yaml:"cleanup_enabled" json:"cleanup_enabled"` // 是否启用清理
 }

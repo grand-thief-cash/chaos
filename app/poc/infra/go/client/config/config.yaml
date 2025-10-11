@@ -1,3 +1,7 @@
+app:
+  name: "go_poc_client"
+  mode: "development"  # development, production
+
 logging:
   enabled: true
   level: INFO
