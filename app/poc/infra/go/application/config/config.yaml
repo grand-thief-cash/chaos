@@ -1,7 +1,7 @@
 # config.yaml
-app:
-  name: "go_poc_server"
-  mode: "development"  # development, production
+app_info:
+  app_name: "go_poc_server"
+  env: "development"  # development, production
 
 logging:
   enabled: true
@@ -9,13 +9,12 @@ logging:
   format: "json"  # json 或 console
   output: "stdout"  # stdout, stderr, file
   file_config:
-    dir: "./logs"
-    filename: "poc_go"  # 会生成 app_name.log, app_name.log.20231201 等
+    dir: "./logs"       # 不配置 filename, 自动使用 app_info.app_name
   rotate_config:
     enabled: true
     max_age: 360h  # 15天 (15 * 24h)
     cleanup_enabled: true
-    rotate_interval: 24h
+    rotate_interval: 24h  # 24h >= 一天 -> 采用 <app_name>.log.YYYYMMDD 格式
 
 
 grpc_clients:
@@ -84,6 +83,7 @@ http_server:
   idle_timeout: 60s
   graceful_timeout: 10s
   enable_health: true
+  add_trace_id_header: true   # 新增: 返回 trace_id & traceparent 头便于前端/调试
 
 http_clients:
   enabled: true
@@ -158,7 +158,7 @@ telemetry:
   exporter: stdout         # stdout|otlp
   sample_ratio: 1.0        # 0~1; adjust for sampling
   stdout_pretty: false     # false keeps exporter output compact
-  stdout_file: ./logs/telemetry.log  # separate file; omit to print to stdout
+#  stdout_file: ./logs/telemetry.log  # separate file; omit to print to stdout
   # otlp:
   #   endpoint: 127.0.0.1:4317
   #   insecure: true

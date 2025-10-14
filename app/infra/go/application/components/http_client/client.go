@@ -13,9 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 )
 
 type InstrumentedClient struct {
@@ -118,11 +120,24 @@ func (ic *InstrumentedClient) Do(ctx context.Context, method, path string, query
 	resp, err := ic.doWithRetry(ctx, req)
 	latency := time.Since(start)
 
+	// Prefer span from response request context (child span created by otelhttp transport)
+	spanCtx := ctx
+	if resp != nil && resp.Request != nil && resp.Request.Context() != nil {
+		spanCtx = resp.Request.Context()
+	}
+
 	fields := []zap.Field{
 		zap.String("client", ic.Name),
 		zap.String("method", method),
 		zap.String("url", targetURL),
 		zap.Duration("latency", latency),
+	}
+	if sc := trace.SpanContextFromContext(spanCtx); sc.IsValid() {
+		fields = append([]zap.Field{
+			zap.String(consts.KEY_TraceID, sc.TraceID().String()),
+			zap.String("span_id", sc.SpanID().String()),
+			zap.String("trace_flags", sc.TraceFlags().String()),
+		}, fields...)
 	}
 	if err != nil {
 		fields = append(fields, zap.String("error", err.Error()))
