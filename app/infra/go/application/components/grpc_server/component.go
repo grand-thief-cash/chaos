@@ -6,12 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/codes" // OTel status codes
-	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -56,15 +53,17 @@ func (gc *GRPCServerComponent) Start(ctx context.Context) error {
 		return errors.New("grpc_server enabled flag mismatch")
 	}
 
+	// Interceptor chain (order): recovery -> trace header injection -> logging
 	unaryInts := []grpc.UnaryServerInterceptor{
-		gc.otelTracingInterceptor(),
-		gc.loggingInterceptor(),
 		gc.recoveryInterceptor(),
+		gc.traceHeaderInjectorInterceptor(),
+		gc.loggingInterceptor(),
 	}
 	opts := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(gc.cfg.MaxRecvMsgSize),
 		grpc.MaxSendMsgSize(gc.cfg.MaxSendMsgSize),
 		grpc.ChainUnaryInterceptor(unaryInts...),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	}
 
 	gc.server = grpc.NewServer(opts...)
@@ -101,9 +100,8 @@ func (gc *GRPCServerComponent) Start(ctx context.Context) error {
 }
 
 func (gc *GRPCServerComponent) Stop(ctx context.Context) error {
-	defer gc.BaseComponent.Stop(ctx)
 	if !gc.started || gc.server == nil {
-		return nil
+		return gc.BaseComponent.Stop(ctx)
 	}
 	deadline := time.Now().Add(gc.cfg.GracefulTimeout)
 	done := make(chan struct{})
@@ -121,7 +119,8 @@ func (gc *GRPCServerComponent) Stop(ctx context.Context) error {
 		logging.Warn(ctx, "grpc_server graceful timeout exceeded, forcing")
 		gc.server.Stop()
 	}
-	return nil
+	gc.started = false
+	return gc.BaseComponent.Stop(ctx)
 }
 
 func (gc *GRPCServerComponent) HealthCheck() error {
@@ -134,55 +133,25 @@ func (gc *GRPCServerComponent) HealthCheck() error {
 	return nil
 }
 
-// OpenTelemetry tracing interceptor.
-func (gc *GRPCServerComponent) otelTracingInterceptor() grpc.UnaryServerInterceptor {
-	propagator := otel.GetTextMapPropagator()
-	tracer := otel.Tracer("grpc.server")
-
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			ctx = propagator.Extract(ctx, metadataCarrier{md})
-		}
-
-		service, method := splitFullMethod(info.FullMethod)
-		ctx, span := tracer.Start(ctx, info.FullMethod, trace.WithSpanKind(trace.SpanKindServer))
-		span.SetAttributes(
-			semconv.RPCSystemGRPC,
-			semconv.RPCService(service),
-			semconv.RPCMethod(method),
-		)
-		defer span.End()
-
-		resp, err := handler(ctx, req)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		} else {
-			span.SetStatus(codes.Ok, "OK")
-		}
-
-		traceID := span.SpanContext().TraceID().String()
-		_ = grpc.SetHeader(ctx, metadata.Pairs("trace_id", traceID))
-
-		return resp, err
-	}
-}
-
+// loggingInterceptor now also logs grpc status code
 func (gc *GRPCServerComponent) loggingInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
 		start := time.Now()
 		resp, err = handler(ctx, req)
 		dur := time.Since(start)
+		st := status.Code(err)
 		if err != nil {
 			logging.Error(ctx, "grpc_access",
 				zap.String("method", info.FullMethod),
 				zap.Duration("dur", dur),
+				zap.String("grpc_status", st.String()),
 				zap.String("error", err.Error()),
 			)
 		} else {
 			logging.Info(ctx, "grpc_access",
 				zap.String("method", info.FullMethod),
 				zap.Duration("dur", dur),
+				zap.String("grpc_status", st.String()),
 			)
 		}
 		return resp, err
@@ -201,32 +170,16 @@ func (gc *GRPCServerComponent) recoveryInterceptor() grpc.UnaryServerInterceptor
 	}
 }
 
-type metadataCarrier struct{ metadata.MD }
-
-func (mc metadataCarrier) Get(key string) string {
-	values := mc.MD.Get(key)
-	if len(values) == 0 {
-		return ""
+// traceHeaderInjectorInterceptor injects a convenience 'trace_id' response header (non-standard) if a valid span is present.
+func (gc *GRPCServerComponent) traceHeaderInjectorInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		resp, err := handler(ctx, req)
+		if span := trace.SpanFromContext(ctx); span != nil {
+			sc := span.SpanContext()
+			if sc.IsValid() {
+				_ = grpc.SetHeader(ctx, metadata.Pairs("trace_id", sc.TraceID().String()))
+			}
+		}
+		return resp, err
 	}
-	return values[0]
-}
-func (mc metadataCarrier) Set(key, value string) { mc.MD.Set(key, value) }
-func (mc metadataCarrier) Keys() []string {
-	keys := make([]string, 0, len(mc.MD))
-	for k := range mc.MD {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-func splitFullMethod(full string) (service, method string) {
-	if full == "" {
-		return "", ""
-	}
-	s := strings.TrimPrefix(full, "/")
-	parts := strings.SplitN(s, "/", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
-	}
-	return s, ""
 }
