@@ -1,7 +1,10 @@
 # VERSION
-v0.11.4
+v0.11.5
 
 # Changelog
+- v0.11.5
+    - Change name of logging out put file to "{appname}.log.20250101"
+    - HTTP server/client componet removed "trace_id" and use w3c standard trace
 - v0.11.4
     - Adjuested grpc server/client component to make compatible with otel & logging.
     - Added README.md for grpc server/client component.

@@ -134,24 +134,17 @@ func (hc *HTTPServerComponent) setupMiddlewares() {
 	hc.router.Use(middleware.Timeout(60 * time.Second))
 
 	// OTel middleware: extracts W3C traceparent / tracestate and starts a server span.
-	// Use service name if available; fallback to address.
 	serviceName := hc.cfg.Address
 	if tp := otel.GetTracerProvider(); tp != nil {
-		// no-op: kept for clarity; otelchi will use global provider
+		// no-op: kept for clarity; otelchi uses global provider
 	}
 	hc.router.Use(otelchi.Middleware(serviceName))
 
-	// Access log with status + trace id (if present). No manual trace id creation.
+	// Access log with status + trace metadata; always return standard traceparent header (W3C) when span present.
 	hc.router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
-
-			// Optional: echo W3C traceparent back (NOT required, only if you want client visibility)
-			if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
-				w.Header().Set("traceparent",
-					fmt.Sprintf("00-%s-%s-01", sc.TraceID().String(), sc.SpanID().String()))
-			}
 
 			next.ServeHTTP(sw, r)
 			elapsed := time.Since(start)
@@ -165,6 +158,8 @@ func (hc *HTTPServerComponent) setupMiddlewares() {
 			}
 			if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
 				fields = append(fields, zap.String("trace_id", sc.TraceID().String()), zap.String("span_id", sc.SpanID().String()))
+				// Always expose standard traceparent for easier cross-service correlation (idempotent header set)
+				w.Header().Set("traceparent", fmt.Sprintf("00-%s-%s-01", sc.TraceID().String(), sc.SpanID().String()))
 			}
 			logging.Info(r.Context(), "http_access", fields...)
 		})
