@@ -258,6 +258,61 @@ redis:
 | enable_reflection | 是否注册 reflection 服务 |
 | enable_health | 是否注册健康服务 |
 
+---
+
+当前使用 OTel StatsHandler + 自定义 Unary 拦截器链：
+- grpc.StatsHandler(otelgrpc.NewServerHandler()) 负责生成/传播 trace + metrics。
+- 自定义 Unary 拦截器顺序：
+    1. recoveryInterceptor (panic 保护)
+    2. traceHeaderInjectorInterceptor (在 handler 执行后注入非标准 trace_id 响应头)
+    3. loggingInterceptor (访问日志，自动携带 trace_id/span_id)
+
+说明：
+- 由于当前依赖版本未暴露 `otelgrpc.UnaryServerInterceptor`，使用 StatsHandler 方式同样可以获得 trace 与基础指标。
+- 如果未来升级依赖并提供官方 Unary 拦截器，可把 tracing 逻辑迁移到拦截器层（可获得更细粒度控制）。
+
+#### 客户端 (grpc_client)
+- 拨号时安装：
+    - grpc.WithChainUnaryInterceptor(loggingUnaryClientInterceptor)
+    - grpc.WithStatsHandler(otelgrpc.NewClientHandler())
+- StatsHandler 生成 / 关联 span 并处理上下游 context 传播；logging 拦截器记录 method/duration/status。
+
+#### Telemetry 依赖
+- grpc_server / grpc_client 都声明依赖 telemetry + logging，保证全局 TracerProvider 在建连或接受请求之前已注册。
+
+#### trace_id 响应头
+- 非标准 `trace_id` header 由 traceHeaderInjectorInterceptor 写入，便于非 OTel 客户端快速调试。
+- 正式链路依赖 W3C traceparent / baggage（由 StatsHandler 自动处理）。
+
+#### 上下文 (context) 策略
+- 组件内部操作（健康检查、延迟拨号）使用启动时捕获的 baseCtx，避免滥用 context.Background()。
+- 业务调用必须传入入口 ctx 以延续调用链；客户端延迟拨号时也在该 ctx 上派生 span（由 StatsHandler 处理）。
+
+#### 访问日志字段
+- 已输出: method, dur, grpc_status, trace_id, span_id。
+- 可扩展: peer_ip, req_size, resp_size, user_agent。
+
+---
+#### FAQ
+**如何验证 trace 关联?** 在客户端 request 日志与服务端访问日志中查看相同 trace_id；导出到后端后查看同一 trace 内是否含 client->server 两段 span。
+
+**StatsHandler 与拦截器能否同时使用?** 可以；当前未使用 OTel Unary 拦截器（版本缺失），StatsHandler 已足够。升级后若添加官方 Unary 拦截器，请移除重复的 StatsHandler（避免重复 span）。
+
+**traceHeaderInjectorInterceptor 可否删除?** 纯 OTel 客户端环境可删；删除后只保留标准 traceparent。
+
+---
+#### 后续可选改进（未在本次实现）
+1. Streaming (Server/Client) 拦截器 + 日志。
+2. 更丰富的 span attributes（消息大小、peer 信息）。
+3. 统一重试策略使用 ServiceConfig。
+4. 指标：请求数/错误数/直方图分桶自定义。
+
+---
+#### 升级注意
+- 升级 otelgrpc 后若出现 `UnaryServerInterceptor` / `UnaryClientInterceptor` 可用，可将 StatsHandler 替换为拦截器方式（避免重复）。
+- 确保 Telemetry 组件仍最先初始化。
+
+
 ### 8.5 gRPC Clients (`components/grpc_client`)
 根结构：
 | 字段 | 说明 |

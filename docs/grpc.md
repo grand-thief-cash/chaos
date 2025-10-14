@@ -1,6 +1,3 @@
-
-
-
 # gRPC 代码生成说明
 
 | 组件             | 作用                                   | 生成文件类型           | 依赖关系                         |
@@ -12,8 +9,9 @@
 
 示例2:  protoc --go_out=..\..\..\..\infra\go\common\grpc_gen\poc --go-grpc_out=..\..\..\..\infra\go\common\grpc_gen\poc protos\echo.proto
 
-``` protobuf
+```protobuf
 option go_package = "/;poc";
 ```
-Before the ';' means protoc will generate folders recursively under your specified "go_out" and "go-grpc_out"
-After the ';' it implys "import XXX" in the generated code.
+Before the ';' means protoc will generate folders recursively under your specified "go_out" and "go-grpc_out".
+After the ';' it implies `import XXX` in the generated code.
+

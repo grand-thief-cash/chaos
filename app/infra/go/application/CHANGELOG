@@ -1,7 +1,10 @@
 # VERSION
-v0.11.3
+v0.11.4
 
 # Changelog
+- v0.11.4
+    - Adjuested grpc server/client component to make compatible with otel & logging.
+    - Added README.md for grpc server/client component.
 - v0.11.3
     - Added InstallWindowsCtrlHandler for non-windows platform to avoid build error.
 - v0.11.2
