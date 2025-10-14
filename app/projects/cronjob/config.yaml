@@ -1,0 +1,15 @@
+server:
+  host: 0.0.0.0
+  port: 18800
+  graceful_timeout: 10s
+mysql:
+  dsn: "root:123456@tcp(127.0.0.1:13306)/cronjob?charset=utf8mb4&parseTime=True&loc=Local"
+scheduler:
+  poll_interval: 1s
+  ahead_seconds: 30
+  batch_limit: 200
+  enable_seconds_field: true
+executor:
+  worker_pool_size: 8
+  request_timeout: 15s
+
