@@ -26,6 +26,25 @@ grpc_clients:
       secure: false
       connect_on_start: true
 
+http_clients:
+  enabled: true
+  default: default
+  clients:
+    server:
+      base_url: "http://127.0.0.1:9999"  # local server for /ping
+      timeout: 2s
+      max_idle_conns: 50
+      max_idle_conns_per_host: 50
+      idle_conn_timeout: 30s
+      default_headers:
+        Accept: "text/plain, */*"
+      retry:
+        enabled: true
+        max_attempts: 2
+        initial_backoff: 100ms
+        max_backoff: 500ms
+        backoff_multiplier: 2
+
 telemetry:
   enabled: true
   service_name: demo-service

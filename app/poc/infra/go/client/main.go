@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_client"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -60,44 +61,57 @@ func main() {
 					fmt.Println("No trace-id returned")
 				}
 			}
-
-			time.Sleep(300 * time.Millisecond)
-			app.Shutdown(context.Background())
 		}()
 		return nil
 	}, 100)
 
+	// AfterStart hook: HTTP /ping via http_clients -> gRPC echo -> shutdown
+	_ = app.AddHook("invoke_http_echo", hooks.AfterStart, func(ctx context.Context) error {
+		go func() {
+			rootCtx, rootSpan := otel.Tracer("poc.client").Start(context.Background(), "DemoCalls")
+			defer rootSpan.End()
+
+			// 1. HTTP /ping using http_clients component (client: server)
+			func() {
+				httpCtx, span := otel.Tracer("poc.client").Start(rootCtx, "HTTPPingCall")
+				defer span.End()
+				comp, err := app.GetComponent("http_clients")
+				if err != nil {
+					log.Printf("get http_clients component failed: %v", err)
+					return
+				}
+				hcc := comp.(*http_client.HTTPClientsComponent)
+				cli, err := hcc.Client("server")
+				if err != nil {
+					log.Printf("get http client 'server' failed: %v", err)
+					return
+				}
+				var body string
+				resp, err := cli.Get(httpCtx, "/ping", nil, nil, &body)
+				if err != nil {
+					log.Printf("HTTP /ping call error: %v", err)
+					return
+				}
+				fmt.Printf("HTTP /ping status=%d body=%q traceparent=%s\n", resp.StatusCode, body, resp.Header.Get("traceparent"))
+			}()
+
+		}()
+		return nil
+	}, 100)
+
+	_ = app.AddHook("app_shutdown", hooks.AfterStart, func(ctx context.Context) error {
+		go func() {
+			time.Sleep(5000 * time.Millisecond)
+			app.Shutdown(context.Background())
+		}()
+		return nil
+	}, 101)
+
 	if err := app.Run(); err != nil {
 		log.Fatalf("client app exited with error: %v", err)
 	}
-}
 
-// testGRPCServer demonstrates a direct dial with OTel interceptors already applied in component code.
-func testGRPCServer() {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(), grpc.WithBlock())
-	if err != nil {
-		log.Fatalf("dial failed: %v", err)
-	}
-	defer conn.Close()
-
-	c := pb.NewEchoServiceClient(conn)
-
-	ctx, span := otel.Tracer("poc.client").Start(context.Background(), "EchoDirect")
-	defer span.End()
-
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-
-	var headerMD metadata.MD
-	resp, err := c.Say(ctx, &pb.EchoRequest{Message: "hello grpc"}, grpc.Header(&headerMD))
-	if err != nil {
-		log.Fatalf("rpc failed: %v", err)
-	}
-
-	fmt.Printf("响应: %s\n", resp.Message)
-	if vals := headerMD.Get("trace-id"); len(vals) > 0 {
-		fmt.Printf("服务器返回 trace-id: %s\n", vals[0])
-	} else {
-		fmt.Println("服务器未返回 trace-id")
+	if err := app.Run(); err != nil {
+		log.Fatalf("client app exited with error: %v", err)
 	}
 }
