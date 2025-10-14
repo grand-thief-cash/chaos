@@ -12,6 +12,10 @@ func init() {
 		if cfg.HTTPServer == nil || !cfg.HTTPServer.Enabled {
 			return false, nil, nil
 		}
+		// Inject service name from APPInfo if present
+		if cfg.APPInfo != nil && cfg.APPInfo.APPName != "" {
+			cfg.HTTPServer.ServiceName = cfg.APPInfo.APPName
+		}
 		factory := http_server.NewFactory(c)
 		comp, err := factory.Create(cfg.HTTPServer)
 		if err != nil {

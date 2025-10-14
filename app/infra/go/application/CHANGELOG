@@ -1,7 +1,12 @@
 # VERSION
-v0.11.5
+v0.11.6
 
 # Changelog
+- v0.11.6
+    - Remove ServiceName from HTTPServerConfig
+    - Use APPName as ServiceName
+    - Added traceparent in http server/client component
+    - Added http client demo in main.go and config.yaml
 - v0.11.5
     - Change name of logging out put file to "{appname}.log.20250101"
     - HTTP server/client componet removed "trace_id" and use w3c standard trace

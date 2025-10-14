@@ -13,6 +13,6 @@ type HTTPServerConfig struct {
 	// Built-in endpoints
 	EnableHealth bool `yaml:"enable_health" json:"enable_health"`
 	EnablePprof  bool `yaml:"enable_pprof" json:"enable_pprof"`
-	// AddTraceIDHeader controls whether to add a simple trace_id header in responses (for easier copy/paste in debugging tools)
-	AddTraceIDHeader bool `yaml:"add_trace_id_header" json:"add_trace_id_header"`
+	// ServiceName injected from APPInfo.APPName (not user configurable via YAML directly)
+	ServiceName string `yaml:"-" json:"-"`
 }
