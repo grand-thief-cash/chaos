@@ -146,14 +146,41 @@ func NewRouter(dep Dependencies) http.Handler {
 
 func createTask(w http.ResponseWriter, r *http.Request, dep Dependencies) {
 	var req struct {
-		Name, Description, CronExpr, ExecType, HTTPMethod, TargetURL string
-		TimeoutSeconds                                               int
+		Name           string `json:"name"`
+		Description    string `json:"description"`
+		CronExpr       string `json:"cron_expr"`
+		ExecType       string `json:"exec_type"`
+		HTTPMethod     string `json:"http_method"`
+		TargetURL      string `json:"target_url"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, "INVALID_JSON")
+		writeErr(w, 400, "Json Decode failed")
 		return
 	}
-	t := &model.Task{Name: strings.TrimSpace(req.Name), Description: req.Description, CronExpr: model.NormalizeCron(req.CronExpr), ExecType: model.ExecType(req.ExecType), HTTPMethod: strings.ToUpper(req.HTTPMethod), TargetURL: req.TargetURL, TimeoutSeconds: req.TimeoutSeconds, Status: "ENABLED", Timezone: "UTC", MaxConcurrency: 1, ConcurrencyPolicy: model.ConcurrencyQueue}
+	t := &model.Task{
+		Name:               strings.TrimSpace(req.Name),
+		Description:        req.Description,
+		CronExpr:           model.NormalizeCron(req.CronExpr),
+		Timezone:           "UTC",
+		ExecType:           model.ExecType(req.ExecType),
+		HTTPMethod:         strings.ToUpper(req.HTTPMethod),
+		TargetURL:          req.TargetURL,
+		HeadersJSON:        "{}",
+		BodyTemplate:       "",
+		TimeoutSeconds:     10,
+		RetryPolicyJSON:    "{}",
+		MaxConcurrency:     1,
+		ConcurrencyPolicy:  model.ConcurrencyQueue,
+		MisfirePolicy:      "FIRE_NOW",
+		CatchupLimit:       0,
+		CallbackMethod:     "POST",
+		CallbackTimeoutSec: 300,
+		Status:             "ENABLED",
+		Version:            1,
+		CreatedAt:          time.Now().UTC(),
+		UpdatedAt:          time.Now().UTC(),
+	}
 	if t.CronExpr == "" || t.Name == "" || t.TargetURL == "" {
 		writeErr(w, 400, "INVALID_ARGUMENT")
 		return

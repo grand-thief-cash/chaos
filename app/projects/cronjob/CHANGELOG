@@ -1,6 +1,10 @@
 # VERSION
-v0.1.0
+v0.1.1
 
 # Changelog
+- v0.1.1
+  - Fixed create cronjob api, added fields in TaskDao
+  - Added comments for Task & Run models, also updated in README.md
+  - Rename *respository to *Dao.
 - v0.1.0
   - Initial version of cronjob, it's running

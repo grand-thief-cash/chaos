@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/executor"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
-	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/repository"
 )
 
 type Config struct {
@@ -18,14 +18,14 @@ type Config struct {
 
 type Engine struct {
 	cfg     Config
-	tr      repository.TaskRepository
-	rr      repository.RunRepository
+	tr      dao.TaskDao
+	rr      dao.RunDao
 	exec    *executor.Executor
 	started bool
 	mu      sync.Mutex
 }
 
-func NewEngine(tr repository.TaskRepository, rr repository.RunRepository, exec *executor.Executor, cfg Config) *Engine {
+func NewEngine(tr dao.TaskDao, rr dao.RunDao, exec *executor.Executor, cfg Config) *Engine {
 	return &Engine{cfg: cfg, tr: tr, rr: rr, exec: exec}
 }
 

@@ -13,9 +13,9 @@ import (
 
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/api"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/executor"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/migrate"
-	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/repository"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/scheduler"
 )
 
@@ -34,13 +34,13 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	db, err := repository.OpenMySQL(cfg.MySQL.DSN)
+	db, err := dao.OpenMySQL(cfg.MySQL.DSN)
 	if err != nil {
 		log.Fatalf("open mysql: %v", err)
 	}
 	defer db.Close()
 
-	if err := repository.Ping(db, 5, time.Second*2); err != nil {
+	if err := dao.Ping(db, 5, time.Second*2); err != nil {
 		log.Fatalf("ping mysql: %v", err)
 	}
 
@@ -52,15 +52,15 @@ func main() {
 		log.Printf("migrations applied from %s", abs)
 	}
 
-	taskRepo := repository.NewTaskRepository(db)
-	runRepo := repository.NewRunRepository(db)
+	taskDao := dao.NewTaskDao(db)
+	runDao := dao.NewRunDao(db)
 
 	exec := executor.NewExecutor(executor.Config{
 		WorkerPoolSize: cfg.Executor.WorkerPoolSize,
 		RequestTimeout: cfg.Executor.RequestTimeout,
-	}, taskRepo, runRepo)
+	}, taskDao, runDao)
 
-	sch := scheduler.NewEngine(taskRepo, runRepo, exec,
+	sch := scheduler.NewEngine(taskDao, runDao, exec,
 		scheduler.Config{PollInterval: cfg.Scheduler.PollInterval})
 
 	// start background components
@@ -70,8 +70,8 @@ func main() {
 	go exec.Start(ctx)
 
 	router := api.NewRouter(api.Dependencies{
-		TaskRepo: taskRepo,
-		RunRepo:  runRepo,
+		TaskRepo: taskDao,
+		RunRepo:  runDao,
 		Exec:     exec,
 		Sched:    sch,
 		Version:  Version,
