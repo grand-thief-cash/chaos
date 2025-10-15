@@ -49,6 +49,7 @@ type Task struct {
 	Version            int               // 乐观锁版本（更新时 +1，用于并发修改控制）
 	CreatedAt          time.Time         // 创建时间
 	UpdatedAt          time.Time         // 最近更新时间
+	Deleted            int               // 软删除标志位：0 表示未删除，1 表示已删除
 }
 
 // NormalizeCron ���准化 Cron 表达式：如果是 5 字段则自动补前导秒 0
@@ -62,3 +63,5 @@ func NormalizeCron(expr string) string {
 	}
 	return expr // invalid left as is, will fail validation
 }
+
+func (Task) TableName() string { return "tasks" }

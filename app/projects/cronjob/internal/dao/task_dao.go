@@ -2,9 +2,11 @@ package dao
 
 import (
 	"context"
-	"database/sql"
+	"strings"
 
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TaskDao interface {
@@ -16,59 +18,86 @@ type TaskDao interface {
 	SoftDelete(ctx context.Context, id int64) error
 }
 
-type taskDaoImpl struct{ db *sql.DB }
+type taskDaoImpl struct{ db *gorm.DB }
 
-func NewTaskDao(db *sql.DB) TaskDao { return &taskDaoImpl{db: db} }
+func NewTaskDao(db *gorm.DB) TaskDao { return &taskDaoImpl{db: db} }
 
 func (r *taskDaoImpl) Create(ctx context.Context, t *model.Task) error {
-	res, err := r.db.ExecContext(ctx, `INSERT INTO tasks(name,description,cron_expr,timezone,exec_type,http_method,target_url,headers_json,body_template,timeout_seconds,retry_policy_json,max_concurrency,concurrency_policy,misfire_policy,catchup_limit,callback_method,callback_timeout_sec,status,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
-		t.Name, t.Description, t.CronExpr, t.Timezone, t.ExecType, t.HTTPMethod, t.TargetURL, t.HeadersJSON, t.BodyTemplate, t.TimeoutSeconds, t.RetryPolicyJSON, t.MaxConcurrency, t.ConcurrencyPolicy, t.MisfirePolicy, t.CatchupLimit, t.CallbackMethod, t.CallbackTimeoutSec, t.Status)
-	if err != nil {
-		return err
+	if t.Version == 0 {
+		t.Version = 1
 	}
-	id, _ := res.LastInsertId()
-	t.ID = id
-	return nil
+	if strings.TrimSpace(t.HeadersJSON) == "" {
+		t.HeadersJSON = "{}"
+	}
+	if strings.TrimSpace(t.RetryPolicyJSON) == "" {
+		t.RetryPolicyJSON = "{}"
+	}
+	return r.db.WithContext(ctx).Create(t).Error
 }
 
 func (r *taskDaoImpl) Get(ctx context.Context, id int64) (*model.Task, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT id,name,description,cron_expr,timezone,exec_type,http_method,target_url,IFNULL(headers_json,''),IFNULL(body_template,''),timeout_seconds,IFNULL(retry_policy_json,''),max_concurrency,concurrency_policy,misfire_policy,catchup_limit,callback_method,callback_timeout_sec,status,version,created_at,updated_at FROM tasks WHERE id=? AND deleted=0`, id)
-	t := &model.Task{}
-	if err := row.Scan(&t.ID, &t.Name, &t.Description, &t.CronExpr, &t.Timezone, &t.ExecType, &t.HTTPMethod, &t.TargetURL, &t.HeadersJSON, &t.BodyTemplate, &t.TimeoutSeconds, &t.RetryPolicyJSON, &t.MaxConcurrency, &t.ConcurrencyPolicy, &t.MisfirePolicy, &t.CatchupLimit, &t.CallbackMethod, &t.CallbackTimeoutSec, &t.Status, &t.Version, &t.CreatedAt, &t.UpdatedAt); err != nil {
+	var t model.Task
+	if err := r.db.WithContext(ctx).Where("id=? AND deleted=0", id).First(&t).Error; err != nil {
 		return nil, err
 	}
-	return t, nil
+	return &t, nil
 }
 
 func (r *taskDaoImpl) ListEnabled(ctx context.Context) ([]*model.Task, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,name,description,cron_expr,timezone,exec_type,http_method,target_url,IFNULL(headers_json,''),IFNULL(body_template,''),timeout_seconds,IFNULL(retry_policy_json,''),max_concurrency,concurrency_policy,misfire_policy,catchup_limit,callback_method,callback_timeout_sec,status,version,created_at,updated_at FROM tasks WHERE status='ENABLED' AND deleted=0`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var list []*model.Task
-	for rows.Next() {
-		t := &model.Task{}
-		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.CronExpr, &t.Timezone, &t.ExecType, &t.HTTPMethod, &t.TargetURL, &t.HeadersJSON, &t.BodyTemplate, &t.TimeoutSeconds, &t.RetryPolicyJSON, &t.MaxConcurrency, &t.ConcurrencyPolicy, &t.MisfirePolicy, &t.CatchupLimit, &t.CallbackMethod, &t.CallbackTimeoutSec, &t.Status, &t.Version, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, err
-		}
-		list = append(list, t)
+	if err := r.db.WithContext(ctx).Where("status=? AND deleted=0", "ENABLED").Find(&list).Error; err != nil {
+		return nil, err
 	}
 	return list, nil
 }
 
 func (r *taskDaoImpl) UpdateCronAndMeta(ctx context.Context, t *model.Task) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE tasks SET description=?,cron_expr=?,timezone=?,exec_type=?,http_method=?,target_url=?,headers_json=?,body_template=?,timeout_seconds=?,retry_policy_json=?,max_concurrency=?,concurrency_policy=?,misfire_policy=?,catchup_limit=?,callback_method=?,callback_timeout_sec=?,version=version+1 WHERE id=? AND deleted=0`,
-		t.Description, t.CronExpr, t.Timezone, t.ExecType, t.HTTPMethod, t.TargetURL, t.HeadersJSON, t.BodyTemplate, t.TimeoutSeconds, t.RetryPolicyJSON, t.MaxConcurrency, t.ConcurrencyPolicy, t.MisfirePolicy, t.CatchupLimit, t.CallbackMethod, t.CallbackTimeoutSec, t.ID)
-	return err
+	if strings.TrimSpace(t.HeadersJSON) == "" {
+		t.HeadersJSON = "{}"
+	}
+	if strings.TrimSpace(t.RetryPolicyJSON) == "" {
+		t.RetryPolicyJSON = "{}"
+	}
+	updates := map[string]interface{}{
+		"description":          t.Description,
+		"cron_expr":            t.CronExpr,
+		"timezone":             t.Timezone,
+		"exec_type":            t.ExecType,
+		"http_method":          t.HTTPMethod,
+		"target_url":           t.TargetURL,
+		"headers_json":         t.HeadersJSON,
+		"body_template":        t.BodyTemplate,
+		"timeout_seconds":      t.TimeoutSeconds,
+		"retry_policy_json":    t.RetryPolicyJSON,
+		"max_concurrency":      t.MaxConcurrency,
+		"concurrency_policy":   t.ConcurrencyPolicy,
+		"misfire_policy":       t.MisfirePolicy,
+		"catchup_limit":        t.CatchupLimit,
+		"callback_method":      t.CallbackMethod,
+		"callback_timeout_sec": t.CallbackTimeoutSec,
+		"version":              gorm.Expr("version + 1"),
+	}
+	// optimistic lock with version
+	res := r.db.WithContext(ctx).Model(&model.Task{}).
+		Where("id=? AND version=? AND deleted=0", t.ID, t.Version).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	// bump local struct version to reflect DB state
+	t.Version++
+	return nil
 }
 
 func (r *taskDaoImpl) UpdateStatus(ctx context.Context, id int64, status string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE tasks SET status=?,version=version+1 WHERE id=? AND deleted=0`, status, id)
-	return err
+	res := r.db.WithContext(ctx).Model(&model.Task{}).Where("id=? AND deleted=0", id).Updates(map[string]any{"status": status, "version": gorm.Expr("version+1")})
+	return res.Error
 }
 
 func (r *taskDaoImpl) SoftDelete(ctx context.Context, id int64) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE tasks SET deleted=1 WHERE id=?`, id)
-	return err
+	return r.db.WithContext(ctx).Model(&model.Task{}).Where("id=?", id).Update("deleted", 1).Error
 }

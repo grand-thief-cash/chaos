@@ -34,26 +34,30 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	db, err := dao.OpenMySQL(cfg.MySQL.DSN)
+	gdb, err := dao.OpenMySQL(cfg.MySQL.DSN)
 	if err != nil {
 		log.Fatalf("open mysql: %v", err)
 	}
-	defer db.Close()
+	sqlDB, err := gdb.DB()
+	if err != nil {
+		log.Fatalf("unwrap sql db: %v", err)
+	}
+	defer sqlDB.Close()
 
-	if err := dao.Ping(db, 5, time.Second*2); err != nil {
+	if err := dao.Ping(gdb, 5, time.Second*2); err != nil {
 		log.Fatalf("ping mysql: %v", err)
 	}
 
 	if *migrateFlag {
 		abs, _ := filepath.Abs(*migrationsDir)
-		if err := migrate.Run(context.Background(), db, abs); err != nil {
+		if err := migrate.Run(context.Background(), sqlDB, abs); err != nil {
 			log.Fatalf("migrations failed: %v", err)
 		}
 		log.Printf("migrations applied from %s", abs)
 	}
 
-	taskDao := dao.NewTaskDao(db)
-	runDao := dao.NewRunDao(db)
+	taskDao := dao.NewTaskDao(gdb)
+	runDao := dao.NewRunDao(gdb)
 
 	exec := executor.NewExecutor(executor.Config{
 		WorkerPoolSize: cfg.Executor.WorkerPoolSize,
