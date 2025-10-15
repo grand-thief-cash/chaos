@@ -1,7 +1,10 @@
 # VERSION
-v0.2.0
+v0.2.1
 
 # Changelog
+- v0.2.1
+  - Renamed rr to runDao; renamed tr to taskDao
+  - Added comments for cancelMap in Executor
 - v0.2.0
   - Changed cronjob DAO to GROM driver.
 - v0.1.1
