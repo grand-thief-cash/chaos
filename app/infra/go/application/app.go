@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -14,10 +15,23 @@ import (
 	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
 )
+
+var (
+	app  *App
+	once sync.Once
+)
+
+func GetApp() *App {
+	once.Do(func() {
+		app = newApp() // still uses flags; can refactor if needed
+	})
+	return app
+}
 
 type App struct {
 	container        *core.Container
@@ -38,16 +52,20 @@ type App struct {
 	cancelFn context.CancelFunc
 }
 
-func NewApp(env string, configPath string) *App {
-	abs := configPath
-	if p, err := filepath.Abs(configPath); err == nil {
-		abs = p
+func newApp() *App {
+	cfgPath := flag.String("config", "config.yaml", "config file path")
+	env := flag.String("env", consts.ENV_DEVELOPMENT, "environment")
+	flag.Parse()
+
+	//abs := configPath
+	if p, err := filepath.Abs(*cfgPath); err == nil {
+		cfgPath = &p
 	}
 	container := core.NewContainer()
 	// Use global hook manager so default hooks (registered in hooks/default.go) are effective.
 	lm := core.NewLifecycleManagerWithManager(container, hooks.GetGlobalHookManager())
 	return &App{
-		configManager:    config.NewConfigManager(env, abs),
+		configManager:    config.NewConfigManager(*env, *cfgPath),
 		container:        container,
 		lifecycleManager: lm,
 		shutdownTimeout:  30 * time.Second,
@@ -236,4 +254,8 @@ func (app *App) Shutdown(ctx context.Context) {
 		app.cancelFn()
 	}
 	// 不在这里直接调用 StopAll，避免竞态；若需要在未 Run 的测试里调用，可扩展一个 ForceStop()。
+}
+
+func (app *App) SetBizConfig(b any) {
+	app.configManager.SetBizConfig(b)
 }

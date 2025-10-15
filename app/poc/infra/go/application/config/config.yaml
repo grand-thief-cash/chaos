@@ -127,3 +127,8 @@ telemetry:
   #   endpoint: 127.0.0.1:4317
   #   insecure: true
   #   timeout: 5s
+
+biz_config:
+  test_config:
+    name: test
+    age: 18
