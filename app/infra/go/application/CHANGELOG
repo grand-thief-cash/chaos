@@ -1,7 +1,10 @@
 # VERSION
-v0.11.7
+v0.12.0
 
 # Changelog
+- v0.12.0
+    - Changed OS vars to flag arguments.
+    - Added biz config support in config manager and app, also provide new Exportable func to users.
 - v0.11.7
     - Added stop log for open telemetry component.
     - Temporarily removed runEnhanced() in app.go.

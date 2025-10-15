@@ -4,26 +4,25 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_client"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/grpc_client"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_client"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
 	pb "github.com/grand-thief-cash/chaos/app/infra/go/common/grpc_gen/poc"
 )
 
 func main() {
-	if len(os.Args) < 3 {
-		log.Fatalf("usage: client <env> <config_path>")
-	}
+	//if len(os.Args) < 3 {
+	//	log.Fatalf("usage: client <env> <config_path>")
+	//}
 
-	app := application.NewApp(os.Args[1], os.Args[2])
+	app := application.GetApp()
 
 	_ = app.AddHook("invoke_grpc_echo", hooks.AfterStart, func(ctx context.Context) error {
 		go func() {

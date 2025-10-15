@@ -17,6 +17,7 @@ import (
 // AppConfig 应用程序配置结构
 type AppConfig struct {
 	APPInfo     *APPInfo                       `yaml:"app_info" json:"app_info"`
+	BizConfig   any                            `yaml:"biz_config" json:"biz_config"`
 	Logging     *logging.LoggingConfig         `yaml:"logging" json:"logging"`
 	GRPCClients *grpc_client.GRPCClientsConfig `yaml:"grpc_clients" json:"grpc_clients"`
 	GRPCServer  *grpc_server.Config            `yaml:"grpc_server" json:"grpc_server"`
