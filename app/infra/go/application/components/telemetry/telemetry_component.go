@@ -255,6 +255,7 @@ func (tc *TelemetryComponent) Stop(ctx context.Context) error {
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
+	logging.Info(ctx, "telemetry stopped gracefully")
 	return nil
 }
 

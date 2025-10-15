@@ -1,7 +1,10 @@
 # VERSION
-v0.11.6
+v0.11.7
 
 # Changelog
+- v0.11.7
+    - Added stop log for open telemetry component.
+    - Temporarily removed runEnhanced() in app.go.
 - v0.11.6
     - Remove ServiceName from HTTPServerConfig
     - Use APPName as ServiceName

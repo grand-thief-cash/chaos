@@ -111,9 +111,9 @@ func (app *App) AddHook(name string, phase hooks.Phase, fn hooks.HookFunc, prior
 //	GOINFRA_DISABLE_FORCE_EXIT=1   禁用超时/第二信号强制退出
 //	GOINFRA_FORCE_EXIT_CODE=<int>  自定义强制退出码（默认 1）
 func (app *App) Run() error {
-	if app.shouldUseEnhanced() {
-		return app.runEnhanced()
-	}
+	//if app.shouldUseEnhanced() {
+	//	return app.runEnhanced()
+	//}
 	return app.runBasic()
 }
 
