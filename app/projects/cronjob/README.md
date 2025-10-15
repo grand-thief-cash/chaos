@@ -960,3 +960,39 @@ curl -X DELETE http://localhost:8080/api/v1/tasks/1
 
 ---
 如需添加新的测试辅助端点或更详细输出（例如扩展运行过滤 / 统计指标），请提出需求。
+
+---
+## 数据模型
+
+#### TaskRun 结构体字段说明
+- `ID`：主键 ID，唯一标识一次运行实例。
+- `TaskID`：关联的 Task ID，指向所属的定时任务。
+- `ScheduledTime`：计划执行时间（UTC），由调度器分配。
+- `StartTime`：实际开始时间，任务开始时记录。
+- `EndTime`：实际结束时间，任务完成时记录。
+- `Status`：运行状态，见 RunStatus 枚举。
+- `Attempt`：当前尝试次数（含重试）。
+- `RequestHeaders`：发送 HTTP 请求时的请求头（JSON 字符串）。
+- `RequestBody`：发送 HTTP 请求时的请求体内容。
+- `ResponseCode`：HTTP 响应码（如有）。
+- `ResponseBody`：HTTP 响应体内容（如有）。
+- `ErrorMessage`：错误信息（如有）。
+- `NextRetryTime`：下次重试时间（如有重试计划）。
+- `CallbackToken`：回调 token，用于异步任务回调识别。
+- `CallbackDeadline`：回调超时时间（异步任务专用）。
+- `TraceID`：链路追踪 ID（如有）。
+- `CreatedAt`：创建时间。
+- `UpdatedAt`：最近更新时间。
+
+#### RunStatus 枚举类型
+- `SCHEDULED`：已调度，等待执行。
+- `RUNNING`：正在执行。
+- `SUCCESS`：执行成功。
+- `FAILED`：执行失败。
+- `TIMEOUT`：执行超时。
+- `RETRYING`：正在重试。
+- `CALLBACK_PENDING`：等待异步回调。
+- `CALLBACK_SUCCESS`：异步回调成功。
+- `FAILED_TIMEOUT`：回调超时失败。
+- `CANCELED`：被取消。
+- `SKIPPED`：被跳过。

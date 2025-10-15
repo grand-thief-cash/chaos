@@ -3,14 +3,16 @@ package executor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
-	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/repository"
 )
 
 type Config struct {
@@ -20,8 +22,8 @@ type Config struct {
 
 type Executor struct {
 	cfg           Config
-	tr            repository.TaskRepository
-	rr            repository.RunRepository
+	tr            dao.TaskDao
+	rr            dao.RunDao
 	ch            chan *model.TaskRun
 	wg            sync.WaitGroup
 	mu            sync.Mutex
@@ -29,7 +31,7 @@ type Executor struct {
 	activePerTask map[int64]int // taskID -> running count
 }
 
-func NewExecutor(cfg Config, tr repository.TaskRepository, rr repository.RunRepository) *Executor {
+func NewExecutor(cfg Config, tr dao.TaskDao, rr dao.RunDao) *Executor {
 	return &Executor{cfg: cfg, tr: tr, rr: rr, ch: make(chan *model.TaskRun, 1024), cancelMap: make(map[int64]context.CancelFunc), activePerTask: make(map[int64]int)}
 }
 
@@ -96,7 +98,10 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	if task.BodyTemplate != "" {
 		body = bytes.NewBufferString(task.BodyTemplate)
 	}
+	tB, _ := json.Marshal(task)
+	fmt.Println(fmt.Sprintf("task: %s", string(tB)))
 	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, task.TargetURL, body)
+	fmt.Println(fmt.Sprintf("targetURL: %s, HTTPMethod: %s", task.TargetURL, task.HTTPMethod))
 	if err != nil {
 		_ = e.rr.MarkFailed(ctx, run.ID, "build request failed")
 		return
@@ -104,6 +109,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	client := &http.Client{Timeout: time.Duration(task.TimeoutSeconds) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		fmt.Printf("HTTP request error: %v\n", err)
 		select {
 		case <-ctx2.Done():
 			_ = e.rr.MarkFailed(ctx, run.ID, "canceled or timeout")
@@ -112,9 +118,11 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 		}
 		return
 	}
+	fmt.Printf("Response: %+v\n", resp)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		fmt.Println(resp.StatusCode, string(b))
 		_ = e.rr.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
 	} else {
 		_ = e.rr.MarkFailed(ctx, run.ID, resp.Status)
