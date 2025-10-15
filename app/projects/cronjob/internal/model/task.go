@@ -20,9 +20,9 @@ const (
 type ConcurrencyPolicy string
 
 const (
-	ConcurrencyQueue    ConcurrencyPolicy = "QUEUE"
-	ConcurrencySkip     ConcurrencyPolicy = "SKIP"
-	ConcurrencyParallel ConcurrencyPolicy = "PARALLEL"
+	ConcurrencyQueue    ConcurrencyPolicy = "QUEUE"    // 达到并发上限时排队等待执行
+	ConcurrencySkip     ConcurrencyPolicy = "SKIP"     // 达到并发上限时直接跳过该任务
+	ConcurrencyParallel ConcurrencyPolicy = "PARALLEL" //不限制并发，任务可直接并行执行
 )
 
 // Task 描述一个可调度的定时任务配置，字段已按当前 Phase1 / 规划中的未来能力预留。

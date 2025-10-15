@@ -21,18 +21,28 @@ type Config struct {
 }
 
 type Executor struct {
-	cfg           Config
-	tr            dao.TaskDao
-	rr            dao.RunDao
-	ch            chan *model.TaskRun
-	wg            sync.WaitGroup
-	mu            sync.Mutex
-	cancelMap     map[int64]context.CancelFunc
-	activePerTask map[int64]int // taskID -> running count
+	cfg     Config
+	taskDao dao.TaskDao
+	runDao  dao.RunDao
+	ch      chan *model.TaskRun
+	wg      sync.WaitGroup
+	mu      sync.Mutex
+	// 在 execute 方法中，为每个任务运行创建一个带超时的 context，并将对应的 cancel 函数存入 cancelMap，key 是 run 的 ID。
+	// 当需要取消某个任务运行时（如调用 CancelRun(id int64)），可以通过 cancelMap 查找并调用对应的 CancelFunc，从而取消该任务的执行。
+	// 在任务执行结束后，会从 cancelMap 删除对应的 CancelFunc，避免内存泄漏。
+	cancelMap     map[int64]context.CancelFunc // 用于管理每个任务运行（run）的取消函数。
+	activePerTask map[int64]int                // taskID -> running count
 }
 
-func NewExecutor(cfg Config, tr dao.TaskDao, rr dao.RunDao) *Executor {
-	return &Executor{cfg: cfg, tr: tr, rr: rr, ch: make(chan *model.TaskRun, 1024), cancelMap: make(map[int64]context.CancelFunc), activePerTask: make(map[int64]int)}
+func NewExecutor(cfg Config, taskDao dao.TaskDao, runDao dao.RunDao) *Executor {
+	return &Executor{
+		cfg:           cfg,
+		taskDao:       taskDao,
+		runDao:        runDao,
+		ch:            make(chan *model.TaskRun, 1024),
+		cancelMap:     make(map[int64]context.CancelFunc),
+		activePerTask: make(map[int64]int),
+	}
 }
 
 func (e *Executor) Start(ctx context.Context) {
@@ -60,7 +70,7 @@ func (e *Executor) worker(ctx context.Context) {
 			if run == nil {
 				continue
 			}
-			ok, err := e.rr.TransitionToRunning(ctx, run.ID)
+			ok, err := e.runDao.TransitionToRunning(ctx, run.ID)
 			if err != nil || !ok {
 				continue
 			}
@@ -71,10 +81,10 @@ func (e *Executor) worker(ctx context.Context) {
 
 func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	// load task
-	task, err := e.tr.Get(ctx, run.TaskID)
+	task, err := e.taskDao.Get(ctx, run.TaskID)
 	if err != nil {
 		log.Printf("load task %d: %v", run.TaskID, err)
-		_ = e.rr.MarkFailed(ctx, run.ID, "load task failed")
+		_ = e.runDao.MarkFailed(ctx, run.ID, "load task failed")
 		return
 	}
 
@@ -103,7 +113,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, task.TargetURL, body)
 	fmt.Println(fmt.Sprintf("targetURL: %s, HTTPMethod: %s", task.TargetURL, task.HTTPMethod))
 	if err != nil {
-		_ = e.rr.MarkFailed(ctx, run.ID, "build request failed")
+		_ = e.runDao.MarkFailed(ctx, run.ID, "build request failed")
 		return
 	}
 	client := &http.Client{Timeout: time.Duration(task.TimeoutSeconds) * time.Second}
@@ -112,9 +122,9 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 		fmt.Printf("HTTP request error: %v\n", err)
 		select {
 		case <-ctx2.Done():
-			_ = e.rr.MarkFailed(ctx, run.ID, "canceled or timeout")
+			_ = e.runDao.MarkFailed(ctx, run.ID, "canceled or timeout")
 		default:
-			_ = e.rr.MarkFailed(ctx, run.ID, err.Error())
+			_ = e.runDao.MarkFailed(ctx, run.ID, err.Error())
 		}
 		return
 	}
@@ -123,9 +133,9 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		fmt.Println(resp.StatusCode, string(b))
-		_ = e.rr.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
+		_ = e.runDao.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
 	} else {
-		_ = e.rr.MarkFailed(ctx, run.ID, resp.Status)
+		_ = e.runDao.MarkFailed(ctx, run.ID, resp.Status)
 	}
 }
 

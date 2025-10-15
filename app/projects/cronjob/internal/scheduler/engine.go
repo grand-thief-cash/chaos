@@ -18,15 +18,15 @@ type Config struct {
 
 type Engine struct {
 	cfg     Config
-	tr      dao.TaskDao
-	rr      dao.RunDao
+	taskDao dao.TaskDao
+	runDao  dao.RunDao
 	exec    *executor.Executor
 	started bool
 	mu      sync.Mutex
 }
 
 func NewEngine(tr dao.TaskDao, rr dao.RunDao, exec *executor.Executor, cfg Config) *Engine {
-	return &Engine{cfg: cfg, tr: tr, rr: rr, exec: exec}
+	return &Engine{cfg: cfg, taskDao: tr, runDao: rr, exec: exec}
 }
 
 func (e *Engine) Start(ctx context.Context) {
@@ -53,7 +53,7 @@ func (e *Engine) Start(ctx context.Context) {
 }
 
 func (e *Engine) scan(ctx context.Context, now time.Time) error {
-	tasks, err := e.tr.ListEnabled(ctx)
+	tasks, err := e.taskDao.ListEnabled(ctx)
 	if err != nil {
 		return err
 	}
@@ -66,14 +66,17 @@ func (e *Engine) scan(ctx context.Context, now time.Time) error {
 		if t.MaxConcurrency > 0 && t.ConcurrencyPolicy == model.ConcurrencySkip && e.exec.ActiveCount(t.ID) >= t.MaxConcurrency {
 			// record skipped run for observability
 			run := &model.TaskRun{TaskID: t.ID, ScheduledTime: sec, Status: model.RunStatusScheduled, Attempt: 1}
-			if err := e.rr.CreateScheduled(ctx, run); err == nil {
-				_ = e.rr.MarkSkipped(ctx, run.ID)
+			if err := e.runDao.CreateScheduled(ctx, run); err == nil {
+				//MarkSkipped 的作用是将某个任务运行（run）的状态标记为“已跳过”。
+				//当任务因并发策略被跳过时，先创建一个调度记录（CreateScheduled），
+				//然后通过 MarkSkipped 更新该记录的状态，方便后续统计、监控和排查任务为何未执行。这样可以提升系统的可观测性和可维护性
+				_ = e.runDao.MarkSkipped(ctx, run.ID)
 			}
 			continue
 		}
 		// create run
 		run := &model.TaskRun{TaskID: t.ID, ScheduledTime: sec, Status: model.RunStatusScheduled, Attempt: 1}
-		if err := e.rr.CreateScheduled(ctx, run); err != nil {
+		if err := e.runDao.CreateScheduled(ctx, run); err != nil {
 			continue
 		}
 		// enqueue; queue policy currently immediate (Phase2: true queue)
