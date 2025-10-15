@@ -41,3 +41,5 @@ const (
 	RunStatusCanceled        RunStatus = "CANCELED"         // 被取消
 	RunStatusSkipped         RunStatus = "SKIPPED"          // 被跳过
 )
+
+func (TaskRun) TableName() string { return "task_runs" }
