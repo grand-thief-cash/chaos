@@ -500,6 +500,219 @@ func (f *FakeStore) Stop(ctx context.Context) error  { f.SetActive(false); retur
 7. 启动；若其它组件 Dependencies 包含 "foo" 但 YAML 未启用，将提前失败。
 
 ---
+## 13.1 用户自定义业务组件 (示例: taskDao / taskService)
+很多业务方需要在基础设施组件 (logging, mysql_gorm, redis 等) 之上再封装自己的 DAO / Service 组件，并希望：
+- 声明依赖后自动按顺序构建、启动、停止
+- 复用统一生命周期与优雅停机
+- 使用统一、标准、可测试的组件定义方式（结构体 + builder）
+
+本框架已引入两项能力：
+1. registry.RegisterWithDeps(name, deps, fn)  —  Builder 级别的“构建顺序”依赖
+2. App.RegisterCustomBuilder / App.ProvideComponent —  业务在启动前动态扩展组件
+
+注意：
+- Builder 的 deps 只影响“构建顺序”，运行期 Start/Stop 顺序仍由 Component.Dependencies() 决定；两者都需要正确声明。
+- 这样可以在 Builder 中安全地 Resolve 依赖组件（因为其 Builder 已执行并注册进 Container）。
+
+### A. 通过 Builder 定义 taskDao 组件
+```go
+// components/taskdao/task_dao.go
+package taskdao
+
+import (
+    "context"
+    "fmt"
+    "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+    "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+    mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+    "gorm.io/gorm"
+)
+
+type TaskDAO struct {
+    *core.BaseComponent
+    gormComp *mg.GormComponent // 注入的 mysql_gorm 组件实例（尚未启动时也可以拿到指针）
+    db       *gorm.DB          // 启动后绑定的具体数据源句柄
+    dsName   string            // 数据源名称（示例用 "main"）
+}
+
+// New 仅做结构体初始化，不访问外部资源
+func New(gormComp *mg.GormComponent, dsName string) *TaskDAO {
+    return &TaskDAO{
+        BaseComponent: core.NewBaseComponent("task_dao", consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING),
+        gormComp:      gormComp,
+        dsName:        dsName,
+    }
+}
+
+func (d *TaskDAO) Start(ctx context.Context) error {
+    // 标记 active（也可以先做依赖检查，再 SetActive）
+    if err := d.BaseComponent.Start(ctx); err != nil { return err }
+    // 到这里 mysql_gorm 已经被框架保证先启动（因为 Dependencies 中声明）
+    db, err := d.gormComp.GetDB(d.dsName)
+    if err != nil { return fmt.Errorf("get gorm db %s failed: %w", d.dsName, err) }
+    d.db = db
+    return nil
+}
+
+func (d *TaskDAO) Stop(ctx context.Context) error { return d.BaseComponent.Stop(ctx) }
+
+// 示例 DAO 方法
+func (d *TaskDAO) FindTask(ctx context.Context, id int64) (*Task, error) {
+    var t Task
+    if err := d.db.WithContext(ctx).First(&t, id).Error; err != nil { return nil, err }
+    return &t, nil
+}
+
+type Task struct { ID int64 `gorm:"primaryKey"` Name string }
+```
+
+```go
+// registry/taskdao.go  (业务侧放在任意被编译到的包内)
+package registry_ext
+
+import (
+    "fmt"
+    "github.com/grand-thief-cash/chaos/app/infra/go/application/config"
+    "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+    mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+    "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+    "github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
+    "github.com/your/module/components/taskdao"
+)
+
+func init() {
+    // RegisterWithDeps 确保构建顺序：mysql_gorm/logging 先被构建并注册
+    registry.RegisterWithDeps("task_dao", []string{consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+        // 1. 可选启用判断（这里简单直接启用）
+        // 2. 构建期 Resolve：拿到尚未启动但已构造的 mysql_gorm 组件实例
+        comp, err := c.Resolve(consts.COMPONENT_MYSQL_GORM)
+        if err != nil { return true, nil, fmt.Errorf("resolve mysql_gorm failed: %w", err) }
+        gormComp, ok := comp.(*mg.GormComponent)
+        if !ok { return true, nil, fmt.Errorf("mysql_gorm type assertion failed") }
+        // 3. 仅注入引用，不获取具体 *gorm.DB（必须留到 Start 之后）
+        dao := taskdao.New(gormComp, "main")
+        return true, dao, nil
+    })
+}
+```
+
+> 关键点：
+> - RegisterWithDeps 保证 mysql_gorm builder 先执行，因此 Resolve 一定成功。
+> - Start 顺序再由 TaskDAO.Dependencies() 决定（运行期拓扑），mysql_gorm 会先启动，
+>   所以在 TaskDAO.Start 中调用 gormComp.GetDB() 才能得到已初始化的 *gorm.DB。
+> - 构建期不要访问对方启动后才会准备的资源（如连接池），否则会得到空/未初始化状态。
+
+## 13.2 使用 App.RegisterCustomBuilder 动态注册组件
+当你不想写 `init()`（例如：根据启动参数 / 环境变量 / 运行时逻辑决定是否注册）时，可以在调用 `app.Run()` 之前显式注册自定义组件 builder。
+
+特点：
+- 仍然走标准 builder 流程（可声明构建期依赖、可在 builder 内 Resolve）。
+- 代码集中在 main（或组装层），便于条件控制与调试。
+- 与 `init()` 自注册方式互斥或并存（同名二次注册会 panic）。
+
+示例：动态注册一个简单的 `reporter` 组件，它依赖 `logging`。
+```go
+// main.go
+package main
+
+import (
+  "context"
+  "os"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/config"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+)
+
+type Reporter struct { *core.BaseComponent }
+func NewReporter() *Reporter { return &Reporter{core.NewBaseComponent("reporter", consts.COMPONENT_LOGGING)} }
+func (r *Reporter) Start(ctx context.Context) error { return r.BaseComponent.Start(ctx) }
+func (r *Reporter) Stop(ctx context.Context) error  { return r.BaseComponent.Stop(ctx) }
+
+func main(){
+  app := application.GetApp()
+  if os.Getenv("ENABLE_REPORTER") == "1" { // 条件启用
+    app.RegisterCustomBuilder("reporter", []string{consts.COMPONENT_LOGGING}, func(cfg *config.AppConfig, c *core.Container)(bool, core.Component, error){
+      // 可选：_ , _ = c.Resolve(consts.COMPONENT_LOGGING) 做构建期 wiring
+      return true, NewReporter(), nil
+    })
+  }
+  if err := app.Run(); err != nil { panic(err) }
+}
+```
+行为说明：
+- 如果未设置 ENABLE_REPORTER=1，组件不注册；任何声明依赖 reporter 的组件会在启动前依赖校验直接失败。
+- 测试中可直接调用 RegisterCustomBuilder 注入 mock 实现。
+
+## 13.3 使用 ProvideComponent 直接提供实例
+`ProvideComponent` 适合“已存在实例”或“非常简单无需构建期依赖注入”的场景。
+
+限制与注意：
+
+| 项目 | 说明 |
+|-----|------|
+| 不支持构建期 Resolve | 没有 builder 回调，无法在提供时通过容器 Resolve 其它组件实例。 |
+| 仍需声明运行期依赖  | 结构体内嵌 `BaseComponent` 时把硬依赖名称放进去，保障启动顺序。 |
+| 必须在 boot 前调用 | `app.Run()` / `RunWithContext()` 触发 boot 后再调用会失败。 |
+| 无 enabled 语义 | 是否注册完全由你代码逻辑决定。 |
+| 不适合复杂初始化 | 需要依赖其它组件资源/引用的建议使用 builder。 |
+
+
+示例：内存缓存组件（依赖 logging）。
+```go
+// cache/cache.go
+package cache
+
+import (
+  "context"
+  "sync"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+)
+
+type MemoryCache struct {
+  *core.BaseComponent
+  mu   sync.RWMutex
+  data map[string]string
+}
+
+func NewMemoryCache() *MemoryCache {
+  return &MemoryCache{BaseComponent: core.NewBaseComponent("memory_cache", consts.COMPONENT_LOGGING), data: make(map[string]string)}
+}
+func (m *MemoryCache) Start(ctx context.Context) error { return m.BaseComponent.Start(ctx) }
+func (m *MemoryCache) Stop(ctx context.Context) error  { return m.BaseComponent.Stop(ctx) }
+func (m *MemoryCache) Get(k string) (string, bool) { m.mu.RLock(); v, ok := m.data[k]; m.mu.RUnlock(); return v, ok }
+func (m *MemoryCache) Set(k, v string) { m.mu.Lock(); m.data[k]=v; m.mu.Unlock() }
+```
+
+注册与访问：
+```go
+// main.go
+package main
+import (
+  "github.com/grand-thief-cash/chaos/app/infra/go/application"
+  "github.com/your/module/cache"
+)
+func main(){
+  app := application.GetApp()
+  if err := app.ProvideComponent(cache.NewMemoryCache()); err != nil { panic(err) }
+  if err := app.Run(); err != nil { panic(err) }
+}
+```
+使用：
+```go
+comp, _ := app.GetComponent("memory_cache")
+mc := comp.(*cache.MemoryCache)
+mc.Set("k","v")
+```
+何时不要用：
+- 需要构建期注入其它组件引用（改用 RegisterCustomBuilder）。
+- 需要 enabled=false 条件配置化跳过。
+- 未来会演进成复杂生命周期。
+
+迁移策略：默认优先“struct + builder”；仅在组件完全无构建期依赖且逻辑极简单时考虑 ProvideComponent，否则容易形成隐式耦合。
+
+---
 ## 14. 常见错误与排查 (Troubleshooting)
 | 症状 | 可能原因 | 排查步骤 |
 |------|----------|----------|
