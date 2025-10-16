@@ -2,10 +2,15 @@ package dao
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
-	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"gorm.io/gorm"
+
+	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
 type RunDao interface {
@@ -19,9 +24,34 @@ type RunDao interface {
 	ListByTask(ctx context.Context, taskID int64, limit int) ([]*model.TaskRun, error)
 }
 
-type runDaoImpl struct{ db *gorm.DB }
+type runDaoImpl struct {
+	db *gorm.DB
+	*core.BaseComponent
+	gormComp *mg.GormComponent
+	dsName   string // 数据源名称（示例用 "main"）
+}
 
-func NewRunDao(db *gorm.DB) RunDao { return &runDaoImpl{db: db} }
+func NewRunDao(gormComp *mg.GormComponent, dsName string) RunDao {
+	return &runDaoImpl{
+		BaseComponent: core.NewBaseComponent("run_dao", consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING),
+		gormComp:      gormComp,
+		dsName:        dsName,
+	}
+}
+
+func (d *runDaoImpl) Start(ctx context.Context) error {
+	// 标记 active（也可以先做依赖检查，再 SetActive）
+	if err := d.BaseComponent.Start(ctx); err != nil {
+		return err
+	}
+	// 到这里 mysql_gorm 已经被框架保证先启动（因为 Dependencies 中声明）
+	db, err := d.gormComp.GetDB(d.dsName)
+	if err != nil {
+		return fmt.Errorf("get gorm db %s failed: %w", d.dsName, err)
+	}
+	d.db = db
+	return nil
+}
 
 func (r *runDaoImpl) CreateScheduled(ctx context.Context, run *model.TaskRun) error {
 	if run.Status == "" {
