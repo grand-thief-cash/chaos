@@ -235,9 +235,152 @@ redis:
 | read_timeout / write_timeout / idle_timeout | 服务端超时保护 |
 | graceful_timeout | 停机等待正在处理请求的上限 |
 | enable_health | 内置 `/healthz` |
-| enable_pprof | 是否暴露 pprof |
+| enable_pprof | 是否暴露 pprof *(当前版本仅预留配置字段，尚未在组件内自动注册，需要后续实现或手动注册)* |
 
-### 8.3 HTTP Clients (`components/http_client`)
+#### 8.2.1 快速启用示例
+```yaml
+http_server:
+  enabled: true
+  address: ":8080"
+  enable_health: true
+  enable_pprof: false
+```
+启动后（`enable_health: true`）自动暴露：`GET /healthz -> 200 ok`。
+
+#### 8.2.2 路由注册模型概览
+HTTP Server 使用 `github.com/go-chi/chi/v5` 作为路由，支持两种“预启动”注册方式：
+1. 全局注册：`http_server.RegisterRoutes(fn)` （推荐，简单直接）
+2. 实例注册：通过生命周期 `BeforeStart` Hook 获取组件实例并调用 `AddRouteRegistrar(fn)`（适合需要按条件动态注册或依赖其他已构造组件但尚未启动的场景）
+
+组件在 `Start()` 阶段会：
+- 构造新的 `chi.NewRouter()`
+- 安装中间件（RealIP / Recoverer / Timeout / otelchi tracing / 访问日志）
+- 注入健康检查路由（可选）
+- 汇总所有注册器：`global snapshot()` + `extras`（由 `AddRouteRegistrar` 添加）并依次执行，将路由写入该 Router。
+
+> 注意：`AddRouteRegistrar` 若在组件启动后调用会返回错误：`cannot register route: http_server already started (use BeforeStart hook)`。
+
+#### 8.2.3 全局注册示例（在 `init()` 中）
+```go
+// controllers/user_controller.go
+func init() {
+  http_server.RegisterRoutes(func(r chi.Router, c *core.Container) error {
+    // 解析其他组件（例如 mysql）
+    comp, err := c.Resolve("mysql")
+    if err != nil { return err }
+    mysqlComp := comp.(*appmysql.MysqlComponent)
+    db, err := mysqlComp.GetDB("primary")
+    if err != nil { return err }
+
+    // 路由分组
+    r.Route("/users", func(r chi.Router) {
+      r.Get("/{id}", getUserHandler(db))
+    })
+    return nil
+  })
+}
+```
+特点：
+- 写法最简单；只要文件被编译，`init()` 执行即完成注册。
+- 与业务控制器代码自然耦合，方便查看。
+- 需保证在 `application.App.Run()` 触发组件启动前完成（Go 的 `init()` 顺序满足这一点）。
+
+#### 8.2.4 通过 Hook 动态注册示例
+当需要按运行参数或外部条件决定是否注册路由，可使用生命周期钩子：
+```go
+app.AddHook("register_extra_routes", hooks.BeforeStart, func(ctx context.Context) error {
+  comp, err := app.GetComponent(consts.COMPONENT_HTTP_SERVER)
+  if err != nil { return err }
+  h := comp.(*http_server.HTTPServerComponent)
+  return h.AddRouteRegistrar(func(r chi.Router, c *core.Container) error {
+    r.Get("/version", func(w http.ResponseWriter, r *http.Request) {
+      w.Write([]byte("1.0.0"))
+    })
+    return nil
+  })
+}, priority /* 数值越小越先执行 */)
+```
+特点：
+- 适用于需要读取配置、环境变量或构造复杂依赖后再决定路由的场景。
+- 仍保证在 HTTP 服务器真正 `ListenAndServe` 前注册。
+
+#### 8.2.5 中间件管理与顺序
+框架内置以下中间件（顺序固定）：
+1. `middleware.RealIP` — 解析真实客户端 IP
+2. `middleware.Recoverer` — panic 保护
+3. `middleware.Timeout(60s)` — 请求超时（顶层）
+4. `otelchi.Middleware(serviceName)` — 分布式追踪（提取/创建 Span）
+5. 自定义访问日志包装器（写入 traceparent/header + zap 结构化日志）
+
+在你的路由注册函数中可以添加额外中间件：
+```go
+http_server.RegisterRoutes(func(r chi.Router, c *core.Container) error {
+  r.Use(customAuthMiddleware)
+  r.Get("/ping", func(w http.ResponseWriter, r *http.Request){ w.Write([]byte("pong")) })
+  return nil
+})
+```
+若只想作用于子路由：
+```go
+r.Route("/api", func(sr chi.Router){
+  sr.Use(perRouteMiddleware)
+  sr.Get("/items", listHandler)
+})
+```
+> 建议：认证/限流/业务统计等放在更靠近业务的分组上，避免对所有内部健康或指标端点造成开销。
+
+#### 8.2.6 访问日志与 Trace 头
+访问日志字段：`method,path,remote,status,dur,trace_id,span_id`。
+框架额外设置响应头：`traceparent`（W3C 格式），便于无 OTel 客户端调试。
+自定义返回头部或日志附加字段：在你自己的中间件中读取 `trace.SpanContextFromContext(r.Context())` 并添加。
+
+#### 8.2.7 依赖其他组件
+在路由注册器中通过 `c.Resolve(name)` 获取其他已注册组件（它们尚未启动，但可读取配置或准备数据结构）。
+避免耗时外部 I/O（例如主动查询数据库）——建议放到请求处理阶段或组件自身 `Start` 中。
+
+#### 8.2.8 常见错误与排查
+| 场景 | 现象 | 解决 |
+|------|------|------|
+| 注册函数返回错误 | 启动失败并回滚已启动组件 | 检查依赖组件名称或类型断言是否正确 |
+| 在组件启动后调用 `AddRouteRegistrar` | 报错 `cannot register route...` | 改为在 `init()` 或 `BeforeStart` Hook 中注册 |
+| 路由未匹配 | 404 | 确认分组前缀与最终请求路径拼接是否正确（`r.Route("/users"...)` + `GET /{id}` => `/users/{id}`） |
+| trace 字段缺失 | 日志中无 `trace_id` | 确认 Telemetry 组件已启用 & 客户端是否传递 `traceparent` 头 |
+| pprof 无效 | 访问 `/debug/pprof` 404 | 当前实现未自动注册，需要自行在注册器中 `import _ "net/http/pprof"` 并手动挂载 |
+
+#### 8.2.9 最佳实践
+- 单一控制器文件只注册相近资源（RESTful 分组）。
+- 使用 `Route("/resource", func(r chi.Router){ ... })` 代替硬编码重复前缀。
+- 将可复用中间件封装为函数（避免闭包捕获过多变量导致 GC 压力）。
+- 避免在注册阶段做阻塞 I/O；启动速度更快，可观测性更好。
+- 如果需要延迟加载较大数据，可在首次请求处理时通过 `sync.Once` 初始化。
+
+#### 8.2.10 何时使用 AddRouteRegistrar vs RegisterRoutes
+| 方式 | 适用场景 | 优点 | 注意 |
+|------|------|------|------|
+| RegisterRoutes | 绝大多数静态路由 | 简洁；文件即注册 | 不易按条件跳过（需在函数内部判断） |
+| AddRouteRegistrar | 条件/动态、插件式扩展 | 可根据运行态决定是否添加 | 必须在启动前（Hook）调用；多次调用顺序由添加先后决定 |
+
+#### 8.2.11 获取 Router（高级用法）
+在 `AfterStart` Hook 中可以访问已启动的 Router（不推荐再增删路由，只做只读或调试）：
+```go
+app.AddHook("inspect_routes", hooks.AfterStart, func(ctx context.Context) error {
+  comp, _ := app.GetComponent(consts.COMPONENT_HTTP_SERVER)
+  h := comp.(*http_server.HTTPServerComponent)
+  router := h.Router()
+  // 只能做只读反射 / 输出调试，不要再注册新路由（运行期修改可能产生竞态）。
+  _ = router
+  return nil
+}, 100)
+```
+
+#### 8.2.12 后续增强计划（与该组件相关）
+- 自动挂载 pprof (`/debug/pprof/*`)。
+- 支持请求指标（如 active requests、latency histogram、status codes）。
+- 内置限流/熔断可选中间件。
+- 热更新路由（需配合读写锁与版本切换）。
+
+---
+## 8.3 HTTP Clients (`components/http_client`)
 | 层级 | 字段 | 说明 |
 |------|------|------|
 | root | enabled | 是否启用统一客户端管理 |
@@ -319,6 +462,7 @@ redis:
 
 ### 8.5 gRPC Clients (`components/grpc_client`)
 根结构：
+
 | 字段 | 说明 |
 |------|------|
 | enabled | 是否启用管理器 |
@@ -328,6 +472,7 @@ redis:
 | health_check_interval | 健康检查间隔 |
 
 单 client：
+
 | 字段 | 说明 |
 |------|------|
 | name | 客户端标识 |
@@ -343,12 +488,14 @@ redis:
 
 ### 8.6 MySQL (`components/mysql`)
 顶层：
+
 | 字段 | 说明 |
 |------|------|
 | enabled | 是否启用 |
 | data_sources | 多数据源 map |
 
 DataSource：
+
 | 字段 | 说明 |
 |------|------|
 | dsn | 完整 DSN（存在则优先） |
@@ -360,6 +507,7 @@ DataSource：
 
 ### 8.7 MySQL GORM (`components/mysqlgorm`)
 与原生 mysql 类似 + GORM 级别拓展：
+
 | 字段 | 说明 |
 |------|------|
 | enabled | 启用 |
@@ -370,6 +518,7 @@ DataSource：
 | per-ds: prepare_stmt | 预编译缓存 |
 
 ### 8.8 Redis (`components/redis`)
+
 | 字段 | 说明 |
 |------|------|
 | enabled | 启用 |
@@ -901,8 +1050,12 @@ func init(){
 5. 动态重载：监听配置变更 -> 选择性 Restart 可热更新配置（需明确降级策略）。
 6. Health 聚合器：核心统一路由 /healthz 汇总所有组件 HealthCheck。
 7. Start Strategy 插件：顺序 / 分层并行 / 全并行(with dependency readiness barrier)。
-
 ---
+
+HTTP Server Component 相关增强：
+1. 在 HTTP Server 组件中实现 enable_pprof 自动挂载（/debug/pprof/*）。
+2. 增加路由列表调试输出（仅开发环境）以便确认注册结果。 
+3. 增加一个示例 metrics 中间件（记录请求耗时直方图）。
 
 ## 附：原始职责边界表 (保留)
 

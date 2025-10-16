@@ -1,7 +1,9 @@
 # VERSION
-v0.13.0
+v0.13.1
 
 # Changelog
+- v0.13.1
+    - Added HTTP SERVER Component usage example in Documents.
 - v0.13.0
     - Added extendable component by adding registry builders.
     - Also provided ability for dynamic customized component.
