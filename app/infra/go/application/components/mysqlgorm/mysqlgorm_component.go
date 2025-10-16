@@ -31,7 +31,7 @@ type GormComponent struct {
 
 func NewGormComponent(cfg *Config) *GormComponent {
 	gc := &GormComponent{
-		BaseComponent: core.NewBaseComponent(consts.COMPONENT_MYSQL_GORM),
+		BaseComponent: core.NewBaseComponent(consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING), // add explicit logging dependency
 		cfg:           cfg,
 		dbs:           make(map[string]*gorm.DB),
 	}

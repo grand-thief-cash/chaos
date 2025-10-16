@@ -27,7 +27,7 @@ type MysqlComponent struct {
 
 func NewMySQLComponent(cfg *MySQLConfig) *MysqlComponent {
 	return &MysqlComponent{
-		BaseComponent: core.NewBaseComponent(consts.COMPONENT_MYSQL),
+		BaseComponent: core.NewBaseComponent(consts.COMPONENT_MYSQL, consts.COMPONENT_LOGGING), // add explicit logging dependency
 		cfg:           cfg,
 		databases:     make(map[string]*sql.DB),
 	}

@@ -1,7 +1,14 @@
 # VERSION
-v0.12.0
+v0.13.0
 
 # Changelog
+- v0.13.0
+    - Added extendable component by adding registry builders.
+    - Also provided ability for dynamic customized component.
+    - Added ProvideComponent directly.
+    - Supplied dependencies for mysql component and gorm component.
+    - Doc also updated.
+
 - v0.12.0
     - Changed OS vars to flag arguments.
     - Added biz config support in config manager and app, also provide new Exportable func to users.
