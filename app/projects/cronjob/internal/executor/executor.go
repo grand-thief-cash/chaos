@@ -11,31 +11,43 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
-type Config struct {
-	WorkerPoolSize int
-	RequestTimeout time.Duration
-}
+// Config holds executor runtime parameters
+//type Config struct {
+//	WorkerPoolSize int
+//	RequestTimeout time.Duration
+//}
 
 type Executor struct {
-	cfg     Config
+	*core.BaseComponent
+
+	cfg     config.ExecutorConfig
 	taskDao dao.TaskDao
 	runDao  dao.RunDao
 	ch      chan *model.TaskRun
 	wg      sync.WaitGroup
 	mu      sync.Mutex
-	// 在 execute 方法中，为每个任务运行创建一个带超时的 context，并将对应的 cancel 函数存入 cancelMap，key 是 run 的 ID。
-	// 当需要取消某个任务运行时（如调用 CancelRun(id int64)），可以通过 cancelMap 查找并调用对应的 CancelFunc，从而取消该任务的执行。
-	// 在任务执行结束后，会从 cancelMap 删除对应的 CancelFunc，避免内存泄漏。
-	cancelMap     map[int64]context.CancelFunc // 用于管理每个任务运行（run）的取消函数。
+	cancel  context.CancelFunc
+	// In execute we create timeout contexts per run; cancelMap stores per-run cancel funcs.
+	cancelMap     map[int64]context.CancelFunc // runID -> cancel func
 	activePerTask map[int64]int                // taskID -> running count
 }
 
-func NewExecutor(cfg Config, taskDao dao.TaskDao, runDao dao.RunDao) *Executor {
+func NewExecutor(cfg config.ExecutorConfig, taskDao dao.TaskDao, runDao dao.RunDao) *Executor {
+	if cfg.WorkerPoolSize <= 0 {
+		cfg.WorkerPoolSize = 4
+	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = 15 * time.Second
+	}
 	return &Executor{
+		BaseComponent: core.NewBaseComponent("executor", "task_dao", "run_dao", consts.COMPONENT_LOGGING),
 		cfg:           cfg,
 		taskDao:       taskDao,
 		runDao:        runDao,
@@ -45,14 +57,54 @@ func NewExecutor(cfg Config, taskDao dao.TaskDao, runDao dao.RunDao) *Executor {
 	}
 }
 
-func (e *Executor) Start(ctx context.Context) {
+// Start implements core.Component
+func (e *Executor) Start(ctx context.Context) error {
+	if e.IsActive() { // idempotent
+		return nil
+	}
+	if err := e.BaseComponent.Start(ctx); err != nil { // set active flag
+		return err
+	}
+	ctx2, cancel := context.WithCancel(ctx)
+	e.cancel = cancel
+	// start workers
 	for i := 0; i < e.cfg.WorkerPoolSize; i++ {
 		e.wg.Add(1)
-		go e.worker(ctx)
+		go e.worker(ctx2)
 	}
+	return nil
 }
 
-func (e *Executor) Enqueue(run *model.TaskRun) { e.ch <- run }
+// Stop implements core.Component
+func (e *Executor) Stop(ctx context.Context) error {
+	if !e.IsActive() { // already stopped
+		return nil
+	}
+	if e.cancel != nil {
+		e.cancel()
+	}
+	// drain channel by closing (workers exit on ctx cancel anyway). Avoid panic on double close.
+	e.mu.Lock()
+	ch := e.ch
+	if ch != nil {
+		close(e.ch)
+		// mark nil to avoid re-close
+		e.ch = nil
+	}
+	e.mu.Unlock()
+	e.wg.Wait()
+	return e.BaseComponent.Stop(ctx)
+}
+
+func (e *Executor) Enqueue(run *model.TaskRun) { // exposed API
+	e.mu.Lock()
+	if e.ch == nil { // stopped
+		e.mu.Unlock()
+		return
+	}
+	e.mu.Unlock()
+	e.ch <- run
+}
 
 func (e *Executor) ActiveCount(taskID int64) int {
 	e.mu.Lock()
@@ -66,12 +118,15 @@ func (e *Executor) worker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case run := <-e.ch:
+		case run, ok := <-e.ch:
+			if !ok { // channel closed
+				return
+			}
 			if run == nil {
 				continue
 			}
-			ok, err := e.runDao.TransitionToRunning(ctx, run.ID)
-			if err != nil || !ok {
+			ok2, err := e.runDao.TransitionToRunning(ctx, run.ID)
+			if err != nil || !ok2 {
 				continue
 			}
 			e.execute(ctx, run)

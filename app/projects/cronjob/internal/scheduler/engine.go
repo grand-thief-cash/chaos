@@ -7,49 +7,74 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/executor"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
-type Config struct {
-	PollInterval time.Duration
-}
-
 type Engine struct {
-	cfg     Config
+	cfg     config.SchedulerConfig
 	taskDao dao.TaskDao
 	runDao  dao.RunDao
 	exec    *executor.Executor
-	started bool
-	mu      sync.Mutex
+	*core.BaseComponent
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
-func NewEngine(tr dao.TaskDao, rr dao.RunDao, exec *executor.Executor, cfg Config) *Engine {
-	return &Engine{cfg: cfg, taskDao: tr, runDao: rr, exec: exec}
-}
-
-func (e *Engine) Start(ctx context.Context) {
-	e.mu.Lock()
-	if e.started {
-		e.mu.Unlock()
-		return
+func NewEngine(tr dao.TaskDao, rr dao.RunDao, exec *executor.Executor, cfg config.SchedulerConfig) *Engine {
+	if cfg.PollInterval <= 0 {
+		cfg.PollInterval = time.Second
 	}
-	e.started = true
-	e.mu.Unlock()
-	ticker := time.NewTicker(e.cfg.PollInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("scheduler stopped")
-			return
-		case now := <-ticker.C:
-			if err := e.scan(ctx, now); err != nil {
-				log.Printf("scheduler scan err: %v", err)
+	return &Engine{
+		cfg:           cfg,
+		taskDao:       tr,
+		runDao:        rr,
+		exec:          exec,
+		BaseComponent: core.NewBaseComponent("scheduler_engine", "task_dao", "run_dao", "executor"),
+	}
+}
+
+func (e *Engine) Start(ctx context.Context) error {
+	if e.IsActive() {
+		return nil
+	}
+	if err := e.BaseComponent.Start(ctx); err != nil {
+		return err
+	}
+	loopCtx, cancel := context.WithCancel(ctx)
+	e.cancel = cancel
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		ticker := time.NewTicker(e.cfg.PollInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-loopCtx.Done():
+				log.Println("scheduler stopped")
+				return
+			case now := <-ticker.C:
+				if err := e.scan(loopCtx, now); err != nil {
+					log.Printf("scheduler scan err: %v", err)
+				}
 			}
 		}
+	}()
+	return nil
+}
+
+func (e *Engine) Stop(ctx context.Context) error {
+	if !e.IsActive() {
+		return nil
 	}
+	if e.cancel != nil {
+		e.cancel()
+	}
+	e.wg.Wait()
+	return e.BaseComponent.Stop(ctx)
 }
 
 func (e *Engine) scan(ctx context.Context, now time.Time) error {
