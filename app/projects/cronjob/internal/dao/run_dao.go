@@ -14,6 +14,8 @@ import (
 )
 
 type RunDao interface {
+	// Embed component so registry builders can return a RunDao where core.Component is required
+	core.Component
 	CreateScheduled(ctx context.Context, run *model.TaskRun) error
 	TransitionToRunning(ctx context.Context, runID int64) (bool, error)
 	MarkSuccess(ctx context.Context, runID int64, code int, body string) error
@@ -51,6 +53,10 @@ func (d *runDaoImpl) Start(ctx context.Context) error {
 	}
 	d.db = db
 	return nil
+}
+
+func (d *runDaoImpl) Stop(ctx context.Context) error {
+	return d.BaseComponent.Stop(ctx)
 }
 
 func (r *runDaoImpl) CreateScheduled(ctx context.Context, run *model.TaskRun) error {
