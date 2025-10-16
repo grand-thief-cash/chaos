@@ -118,6 +118,24 @@ func (app *App) AddHook(name string, phase hooks.Phase, fn hooks.HookFunc, prior
 	return app.lifecycleManager.AddHook(name, phase, fn, priority)
 }
 
+// RegisterCustomBuilder lets users register their own component builders (with optional build-time dependencies)
+// before the application boots. Safe to call multiple times prior to Run/RunWithContext.
+func (app *App) RegisterCustomBuilder(name string, deps []string, fn registry.BuilderFunc) {
+	registry.RegisterWithDeps(name, deps, fn)
+}
+
+// ProvideComponent allows directly supplying a fully constructed custom component instance (bypassing builder pattern).
+// Must be invoked before the app boots (i.e., before Run/RunWithContext triggers component registration).
+func (app *App) ProvideComponent(comp core.Component) error {
+	if comp == nil {
+		return fmt.Errorf("nil component")
+	}
+	if app.booted {
+		return fmt.Errorf("application already booted; cannot register new component %s", comp.Name())
+	}
+	return app.container.Register(comp.Name(), comp)
+}
+
 // Run 根据平台与环境变量自动选择基础或增强（双信号 + 超时 + Windows 控制事件）模式。
 // 选择策略：
 //  1. 若设置 GOINFRA_DISABLE_ENHANCED=1 -> 使用基础模式
