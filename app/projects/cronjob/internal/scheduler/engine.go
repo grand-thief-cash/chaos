@@ -2,11 +2,13 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
@@ -41,10 +43,13 @@ func (e *Engine) Start(ctx context.Context) error {
 	if e.IsActive() {
 		return nil
 	}
+	// Use the provided ctx only for initialization; lifecycle manager may cancel it after Start returns.
 	if err := e.BaseComponent.Start(ctx); err != nil {
 		return err
 	}
-	loopCtx, cancel := context.WithCancel(ctx)
+	// IMPORTANT: Don't derive the long-running loop context from the (possibly short-lived) Start ctx.
+	// Otherwise, when the lifecycle manager cancels its per-component timeout ctx, the loop exits immediately.
+	loopCtx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.wg.Add(1)
 	go func() {
@@ -54,7 +59,6 @@ func (e *Engine) Start(ctx context.Context) error {
 		for {
 			select {
 			case <-loopCtx.Done():
-				log.Println("scheduler stopped")
 				return
 			case now := <-ticker.C:
 				if err := e.scan(loopCtx, now); err != nil {
@@ -87,6 +91,7 @@ func (e *Engine) scan(ctx context.Context, now time.Time) error {
 		if !shouldFire(sec, t.CronExpr) {
 			continue
 		}
+		logging.Info(ctx, fmt.Sprintf("task: %d should run", t.ID))
 		// concurrency skip policy
 		if t.MaxConcurrency > 0 && t.ConcurrencyPolicy == model.ConcurrencySkip && e.exec.ActiveCount(t.ID) >= t.MaxConcurrency {
 			// record skipped run for observability
@@ -106,6 +111,7 @@ func (e *Engine) scan(ctx context.Context, now time.Time) error {
 		}
 		// enqueue; queue policy currently immediate (Phase2: true queue)
 		// parallel just enqueues as well
+		logging.Info(ctx, fmt.Sprintf("task: %d prepared enqueued", t.ID))
 		e.exec.Enqueue(run)
 	}
 	return nil

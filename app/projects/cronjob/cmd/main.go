@@ -4,6 +4,8 @@ import (
 	"log"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application"
+	_ "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
+	_ "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/registry_ext"
 )
 
 var (
@@ -47,17 +49,6 @@ func main() {
 	//	}
 	//	log.Printf("migrations applied from %s", abs)
 	//}
-
-	//taskDao := dao.NewTaskDao(gdb)
-	//runDao := dao.NewRunDao(gdb)
-	//
-	//exec := executor.NewExecutor(executor.Config{
-	//	WorkerPoolSize: cfg.Executor.WorkerPoolSize,
-	//	RequestTimeout: cfg.Executor.RequestTimeout,
-	//}, taskDao, runDao)
-	//
-	//sch := scheduler.NewEngine(taskDao, runDao, exec,
-	//	scheduler.Config{PollInterval: cfg.Scheduler.PollInterval})
 
 	//// start background components
 	//ctx, cancel := context.WithCancel(context.Background())

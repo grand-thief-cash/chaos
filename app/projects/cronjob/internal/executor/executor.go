@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
@@ -65,12 +66,15 @@ func (e *Executor) Start(ctx context.Context) error {
 	if err := e.BaseComponent.Start(ctx); err != nil { // set active flag
 		return err
 	}
-	ctx2, cancel := context.WithCancel(ctx)
+	// IMPORTANT: lifecycle manager cancels the ctx passed to Start right after Start returns.
+	// Derive a new background context for long-lived workers so they don't exit immediately.
+	loopCtx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	// start workers
 	for i := 0; i < e.cfg.WorkerPoolSize; i++ {
 		e.wg.Add(1)
-		go e.worker(ctx2)
+		logging.Info(loopCtx, fmt.Sprintf("Starting worker: %d", i))
+		go e.worker(loopCtx)
 	}
 	return nil
 }
@@ -104,6 +108,7 @@ func (e *Executor) Enqueue(run *model.TaskRun) { // exposed API
 	}
 	e.mu.Unlock()
 	e.ch <- run
+	logging.Info(context.Background(), fmt.Sprintf("task: %d has enqueued", run.ID))
 }
 
 func (e *Executor) ActiveCount(taskID int64) int {
@@ -117,16 +122,22 @@ func (e *Executor) worker(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			logging.Info(context.Background(), "worker context canceled; exiting")
 			return
 		case run, ok := <-e.ch:
 			if !ok { // channel closed
+				logging.Info(context.Background(), "channel closed; worker exiting")
 				return
 			}
 			if run == nil {
 				continue
 			}
+			logging.Info(ctx, fmt.Sprintf("task: %d grabbed in worker ok=%v", run.ID, ok))
 			ok2, err := e.runDao.TransitionToRunning(ctx, run.ID)
 			if err != nil || !ok2 {
+				if err != nil {
+					logging.Info(ctx, fmt.Sprintf("transition to running failed for run %d: %v", run.ID, err))
+				}
 				continue
 			}
 			e.execute(ctx, run)

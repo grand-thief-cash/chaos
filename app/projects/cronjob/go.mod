@@ -6,7 +6,6 @@ toolchain go1.24.7
 
 require (
 	github.com/grand-thief-cash/chaos/app/infra/go/application v0.0.0-00010101000000-000000000000
-	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.31.0
 )
@@ -58,6 +57,7 @@ require (
 	google.golang.org/grpc v1.75.1 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/grand-thief-cash/chaos/app/infra/go/application => ./../../infra/go/application
