@@ -1,7 +1,10 @@
 # VERSION
-v0.15.0
+v0.15.1
 
 # Changelog
+- v0.15.1
+    - Added deduplication in autowire process.
+    - Added flag "auto" and dependency inferencing in registry.
 - v0.15.0
     - Added tag-based dependencies injection, autowired and don't need to inject manually.
 - v0.14.0
