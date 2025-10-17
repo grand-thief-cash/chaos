@@ -13,13 +13,10 @@ import (
 func init() {
 	cronjobCfg := bizConfig.GetBizConfig()
 
-	// executor component (builder deps retained for ordering, but construction no longer resolves manually)
-	registry.RegisterWithDeps(consts.COMP_SVC_EXECUTOR, []string{consts.COMP_DAO_TASK, consts.COMP_DAO_RUN}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+	registry.RegisterAuto(consts.COMP_SVC_EXECUTOR, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, executor.NewExecutor(cronjobCfg.Executor), nil
 	})
-
-	// scheduler engine depends (build ordering) on executor and daos; autowire will inject.
-	registry.RegisterWithDeps(consts.COMP_SVC_SCHEDULER, []string{consts.COMP_DAO_TASK, consts.COMP_DAO_RUN, consts.COMP_SVC_EXECUTOR}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+	registry.RegisterAuto(consts.COMP_SVC_SCHEDULER, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, scheduler.NewEngine(cronjobCfg.Scheduler), nil
 	})
 }
