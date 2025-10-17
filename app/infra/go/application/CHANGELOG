@@ -1,7 +1,9 @@
 # VERSION
-v0.13.1
+v0.13.2
 
 # Changelog
+- v0.13.2
+    - Added dumpRoutes in HTTP SERVER component for debugging purpose.
 - v0.13.1
     - Added HTTP SERVER Component usage example in Documents.
 - v0.13.0
