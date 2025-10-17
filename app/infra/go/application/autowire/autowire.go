@@ -10,6 +10,7 @@ package autowire
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 
@@ -52,6 +53,12 @@ func Inject(c *core.Container, comp core.Component) error {
 	if a, ok := comp.(runtimeDepAdder); ok {
 		adder = a
 	}
+	existingDepSet := map[string]struct{}{}
+	if adder != nil {
+		for _, d := range comp.Dependencies() {
+			existingDepSet[d] = struct{}{}
+		}
+	}
 	typ := val.Type()
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
@@ -79,6 +86,7 @@ func Inject(c *core.Container, comp core.Component) error {
 		resolved, err := c.Resolve(name)
 		if err != nil {
 			if optional {
+				log.Printf("[autowire] component=%s field=%s dep=%s optional missing; skip", comp.Name(), field.Name, name)
 				continue
 			}
 			return fmt.Errorf("resolve %s failed: %w", name, err)
@@ -90,8 +98,16 @@ func Inject(c *core.Container, comp core.Component) error {
 		if err := assignValue(fv, resolved); err != nil {
 			return fmt.Errorf("assign %s -> field %s failed: %w", name, field.Name, err)
 		}
+		// Uncomment this line to enable debug logging of successful injections.
+		//log.Printf("[autowire] component=%s field=%s injected dep=%s", comp.Name(), field.Name, name)
 		if adder != nil {
-			adder.AddDependencies(name)
+			if _, exists := existingDepSet[name]; !exists {
+				adder.AddDependencies(name)
+				existingDepSet[name] = struct{}{}
+				log.Printf("[autowire] component=%s append runtime dependency %s", comp.Name(), name)
+			} else {
+				log.Printf("[autowire] component=%s runtime dependency %s already present; skip append", comp.Name(), name)
+			}
 		}
 	}
 	return nil
