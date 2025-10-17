@@ -10,26 +10,21 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/executor"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/scheduler"
 )
 
 type TaskMgmtController struct {
 	*core.BaseComponent
-	taskDao TaskDaoIface
-	runDao  RunDaoIface
-	Exec    ExecutorIface
-	Sched   interface{}
+	TaskDao dao.TaskDao        `infra:"dep:task_dao"`
+	RunDao  dao.RunDao         `infra:"dep:run_dao"`
+	Exec    *executor.Executor `infra:"dep:executor"`
+	Sched   *scheduler.Engine  `infra:"dep:scheduler_engine"`
 }
 
-func NewTaskMgmtController(taskDao dao.TaskDao, runDao dao.RunDao, exec ExecutorIface, Sched interface{}) *TaskMgmtController {
-	return &TaskMgmtController{
-		BaseComponent: core.NewBaseComponent(bizConsts.COMP_CTRL_TASK_MGMT, bizConsts.COMP_DAO_TASK,
-			bizConsts.COMP_DAO_RUN, bizConsts.COMP_SVC_EXECUTOR, consts.COMPONENT_LOGGING),
-		taskDao: taskDao,
-		runDao:  runDao,
-		Exec:    exec,
-		Sched:   Sched,
-	}
+func NewTaskMgmtController() *TaskMgmtController {
+	return &TaskMgmtController{BaseComponent: core.NewBaseComponent(bizConsts.COMP_CTRL_TASK_MGMT, consts.COMPONENT_LOGGING)}
 }
 
 func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +68,7 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 		writeErr(w, 400, "INVALID_ARGUMENT")
 		return
 	}
-	if err := tmc.taskDao.Create(r.Context(), t); err != nil {
+	if err := tmc.TaskDao.Create(r.Context(), t); err != nil {
 		writeErr(w, 500, "INTERNAL")
 		return
 	}
@@ -81,12 +76,12 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 }
 
 func (tmc *TaskMgmtController) listTasks(w http.ResponseWriter, r *http.Request) {
-	list, _ := tmc.taskDao.ListEnabled(r.Context())
+	list, _ := tmc.TaskDao.ListEnabled(r.Context())
 	writeJSON(w, list)
 }
 
 func (tmc *TaskMgmtController) getTask(w http.ResponseWriter, r *http.Request, id int64) {
-	t, err := tmc.taskDao.Get(r.Context(), id)
+	t, err := tmc.TaskDao.Get(r.Context(), id)
 	if err != nil {
 		writeErr(w, 404, "NOT_FOUND")
 		return
@@ -103,7 +98,7 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 		writeErr(w, 400, "INVALID_JSON")
 		return
 	}
-	t, err := tmc.taskDao.Get(r.Context(), id)
+	t, err := tmc.TaskDao.Get(r.Context(), id)
 	if err != nil {
 		writeErr(w, 404, "NOT_FOUND")
 		return
@@ -114,7 +109,7 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	if req.CronExpr != "" {
 		t.CronExpr = model.NormalizeCron(req.CronExpr)
 	}
-	if err := tmc.taskDao.UpdateCronAndMeta(r.Context(), t); err != nil {
+	if err := tmc.TaskDao.UpdateCronAndMeta(r.Context(), t); err != nil {
 		writeErr(w, 500, "INTERNAL")
 		return
 	}
@@ -122,12 +117,12 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 }
 
 func (tmc *TaskMgmtController) deleteTask(w http.ResponseWriter, r *http.Request, id int64) {
-	_ = tmc.taskDao.SoftDelete(r.Context(), id)
+	_ = tmc.TaskDao.SoftDelete(r.Context(), id)
 	writeJSON(w, map[string]any{"deleted": true})
 }
 
 func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Request, id int64) {
-	t, err := tmc.taskDao.Get(r.Context(), id)
+	t, err := tmc.TaskDao.Get(r.Context(), id)
 	if err != nil {
 		writeErr(w, 404, "NOT_FOUND")
 		return
@@ -138,7 +133,7 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	run := &model.TaskRun{TaskID: t.ID, ScheduledTime: time.Now().UTC().Truncate(time.Second), Status: model.RunStatusScheduled, Attempt: 1}
-	if err := tmc.runDao.CreateScheduled(r.Context(), run); err != nil {
+	if err := tmc.RunDao.CreateScheduled(r.Context(), run); err != nil {
 		writeErr(w, 500, "INTERNAL")
 		return
 	}
@@ -147,12 +142,12 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 }
 
 func (tmc *TaskMgmtController) listRuns(w http.ResponseWriter, r *http.Request, taskID int64) {
-	list, _ := tmc.runDao.ListByTask(r.Context(), taskID, 50)
+	list, _ := tmc.RunDao.ListByTask(r.Context(), taskID, 50)
 	writeJSON(w, list)
 }
 
 func (tmc *TaskMgmtController) getRun(w http.ResponseWriter, r *http.Request, runID int64) {
-	run, err := tmc.runDao.Get(r.Context(), runID)
+	run, err := tmc.RunDao.Get(r.Context(), runID)
 	if err != nil {
 		writeErr(w, 404, "NOT_FOUND")
 		return
@@ -161,7 +156,7 @@ func (tmc *TaskMgmtController) getRun(w http.ResponseWriter, r *http.Request, ru
 }
 
 func (tmc *TaskMgmtController) updateStatus(w http.ResponseWriter, r *http.Request, id int64, status string) {
-	err := tmc.taskDao.UpdateStatus(r.Context(), id, status)
+	err := tmc.TaskDao.UpdateStatus(r.Context(), id, status)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
