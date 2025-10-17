@@ -7,6 +7,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
 	bizConfig "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/executor"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/scheduler"
@@ -16,8 +17,8 @@ func init() {
 	cronjobCfg := bizConfig.GetBizConfig()
 
 	// executor component
-	registry.RegisterWithDeps("executor", []string{"task_dao", "run_dao"}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		compTask, err := c.Resolve("task_dao")
+	registry.RegisterWithDeps(consts.COMP_SVC_EXECUTOR, []string{consts.COMP_DAO_TASK, consts.COMP_DAO_RUN}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		compTask, err := c.Resolve(consts.COMP_DAO_TASK)
 		if err != nil {
 			return true, nil, fmt.Errorf("resolve task_dao failed: %w", err)
 		}
@@ -26,7 +27,7 @@ func init() {
 			return true, nil, fmt.Errorf("task_dao type assertion failed")
 		}
 
-		compRun, err := c.Resolve("run_dao")
+		compRun, err := c.Resolve(consts.COMP_DAO_RUN)
 		if err != nil {
 			return true, nil, fmt.Errorf("resolve run_dao failed: %w", err)
 		}
@@ -39,8 +40,8 @@ func init() {
 	})
 
 	// scheduler engine depends on executor (runtime) and daos
-	registry.RegisterWithDeps("scheduler_engine", []string{"task_dao", "run_dao", "executor"}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		compTask, err := c.Resolve("task_dao")
+	registry.RegisterWithDeps(consts.COMP_SVC_SCHEDULER, []string{consts.COMP_DAO_TASK, consts.COMP_DAO_RUN, consts.COMP_SVC_EXECUTOR}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		compTask, err := c.Resolve(consts.COMP_DAO_TASK)
 		if err != nil {
 			return true, nil, fmt.Errorf("resolve task_dao failed: %w", err)
 		}
@@ -49,7 +50,7 @@ func init() {
 			return true, nil, fmt.Errorf("task_dao type assertion failed")
 		}
 
-		compRun, err := c.Resolve("run_dao")
+		compRun, err := c.Resolve(consts.COMP_DAO_RUN)
 		if err != nil {
 			return true, nil, fmt.Errorf("resolve run_dao failed: %w", err)
 		}
@@ -58,7 +59,7 @@ func init() {
 			return true, nil, fmt.Errorf("run_dao type assertion failed")
 		}
 
-		compExecutor, err := c.Resolve("executor")
+		compExecutor, err := c.Resolve(consts.COMP_SVC_EXECUTOR)
 		if err != nil {
 			return true, nil, fmt.Errorf("resolve executor failed: %w", err)
 		}

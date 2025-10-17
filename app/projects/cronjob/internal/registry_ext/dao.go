@@ -8,12 +8,13 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 )
 
 func init() {
 	// RegisterWithDeps 确保构建顺序：mysql_gorm/logging 先被构建并注册
-	registry.RegisterWithDeps("task_dao", []string{
+	registry.RegisterWithDeps(bizConsts.COMP_DAO_TASK, []string{
 		consts.COMPONENT_MYSQL_GORM,
 		consts.COMPONENT_LOGGING,
 	}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
@@ -33,7 +34,7 @@ func init() {
 	})
 
 	// run_dao builder
-	registry.RegisterWithDeps("run_dao", []string{
+	registry.RegisterWithDeps(bizConsts.COMP_DAO_RUN, []string{
 		consts.COMPONENT_MYSQL_GORM,
 		consts.COMPONENT_LOGGING,
 	}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {

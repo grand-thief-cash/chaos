@@ -11,7 +11,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
-type TaskRepoIface interface {
+type TaskDaoIface interface {
 	Create(context.Context, *model.Task) error
 	Get(context.Context, int64) (*model.Task, error)
 	ListEnabled(context.Context) ([]*model.Task, error)
@@ -20,7 +20,7 @@ type TaskRepoIface interface {
 	SoftDelete(context.Context, int64) error
 }
 
-type RunRepoIface interface {
+type RunDaoIface interface {
 	CreateScheduled(context.Context, *model.TaskRun) error
 	Get(context.Context, int64) (*model.TaskRun, error)
 	ListByTask(context.Context, int64, int) ([]*model.TaskRun, error)
@@ -37,8 +37,8 @@ type ExecutorIface interface {
 // Sched 保留占位未来需要
 
 type Dependencies struct {
-	TaskRepo TaskRepoIface
-	RunRepo  RunRepoIface
+	TaskRepo TaskDaoIface
+	RunRepo  RunDaoIface
 	Exec     ExecutorIface
 	Sched    interface{}
 	Version  string
@@ -46,8 +46,12 @@ type Dependencies struct {
 
 func NewRouter(dep Dependencies) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
-	mux.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(dep.Version)) })
+	mux.HandleFunc("/api/v1/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(dep.Version))
+	})
 
 	// tasks collection
 	mux.HandleFunc("/api/v1/tasks", func(w http.ResponseWriter, r *http.Request) {

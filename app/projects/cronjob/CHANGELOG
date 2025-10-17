@@ -1,7 +1,10 @@
 # VERSION
-v0.2.3
+v0.3.0
 
 # Changelog
+- v0.3.0
+  - Transitioned cronjob project to use new infra framework structure.
+  - Replaced magic numbers with constants for better code readability.
 - v0.2.3 [Unfinished]
   - Runnable version of cronjob using infra framework.
   - HTTP server haven't been transitioned yet.

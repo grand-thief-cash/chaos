@@ -15,6 +15,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
@@ -48,7 +49,7 @@ func NewExecutor(cfg config.ExecutorConfig, taskDao dao.TaskDao, runDao dao.RunD
 		cfg.RequestTimeout = 15 * time.Second
 	}
 	return &Executor{
-		BaseComponent: core.NewBaseComponent("executor", "task_dao", "run_dao", consts.COMPONENT_LOGGING),
+		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_EXECUTOR, bizConsts.COMP_DAO_RUN, bizConsts.COMP_DAO_TASK, consts.COMPONENT_LOGGING),
 		cfg:           cfg,
 		taskDao:       taskDao,
 		runDao:        runDao,

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -38,7 +39,7 @@ type TaskDaoImpl struct {
 // New 仅做结构体初始化，不访问外部资源
 func NewTaskDao(gormComp *mg.GormComponent, dsName string) *TaskDaoImpl {
 	return &TaskDaoImpl{
-		BaseComponent: core.NewBaseComponent("task_dao", consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING),
+		BaseComponent: core.NewBaseComponent(bizConsts.COMP_DAO_TASK, consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING),
 		gormComp:      gormComp,
 		dsName:        dsName,
 	}
