@@ -10,111 +10,136 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
 
-// NOTE: existing public API Register(name, fn) is kept for backward compatibility.
-// New API RegisterWithDeps allows declaring inter-builder dependencies so that
-// component build order can be deterministically topologically sorted.
-// This ensures user-defined custom components that need other components' instances
-// (e.g., to fetch a logger instance during construction) can rely on those builders
-// having already run.
-
-// BuilderFunc returns (enabled, component, error). If enabled=false component is ignored.
+// BuilderFunc returns (enabled, component, error). enabled=false skips registration.
 type BuilderFunc func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error)
 
-// Builder wraps a builder function with its metadata / dependencies.
+// Builder holds metadata.
 type Builder struct {
-	Name string
-	Deps []string // names of other builders this builder depends on (for build ordering)
-	Fn   BuilderFunc
-	Auto bool // true if registered via RegisterAuto (deps inferred from struct tags)
+	Name       string         // final component name (may be inferred for auto builders)
+	Fn         BuilderFunc    // build function
+	Auto       bool           // auto builders: infer name + build-time deps from tags
+	Deps       []string       // inferred build-time deps (auto) to order builders
+	prebuilt   core.Component // cached component instance for name inference
+	preEnabled bool           // cached enabled flag
 }
 
-var builders = map[string]*Builder{}
+var builders []*Builder
 
-// Register registers a component builder by name with no explicit build-time dependencies.
-// Panics on duplicate to surface programming errors early.
-func Register(name string, fn BuilderFunc) { RegisterWithDepsInternal(name, nil, fn, false) }
-
-// RegisterAuto registers a builder without explicit build-time deps; intended for components
-// whose dependencies are declared via struct tags and injected later by autowire.
-func RegisterAuto(name string, fn BuilderFunc) { RegisterWithDepsInternal(name, nil, fn, true) }
-
-// RegisterWithDeps registers a component builder with explicit dependencies.
-// Dependencies are only used to order builder execution (topological sort) and do NOT
-// automatically populate the Component.Dependencies() list; component authors should still
-// set runtime dependencies inside their component implementation so that start/stop
-// ordering is also enforced at runtime.
-func RegisterWithDeps(name string, deps []string, fn BuilderFunc) {
-	RegisterWithDepsInternal(name, deps, fn, false)
-}
-
-func RegisterWithDepsInternal(name string, deps []string, fn BuilderFunc, auto bool) {
-	if _, exists := builders[name]; exists {
-		panic("registry: duplicate builder registered for component " + name)
-	}
-	builders[name] = &Builder{Name: name, Deps: deps, Fn: fn, Auto: auto}
-}
-
-// BuildAndRegisterAll now performs a pre-build of auto builders to infer build-time dependencies
-// from struct field tags (infra:"dep:<component>"). Only dependencies that correspond to other
-// registered builder names are considered for ordering.
-func BuildAndRegisterAll(cfg *config.AppConfig, c *core.Container) error {
-	// First infer dependencies for auto builders that have no explicit deps.
+func findBuilder(name string) *Builder {
 	for _, b := range builders {
-		if !b.Auto || len(b.Deps) > 0 {
+		if b.Name == name {
+			return b
+		}
+	}
+	return nil
+}
+
+// Register registers a component builder with explicit name (no auto inference).
+func Register(name string, fn BuilderFunc) {
+	if name == "" {
+		panic("registry: empty name in Register")
+	}
+	if findBuilder(name) != nil {
+		panic("registry: duplicate builder name " + name)
+	}
+	builders = append(builders, &Builder{Name: name, Fn: fn, Auto: false})
+}
+
+// RegisterAuto registers a builder whose component name and build-time dependencies are inferred.
+// The builder function MUST construct a component whose Name() returns a stable non-empty value.
+func RegisterAuto(fn BuilderFunc) { builders = append(builders, &Builder{Auto: true, Fn: fn}) }
+
+// BuildAndRegisterAll builds all registered builders applying:
+// 1. For auto builders: pre-build to infer name and cache instance.
+// 2. Infer build-time dependencies from struct tags for auto builders.
+// 3. Topologically sort builders by inferred deps.
+// 4. Build (reuse cached auto instance) and register components.
+func BuildAndRegisterAll(cfg *config.AppConfig, c *core.Container) error {
+	// Step 1: name inference for auto builders
+	for _, b := range builders {
+		if !b.Auto || b.Name != "" {
 			continue
 		}
-		// Pre-build component (ignore enabled flag; if disabled skip inference)
 		enabled, comp, err := b.Fn(cfg, c)
-		if err != nil || !enabled || comp == nil {
-			continue // skip inference if build fails or disabled
+		if err != nil || comp == nil {
+			b.preEnabled, b.prebuilt = false, nil
+			continue
 		}
-		deps := inferTagDependencies(comp)
-		// Filter only those that are registered builder names (avoid spurious runtime-only deps)
+		b.preEnabled, b.prebuilt = enabled, comp
+		if !enabled {
+			continue
+		}
+		name := comp.Name()
+		if name == "" {
+			return fmt.Errorf("auto builder produced unnamed component")
+		}
+		if existing := findBuilder(name); existing != nil && existing != b {
+			return fmt.Errorf("duplicate inferred name: %s", name)
+		}
+		b.Name = name
+	}
+	// Step 2: infer deps for auto builders
+	for _, b := range builders {
+		if !b.Auto || len(b.Deps) > 0 || b.Name == "" {
+			continue
+		}
+		comp := b.prebuilt
+		if comp == nil || !b.preEnabled {
+			continue
+		}
+		raw := inferTagDependencies(comp)
 		var filtered []string
-		for _, d := range deps {
-			if _, ok := builders[d]; ok {
+		for _, d := range raw {
+			if findBuilder(d) != nil {
 				filtered = append(filtered, d)
 			}
 		}
-		if len(filtered) > 0 {
-			b.Deps = filtered
-		}
+		b.Deps = filtered
 	}
-	ordered, err := sortBuilders()
+	// Step 3: topological sort
+	ordered, err := topoSortBuilders(builders)
 	if err != nil {
 		return err
 	}
+	// Step 4: build & register
 	for _, b := range ordered {
-		enabled, comp, err := b.Fn(cfg, c)
-		if err != nil {
-			return fmt.Errorf("build component %s failed: %w", b.Name, err)
+		var enabled bool
+		var comp core.Component
+		if b.Auto {
+			// reuse cached instance (avoid double build). If disabled skip.
+			enabled, comp = b.preEnabled, b.prebuilt
+		} else {
+			enabled, comp, err = b.Fn(cfg, c)
+			if err != nil {
+				return fmt.Errorf("build %s failed: %w", b.Name, err)
+			}
 		}
 		if !enabled || comp == nil {
 			continue
 		}
 		if err := c.Register(b.Name, comp); err != nil {
-			return fmt.Errorf("register component %s failed: %w", b.Name, err)
+			return fmt.Errorf("register %s failed: %w", b.Name, err)
 		}
 	}
-	// Apply user-declared runtime dependency extensions now that all components are registered.
 	applyRuntimeDepExtensions(c)
 	return nil
 }
 
+// inferTagDependencies extracts component names from `infra:"dep:<name>"` tags.
 func inferTagDependencies(comp core.Component) []string {
-	val := reflect.ValueOf(comp)
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
+	v := reflect.ValueOf(comp)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
 	}
-	if val.Kind() != reflect.Struct {
+	if v.Kind() != reflect.Struct {
 		return nil
 	}
-	typ := val.Type()
+	t := v.Type()
 	seen := map[string]struct{}{}
-	var deps []string
-	for i := 0; i < typ.NumField(); i++ {
-		f := typ.Field(i)
-		if f.PkgPath != "" { // unexported
+	var out []string
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" {
 			continue
 		}
 		tag := f.Tag.Get("infra")
@@ -125,81 +150,67 @@ func inferTagDependencies(comp core.Component) []string {
 		if name == "" {
 			continue
 		}
-		if strings.HasSuffix(name, "?") { // optional marker
+		if strings.HasSuffix(name, "?") {
 			name = strings.TrimSuffix(name, "?")
 		}
 		if _, exists := seen[name]; exists {
 			continue
 		}
 		seen[name] = struct{}{}
-		deps = append(deps, name)
+		out = append(out, name)
 	}
-	return deps
+	return out
 }
 
-// List returns registered builder names (for debugging / tests)
-func List() []string {
-	keys := make([]string, 0, len(builders))
-	for k := range builders {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// sortBuilders returns builders ordered topologically by Declared deps; if a dependency name
-// is not itself a registered builder, it is ignored for build ordering (it may still be a
-// runtime component dependency provided some other way). Cycles return an error.
-func sortBuilders() ([]*Builder, error) {
-	// Kahn's algorithm
-	inDegree := map[string]int{}
+// topoSortBuilders orders builders by inferred deps (auto builders) + explicit names.
+func topoSortBuilders(list []*Builder) ([]*Builder, error) {
+	nameMap := map[string]*Builder{}
+	inDeg := map[string]int{}
 	adj := map[string][]string{}
-	// initialize
-	for name, b := range builders {
-		inDegree[name] = 0
-		_ = b
-	}
-	for name, b := range builders {
-		for _, dep := range b.Deps {
-			if _, ok := builders[dep]; !ok {
-				continue // ignore unknown builders for ordering purposes
-			}
-			adj[dep] = append(adj[dep], name)
-			inDegree[name]++
+	for _, b := range list {
+		if b.Name != "" {
+			nameMap[b.Name] = b
+			inDeg[b.Name] = 0
 		}
 	}
-	// queue of zero in-degree
+	for _, b := range list {
+		for _, d := range b.Deps {
+			if _, ok := nameMap[d]; !ok {
+				continue
+			}
+			adj[d] = append(adj[d], b.Name)
+			inDeg[b.Name]++
+		}
+	}
 	var zero []string
-	for name, d := range inDegree {
+	for n, d := range inDeg {
 		if d == 0 {
-			zero = append(zero, name)
+			zero = append(zero, n)
 		}
 	}
 	sort.Strings(zero)
-	ordered := make([]*Builder, 0, len(builders))
+	var ordered []*Builder
 	for len(zero) > 0 {
-		// pop first (lexicographically smallest for determinism)
-		name := zero[0]
+		n := zero[0]
 		zero = zero[1:]
-		ordered = append(ordered, builders[name])
-		for _, nxt := range adj[name] {
-			inDegree[nxt]--
-			if inDegree[nxt] == 0 {
+		ordered = append(ordered, nameMap[n])
+		for _, nxt := range adj[n] {
+			inDeg[nxt]--
+			if inDeg[nxt] == 0 {
 				zero = append(zero, nxt)
 			}
 		}
 		sort.Strings(zero)
 	}
-	if len(ordered) != len(builders) {
-		// cycle exists; find participants
-		var remaining []string
-		for name, d := range inDegree {
+	if len(ordered) != len(nameMap) {
+		var cyc []string
+		for n, d := range inDeg {
 			if d > 0 {
-				remaining = append(remaining, name)
+				cyc = append(cyc, n)
 			}
 		}
-		sort.Strings(remaining)
-		return nil, fmt.Errorf("registry: cyclic builder dependencies detected: %v", remaining)
+		sort.Strings(cyc)
+		return nil, fmt.Errorf("registry: cyclic builder deps: %v", cyc)
 	}
 	return ordered, nil
 }
