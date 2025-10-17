@@ -11,6 +11,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/executor"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
@@ -31,11 +32,12 @@ func NewEngine(tr dao.TaskDao, rr dao.RunDao, exec *executor.Executor, cfg confi
 		cfg.PollInterval = time.Second
 	}
 	return &Engine{
-		cfg:           cfg,
-		taskDao:       tr,
-		runDao:        rr,
-		exec:          exec,
-		BaseComponent: core.NewBaseComponent("scheduler_engine", "task_dao", "run_dao", "executor"),
+		cfg:     cfg,
+		taskDao: tr,
+		runDao:  rr,
+		exec:    exec,
+		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_SCHEDULER, bizConsts.COMP_DAO_TASK,
+			bizConsts.COMP_DAO_RUN, bizConsts.COMP_SVC_EXECUTOR),
 	}
 }
 

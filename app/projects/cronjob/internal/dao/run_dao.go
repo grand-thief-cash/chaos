@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"gorm.io/gorm"
 
 	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
@@ -35,7 +36,7 @@ type runDaoImpl struct {
 
 func NewRunDao(gormComp *mg.GormComponent, dsName string) RunDao {
 	return &runDaoImpl{
-		BaseComponent: core.NewBaseComponent("run_dao", consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING),
+		BaseComponent: core.NewBaseComponent(bizConsts.COMP_DAO_RUN, consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING),
 		gormComp:      gormComp,
 		dsName:        dsName,
 	}
