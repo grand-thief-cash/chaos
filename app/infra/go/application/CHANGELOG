@@ -1,7 +1,12 @@
 # VERSION
-v0.15.1
+v0.15.2
 
 # Changelog
+- v0.15.2
+    - infra/go/application/registry/registry.go Simplification:
+        - Remove RegisterWithDeps and RegisterAutoInferName, keep only Register (with explicit name) and a new RegisterAuto (which automatically infers name and dependencies).
+        - Simplify the Builder struct to only include: Name, Fn, Auto, Deps, and caching fields; remove any redundant flags.
+        - Construction flow: pre-build automatic components -> infer tag-based dependencies -> perform topological sorting -> register.
 - v0.15.1
     - Added deduplication in autowire process.
     - Added flag "auto" and dependency inferencing in registry.
