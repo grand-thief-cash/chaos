@@ -1,7 +1,9 @@
 # VERSION
-v0.3.0
+v0.3.1
 
 # Changelog
+- v0.3.1
+  - Added extend runtime dependencies for http server component.
 - v0.3.0
   - Transitioned cronjob project to use new infra framework structure.
   - Replaced magic numbers with constants for better code readability.
