@@ -45,7 +45,8 @@ func RegisterWithDeps(name string, deps []string, fn BuilderFunc) {
 
 // BuildAndRegisterAll iterates all registered builders (topologically sorted by deps,
 // falling back to name order among independent builders), building and registering
-// those whose builder reports enabled.
+// those whose builder reports enabled. After registration, any runtime dependency
+// extensions declared via ExtendRuntimeDependencies are applied.
 func BuildAndRegisterAll(cfg *config.AppConfig, c *core.Container) error {
 	ordered, err := sortBuilders()
 	if err != nil {
@@ -63,6 +64,8 @@ func BuildAndRegisterAll(cfg *config.AppConfig, c *core.Container) error {
 			return fmt.Errorf("register component %s failed: %w", b.Name, err)
 		}
 	}
+	// Apply user-declared runtime dependency extensions now that all components are registered.
+	applyRuntimeDepExtensions(c)
 	return nil
 }
 
