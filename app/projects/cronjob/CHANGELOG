@@ -1,7 +1,9 @@
 # VERSION
-v0.4.1
+v0.4.2
 
 # Changelog
+- v0.4.2
+  - Replaced  RegisterAutoInferName with registry.RegisterAuto.
 - v0.4.1
   - Transitioned run_dao and task_dao to tag-based dependency injection.
   - Updated api by removing manual dependency injection.
