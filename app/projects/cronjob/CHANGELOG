@@ -1,0 +1,23 @@
+# VERSION
+v0.3.0
+
+# Changelog
+- v0.3.0
+  - Transitioned cronjob project to use new infra framework structure.
+  - Replaced magic numbers with constants for better code readability.
+- v0.2.3 [Unfinished]
+  - Runnable version of cronjob using infra framework.
+  - HTTP server haven't been transitioned yet.
+- v0.2.2 [Unfinished]
+  - Transiting cronjob project to infra based project.
+- v0.2.1
+  - Renamed rr to runDao; renamed tr to taskDao
+  - Added comments for cancelMap in Executor
+- v0.2.0
+  - Changed cronjob DAO to GROM driver.
+- v0.1.1
+  - Fixed create cronjob api, added fields in TaskDao
+  - Added comments for Task & Run models, also updated in README.md
+  - Rename *respository to *Dao.
+- v0.1.0
+  - Initial version of cronjob, it's running
