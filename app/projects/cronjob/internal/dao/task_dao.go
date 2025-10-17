@@ -26,21 +26,15 @@ type TaskDao interface {
 
 type TaskDaoImpl struct {
 	*core.BaseComponent
-	gormComp *mg.GormComponent
+	GormComp *mg.GormComponent `infra:"dep:mysql_gorm"`
 	db       *gorm.DB
 	dsName   string // 数据源名称（示例用 "main"）
 }
 
-//
-//func NewTaskDao(db *gorm.DB) TaskDao {
-//	return &TaskDaoImpl{db: db}
-//}
-
-// New 仅做结构体初始化，不访问外部资源
-func NewTaskDao(gormComp *mg.GormComponent, dsName string) *TaskDaoImpl {
+// NewTaskDao now only needs dsName; mysql_gorm injected via tag.
+func NewTaskDao(dsName string) *TaskDaoImpl {
 	return &TaskDaoImpl{
-		BaseComponent: core.NewBaseComponent(bizConsts.COMP_DAO_TASK, consts.COMPONENT_MYSQL_GORM, consts.COMPONENT_LOGGING),
-		gormComp:      gormComp,
+		BaseComponent: core.NewBaseComponent(bizConsts.COMP_DAO_TASK, consts.COMPONENT_LOGGING),
 		dsName:        dsName,
 	}
 }
@@ -52,7 +46,7 @@ func (d *TaskDaoImpl) Start(ctx context.Context) error {
 		return err
 	}
 	// 到这里 mysql_gorm 已经被框架保证先启动（因为 Dependencies 中声明）
-	db, err := d.gormComp.GetDB(d.dsName)
+	db, err := d.GormComp.GetDB(d.dsName)
 	if err != nil {
 		return fmt.Errorf("get gorm db %s failed: %w", d.dsName, err)
 	}
