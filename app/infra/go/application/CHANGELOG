@@ -1,7 +1,10 @@
 # VERSION
-v0.13.2
+v0.14.0
 
 # Changelog
+- v0.14.0
+    - Added support for user-declared runtime dependencies.
+    - TODO: support auto-injection of dependencies in components.
 - v0.13.2
     - Added dumpRoutes in HTTP SERVER component for debugging purpose.
 - v0.13.1
