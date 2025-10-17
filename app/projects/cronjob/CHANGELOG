@@ -1,7 +1,15 @@
 # VERSION
-v0.3.1
+v0.4.2
 
 # Changelog
+- v0.4.2
+  - Replaced  RegisterAutoInferName with registry.RegisterAuto.
+- v0.4.1
+  - Transitioned run_dao and task_dao to tag-based dependency injection.
+  - Updated api by removing manual dependency injection.
+  - Use auto reolve in registry_ext/*.go
+- v0.4.0
+  - Transitioned executor component and shceduler to tag-based dependency injection.
 - v0.3.1
   - Added extend runtime dependencies for http server component.
 - v0.3.0

@@ -17,27 +17,24 @@ import (
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
+// Engine component; dependencies injected via tags.
 type Engine struct {
 	cfg     config.SchedulerConfig
-	taskDao dao.TaskDao
-	runDao  dao.RunDao
-	exec    *executor.Executor
+	TaskDao dao.TaskDao        `infra:"dep:task_dao"`
+	RunDao  dao.RunDao         `infra:"dep:run_dao"`
+	Exec    *executor.Executor `infra:"dep:executor"`
 	*core.BaseComponent
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
-func NewEngine(tr dao.TaskDao, rr dao.RunDao, exec *executor.Executor, cfg config.SchedulerConfig) *Engine {
+func NewEngine(cfg config.SchedulerConfig) *Engine {
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = time.Second
 	}
 	return &Engine{
-		cfg:     cfg,
-		taskDao: tr,
-		runDao:  rr,
-		exec:    exec,
-		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_SCHEDULER, bizConsts.COMP_DAO_TASK,
-			bizConsts.COMP_DAO_RUN, bizConsts.COMP_SVC_EXECUTOR),
+		cfg:           cfg,
+		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_SCHEDULER),
 	}
 }
 
@@ -45,12 +42,9 @@ func (e *Engine) Start(ctx context.Context) error {
 	if e.IsActive() {
 		return nil
 	}
-	// Use the provided ctx only for initialization; lifecycle manager may cancel it after Start returns.
 	if err := e.BaseComponent.Start(ctx); err != nil {
 		return err
 	}
-	// IMPORTANT: Don't derive the long-running loop context from the (possibly short-lived) Start ctx.
-	// Otherwise, when the lifecycle manager cancels its per-component timeout ctx, the loop exits immediately.
 	loopCtx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.wg.Add(1)
@@ -84,7 +78,7 @@ func (e *Engine) Stop(ctx context.Context) error {
 }
 
 func (e *Engine) scan(ctx context.Context, now time.Time) error {
-	tasks, err := e.taskDao.ListEnabled(ctx)
+	tasks, err := e.TaskDao.ListEnabled(ctx)
 	if err != nil {
 		return err
 	}
@@ -94,27 +88,19 @@ func (e *Engine) scan(ctx context.Context, now time.Time) error {
 			continue
 		}
 		logging.Info(ctx, fmt.Sprintf("task: %d should run", t.ID))
-		// concurrency skip policy
-		if t.MaxConcurrency > 0 && t.ConcurrencyPolicy == model.ConcurrencySkip && e.exec.ActiveCount(t.ID) >= t.MaxConcurrency {
-			// record skipped run for observability
+		if t.MaxConcurrency > 0 && t.ConcurrencyPolicy == model.ConcurrencySkip && e.Exec.ActiveCount(t.ID) >= t.MaxConcurrency {
 			run := &model.TaskRun{TaskID: t.ID, ScheduledTime: sec, Status: model.RunStatusScheduled, Attempt: 1}
-			if err := e.runDao.CreateScheduled(ctx, run); err == nil {
-				//MarkSkipped 的作用是将某个任务运行（run）的状态标记为“已跳过”。
-				//当任务因并发策略被跳过时，先创建一个调度记录（CreateScheduled），
-				//然后通过 MarkSkipped 更新该记录的状态，方便后续统计、监控和排查任务为何未执行。这样可以提升系统的可观测性和可维护性
-				_ = e.runDao.MarkSkipped(ctx, run.ID)
+			if err := e.RunDao.CreateScheduled(ctx, run); err == nil {
+				_ = e.RunDao.MarkSkipped(ctx, run.ID)
 			}
 			continue
 		}
-		// create run
 		run := &model.TaskRun{TaskID: t.ID, ScheduledTime: sec, Status: model.RunStatusScheduled, Attempt: 1}
-		if err := e.runDao.CreateScheduled(ctx, run); err != nil {
+		if err := e.RunDao.CreateScheduled(ctx, run); err != nil {
 			continue
 		}
-		// enqueue; queue policy currently immediate (Phase2: true queue)
-		// parallel just enqueues as well
 		logging.Info(ctx, fmt.Sprintf("task: %d prepared enqueued", t.ID))
-		e.exec.Enqueue(run)
+		e.Exec.Enqueue(run)
 	}
 	return nil
 }
