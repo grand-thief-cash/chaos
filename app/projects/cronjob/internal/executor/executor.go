@@ -30,8 +30,8 @@ type Executor struct {
 	*core.BaseComponent
 
 	cfg     config.ExecutorConfig
-	taskDao dao.TaskDao
-	runDao  dao.RunDao
+	TaskDao dao.TaskDao `infra:"dep:task_dao"`
+	RunDao  dao.RunDao  `infra:"dep:run_dao"`
 	ch      chan *model.TaskRun
 	wg      sync.WaitGroup
 	mu      sync.Mutex
@@ -41,7 +41,7 @@ type Executor struct {
 	activePerTask map[int64]int                // taskID -> running count
 }
 
-func NewExecutor(cfg config.ExecutorConfig, taskDao dao.TaskDao, runDao dao.RunDao) *Executor {
+func NewExecutor(cfg config.ExecutorConfig) *Executor {
 	if cfg.WorkerPoolSize <= 0 {
 		cfg.WorkerPoolSize = 4
 	}
@@ -49,10 +49,8 @@ func NewExecutor(cfg config.ExecutorConfig, taskDao dao.TaskDao, runDao dao.RunD
 		cfg.RequestTimeout = 15 * time.Second
 	}
 	return &Executor{
-		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_EXECUTOR, bizConsts.COMP_DAO_RUN, bizConsts.COMP_DAO_TASK, consts.COMPONENT_LOGGING),
+		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_EXECUTOR, consts.COMPONENT_LOGGING),
 		cfg:           cfg,
-		taskDao:       taskDao,
-		runDao:        runDao,
 		ch:            make(chan *model.TaskRun, 1024),
 		cancelMap:     make(map[int64]context.CancelFunc),
 		activePerTask: make(map[int64]int),
@@ -134,7 +132,7 @@ func (e *Executor) worker(ctx context.Context) {
 				continue
 			}
 			logging.Info(ctx, fmt.Sprintf("task: %d grabbed in worker ok=%v", run.ID, ok))
-			ok2, err := e.runDao.TransitionToRunning(ctx, run.ID)
+			ok2, err := e.RunDao.TransitionToRunning(ctx, run.ID)
 			if err != nil || !ok2 {
 				if err != nil {
 					logging.Info(ctx, fmt.Sprintf("transition to running failed for run %d: %v", run.ID, err))
@@ -148,10 +146,10 @@ func (e *Executor) worker(ctx context.Context) {
 
 func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	// load task
-	task, err := e.taskDao.Get(ctx, run.TaskID)
+	task, err := e.TaskDao.Get(ctx, run.TaskID)
 	if err != nil {
 		log.Printf("load task %d: %v", run.TaskID, err)
-		_ = e.runDao.MarkFailed(ctx, run.ID, "load task failed")
+		_ = e.RunDao.MarkFailed(ctx, run.ID, "load task failed")
 		return
 	}
 
@@ -180,7 +178,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, task.TargetURL, body)
 	fmt.Println(fmt.Sprintf("targetURL: %s, HTTPMethod: %s", task.TargetURL, task.HTTPMethod))
 	if err != nil {
-		_ = e.runDao.MarkFailed(ctx, run.ID, "build request failed")
+		_ = e.RunDao.MarkFailed(ctx, run.ID, "build request failed")
 		return
 	}
 	client := &http.Client{Timeout: time.Duration(task.TimeoutSeconds) * time.Second}
@@ -189,9 +187,9 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 		fmt.Printf("HTTP request error: %v\n", err)
 		select {
 		case <-ctx2.Done():
-			_ = e.runDao.MarkFailed(ctx, run.ID, "canceled or timeout")
+			_ = e.RunDao.MarkFailed(ctx, run.ID, "canceled or timeout")
 		default:
-			_ = e.runDao.MarkFailed(ctx, run.ID, err.Error())
+			_ = e.RunDao.MarkFailed(ctx, run.ID, err.Error())
 		}
 		return
 	}
@@ -200,9 +198,9 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		fmt.Println(resp.StatusCode, string(b))
-		_ = e.runDao.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
+		_ = e.RunDao.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
 	} else {
-		_ = e.runDao.MarkFailed(ctx, run.ID, resp.Status)
+		_ = e.RunDao.MarkFailed(ctx, run.ID, resp.Status)
 	}
 }
 
