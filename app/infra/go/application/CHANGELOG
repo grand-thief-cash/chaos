@@ -1,7 +1,9 @@
 # VERSION
-v0.14.0
+v0.15.0
 
 # Changelog
+- v0.15.0
+    - Added tag-based dependencies injection, autowired and don't need to inject manually.
 - v0.14.0
     - Added support for user-declared runtime dependencies.
     - TODO: support auto-injection of dependencies in components.

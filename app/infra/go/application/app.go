@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/autowire"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -99,6 +100,10 @@ func (app *App) registerComponents() error {
 	// New unified registration via registry. Each component self-registers its builder in its registry/*.go init().
 	if err := registry.BuildAndRegisterAll(cfg, app.container); err != nil {
 		return err
+	}
+	// perform autowire injection after all components registered
+	if err := autowire.InjectAll(app.container); err != nil {
+		return fmt.Errorf("autowire injection failed: %w", err)
 	}
 	return nil
 }
