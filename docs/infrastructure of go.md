@@ -20,6 +20,10 @@
 11. 健康检查 & 监控 (Health / Metrics / Telemetry)
 12. 测试与可替换性 (Testing & Replace)
 13. 扩展示例：新增组件 (How to Add a Component)
+13.1 用户自定义业务组件 (taskDao / taskService)
+13.2 使用 App.RegisterCustomBuilder 动态注册组件
+13.3 使用 ProvideComponent 直接提供实例
+13.4 Service 业务服务组件示例 (依赖多个 DAO / 分层依赖实践)
 14. 常见错误与排查 (Troubleshooting)
 15. 环境变量与运行参数 (Environment Variables)
 16. 最佳实践 (Best Practices)
@@ -860,6 +864,142 @@ mc.Set("k","v")
 - 未来会演进成复杂生命周期。
 
 迁移策略：默认优先“struct + builder”；仅在组件完全无构建期依赖且逻辑极简单时考虑 ProvideComponent，否则容易形成隐式耦合。
+
+---
+## 13.4 Service 业务服务组件示例 (依赖多个 DAO / 分层依赖实践)
+很多用户还会继续在 DAO 之上抽象 Service 层（聚合多表、多 DAO、封装业务事务、编排调用），希望 Service 也能作为一个标准组件被生命周期管理，并被上层 HTTP / gRPC Server 使用。
+
+目标：
+- Service 作为组件受统一 Start / Stop 管控；可替换 / 可测试。
+- 明确分层： Infra (mysql_gorm / logging) -> DAO 组件 -> Service 组件 -> 接入层 (http_server / grpc_server)。
+- 避免环：Service 不依赖 http_server；路由注册由 server 侧在启动阶段 Resolve Service。
+
+典型依赖拓扑：
+```
+logging ─┬─> mysql_gorm ─> task_dao ─> task_service ─> (used by http_server handlers)
+         └───────────────────────────────────────────┘ (logging 也被 service 使用)
+```
+
+### 13.4.1 定义 Service 组件
+```go
+// components/taskservice/task_service.go
+package taskservice
+
+import (
+  "context"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+  td "github.com/your/module/components/taskdao" // 业务侧 DAO 包
+)
+
+type TaskService struct {
+  *core.BaseComponent
+  dao *td.TaskDAO // 已在 builder 注入 (构建期引用)，Start 时可直接使用其公开方法
+}
+
+func New(dao *td.TaskDAO) *TaskService {
+  // 运行期依赖：task_dao + logging (如果内部直接打日志)
+  return &TaskService{BaseComponent: core.NewBaseComponent("task_service", "task_dao", consts.COMPONENT_LOGGING), dao: dao}
+}
+
+func (s *TaskService) Start(ctx context.Context) error { return s.BaseComponent.Start(ctx) }
+func (s *TaskService) Stop(ctx context.Context) error  { return s.BaseComponent.Stop(ctx) }
+
+// 业务方法示例
+type TaskDTO struct { ID int64; Name string }
+func (s *TaskService) GetTask(ctx context.Context, id int64) (*TaskDTO, error) {
+  t, err := s.dao.FindTask(ctx, id)
+  if err != nil { return nil, err }
+  return &TaskDTO{ID: t.ID, Name: t.Name}, nil
+}
+```
+
+### 13.4.2 注册 Service Builder
+Service 需要在构建期 Resolve task_dao，因此使用 `RegisterWithDeps` 并声明构建期依赖。
+```go
+// registry/taskservice.go
+package registry_ext
+
+import (
+  "fmt"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/config"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
+  td "github.com/your/module/components/taskdao"
+  ts "github.com/your/module/components/taskservice"
+)
+
+func init() {
+  registry.RegisterWithDeps("task_service", []string{"task_dao"}, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+    comp, err := c.Resolve("task_dao")
+    if err != nil { return true, nil, fmt.Errorf("resolve task_dao failed: %w", err) }
+    dao, ok := comp.(*td.TaskDAO)
+    if !ok { return true, nil, fmt.Errorf("task_dao type assertion failed") }
+    return true, ts.New(dao), nil
+  })
+}
+```
+关键点：
+- 构建期依赖只写 `[]string{"task_dao"}`；`logging` 不需要放在构建期（除非构建期要 Resolve logger）。
+- 运行期依赖在 `New()` 里通过 BaseComponent 声明：`task_dao`, `logging`。
+- 这样保证：task_dao builder -> task_service builder -> 拓扑排序启动时：logging -> mysql_gorm -> task_dao -> task_service。
+
+### 13.4.3 在 HTTP / gRPC Server 中使用 Service
+不建议让 Service 依赖 http_server（那会造成“业务层依赖接入层”反向依赖），应由 http_server 侧（或其路由注册钩子）在 Start 之后 Resolve Service。
+
+方案 A：在 http_server 组件的 Start 内追加“路由注册回调”列表（如果已有可扩展点），遍历时 Resolve。
+
+方案 B：使用 Hook：注册 `hooks.AfterStart` 钩子，里边 Resolve `http_server` + `task_service`，再把 handler 绑定。
+
+示例（伪代码 Hook）：
+```go
+// registry/http_routes.go
+package registry_ext
+import (
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/hooks"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+  "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
+)
+
+func init(){
+  hooks.DefaultManager().RegisterAfterStart(100, func(c *core.Container) error {
+     srvComp, err := c.Resolve(consts.COMPONENT_HTTP_SERVER)
+     if err != nil { return err }
+     svcComp, err := c.Resolve("task_service")
+     if err != nil { return err }
+     srv := srvComp.(interface{ RegisterGET(path string, h func(ctx Context)))
+     taskSvc := svcComp.(*taskservice.TaskService)
+     srv.RegisterGET("/tasks/:id", func(ctx Context){ /* 调用 taskSvc.GetTask */ })
+     return nil
+  })
+}
+```
+
+### 13.4.4 DAO / Service 的接口抽象建议
+- 导出 DAO / Service interface（放在更高层 pkg），组件内部持有实现，外部依赖 interface 便于测试替换。
+- 在测试中使用 `container.Replace("task_service", fakeServiceComp)` 直接替换整块逻辑。
+
+### 13.4.5 何时将 Service 做成组件？
+| 场景 | 建议 |
+|------|------|
+| Service 需要被多个接入层（HTTP + gRPC + cron）共享 | 做成组件，集中生命周期管理 |
+| Service 需要依赖其它组件并在 Start 进行预热 / 缓存加载 | 做成组件 |
+| Service 逻辑纯计算，无外部依赖 | 可直接普通 struct，不必组件化 |
+| 需要在测试中替换 Service 实现 | 组件 + Replace 更方便 |
+
+### 13.4.6 常见错误
+| 错误 | 说明 | 解决 |
+|------|------|------|
+| 在 Service Start 中访问尚未启动的 DAO 资源 | 运行期依赖未声明导致启动顺序错误 | 确认 BaseComponent 里包含 DAO 名称 |
+| Service Builder 中访问事务 / 连接池 | 构建期过早访问启动才准备的资源 | 延迟到 Start 或 AfterStart Hook |
+| Service 依赖 http_server | 反向耦合导致拓扑复杂 | 把路由注册放在 server 或 Hook 中 |
+| Builder 漏写构建期 deps 直接 Resolve | Resolve 失败或返回 nil | 使用 RegisterWithDeps 并加上 task_dao |
+
+### 13.4.7 结构检查总结
+| 阶段 | 使用的依赖描述来源 | 目的 |
+|------|--------------------|------|
+| 构建期 (builder) | RegisterWithDeps([...]) | 允许 Resolve 已构建组件引用 |
+| 运行期 Start/Stop | Component.Dependencies() -> BaseComponent | 决定启动拓扑、停机逆序 |
 
 ---
 ## 14. 常见错误与排查 (Troubleshooting)
