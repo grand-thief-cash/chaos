@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
+	appconsts "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/api"
@@ -14,6 +15,9 @@ import (
 )
 
 func init() {
+	// Ensure http_server starts after our controller component by extending its runtime dep graph.
+	registry.ExtendRuntimeDependencies(appconsts.COMPONENT_HTTP_SERVER, consts.COMP_CTRL_TASK_MGMT)
+
 	// executor component
 	registry.RegisterWithDeps(consts.COMP_CTRL_TASK_MGMT, []string{
 		consts.COMP_DAO_TASK, consts.COMP_DAO_RUN, consts.COMP_SVC_EXECUTOR, consts.COMP_SVC_SCHEDULER,
