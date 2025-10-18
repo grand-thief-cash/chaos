@@ -65,7 +65,7 @@ func (r *runDaoImpl) CreateScheduled(ctx context.Context, run *model.TaskRun) er
 		run.Attempt = 1
 	}
 	if strings.TrimSpace(run.RequestHeaders) == "" { // JSON column requires valid document
-		run.RequestHeaders = "{}"
+		run.RequestHeaders = bizConsts.DEFAULT_JSON_STR
 	}
 	return r.db.WithContext(ctx).Create(run).Error
 }

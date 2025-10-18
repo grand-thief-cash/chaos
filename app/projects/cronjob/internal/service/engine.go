@@ -1,4 +1,4 @@
-package scheduler
+package service
 
 import (
 	"context"
@@ -13,16 +13,15 @@ import (
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
-	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/executor"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
 // Engine component; dependencies injected via tags.
 type Engine struct {
 	cfg     config.SchedulerConfig
-	TaskDao dao.TaskDao        `infra:"dep:task_dao"`
-	RunDao  dao.RunDao         `infra:"dep:run_dao"`
-	Exec    *executor.Executor `infra:"dep:executor"`
+	TaskDao dao.TaskDao `infra:"dep:task_dao"`
+	RunDao  dao.RunDao  `infra:"dep:run_dao"`
+	Exec    *Executor   `infra:"dep:executor"`
 	*core.BaseComponent
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -88,7 +87,7 @@ func (e *Engine) scan(ctx context.Context, now time.Time) error {
 			continue
 		}
 		logging.Info(ctx, fmt.Sprintf("task: %d should run", t.ID))
-		if t.MaxConcurrency > 0 && t.ConcurrencyPolicy == model.ConcurrencySkip && e.Exec.ActiveCount(t.ID) >= t.MaxConcurrency {
+		if t.MaxConcurrency > 0 && t.ConcurrencyPolicy == bizConsts.ConcurrencySkip && e.Exec.ActiveCount(t.ID) >= t.MaxConcurrency {
 			run := &model.TaskRun{TaskID: t.ID, ScheduledTime: sec, Status: model.RunStatusScheduled, Attempt: 1}
 			if err := e.RunDao.CreateScheduled(ctx, run); err == nil {
 				_ = e.RunDao.MarkSkipped(ctx, run.ID)
