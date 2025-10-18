@@ -709,7 +709,7 @@ func init() {
 - 需保证在 `application.App.Run()` 触发组件启动前完成（Go 的 `init()` 顺序满足这一点）。
 
 #### 8.2.4 通过 Hook 动态注册示例
-当需要按运行参数或外部条件决定是否注册路由，可使用生命周期钩子：
+当需要读取配置、环境变量或构造复杂依赖后再决定路由时，可使用生命周期钩子：
 ```go
 app.AddHook("register_extra_routes", hooks.BeforeStart, func(ctx context.Context) error {
   comp, err := app.GetComponent(consts.COMPONENT_HTTP_SERVER)
@@ -817,7 +817,8 @@ app.AddHook("inspect_routes", hooks.AfterStart, func(ctx context.Context) error 
 | client.retry | initial_backoff / max_backoff | 回退窗口 |
 | client.retry | backoff_multiplier | 指数递增倍数 |
 
-### 8.4 gRPC Server (`components/grpc_server`)
+---
+## 8.4 gRPC Server (`components/grpc_server`)
 | 字段 | 说明 |
 |------|------|
 | enabled | 是否启动 gRPC 服务 |
@@ -926,32 +927,96 @@ DataSource：
 | max_open_conns / max_idle_conns | 连接池 |
 | conn_max_life / conn_max_idle | 生命周期控制 |
 | ping_on_start | 启动是否 ping 验证 |
+| migrate_enabled | 是否在启动时执行该数据源的 SQL 迁移 |
+| migrate_dir | .sql 文件所在目录（非递归，按文件名字典序执行） |
 
+迁移执行策略：
+- 若 `migrate_enabled: true` 但 `migrate_dir` 为空 => 启动失败并关闭该数据源连接。
+- 读取目录中所有直接子文件（忽略子目录），筛选后缀 `.sql`（大小写不敏感）。
+- 按文件名字典序排序，逐个读取与分号 (`;`) 拆分语句；空白语句跳过。
+- 失败立即返回错误，组件整体启动失败并触发回滚。
+- 语句拆分简单，不支持存储过程内含分号的复杂场景（需要时建议切换 Goose / golang-migrate）。
+
+示例：
+```yaml
+mysql:
+  enabled: true
+  data_sources:
+    main:
+      host: 127.0.0.1
+      port: 3306
+      user: root
+      password: secret
+      database: appdb
+      ping_on_start: true
+      migrate_enabled: true
+      migrate_dir: migrations/sql/main
+```
+目录结构：
+```
+migrations/sql/main/
+  0001_init.sql
+  0002_add_index.sql
+  0003_seed_data.sql
+```
+执行顺序：`0001_init.sql -> 0002_add_index.sql -> 0003_seed_data.sql`。
+
+最佳实践：
+- 文件命名使用零填充递增序号 + 描述：`0004_add_user_table.sql`。
+- 语句内部使用 `IF NOT EXISTS` 保持幂等；重复执行不报错。
+- 大事务拆分多文件，避免单文件过大导致排查困难。
+- 不在迁移中放置长耗时批量写入，可通过业务逻辑或独立任务处理。
+
+---
 ### 8.7 MySQL GORM (`components/mysqlgorm`)
 与原生 mysql 类似 + GORM 级别拓展：
 
 | 字段 | 说明 |
 |------|------|
 | enabled | 启用 |
-| log_level | gorm 日志等级 |
-| slow_threshold | 慢查询阈值 |
-| data_sources.* 与 mysql 相同 |  |
-| per-ds: skip_default_tx | 跳过默认事务 |
-| per-ds: prepare_stmt | 预编译缓存 |
+| log_level | gorm 日志等级 (silent/error/warn/info/debug -> debug 映射为 info + trace 级 Debugf) |
+| slow_threshold | 慢查询阈值 (duration) |
+| data_sources | map[name]DataSourceConfig |
+| data_sources.* 与 mysql 相同 | 同 8.6 中连接池/基础字段 |
+| per-ds: skip_default_tx | 跳过默认事务（提升性能） |
+| per-ds: prepare_stmt | 启用预编译语句缓存 |
+| per-ds: migrate_enabled | 启动迁移开关（同 MySQL 原生） |
+| per-ds: migrate_dir | 迁移目录 |
 
-### 8.8 Redis (`components/redis`)
+GORM 日志：自定义 logger 映射到统一 logging 组件；Slow SQL 检测通过 `slow_threshold` 报告 warn；普通 SQL 在 `info/debug` 级输出 debug 行（含耗时、rows）。
 
-| 字段 | 说明 |
-|------|------|
-| enabled | 启用 |
-| mode | single / cluster / sentinel |
-| addresses | 地址数组（cluster/sentinel 多个） |
-| username/password | 认证 |
-| db | DB index (single 模式) |
-| sentinel_master | sentinel 主名 |
-| pool_size / min_idle_conns | 连接池参数 |
-| conn_max_lifetime / conn_max_idle_time | 连接生命周期 |
-| dial_timeout / read_timeout / write_timeout | 操作超时 |
+迁移实现：与原生 mysql 组件的逻辑等价，基于底层 `sql.DB` 执行纯 SQL 文件，不使用 `AutoMigrate`：
+- 适合团队希望保持明确 SQL 版本历史。
+- 可与未来 goose/migrate 工具平滑替换。
+
+示例：
+```yaml
+mysql_gorm:
+  enabled: true
+  log_level: info
+  slow_threshold: 250ms
+  data_sources:
+    main:
+      host: 127.0.0.1
+      port: 3306
+      user: root
+      password: secret
+      database: appdb
+      skip_default_tx: true
+      prepare_stmt: true
+      ping_on_start: true
+      migrate_enabled: true
+      migrate_dir: migrations/sql/main
+```
+
+慢查询调优建议：
+- 将 `slow_threshold` 设置为满足 SLO 的阈值（例如 200ms）；过低会产生噪音。
+- 若出现大量慢查询日志，结合 `EXPLAIN` 与索引迁移文件新增索引，然后重新部署。
+
+最佳实践补充：
+- 避免在迁移中使用 `FOREIGN KEY` 约束（已通过 `DisableForeignKeyConstraintWhenMigrating: true` 禁用 GORM 自动 FK）。
+- 采用 `ENUM` / 业务码表时应通过独立迁移进行插入，保证幂等：`INSERT IGNORE`。
+- 大批量数据初始化放置在后置 Hook 或单次脚本执行，不放在框架启动迁移路径。
 
 ### 8.9 Prometheus (`components/prometheus`)
 | 字段 | 说明 |
