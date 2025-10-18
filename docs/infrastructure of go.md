@@ -16,75 +16,156 @@
 7. 配置系统 (Configuration System)
 8. 组件目录与配置详解 (Component Catalog & Config Fields)
 9. 启动流程 (Boot & Run Flow)
+   9.1 分阶段总览  9.2 模式决策  9.3 时序图  9.4 伪代码  9.5 回滚策略  9.6 依赖验证  9.7 Hooks 保证  9.8 扩展点  9.9 性能  9.10 异常诊断  9.11 调试  9.12 拓扑层级  9.13 成功判据  9.14 启动摘要
 10. 优雅停机 (Graceful Shutdown / Windows 支持)
+    10.1 触发源  10.2 时间线  10.3 顺序细化  10.4 Stop 规范  10.5 超时与强退  10.6 流程图  10.7 问题与解决  10.8 最佳实践  10.9 耗时指标  10.10 Hooks 交互  10.11 强退日志  10.12 退出码  10.13 校验  10.14 伪代码  10.15 增强  10.16 摘要
 11. 健康检查 & 监控 (Health / Metrics / Telemetry)
 12. 测试与可替换性 (Testing & Replace)
 13. 扩展示例：新增组件 (How to Add a Component)
-13.1 用户自定义业务组件 (taskDao / taskService)
-13.2 使用 App.RegisterCustomBuilder 动态注册组件
-13.3 使用 ProvideComponent 直接提供实例
-13.4 Service 业务服务组件示例 (依赖多个 DAO / 分层依赖实践)
+    1. 用户自定义业务组件 (taskDao / taskService)
+    2. 使用 App.RegisterCustomBuilder 动态注册组件
+    3. 使用 ProvideComponent 直接提供实例
+    4. Service 业务服务组件示例 (依赖多个 DAO / 分层依赖实践)
 14. 常见错误与排查 (Troubleshooting)
 15. 环境变量与运行参数 (Environment Variables)
 16. 最佳实践 (Best Practices)
 17. 未来增强路线 (Future Enhancements)
 
 ---
-## 1. 背景 & 设计目标
-| 目标 | 说明 |
-|------|------|
-| 模块化 | 各基础设施能力（日志、HTTP、gRPC、DB、缓存、监控）独立、按需启用 |
-| 可组合 | 组件之间声明依赖，由框架统一拓扑排序启动/停止 |
-| 自描述装配 | 组件自注册 (registry + `init()`)，新增能力无需修改集中式启动文件 (OCP) |
-| 可测试 | 支持在激活前替换组件，实现依赖隔离测试 (`Container.Replace`) |
-| 确定性 | 启动顺序、注册顺序、失败回滚策略全部确定且可预测 |
-| 平台友好 | Windows / *nix 均支持优雅停机，Windows 控制台事件捕获 |
-| 可 observability | Prometheus 指标 + Telemetry (Tracing/OTLP/Stdout) 组件内聚 |
+## 1. 背景 & 设计目标 (Background & Goals)
+### 1.1 背景痛点 (Problems in typical Go service bootstrapping)
+常见中大型 Go 服务在基础设施层面易出现：
+- 启动脚本臃肿：main.go 中硬编码创建顺序，耦合全部组件。
+- 依赖混乱：组件间显式/隐式依赖混在一起，顺序不确定，偶发“有时启动成功”。
+- 横切能力散落：日志、Tracing、Metrics、健康检查分散在各自初始化片段中，难以统一治理。
+- 不易测试：无法在未激活状态替换组件，集成测试需真实资源（MySQL/Redis），成本高。
+- 扩展成本高：新增一个组件需要修改多个集中式文件（违背开放封闭原则）。
+- 停机不可控：缺乏统一生命周期与优雅回滚策略，Windows 平台兼容性差。
+
+### 1.2 设计策略 (Design Strategies)
+为解决上述问题，框架强调：
+- 显式依赖图：构建 + 运行时分离，拓扑排序确定性；缺失/环检测前置失败。
+- 自注册 & 去中心化：组件通过 registry + init() 注册，主流程只“触发”构建与启动。
+- 生命周期钩子分层：BeforeStart/AfterStart/BeforeShutdown/AfterShutdown 分阶段插入扩展逻辑。
+- 组件最小职责：资源管理 + 健康检查；不混入装配逻辑。
+- 可替换性：启动前允许 Replace mock/stub，缩小测试域。
+- 观测内聚：日志、指标、Tracing 都是独立组件，按需启用。
+- 错误即回滚：部分启动失败立即停止已激活组件，保证系统处于一致状态。
+
+### 1.3 设计目标总览 (Goals Overview)
+| 目标 | 说明 | 价值 (Why) |
+|------|------|-----------|
+| 模块化 | 日志/HTTP/gRPC/DB/缓存/监控独立启用 | 降低冷启动资源占用，加速按需裁剪 |
+| 可组合 | 声明式依赖统一排序 | 避免隐式顺序与偶发启动失败 |
+| 自描述装配 | init()+registry.Register | 新增能力零修改主入口，OCP |
+| 可测试 | Container.Replace | 单测用内存/假实现替换真实资源 |
+| 确定性 | 排序策略固定（名称排序+DFS） | 线上行为稳定可复现，易排查 |
+| 平台友好 | Windows/*nix 停机流程统一 | 跨平台部署一致体验 |
+| 可观测 | Prometheus + Telemetry 正交启用 | 快速定位性能与链路问题 |
+| 扩展点简洁 | Hooks + Runtime Dep Extension | 最少概念满足多样化装配需求 |
+
+### 1.4 成功判据 (Success Criteria)
+- 新增一个组件 = 新建包 + init() 注册，不编辑已有文件。
+- 依赖环或缺失在启动前即时报错，日志含详细路径。
+- 替换组件进行集成测试 < 5 行额外代码。
+- 部署与本地差异仅限配置文件变化，不触及代码。
 
 ---
-## 2. 架构总览
+## 2. 架构总览 (High-Level Architecture)
+### 2.1 分层结构 (Layered View)
 ```
 +-------------------- Application Layer --------------------+
-|                      application.App                      |
-|  - parse env & config path                                 |
-|  - load & validate config                                  |
-|  - trigger registry.BuildAndRegisterAll                    |
-|  - delegate start/stop to LifecycleManager                 |
-+------------------------+----------------------------------+
+| application.App                                         |
+|  - 解析启动参数 / env                                   |
+|  - 加载 & 校验配置 (ConfigManager)                      |
+|  - 触发 registry.BuildAndRegisterAll                    |
+|  - 委托 LifecycleManager Start/Stop                      |
++------------------------+---------------------------------+
                          v
 +-------------------- Core Layer ---------------------------+
-|  Container  |  LifecycleManager  |  Hooks Manager         |
-|   - DI map  |  - start/stop seq  |  - phase -> hooks      |
-|   - dep topo|  - rollback on fail|  - priority ordering   |
-+-------+-------------+------------+------------------------+
-        |             | (uses hooks) 
+| Container | LifecycleManager | Hooks Manager             |
+|  - 组件存储  - 顺序 & 回滚    - 四阶段钩子               |
+|  - 依赖校验  - 超时封装       - 优先级排序                |
++-------+-------------+-------------+-----------------------+
+        |             | (hooks 调用) 
         v             v
 +-------------------- Components Layer ---------------------+
-| logging | http_server | http_clients | grpc_server | ...  |
-|  each: config struct + builder + component impl           |
-|  declare Dependencies() -> other component names          |
-+-----------------------------------------------------------+
+| logging | http_server | http_clients | grpc_server | ... |
+|  builder -> component -> Start/Stop/Health               |
+|  声明 Dependencies() 决定启动顺序                        |
++----------------------------------------------------------+
 ```
 
+### 2.2 启动数据流 (Boot Sequence Flow)
+1. App: 读取配置文件 -> 构造 Container & LifecycleManager。
+2. Registry: 遍历已注册 builders -> 构建组件实例 -> 注册入 Container。
+3. LifecycleManager: ValidateDependencies() -> 排序 -> StartAll 顺序启动。
+4. Hooks: 在各阶段插入扩展逻辑（路由注册、预热数据等）。
+5. 失败任意一步：立即执行回滚逻辑 (stop 已激活组件)。
+
+### 2.3 关键区分 (Build-Time vs Runtime)
+| 阶段 | 发生内容 | 侧重点 | 不做的事 |
+|------|----------|--------|----------|
+| Build | 创建内存结构 | 不触发 I/O | 不连接外部网络/DB |
+| Runtime Start | 真实资源初始化 | 顺序 & 超时 & 回滚 | 不再修改依赖图 |
+| Runtime Stop | 释放资源 | 逆序停止 | 不启动新组件 |
+
+### 2.4 可替换性与扩展点
+- 替换：在 StartAll 前调用 `Container.Replace(name, mock)`。
+- 路由/任务注册：使用 Hooks BeforeStart，保证组件尚未激活。
+- 运行时依赖扩展：`registry.ExtendRuntimeDependencies(target, deps...)` 增加启动顺序约束（不改变 builder 构建顺序）。
+
 ---
-## 3. 核心模块职责 (Responsibilities & Boundaries)
-(与原表一致并补充细节)
+## 3. 核心模块职责 (Core Modules Responsibilities)
+### 3.1 总览表 (Responsibilities Matrix)
+| 模块 | 职责 | 输入 | 输出 | 不负责 |
+|------|------|------|------|--------|
+| application.App | 启动编排 | config path/env | 正常退出/错误 | 组件具体实现 |
+| registry | 构建与注册组件 | AppConfig, Container | 已注册组件集合 | 生命周期控制 |
+| core.Container | 存储实例 + 依赖校验 | builders 产物 | Resolve/Validate 排序结果 | Start/Stop |
+| core.LifecycleManager | 顺序启动 & 回滚 & 停止 | Container 排序结果 + Hooks | 稳定运行的激活组件 | 构建组件/解析配置 |
+| hooks.Manager | 管理钩子 | Hook 注册请求 | 按阶段执行结果 | 业务逻辑本身 |
+| components/* | 管理协议/资源 | 配置/依赖实例 | 资源连接 & 健康逻辑 | 全局排程 |
 
-| 模块 | 职责 | 关键点 | 不做的事 |
-|------|------|--------|----------|
-| `application.App` | 启动编排入口 | 只关心“何时”而非“如何”创建组件 | 不直接 new 具体组件 |
-| `registry` | 维护 name->BuilderFunc；按名字排序构建 | builder 返回 (enabled bool)；失败立即终止 | 不做启动 / 停止 |
-| `core.Container` | 保存组件实例；依赖完整性校验；拓扑排序 | 支持 `Replace` 用于测试 | 不管理生命周期细节 |
-| `core.LifecycleManager` | Start/Stop 顺序、钩子执行、失败回滚 | 启动前调用 `ValidateDependencies` | 不解析配置 / 不创建组件 |
-| `hooks.Manager` | 生命周期四阶段 hook 注册与调度 | 优先级整数越小越先 | 不包含业务逻辑 |
-| `components/*` | 各自协议/资源初始化、内部健康逻辑 | Start 时才做 I/O | 不感知全局结构 |
-| `config/*` | 读取/反序列化/结构校验/未来 env merge | 可添加缺省填充 | 不创建资源连接 |
+### 3.2 交互关系 (Interactions)
+```
+App -> Registry -> Container -> LifecycleManager -> Components
+  |          |            ^              |                ^
+  |          |            |              |                |
+  |          +----(Register)-------------+----(Start/Stop)+
+  +--(AddHook)--> Hooks.Manager <---------------------------
+```
 
-> 详见下节组件模型与生命周期说明。
+### 3.3 Container 细节
+- 线程安全：内部使用 RWMutex；注册与替换互斥。
+- 拓扑排序：`SortComponentsByDependencies` 采用 DFS + 名称字典序的稳定顺序。
+- 校验：`ValidateDependencies` 先缺失依赖收集再调用排序进行环检测。
+- 替换约束：只能替换未激活组件；激活后拒绝，确保运行时一致性。
+
+### 3.4 LifecycleManager 细节
+- 四阶段：BeforeStart -> StartAll -> AfterStart -> (运行期) -> BeforeShutdown -> StopAll -> AfterShutdown。
+- 超时：每个组件 Start/Stop 包裹 `context.WithTimeout`（默认 30s，可通过 `SetTimeout` 调整）。
+- 回滚：任一组件 Start 失败 -> 停止已激活的前序组件 + 尝试停止失败组件自身（若部分激活）。
+- ShutDown 幂等：多次调用仅执行一次。
+
+### 3.5 Hooks Manager
+- 注册：`AddHook(name, phase, func, priority)`；priority 数值小先执行。
+- 执行策略：同一 phase 内按 priority 升序；出现错误立即终止该 phase。
+- 典型用途：预注册路由 / 延迟数据预热 / 输出启动 banner / 注入调试探针。
+
+### 3.6 Registry
+- 手动注册：`registry.Register(name, fn)` 显式命名。
+- 自动注册：`registry.RegisterAuto(fn)` 在 Build 阶段先构建一次以推断名称与 tag 依赖。
+- 运行时依赖扩展：构建完成后调用 `applyRuntimeDepExtensions` 为支持 `AddDependencies` 的组件追加依赖。
+
+### 3.7 组件包 (components/*) 设计约束
+- Builder 返回三元组 `(enabled, component, error)`；未启用或返回 nil 跳过。
+- Start 阶段才做外部 I/O（避免构建阶段阻塞或失败污染装配）。
+- HealthCheck 保证当 active=true 时基本可用；未激活时允许返回错误。
 
 ---
 ## 4. 组件模型 (Component Model)
-接口：
+### 4.1 接口定义
 ```
 type Component interface {
   Name() string
@@ -95,62 +176,196 @@ type Component interface {
   IsActive() bool
 }
 ```
-规范：
-- Start 必须做到“幂等多次调用只激活一次/或快速返回错误”。
-- Stop 忽略已经停止状态，避免二次错误。
-- HealthCheck 语义：仅在 `IsActive()==true` 时保证核心依赖可用；未激活时可返回错误或特定 sentinel。
-- Dependencies 列出硬依赖（缺失即无法启动）。软依赖由组件在 Start 中自行探测并降级。
-- BaseComponent 提供 active 状态字段 & 默认 HealthCheck；业务组件可组合嵌入。
+对应实现参考 `core/component.go` 中 `BaseComponent`：提供 active 状态与默认 `HealthCheck` 行为。
 
-状态流转（简化）：
+### 4.2 方法语义
+| 方法 | 语义 | 约束/建议 |
+|------|------|-----------|
+| Name | 稳定唯一名 | 用于排序/日志/替换；常量化 |
+| Start | 激活资源 | 幂等；部分失败需清理内部状态（active=false）|
+| Stop | 释放资源 | 幂等；失败写日志不 panic |
+| HealthCheck | 活性检测 | 只检查关键依赖；避免重度操作 |
+| Dependencies | 运行时硬依赖 | 缺失即启动前失败；不含可选依赖 |
+| IsActive | 当前激活标志 | 写操作仅在 Start/Stop 内发生 |
+
+### 4.3 状态机 (Lifecycle State Machine)
 ```
 Registered -> (Start OK) -> Active -> (Stop) -> Inactive
-                      (Start Fail) -> Error + Rollback others
+           -> (Start Fail) -> Error -> Rollback others -> Inactive
 ```
+并发策略：框架当前串行启动；避免并发交织复杂回滚。后续可拓展并发拓扑层级启动。
+
+### 4.4 构建 vs 启动职责分离
+- 构建（Builder）阶段：仅创建 struct + 填充配置，不访问网络/磁盘，不启动 goroutine；可安全、快速、可预测。
+- 启动（Start）阶段：执行 I/O（dial/listen/ping）、注册路由、启动后台协程、建立池。
+- 益处：构建失败 = 逻辑/配置错误；启动失败 = 外部依赖故障；日志含语义分离更易排查。
+
+### 4.5 自定义组件示例 (Minimal Custom Component)
+```
+type MyCache struct { *core.BaseComponent; store map[string]string }
+
+func NewMyCache() core.Component {
+  return &MyCache{ BaseComponent: core.NewBaseComponent("my_cache"), store: make(map[string]string) }
+}
+
+func (m *MyCache) Start(ctx context.Context) error {
+  // 轻量初始化，不做外部 I/O
+  m.SetActive(true)
+  return nil
+}
+func (m *MyCache) Stop(ctx context.Context) error {
+  m.store = nil
+  m.SetActive(false)
+  return nil
+}
+```
+注册：
+```
+func init(){
+  registry.Register("my_cache", func(cfg *config.AppConfig, c *core.Container)(bool, core.Component, error){
+    return true, NewMyCache(), nil
+  })
+}
+```
+
+### 4.6 可选依赖与动态扩展
+- 可选依赖：不在 `Dependencies()` 中声明；在 `Start()` 或 hook 中 `c.Resolve(name)`，失败降级。例如：缓存组件可尝试解析 telemetry，未启用则仅记录本地指标。
+- 动态追加：使用 `registry.ExtendRuntimeDependencies(target, extra...)` 在运行时拓扑排序前补充硬依赖；适合后期才决定的顺序关系（例如某业务组件需要确保在 http_server 之前启动做路由预注册）。
+
+### 4.7 健康检查策略
+| 分类 | 建议实现 | 不建议 |
+|------|----------|--------|
+| DB | `db.PingContext(ctx)` | 全量查询 / schema diff |
+| Redis | `PING` | KEYS * / 大量脚本执行 |
+| HTTP 下游 | 可选：跳过或 HEAD 探测 | GET 复杂正文解析 |
+| 自定义缓存 | 检查 `IsActive()` + 关键 map 非 nil | 深度遍历/大对象序列化 |
+
+特性：HealthCheck 不应修改内部状态，也不应依赖慢操作 (>50ms)。
 
 ---
 ## 5. 依赖与生命周期 (Dependencies & Lifecycle)
-启动顺序 = `container.ValidateDependencies()` 得到的拓扑序列。校验包括：
-1. 缺失依赖收集：若 A 声明依赖 B 但 B 未注册 => 启动前失败。
-2. 环检测：DFS during topo 排序发现回路即失败。
-3. 顺序确定性：先按组件名排序再 DFS，保证相同集合顺序一致。
+### 5.1 校验流程
+1. 收集缺失依赖：任一组件声明的名称在容器中未注册 -> 汇总错误并终止启动。
+2. 环检测：基于 `SortComponentsByDependencies()` 的 DFS 访问栈；发现回路立即返回错误。
+3. 顺序生成：按组件名称字典序遍历，稳定 DFS 结果得到拓扑启动顺序数组。
 
-启动算法：
+### 5.2 启动顺序示例
+假设：
 ```
-validate deps -> ordered components -> foreach:
-  ctx = timeout wrapper
-  comp.Start(ctx)
-  if error: (a) attempt comp.Stop if partially active
-            (b) reverse-started-list Stop
-            (c) return error
+logging: []
+telemetry: [logging]
+http_server: [logging, telemetry]
+redis: [logging]
 ```
-停止算法：
+字典序: http_server, logging, redis, telemetry
+DFS 排序结果（拓扑）：logging -> telemetry -> http_server; logging -> redis
+最终启动序列：logging, telemetry, http_server, redis （redis 与 telemetry 无依赖关系，排序由初始名称顺序+DFS 路径决定，保持确定性）。
+
+### 5.3 启动算法伪代码
 ```
-resolve order (topo) -> reverse iterate; only active components Stop
-hooks: before_start, after_start, before_shutdown, after_shutdown
+ordered = container.ValidateDependencies()
+execute hooks(BeforeStart)
+for comp in ordered:
+  startCtx = withTimeout(globalTimeout)
+  err = comp.Start(startCtx)
+  if err:
+    if comp.IsActive(): comp.Stop(bg)
+    rollback(reverse(alreadyStarted))
+    return error
+execute hooks(AfterStart)
 ```
 
-Hooks 优先级：数值越小越先执行。失败立即中断当前阶段并返回错误（启动阶段）。
+### 5.4 回滚策略
+- 仅在某组件 Start 返回 error 时触发。
+- 已成功激活的组件逆序调用 Stop（带超时）。
+- 失败组件若部分设置 active，尝试 Stop 进行自清理。
+- 回滚过程中 Stop 错误仅记录日志，不影响继续回滚其余组件。
+
+### 5.5 停止算法伪代码
+```
+execute hooks(BeforeShutdown)
+ordered = container.SortComponentsByDependencies()
+for comp in reverse(ordered):
+  if comp.IsActive(): comp.Stop(withTimeout)
+execute hooks(AfterShutdown)
+```
+
+### 5.6 Hooks 使用模式
+| Phase | 场景示例 | 注意 |
+|-------|---------|------|
+| BeforeStart | 注册路由 / 构造内存索引 / 打印启动参数 | 避免重 IO / 长阻塞 |
+| AfterStart | 异步预热 / metrics 注册 / banner | 不再修改依赖或替换组件 |
+| BeforeShutdown | 停止接收新请求 / flush 队列 | 严控耗时 < timeout |
+| AfterShutdown | 输出统计 / 释放额外内存快照 | 不再产生新 goroutines |
+
+### 5.7 错误示例
+| 场景 | 日志示例 | 修复 |
+|------|---------|------|
+| 缺失依赖 | missing component dependencies: http_server -> [telemetry] | 启用 telemetry 或移除依赖 |
+| 环依赖 | circular dependency detected involving component mysql | 拆分依赖 / 引入事件回调替代硬依赖 |
+| 启动失败 | failed to start component redis: dial timeout | 检查地址/网络/鉴权 |
+
+### 5.8 超时与性能建议
+- 单组件启动推荐 < 3s；超过需分析能否拆分：连接建立与预热（预热放 AfterStart）。
+- 使用独立 goroutine 做长耗时缓存预热；主 Start 仅设置活跃标志与轻量连接。
+
+### 5.9 未来增强方向
+- 并行批启动：无依赖关系组件并行启动，记录耗时指标。
+- Readiness 与 Liveness 分离：支持对外两个健康端点。
+- 启动耗时指标：Prometheus Histogram 按组件名打标签。
 
 ---
-## 6. Registry 机制 (Self-Registration)
-Builder 签名：
-```
-type BuilderFunc func(cfg *config.AppConfig, c *core.Container) (enabled bool, comp core.Component, err error)
-```
-约束：
-- “纯” 构建：不做外部 I/O；仅准备内存结构和必要的函数闭包。
-- enabled=false 或 comp=nil => 跳过注册。
-- err!=nil => 视为 fatal，App 启动终止。
-- 注册表按组件名排序，提供确定性。
+## 6. Registry 机制 (Self-Registration Builders)
+### 6.1 目标
+去除集中式“手工 new”装配；新增组件零侵入主入口；允许自动推断名称和构建期依赖。
 
-示例（Logging 已实现）：
+### 6.2 核心概念
+| 概念 | 描述 |
+|------|------|
+| BuilderFunc | `func(cfg *config.AppConfig, c *core.Container)(bool, core.Component, error)` 返回启用标志与实例 |
+| 手动注册 | `registry.Register(name, fn)` 明确名称，无构建期依赖推断 |
+| 自动注册 | `registry.RegisterAuto(fn)` 预构建推断名称 + struct tag 提取依赖 |
+| 构建期依赖 | 仅决定 builder 排序；保证在 builder 中 `c.Resolve(dep)` 成功 |
+| 运行期依赖 | `Component.Dependencies()` 决定 Start/Stop 顺序 |
+| 运行期扩展 | `registry.ExtendRuntimeDependencies(target, extra...)` 追加硬依赖 |
+
+### 6.3 自动注册流程
+1. 预构建：执行 auto builder，缓存 `(enabled, component)`。
+2. 名称推断：使用 `component.Name()` 作为最终名称；重复名称报错。
+3. Tag 解析：扫描公开字段 `infra:"dep:<name>"` 收集构建期依赖；带 `?` 结尾视为可选存在则排序。
+4. 拓扑排序：基于构建期依赖的有向图 + 名称字典序出确定序列。
+5. 注册：复用缓存实例（避免二次构建）或执行手动 builder；跳过 disabled。
+6. 追加运行期扩展：调用 `applyRuntimeDepExtensions` 为支持 `AddDependencies` 的组件补边。
+
+### 6.4 扩展示例
+```
+func init(){
+  registry.ExtendRuntimeDependencies("http_server", "telemetry", "logging")
+}
+```
+使得 http_server 在运行期排序上依赖 telemetry 与 logging（即便其自身 `Dependencies()` 未声明）。
+
+### 6.5 常见陷阱
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| duplicate builder name | 两个 builder 推断或声明同名 | 修改其中一个名称 |
+| auto builder 返回 nil | 构建逻辑过重/失败 | 降级：仅做 struct 初始化，不连外部 |
+| Resolve 失败 | 构建期依赖未声明 | 使用 RegisterWithDeps 或 tag 声明 |
+| 运行期扩展无效 | 调用时机晚于 BuildAndRegisterAll | 确保在 init 中调用 |
+
+### 6.6 最佳实践
+- builder 中避免任何耗时网络操作；只做配置解析与依赖引用绑定。
+- 将所有运行期依赖显式放入 `BaseComponent` 初始化参数，便于阅读。
+- 使用 tag 声明构建期依赖使结构与声明同处一处，减少分散。
+- 复杂扩展统一放在单独 `deps_ext.go` 文件中，集中管理。
+
+### 6.7 代码片段：标准 Logging 注册
 ```
 func init(){
   registry.Register(consts.COMPONENT_LOGGING, func(cfg *config.AppConfig, c *core.Container)(bool, core.Component, error){
-    if cfg.Logging==nil || !cfg.Logging.Enabled {return false,nil,nil}
+    if cfg.Logging==nil || !cfg.Logging.Enabled { return false, nil, nil }
     comp, err := logging.NewFactory().Create(cfg.Logging)
-    if err!=nil {return true,nil,err}
+    if err!=nil { return true, nil, err }
     return true, comp, nil
   })
 }
@@ -158,21 +373,231 @@ func init(){
 
 ---
 ## 7. 配置系统 (Configuration System)
-组成：`Loader` + `Validator` + `ConfigManager` + `schema.go`。
 
-流程：
-1. Loader 读取 YAML / JSON (根据扩展名)。
-2. 反序列化到 `AppConfig`。
-3. (未来) 合并环境变量覆盖；当前留空位。
-4. Validator 基础合法性校验（文件存在、结构非空）。
-5. 成功后 `ConfigManager.appConfig` 可供组件 builder 使用。
+### 7.1 设计目标 (Goals)
+配置系统提供一个“稳定、分层、可扩展”的方式加载应用 + 基础设施 + 业务自定义配置，做到：
+- 可插拔业务配置：基础设施不需要知道具体业务结构，通过 `BizConfig any` 保持抽象。
+- 强类型访问：业务方提供指针，框架完成解码填充，后续无需再做 map 转换或手动反序列化。
+- 分层与扩展：支持未来环境变量覆盖、命令行覆盖、动态热更新预留点。
+- 惰性并确定：一次 Load 后配置对象只读，不允许运行期被组件修改（避免隐性竞态）。
 
-文件选择逻辑：
-- env 为空时默认 `development`。
-- configPath 为空时默认 `config.yaml`。
-- 支持 `.yaml` / `.yml` / `.json`。
+### 7.2 组成组件 (Modules)
+| 组件 | 职责 | 关键方法 |
+|------|------|----------|
+| Loader | 读取文件 + 解析 + 二次解码 biz_config + 未来 env 合并 | `LoadConfig()` / `SetBizConfig()` |
+| Validator | 基础合法性校验（存在性、路径、环境合法性） | `ValidateAppConfig()` |
+| ConfigManager | 编排 Loader + Validator；暴露最终 `AppConfig` | `LoadConfig()` / `BizConfig()` / `SetBizConfig()` |
+| schema.go | 定义强类型 `AppConfig` 与各组件配置结构 | struct definitions |
 
-示例顶层结构 (YAML)：
+### 7.3 AppConfig 分层结构 (Layering)
+```
+AppConfig {
+  APPInfo     *APPInfo           // 基础元数据 (app_name/env)
+  BizConfig   any                // 业务自定义结构 (指针) 已被二次解码填充
+  Logging     *LoggingConfig
+  GRPCClients *GRPCClientsConfig
+  GRPCServer  *grpc_server.Config
+  MySQL       *mysql.MySQLConfig
+  MySQLGORM   *mysqlgorm.Config
+  HTTPServer  *HTTPServerConfig
+  HTTPClient  *HTTPClientsConfig
+  Redis       *redis.Config
+  Prometheus  *prometheus.Config
+  Telemetry   *telemetry.Config
+}
+```
+特征：所有基础设施字段都可为 nil（表示未启用）。业务配置可为 nil 或具体指针。
+
+### 7.4 文件解析与格式支持 (File Resolution)
+算法：
+1. 归一化 env：空值 => `development` (可通过传入自定义 env 覆盖)。
+2. 归一化路径：空值 => `config.yaml`。
+3. 读取文件：支持 `.yaml` / `.yml` / `.json`，不支持其他扩展名（报错）。
+4. 反序列化到临时 `AppConfig`（此时 `BizConfig` 仍是 `map[string]any`）。
+5. 如业务方提供了指针 `bizPtr` 且文件中存在 `biz_config`：
+    - 将 `cfg.BizConfig` 原始 map 再次序列化为对应格式 bytes。
+    - 反序列化到指针（保持指针已有默认值）。
+    - 覆盖 `cfg.BizConfig = bizPtr`。
+6. 若业务方提供指针但文件缺失 `biz_config`：直接将指针挂载，允许其默认值生效。
+7. 合并环境变量（当前为占位 TODO，不会改变配置）。
+8. 校验基础合法性；成功后返回 `AppConfig`。
+
+### 7.5 BizConfig 设计与二次解码 (BizConfig Deep Dive)
+为何需要二次解码？
+- 直接在第一次 Unmarshal 时让 yaml/json 填充一个 `interface{}` 指针并不能得到结构体字段覆盖效果，YAML 库会生成 `map[string]any`。
+- 通过“再序列化 + 再反序列化”保证：文件中出现的字段覆盖指针中的默认值；未出现的字段保留指针内自定义默认值。
+
+指针要求：`SetBizConfig(b any)` 必须传入指针，否则 panic。这样能：
+- 保持调用者清晰知道 BizConfig 是可被填充的写目标。
+- 避免值类型导致的拷贝与默认值丢失。
+
+双入口：
+- Loader.SetBizConfig(ptr) （底层实现）
+- ConfigManager.SetBizConfig(ptr) （更上层的包装，调用前需创建 ConfigManager）
+- 快捷构造：`NewConfigManagerWithBiz(env, path, &MyBizCfg{})`
+
+访问：
+- 业务组件 builder 中通过传入的 `cfg.BizConfig` 强制类型断言为具体结构。
+- 或在运行期（未启动前）通过 `app.ConfigManager().BizConfig()` 获取并断言。
+
+### 7.6 使用示例 (Usage Examples)
+#### 7.6.1 定义业务配置结构
+```go
+// internal/config/biz.go
+package configx
+
+type BizConfig struct {
+  FeatureToggle struct {
+    EnableCache bool `yaml:"enable_cache"`
+    EnableBeta  bool `yaml:"enable_beta"`
+  } `yaml:"feature_toggle"`
+  Limits struct {
+    MaxItems int `yaml:"max_items"`
+  } `yaml:"limits"`
+  // 默认值
+  TimeoutSeconds int `yaml:"timeout_seconds"`
+}
+
+func NewDefaultBizConfig() *BizConfig {
+  c := &BizConfig{}
+  c.Limits.MaxItems = 100
+  c.TimeoutSeconds = 5
+  return c
+}
+```
+
+#### 7.6.2 YAML 文件
+```yaml
+app_info:
+  app_name: example-service
+  env: development
+biz_config:
+  feature_toggle:
+    enable_cache: true
+  limits:
+    max_items: 500
+  timeout_seconds: 10
+logging:
+  enabled: true
+  level: info
+```
+缺失字段：`feature_toggle.enable_beta` 未出现 -> 仍保持默认 false；`limits.max_items` 被覆盖为 500；`timeout_seconds` 覆盖默认 5 => 10。
+
+#### 7.6.3 加载配置
+```go
+biz := configx.NewDefaultBizConfig()
+cm  := config.NewConfigManagerWithBiz("development", "config.yaml", biz)
+if err := cm.LoadConfig(); err != nil { panic(err) }
+appCfg := cm.GetConfig()
+realBiz := appCfg.BizConfig.(*configx.BizConfig)
+fmt.Println(realBiz.Limits.MaxItems) // 500
+```
+
+#### 7.6.4 在组件 builder 中访问
+```go
+registry.Register("cache", func(cfg *config.AppConfig, c *core.Container)(bool, core.Component, error){
+  bc, ok := cfg.BizConfig.(*configx.BizConfig)
+  if !ok { return false, nil, fmt.Errorf("biz config type mismatch") }
+  if !bc.FeatureToggle.EnableCache { return false, nil, nil } // 按业务开关启用组件
+  // 创建组件...
+  return true, NewCache(bc.Limits.MaxItems, bc.TimeoutSeconds), nil
+})
+```
+
+### 7.7 优先级与覆盖顺序 (Precedence)
+当前已实现：File 内容 > 指针内默认值。
+未来计划引入：Environment Variables > Command-Line Flags > File > Pointer Defaults。
+顺序越靠前优先级越高；所有覆盖只做“浅键覆盖”不做复杂 merge。
+
+### 7.8 错误与边界 (Errors & Edge Cases)
+| 场景 | 行为 | 解决 |
+|------|------|------|
+| 配置文件不存在 | Load 失败返回 error | 确认路径/工作目录或传入绝对路径 |
+| 不支持扩展名 | 返回 `unsupported config file format` | 使用 .yaml/.yml/.json |
+| BizConfig 非指针 | panic | 传入指针: `&MyBiz{}` |
+| 文件含 biz_config 但结构字段类型不匹配 | 二次反序列化失败 | 修正文档或字段类型 |
+| Validator 返回错误 (env/path) | LoadConfig 中断 | 修改对应值 |
+| 多次调用 LoadConfig | 覆盖 `appConfig` 引用 | 建议仅启动前一次调用 |
+| 并发读取 BizConfig | 安全（只读） | 不要在运行期修改其字段 |
+| 运行期想热更新 | 当前不支持 | 计划通过增量 watcher + 原子替换实现 |
+
+### 7.9 最佳实践 (Best Practices)
+- 将业务配置单独放在 `internal/config` 包并提供 `NewDefaultBizConfig()` 构造函数。
+- 默认值写在构造函数中，不要依赖零值（提高可读性）。
+- Builder 中严禁修改 BizConfig 内容，只读访问（保持不可变性）。
+- 复杂 map 或 slice 默认值尽量在构造函数中初始化，避免 nil 判断分散。
+- 对需要类型安全的下游模块（例如缓存大小、速率限制）直接传具体字段数值，不再传整个结构。
+- 避免在不同组件间共享对 BizConfig 的写操作；如果必须动态值，改走独立原子参数组件。
+
+### 7.10 Validator 扩展 (Extending Validation)
+当前 Validator 仅做空指针与路径校验，可扩展：
+```go
+func (v *Validator) ValidateAppConfig(c *AppConfig) error {
+  if c == nil { return errors.New("config nil") }
+  if c.Logging!=nil && c.Logging.Level=="" { return errors.New("logging.level empty") }
+  if biz, ok := c.BizConfig.(*configx.BizConfig); ok {
+    if biz.Limits.MaxItems <=0 { return errors.New("biz.limits.max_items must > 0") }
+  }
+  return nil
+}
+```
+建议在不改变核心 infra 包的情况下，通过 fork 或 PR 引入更强验证；避免在 builder 中做重复校验。
+
+### 7.11 环境变量覆盖 (Environment Variable Override) — 规划
+`Loader.mergeEnvVars()` 目前为空。未来策略：
+- 映射格式：`CHAOS_LOGGING_LEVEL=debug` -> `Logging.Level`。
+- 数组分隔：使用 `,` 或 JSON 字符串。
+- BizConfig 覆盖：同样支持前缀 `CHAOS_BIZ_` 加下划线路径。
+- 冲突处理：env 覆盖文件，只记录一次覆盖日志。
+
+### 7.12 与测试集成 (Testing Integration)
+在测试中常见模式：
+1. 创建临时配置文件（或使用内存字符串写入临时路径）。
+2. 提供默认 BizConfig 指针 + 修改测试所需字段。
+3. 调用 `LoadConfig()` 后直接断言 builder 启用状态或组件参数。
+
+示例：
+```go
+func TestCacheEnable(t *testing.T){
+  tmp := t.TempDir() + "/config.yaml"
+  os.WriteFile(tmp, []byte("biz_config:\n  feature_toggle:\n    enable_cache: true\n"), 0644)
+  biz := &configx.BizConfig{} // 默认 false -> 被文件 true 覆盖
+  cm := config.NewConfigManagerWithBiz("development", tmp, biz)
+  require.NoError(t, cm.LoadConfig())
+  bc := cm.BizConfig().(*configx.BizConfig)
+  require.True(t, bc.FeatureToggle.EnableCache)
+}
+```
+
+### 7.13 线程安全与不变性 (Thread-Safety & Immutability)
+- 加载完成后 `AppConfig` 及其中各指针不应被修改；框架不做写保护，依赖约定。
+- 如需在运行期改变行为（例如动态限流阈值），请实现独立的“可热更新组件”，将阈值存储在 `atomic.Value`；初始值来源于配置。
+
+### 7.14 多环境策略建议 (Multi-Environment Strategy)
+- 按环境拆分不同文件：`config.development.yaml`, `config.staging.yaml`, `config.production.yaml`。
+- 入口根据启动参数或 env 组装路径：例如 `fmt.Sprintf("config.%s.yaml", env)` 并传给 ConfigManager。
+- 仅将差异字段放入特定环境文件，公共默认值在基础文件，然后使用浅覆盖合并（后续功能）。
+
+### 7.15 常见 FAQ
+| 问题 | 回答 |
+|------|------|
+| 能否直接把 BizConfig 写成 interface 然后自己反序列化? | 可以，但失去统一二次解码与默认值保留能力；推荐使用指针注入。 |
+| 是否支持多个 BizConfig? | 当前仅一个入口；可在自定义结构中分组字段。 |
+| 想要热更新怎么办? | 目前不支持；规划通过文件 watcher + 原子替换 + 再次拓扑检查（可能需要停机窗口）。 |
+| 可以在组件启动后修改配置提高日志级别? | 不建议；应实现日志组件自己的动态级别接口（独立于配置对象）。 |
+
+### 7.16 后续增强路线 (Planned Enhancements)
+- 环境变量/命令行覆盖。
+- 支持多文件层叠 (`base.yaml` + `env.yaml`).
+- Schema 校验（利用 jsonschema/yamlschema 生成 + 预检测）。
+- 热更新触发 Hooks：`OnConfigReload`。
+- 观测：加载耗时指标、字段缺失警告计数。
+
+### 7.17 摘要 (Summary)
+配置系统通过 `ConfigManager` 协调 `Loader` & `Validator`，并提供业务指针二次解码机制，确保业务逻辑以强类型 + 默认值友好的方式获取定义数据。`SetBizConfig` 是整个“可定制入口”的关键；其指针要求保证默认值保留与类型安全。后续增强将进一步补齐覆盖与热更新能力。
+
+### 7.18 原有示例 (Original Basic Example) — 保留
+下方示例展示最简单的顶层 YAML 结构：
 ```yaml
 app_info:
   app_name: example-service
@@ -185,8 +610,6 @@ logging:
 http_server:
   enabled: true
   address: ":8080"
-  enable_health: true
-  enable_pprof: false
 prometheus:
   enabled: true
   address: ":9090"
@@ -286,7 +709,7 @@ func init() {
 - 需保证在 `application.App.Run()` 触发组件启动前完成（Go 的 `init()` 顺序满足这一点）。
 
 #### 8.2.4 通过 Hook 动态注册示例
-当需要按运行参数或外部条件决定是否注册路由，可使用生命周期钩子：
+当需要读取配置、环境变量或构造复杂依赖后再决定路由时，可使用生命周期钩子：
 ```go
 app.AddHook("register_extra_routes", hooks.BeforeStart, func(ctx context.Context) error {
   comp, err := app.GetComponent(consts.COMPONENT_HTTP_SERVER)
@@ -375,9 +798,8 @@ app.AddHook("inspect_routes", hooks.AfterStart, func(ctx context.Context) error 
 
 #### 8.2.12 后续增强计划（与该组件相关）
 - 自动挂载 pprof (`/debug/pprof/*`)。
-- 支持请求指标（如 active requests、latency histogram、status codes）。
-- 内置限流/熔断可选中间件。
-- 热更新路由（需配合读写锁与版本切换）。
+- 增加路由列表调试输出（仅开发环境）以便确认注册结果。
+- 增加一个示例 metrics 中间件（记录请求耗时直方图）。
 
 ---
 ## 8.3 HTTP Clients (`components/http_client`)
@@ -395,7 +817,8 @@ app.AddHook("inspect_routes", hooks.AfterStart, func(ctx context.Context) error 
 | client.retry | initial_backoff / max_backoff | 回退窗口 |
 | client.retry | backoff_multiplier | 指数递增倍数 |
 
-### 8.4 gRPC Server (`components/grpc_server`)
+---
+## 8.4 gRPC Server (`components/grpc_server`)
 | 字段 | 说明 |
 |------|------|
 | enabled | 是否启动 gRPC 服务 |
@@ -504,32 +927,96 @@ DataSource：
 | max_open_conns / max_idle_conns | 连接池 |
 | conn_max_life / conn_max_idle | 生命周期控制 |
 | ping_on_start | 启动是否 ping 验证 |
+| migrate_enabled | 是否在启动时执行该数据源的 SQL 迁移 |
+| migrate_dir | .sql 文件所在目录（非递归，按文件名字典序执行） |
 
+迁移执行策略：
+- 若 `migrate_enabled: true` 但 `migrate_dir` 为空 => 启动失败并关闭该数据源连接。
+- 读取目录中所有直接子文件（忽略子目录），筛选后缀 `.sql`（大小写不敏感）。
+- 按文件名字典序排序，逐个读取与分号 (`;`) 拆分语句；空白语句跳过。
+- 失败立即返回错误，组件整体启动失败并触发回滚。
+- 语句拆分简单，不支持存储过程内含分号的复杂场景（需要时建议切换 Goose / golang-migrate）。
+
+示例：
+```yaml
+mysql:
+  enabled: true
+  data_sources:
+    main:
+      host: 127.0.0.1
+      port: 3306
+      user: root
+      password: secret
+      database: appdb
+      ping_on_start: true
+      migrate_enabled: true
+      migrate_dir: migrations/sql/main
+```
+目录结构：
+```
+migrations/sql/main/
+  0001_init.sql
+  0002_add_index.sql
+  0003_seed_data.sql
+```
+执行顺序：`0001_init.sql -> 0002_add_index.sql -> 0003_seed_data.sql`。
+
+最佳实践：
+- 文件命名使用零填充递增序号 + 描述：`0004_add_user_table.sql`。
+- 语句内部使用 `IF NOT EXISTS` 保持幂等；重复执行不报错。
+- 大事务拆分多文件，避免单文件过大导致排查困难。
+- 不在迁移中放置长耗时批量写入，可通过业务逻辑或独立任务处理。
+
+---
 ### 8.7 MySQL GORM (`components/mysqlgorm`)
 与原生 mysql 类似 + GORM 级别拓展：
 
 | 字段 | 说明 |
 |------|------|
 | enabled | 启用 |
-| log_level | gorm 日志等级 |
-| slow_threshold | 慢查询阈值 |
-| data_sources.* 与 mysql 相同 |  |
-| per-ds: skip_default_tx | 跳过默认事务 |
-| per-ds: prepare_stmt | 预编译缓存 |
+| log_level | gorm 日志等级 (silent/error/warn/info/debug -> debug 映射为 info + trace 级 Debugf) |
+| slow_threshold | 慢查询阈值 (duration) |
+| data_sources | map[name]DataSourceConfig |
+| data_sources.* 与 mysql 相同 | 同 8.6 中连接池/基础字段 |
+| per-ds: skip_default_tx | 跳过默认事务（提升性能） |
+| per-ds: prepare_stmt | 启用预编译语句缓存 |
+| per-ds: migrate_enabled | 启动迁移开关（同 MySQL 原生） |
+| per-ds: migrate_dir | 迁移目录 |
 
-### 8.8 Redis (`components/redis`)
+GORM 日志：自定义 logger 映射到统一 logging 组件；Slow SQL 检测通过 `slow_threshold` 报告 warn；普通 SQL 在 `info/debug` 级输出 debug 行（含耗时、rows）。
 
-| 字段 | 说明 |
-|------|------|
-| enabled | 启用 |
-| mode | single / cluster / sentinel |
-| addresses | 地址数组（cluster/sentinel 多个） |
-| username/password | 认证 |
-| db | DB index (single 模式) |
-| sentinel_master | sentinel 主名 |
-| pool_size / min_idle_conns | 连接池参数 |
-| conn_max_lifetime / conn_max_idle_time | 连接生命周期 |
-| dial_timeout / read_timeout / write_timeout | 操作超时 |
+迁移实现：与原生 mysql 组件的逻辑等价，基于底层 `sql.DB` 执行纯 SQL 文件，不使用 `AutoMigrate`：
+- 适合团队希望保持明确 SQL 版本历史。
+- 可与未来 goose/migrate 工具平滑替换。
+
+示例：
+```yaml
+mysql_gorm:
+  enabled: true
+  log_level: info
+  slow_threshold: 250ms
+  data_sources:
+    main:
+      host: 127.0.0.1
+      port: 3306
+      user: root
+      password: secret
+      database: appdb
+      skip_default_tx: true
+      prepare_stmt: true
+      ping_on_start: true
+      migrate_enabled: true
+      migrate_dir: migrations/sql/main
+```
+
+慢查询调优建议：
+- 将 `slow_threshold` 设置为满足 SLO 的阈值（例如 200ms）；过低会产生噪音。
+- 若出现大量慢查询日志，结合 `EXPLAIN` 与索引迁移文件新增索引，然后重新部署。
+
+最佳实践补充：
+- 避免在迁移中使用 `FOREIGN KEY` 约束（已通过 `DisableForeignKeyConstraintWhenMigrating: true` 禁用 GORM 自动 FK）。
+- 采用 `ENUM` / 业务码表时应通过独立迁移进行插入，保证幂等：`INSERT IGNORE`。
+- 大批量数据初始化放置在后置 Hook 或单次脚本执行，不放在框架启动迁移路径。
 
 ### 8.9 Prometheus (`components/prometheus`)
 | 字段 | 说明 |
@@ -555,29 +1042,103 @@ DataSource：
 
 ---
 ## 9. 启动流程 (Boot Sequence)
-时序（伪代码）：
+
+### 9.1 分阶段总览 (Phases Overview)
+| 阶段 | 发生内容 | 主要参与者 | 失败行为 |
+|------|----------|------------|----------|
+| Pre-Init | App 对启动参数(env, configPath) 归一化 | application.App | 直接返回错误 (命令行参数问题) |
+| LoadConfig | 读取 + 解析 + 校验配置 | ConfigManager (Loader/Validator) | 返回错误，不进入构建 |
+| Build (Registry) | 遍历所有已注册 builder 构建组件实例并注册 | registry + builders + core.Container | 首次失败立即终止；已注册的成功组件留在容器（未启动） |
+| Runtime Topo | 依赖完整性验证 + 拓扑排序 | core.Container | 收集/输出缺失依赖或环错误，停止启动 |
+| Hooks.BeforeStart | 执行前置钩子 (路由注册、预热索引) | hooks.Manager | 任一错误终止启动且不调用 Start |
+| Start Components | 按拓扑顺序逐个 Start | LifecycleManager | 失败触发回滚 (Stop 已启动组件) |
+| Hooks.AfterStart | 后置钩子 (异步预热、banner、指标注册) | hooks.Manager | 错误记录日志（可选策略：终止或忽略，当前建议终止并回滚） |
+| Running | 正常服务运行 | 全部激活组件 | 发生组件级运行时故障 -> 组件内部自处理/暴露健康错误 |
+| Shutdown (Signal) | 捕获信号/事件，取消根 ctx | application.App | 进入优雅停机流程 |
+| Hooks.BeforeShutdown | 提交停止前钩子 (停止接收新请求、flush 队列) | hooks.Manager | 错误继续执行 StopAll |
+| Stop Components | 逆序 Stop 已激活组件 | LifecycleManager | 个别 Stop 错误写日志，继续其余 |
+| Hooks.AfterShutdown | 后置钩子 (输出统计、转储内存等) | hooks.Manager | 错误写日志（不再有回滚） |
+
+### 9.2 模式决策 (Basic vs Enhanced Mode)
 ```
-App.Run():
-  if enhanced -> runEnhanced() else runBasic()
-    create context (signal or enhanced loop)
-  RunWithContext(ctx):
-    boot():
-      ConfigManager.LoadConfig()
-      registry.BuildAndRegisterAll(cfg, container)
-    lifecycleManager.StartAll(ctx):
-      hooks.BeforeStart
-      container.ValidateDependencies() // topo
-      for comp in ordered: comp.Start()
-      hooks.AfterStart
-  <-ctx.Done()
-  lifecycleManager.StopAll()
++----------------------------+
+| Parse ENV / Flags          |
++-------------+--------------+
+              v
+      Is Enhanced Mode?
+        /          \
+      Yes          No
+      |             |
+  runEnhanced()   runBasic()
+      |             |
+  install WinCtrl  install SIGINT/SIGTERM handler
+      |             |
+   proceed boot     proceed boot
+```
+决策来源：
+- 环境变量：`GOINFRA_FORCE_ENHANCED=1` 强制增强；`GOINFRA_DISABLE_ENHANCED=1` 禁用增强。
+- 平台：Windows 默认增强。
+
+### 9.3 ASCII 时序图 (Detailed Sequence)
+```
+App.Run()
+  |--> normalizeConfigArgs(env, path)
+  |--> cm.LoadConfig() ----------------------X (error? abort)
+  |--> registry.BuildAndRegisterAll(cfg, container)
+  |       |--> for builder in sorted(builders):
+  |       |       (enabled?, instance?) -> container.Register()
+  |       |       (failure -> abort build phase)
+  |--> ordered, err = container.ValidateDependencies() --X (missing/cycle? abort)
+  |--> hooks.Execute(BeforeStart) ---------------------X (error? abort)
+  |--> lifecycle.StartAll():
+  |       for comp in ordered:
+  |          ctx= timeout wrapper
+  |          err = comp.Start(ctx)
+  |          if err: rollback(alreadyStarted); abort
+  |--> hooks.Execute(AfterStart) ----------------------X (error? rollback & abort)
+  |--> running (await ctx.Done())
+  |<-- signal / cancel
+  |--> hooks.Execute(BeforeShutdown)
+  |--> lifecycle.StopAll(): reverse(ordered) stop active comps
+  |--> hooks.Execute(AfterShutdown)
+  |--> exit (enhanced: maybe forced if timeout or second signal)
 ```
 
-Enhanced 模式特性 (Windows 默认 / 或强制变量)：
-- 支持第二次信号强制退出
-- 支持超时强制退出 (默认 30s)
-- 支持 Windows Console Control Events (CTRL_C / CLOSE / LOGOFF / SHUTDOWN)
-- 可通过环境变量禁用强退或设置退出码
+#### 9.3.1 Mermaid 时序图 (Mermaid Sequence Diagram)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as App
+    participant C as ConfigManager
+    participant R as Registry
+    participant K as Hooks
+    participant L as LifecycleManager
+    participant S as OS Signal
+    A->>C: LoadConfig()
+    C-->>A: AppConfig / Error
+    A->>R: BuildAndRegisterAll(cfg, container)
+    R-->>A: Registered components
+    A->>A: ValidateDependencies()
+    A->>K: Run BeforeStart hooks
+    K-->>A: ok / error
+    A->>L: StartAll(ordered)
+    loop components
+      L->>Component: Start(ctx+timeout)
+      Component-->>L: ok / error
+    end
+    L-->>A: start result
+    A->>K: Run AfterStart hooks
+    K-->>A: ok / error
+    S-->>A: signal(cancel root ctx)
+    A->>K: Run BeforeShutdown hooks
+    A->>L: StopAll(reverse ordered)
+    loop components reverse
+      L->>Component: Stop(ctx+timeout)
+      Component-->>L: ok / warn
+    end
+    A->>K: Run AfterShutdown hooks
+    A-->>A: Exit / ForcedExit
+```
 
 ---
 ## 10. 优雅停机 (Graceful Shutdown)
@@ -589,6 +1150,118 @@ Enhanced 模式：
 4. Windows 控制台事件统一映射为首次取消
 
 相关环境变量：见 §15。
+
+### 10.1 触发源
+- UNIX：`SIGINT` / `SIGTERM`。
+- Windows：控制台关闭事件。
+
+### 10.2 时间线
+```
+signal -> 取消根 ctx -> 执行 BeforeShutdown Hooks -> StopAll -> AfterShutdown Hooks -> 退出
+```
+
+### 10.3 顺序细化
+- BeforeShutdown：停止接收新请求，完成正在处理的请求，清理资源。
+- StopAll：逆序停止已激活组件，调用其 Stop 方法。
+
+### 10.4 Stop 规范
+- 幂等：多次调用只执行一次清理。
+- 超时：每个组件 Stop 包裹 `context.WithTimeout`，默认 30s。
+
+### 10.5 超时与强退
+- 超过 `shutdownTimeout` 未完成的组件强制退出。
+- 可通过环境变量或配置调整 `shutdownTimeout` 时长。
+
+### 10.6 流程图 (Flow Diagram)
+```
+          +-------------+  signal1  +------------------+
+          |  Running    | --------> | Cancel Root Ctx  |
+          +-------------+           +---------+--------+
+                                              v
+                                    +--------------------+
+                                    | BeforeShutdown     | (hooks)
+                                    +---------+----------+
+                                              v
+                                    +--------------------+
+                                    | StopAll (reverse)  |
+                                    +---------+----------+
+                                              v
+                                    +--------------------+
+                                    | AfterShutdown      |
+                                    +---------+----------+
+                                              v
+                                    +--------------------+
+                               timeout? yes -> ForcedExit|---> [Exit]
+                                    | no                 |
+                                    +--------------------+
+                                            |
+                                            v
+                                          [Exit]
+```
+
+#### 10.6.1 Mermaid 停机流程图 (Mermaid Flow Diagram)
+```mermaid
+flowchart TD
+    RUN[Running] -->|signal1| CANCEL[Cancel Root Context]
+    CANCEL --> BS[Hooks: BeforeShutdown]
+    BS --> STOP[Lifecycle: StopAll (reverse order)]
+    STOP --> AS[Hooks: AfterShutdown]
+    AS --> DEC{Timeout reached? or second signal?}
+    DEC -->|Yes| FE[Forced Exit]
+    DEC -->|No| EXIT[Graceful Exit]
+    FE --> EXIT
+```
+
+### 10.7 问题与解决
+| 问题 | 解决 |
+|------|------|
+| 停机后仍有请求进入 | 确保 HTTP Server 已正确调用 `Shutdown()` |
+| 某组件 Stop 超时 | 检查该组件 Stop 实现，确保不阻塞 |
+| 强制退出后数据丢失 | 考虑在 Stop 中增加数据持久化逻辑 |
+
+### 10.8 最佳实践
+- 所有组件的 Stop 方法应尽量快，避免长时间阻塞。
+- 对外暴露的服务端口应支持优雅停机，完成中的请求应尽量处理完毕。
+- 使用 `context.Context` 传递取消信号，避免使用全局变量或单例。
+
+### 10.9 耗时指标
+- 记录各阶段耗时：BeforeShutdown、StopAll、AfterShutdown。
+- 可选：记录每个组件 Stop 的耗时。
+
+### 10.10 Hooks 交互
+- BeforeShutdown：停止接收新请求，完成正在处理的请求，清理资源。
+- AfterShutdown：记录停机日志，执行必要的清理工作。
+
+### 10.11 强退日志
+- 强制退出时记录日志，包含堆栈信息和当前 goroutine 信息。
+
+### 10.12 退出码
+- 正常退出：0
+- 异常退出：1
+
+### 10.13 校验
+- 确保所有组件的 Stop 方法幂等。
+- 确保在强制退出前能正确释放资源。
+
+### 10.14 伪代码
+```
+onSignalReceived(signal):
+  cancelRootContext()
+  executeBeforeShutdownHooks()
+  stopAllComponents()
+  executeAfterShutdownHooks()
+  if timeoutReached:
+    forceExit()
+  else:
+    gracefulExit()
+```
+
+### 10.15 增强
+- 支持分阶段停机：根据组件重要性分级停机。
+- 支持动态调整超时：根据系统负载动态调整 `shutdownTimeout`。
+
+### 10.16 摘要
+优雅停机通过信号捕获 -> 钩子执行 -> 组件停止 -> 退出 四个阶段实现。增强模式下支持超时强制退出。未来可扩展分阶段停机与动态超时调整。
 
 ---
 ## 11. 健康检查 & 监控
@@ -656,7 +1329,7 @@ func (f *FakeStore) Stop(ctx context.Context) error  { f.SetActive(false); retur
 ## 13.1 用户自定义业务组件 (示例: taskDao / taskService)
 很多业务方需要在基础设施组件 (logging, mysql_gorm, redis 等) 之上再封装自己的 DAO / Service 组件，并希望：
 - 声明依赖后自动按顺序构建、启动、停止
-- 复用统一生命周期与优雅停机
+- 复用统一生命周期与优雅回滚策略
 - 使用统一、标准、可测试的组件定义方式（结构体 + builder）
 
 本框架已引入两项能力：
@@ -706,17 +1379,6 @@ func (d *TaskDAO) Start(ctx context.Context) error {
     d.db = db
     return nil
 }
-
-func (d *TaskDAO) Stop(ctx context.Context) error { return d.BaseComponent.Stop(ctx) }
-
-// 示例 DAO 方法
-func (d *TaskDAO) FindTask(ctx context.Context, id int64) (*Task, error) {
-    var t Task
-    if err := d.db.WithContext(ctx).First(&t, id).Error; err != nil { return nil, err }
-    return &t, nil
-}
-
-type Task struct { ID int64 `gorm:"primaryKey"` Name string }
 ```
 
 ```go
@@ -748,139 +1410,22 @@ func init() {
     })
 }
 ```
+2. 在 `AppConfig` 加字段 `TaskDAO *taskdao.TaskDAO`（修改 schema.go）。
+3. 在 YAML 添加：
+   ```yaml
+   task_dao:
+     enabled: true
+     data_sources:
+       main:
+         host: 127.0.0.1
+         port: 3306
+         user: root
+         password: secret
+         database: appdb
+   ```
+4. 启动；若其它组件 Dependencies 包含 "task_dao" 但 YAML 未启用，将提前失败。
 
-> 关键点：
-> - RegisterWithDeps 保证 mysql_gorm builder 先执行，因此 Resolve 一定成功。
-> - Start 顺序再由 TaskDAO.Dependencies() 决定（运行期拓扑），mysql_gorm 会先启动，
->   所以在 TaskDAO.Start 中调用 gormComp.GetDB() 才能得到已初始化的 *gorm.DB。
-> - 构建期不要访问对方启动后才会准备的资源（如连接池），否则会得到空/未初始化状态。
-
-## 13.2 使用 App.RegisterCustomBuilder 动态注册组件
-当你不想写 `init()`（例如：根据启动参数 / 环境变量 / 运行时逻辑决定是否注册）时，可以在调用 `app.Run()` 之前显式注册自定义组件 builder。
-
-特点：
-- 仍然走标准 builder 流程（可声明构建期依赖、可在 builder 内 Resolve）。
-- 代码集中在 main（或组装层），便于条件控制与调试。
-- 与 `init()` 自注册方式互斥或并存（同名二次注册会 panic）。
-
-示例：动态注册一个简单的 `reporter` 组件，它依赖 `logging`。
-```go
-// main.go
-package main
-
-import (
-  "context"
-  "os"
-  "github.com/grand-thief-cash/chaos/app/infra/go/application"
-  "github.com/grand-thief-cash/chaos/app/infra/go/application/config"
-  "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
-  "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
-)
-
-type Reporter struct { *core.BaseComponent }
-func NewReporter() *Reporter { return &Reporter{core.NewBaseComponent("reporter", consts.COMPONENT_LOGGING)} }
-func (r *Reporter) Start(ctx context.Context) error { return r.BaseComponent.Start(ctx) }
-func (r *Reporter) Stop(ctx context.Context) error  { return r.BaseComponent.Stop(ctx) }
-
-func main(){
-  app := application.GetApp()
-  if os.Getenv("ENABLE_REPORTER") == "1" { // 条件启用
-    app.RegisterCustomBuilder("reporter", []string{consts.COMPONENT_LOGGING}, func(cfg *config.AppConfig, c *core.Container)(bool, core.Component, error){
-      // 可选：_ , _ = c.Resolve(consts.COMPONENT_LOGGING) 做构建期 wiring
-      return true, NewReporter(), nil
-    })
-  }
-  if err := app.Run(); err != nil { panic(err) }
-}
-```
-行为说明：
-- 如果未设置 ENABLE_REPORTER=1，组件不注册；任何声明依赖 reporter 的组件会在启动前依赖校验直接失败。
-- 测试中可直接调用 RegisterCustomBuilder 注入 mock 实现。
-
-## 13.3 使用 ProvideComponent 直接提供实例
-`ProvideComponent` 适合“已存在实例”或“非常简单无需构建期依赖注入”的场景。
-
-限制与注意：
-
-| 项目 | 说明 |
-|-----|------|
-| 不支持构建期 Resolve | 没有 builder 回调，无法在提供时通过容器 Resolve 其它组件实例。 |
-| 仍需声明运行期依赖  | 结构体内嵌 `BaseComponent` 时把硬依赖名称放进去，保障启动顺序。 |
-| 必须在 boot 前调用 | `app.Run()` / `RunWithContext()` 触发 boot 后再调用会失败。 |
-| 无 enabled 语义 | 是否注册完全由你代码逻辑决定。 |
-| 不适合复杂初始化 | 需要依赖其它组件资源/引用的建议使用 builder。 |
-
-
-示例：内存缓存组件（依赖 logging）。
-```go
-// cache/cache.go
-package cache
-
-import (
-  "context"
-  "sync"
-  "github.com/grand-thief-cash/chaos/app/infra/go/application/core"
-  "github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
-)
-
-type MemoryCache struct {
-  *core.BaseComponent
-  mu   sync.RWMutex
-  data map[string]string
-}
-
-func NewMemoryCache() *MemoryCache {
-  return &MemoryCache{BaseComponent: core.NewBaseComponent("memory_cache", consts.COMPONENT_LOGGING), data: make(map[string]string)}
-}
-func (m *MemoryCache) Start(ctx context.Context) error { return m.BaseComponent.Start(ctx) }
-func (m *MemoryCache) Stop(ctx context.Context) error  { return m.BaseComponent.Stop(ctx) }
-func (m *MemoryCache) Get(k string) (string, bool) { m.mu.RLock(); v, ok := m.data[k]; m.mu.RUnlock(); return v, ok }
-func (m *MemoryCache) Set(k, v string) { m.mu.Lock(); m.data[k]=v; m.mu.Unlock() }
-```
-
-注册与访问：
-```go
-// main.go
-package main
-import (
-  "github.com/grand-thief-cash/chaos/app/infra/go/application"
-  "github.com/your/module/cache"
-)
-func main(){
-  app := application.GetApp()
-  if err := app.ProvideComponent(cache.NewMemoryCache()); err != nil { panic(err) }
-  if err := app.Run(); err != nil { panic(err) }
-}
-```
-使用：
-```go
-comp, _ := app.GetComponent("memory_cache")
-mc := comp.(*cache.MemoryCache)
-mc.Set("k","v")
-```
-何时不要用：
-- 需要构建期注入其它组件引用（改用 RegisterCustomBuilder）。
-- 需要 enabled=false 条件配置化跳过。
-- 未来会演进成复杂生命周期。
-
-迁移策略：默认优先“struct + builder”；仅在组件完全无构建期依赖且逻辑极简单时考虑 ProvideComponent，否则容易形成隐式耦合。
-
----
-## 13.4 Service 业务服务组件示例 (依赖多个 DAO / 分层依赖实践)
-很多用户还会继续在 DAO 之上抽象 Service 层（聚合多表、多 DAO、封装业务事务、编排调用），希望 Service 也能作为一个标准组件被生命周期管理，并被上层 HTTP / gRPC Server 使用。
-
-目标：
-- Service 作为组件受统一 Start / Stop 管控；可替换 / 可测试。
-- 明确分层： Infra (mysql_gorm / logging) -> DAO 组件 -> Service 组件 -> 接入层 (http_server / grpc_server)。
-- 避免环：Service 不依赖 http_server；路由注册由 server 侧在启动阶段 Resolve Service。
-
-典型依赖拓扑：
-```
-logging ─┬─> mysql_gorm ─> task_dao ─> task_service ─> (used by http_server handlers)
-         └───────────────────────────────────────────┘ (logging 也被 service 使用)
-```
-
-### 13.4.1 定义 Service 组件
+### 13.1.2 Service 组件示例
 ```go
 // components/taskservice/task_service.go
 package taskservice
@@ -914,8 +1459,6 @@ func (s *TaskService) GetTask(ctx context.Context, id int64) (*TaskDTO, error) {
 }
 ```
 
-### 13.4.2 注册 Service Builder
-Service 需要在构建期 Resolve task_dao，因此使用 `RegisterWithDeps` 并声明构建期依赖。
 ```go
 // registry/taskservice.go
 package registry_ext
@@ -939,12 +1482,12 @@ func init() {
   })
 }
 ```
-关键点：
-- 构建期依赖只写 `[]string{"task_dao"}`；`logging` 不需要放在构建期（除非构建期要 Resolve logger）。
-- 运行期依赖在 `New()` 里通过 BaseComponent 声明：`task_dao`, `logging`。
-- 这样保证：task_dao builder -> task_service builder -> 拓扑排序启动时：logging -> mysql_gorm -> task_dao -> task_service。
+> 关键点：
+> - 构建期依赖只写 `[]string{"task_dao"}`；`logging` 不需要放在构建期（除非构建期要 Resolve logger）。
+> - 运行期依赖在 `New()` 里通过 BaseComponent 声明：`task_dao`, `logging`。
+> - 这样保证：task_dao builder -> task_service builder -> 拓扑排序启动时：logging -> mysql_gorm -> task_dao -> task_service。
 
-### 13.4.3 在 HTTP / gRPC Server 中使用 Service
+### 13.1.3 在 HTTP / gRPC Server 中使用 Service
 不建议让 Service 依赖 http_server（那会造成“业务层依赖接入层”反向依赖），应由 http_server 侧（或其路由注册钩子）在 Start 之后 Resolve Service。
 
 方案 A：在 http_server 组件的 Start 内追加“路由注册回调”列表（如果已有可扩展点），遍历时 Resolve。
@@ -975,11 +1518,11 @@ func init(){
 }
 ```
 
-### 13.4.4 DAO / Service 的接口抽象建议
+### 13.1.4 DAO / Service 的接口抽象建议
 - 导出 DAO / Service interface（放在更高层 pkg），组件内部持有实现，外部依赖 interface 便于测试替换。
 - 在测试中使用 `container.Replace("task_service", fakeServiceComp)` 直接替换整块逻辑。
 
-### 13.4.5 何时将 Service 做成组件？
+### 13.1.5 何时将 Service 做成组件？
 | 场景 | 建议 |
 |------|------|
 | Service 需要被多个接入层（HTTP + gRPC + cron）共享 | 做成组件，集中生命周期管理 |
@@ -987,7 +1530,7 @@ func init(){
 | Service 逻辑纯计算，无外部依赖 | 可直接普通 struct，不必组件化 |
 | 需要在测试中替换 Service 实现 | 组件 + Replace 更方便 |
 
-### 13.4.6 常见错误
+### 13.1.6 常见错误
 | 错误 | 说明 | 解决 |
 |------|------|------|
 | 在 Service Start 中访问尚未启动的 DAO 资源 | 运行期依赖未声明导致启动顺序错误 | 确认 BaseComponent 里包含 DAO 名称 |
@@ -995,7 +1538,7 @@ func init(){
 | Service 依赖 http_server | 反向耦合导致拓扑复杂 | 把路由注册放在 server 或 Hook 中 |
 | Builder 漏写构建期 deps 直接 Resolve | Resolve 失败或返回 nil | 使用 RegisterWithDeps 并加上 task_dao |
 
-### 13.4.7 结构检查总结
+### 13.1.7 结构检查总结
 | 阶段 | 使用的依赖描述来源 | 目的 |
 |------|--------------------|------|
 | 构建期 (builder) | RegisterWithDeps([...]) | 允许 Resolve 已构建组件引用 |
@@ -1054,7 +1597,7 @@ func init(){
 
 HTTP Server Component 相关增强：
 1. 在 HTTP Server 组件中实现 enable_pprof 自动挂载（/debug/pprof/*）。
-2. 增加路由列表调试输出（仅开发环境）以便确认注册结果。 
+2. 增加路由列表调试输出（仅开发环境）以便确认注册结果。
 3. 增加一个示例 metrics 中间件（记录请求耗时直方图）。
 
 ## 附：原始职责边界表 (保留)
@@ -1090,9 +1633,9 @@ HTTP Server Component 相关增强：
 ### 依赖与生命周期
 - 启动顺序 = `container.ValidateDependencies()` 的拓扑排序结果。
 - 启动失败：
-  - 尝试 Stop 失败组件（若部分激活）
-  - 按已完成的逆序逐个 Stop 已启动组件
-  - 返回首个失败错误
+    - 尝试 Stop 失败组件（若部分激活）
+    - 按已完成的逆序逐个 Stop 已启动组件
+    - 返回首个失败错误
 - 正常 Stop：逆拓扑顺序停止；忽略未激活组件。
 
 ### 边界改进收益
@@ -1100,7 +1643,7 @@ HTTP Server Component 相关增强：
 |-----------|------|------|
 | `app.go` 硬编码 if/else 组件构造 | registry + init 自注册 | 新增组件无需修改集中式文件 (OCP) |
 | 组件构建与启动杂糅 | 构建只在 register 阶段；启动在 Lifecycle | 更清晰的单一职责 |
-| 缺乏依赖完整性提前失败 | `ValidateDependencies()` 启动前执行 | 早期快速失败，避免半启动状态 |
+| 缺乏依赖完整性提前失败 | `ValidateDependencies` 启动前执行 | 早期快速失败，避免半启动状态 |
 | 测试难以替换组件 | `Container.Replace` (未激活) | 提升可测试性 |
 
 (以上为原始摘录，已在前文展开。)

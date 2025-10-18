@@ -1,7 +1,11 @@
 # VERSION
-v0.15.2
+v0.15.4
 
 # Changelog
+- v0.15.4
+    - Mysql GORM component support auto-migration when starting.
+- v0.15.3
+    - Edit doc from chapter 1 to chapter 10.
 - v0.15.2
     - infra/go/application/registry/registry.go Simplification:
         - Remove RegisterWithDeps and RegisterAutoInferName, keep only Register (with explicit name) and a new RegisterAuto (which automatically infers name and dependencies).
@@ -25,7 +29,6 @@ v0.15.2
     - Added ProvideComponent directly.
     - Supplied dependencies for mysql component and gorm component.
     - Doc also updated.
-
 - v0.12.0
     - Changed OS vars to flag arguments.
     - Added biz config support in config manager and app, also provide new Exportable func to users.

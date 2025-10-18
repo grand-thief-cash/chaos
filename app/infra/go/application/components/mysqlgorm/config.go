@@ -30,4 +30,8 @@ type DataSourceConfig struct {
 	// GORM specific per-datasource toggles
 	SkipDefaultTransaction bool `yaml:"skip_default_tx" json:"skip_default_tx"`
 	PrepareStmt            bool `yaml:"prepare_stmt" json:"prepare_stmt"`
+
+	// Migration support: same semantics as raw mysql component: execute .sql files in lexical order non-recursively.
+	MigrateEnabled bool   `yaml:"migrate_enabled" json:"migrate_enabled"`
+	MigrateDir     string `yaml:"migrate_dir" json:"migrate_dir"`
 }
