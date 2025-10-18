@@ -1,7 +1,9 @@
 # VERSION
-v0.15.2
+v0.15.3
 
 # Changelog
+- v0.15.3
+    - Edit doc from chapter 1 to chapter 10.
 - v0.15.2
     - infra/go/application/registry/registry.go Simplification:
         - Remove RegisterWithDeps and RegisterAutoInferName, keep only Register (with explicit name) and a new RegisterAuto (which automatically infers name and dependencies).
