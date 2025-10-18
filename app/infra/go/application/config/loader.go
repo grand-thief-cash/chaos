@@ -114,7 +114,7 @@ func (l *Loader) decodeBizSection(ext string, raw any, target any) error {
 
 // mergeEnvVars 合并环境变量到配置中
 func (l *Loader) mergeEnvVars(_ *AppConfig) {
-	// TODO: 可选实现��境变量覆盖逻辑
+	// TODO: 可选实现境变量覆盖逻辑
 }
 
 // fileExists 检查文件是否存在

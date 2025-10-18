@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/autowire"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -100,6 +101,10 @@ func (app *App) registerComponents() error {
 	if err := registry.BuildAndRegisterAll(cfg, app.container); err != nil {
 		return err
 	}
+	// perform autowire injection after all components registered
+	if err := autowire.InjectAll(app.container); err != nil {
+		return fmt.Errorf("autowire injection failed: %w", err)
+	}
 	return nil
 }
 
@@ -121,7 +126,12 @@ func (app *App) AddHook(name string, phase hooks.Phase, fn hooks.HookFunc, prior
 // RegisterCustomBuilder lets users register their own component builders (with optional build-time dependencies)
 // before the application boots. Safe to call multiple times prior to Run/RunWithContext.
 func (app *App) RegisterCustomBuilder(name string, deps []string, fn registry.BuilderFunc) {
-	registry.RegisterWithDeps(name, deps, fn)
+	// Slimmed registry: explicit build-time deps removed. Ignore deps slice.
+	if name == "" {
+		registry.RegisterAuto(fn) // auto infer name + deps
+	} else {
+		registry.Register(name, fn)
+	}
 }
 
 // ProvideComponent allows directly supplying a fully constructed custom component instance (bypassing builder pattern).

@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -88,6 +90,21 @@ func (c *MysqlComponent) Start(ctx context.Context) error {
 			cancel()
 		}
 
+		// Migrations (optional)
+		if ds.MigrateEnabled {
+			if strings.TrimSpace(ds.MigrateDir) == "" {
+				_ = db.Close()
+				return fmt.Errorf("mysql datasource %s migrate_enabled=true but migrate_dir empty", name)
+			}
+			migStart := time.Now()
+			logging.Infof(ctx, "[mysql] datasource %s running migrations dir=%s", name, ds.MigrateDir)
+			if err := runMigrations(ctx, db, ds.MigrateDir); err != nil {
+				_ = db.Close()
+				return fmt.Errorf("mysql datasource %s migrations failed: %w", name, err)
+			}
+			logging.Infof(ctx, "[mysql] datasource %s migrations completed dur=%s", name, time.Since(migStart))
+		}
+
 		c.mutex.Lock()
 		c.databases[name] = db
 		c.mutex.Unlock()
@@ -101,7 +118,7 @@ func (c *MysqlComponent) Start(ctx context.Context) error {
 }
 
 func (c *MysqlComponent) Stop(ctx context.Context) error {
-	defer c.BaseComponent.Stop(ctx)
+	defer func() { _ = c.BaseComponent.Stop(ctx) }()
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	for name, db := range c.databases {
@@ -178,4 +195,39 @@ func (c *MysqlComponent) listNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// runMigrations executes .sql files (non-recursive) in lexical order; each file may contain multiple statements separated by ';'.
+func runMigrations(ctx context.Context, db *sql.DB, dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read migrations dir: %w", err)
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(strings.ToLower(name), ".sql") {
+			files = append(files, filepath.Join(dir, name))
+		}
+	}
+	sort.Strings(files)
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", f, err)
+		}
+		stmts := strings.Split(string(b), ";")
+		for _, s := range stmts {
+			if strings.TrimSpace(s) == "" {
+				continue
+			}
+			if _, err := db.ExecContext(ctx, s); err != nil {
+				return fmt.Errorf("exec %s failed: %w", f, err)
+			}
+		}
+	}
+	return nil
 }

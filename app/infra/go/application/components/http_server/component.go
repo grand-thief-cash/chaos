@@ -76,6 +76,9 @@ func (hc *HTTPServerComponent) Start(ctx context.Context) error {
 		return err
 	}
 
+	// After all routes registered, dump them for debugging. For debug,open this line if needed.
+	//hc.dumpRoutes(ctx)
+
 	hc.server = &http.Server{
 		Addr:         hc.cfg.Address,
 		ReadTimeout:  hc.cfg.ReadTimeout,
@@ -129,6 +132,8 @@ func (hc *HTTPServerComponent) healthHandler(w http.ResponseWriter, _ *http.Requ
 }
 
 func (hc *HTTPServerComponent) setupMiddlewares() {
+	// Normalize trailing slashes before other middlewares so routing works for both /path and /path/
+	hc.router.Use(middleware.RedirectSlashes)
 	hc.router.Use(middleware.RealIP)
 	hc.router.Use(middleware.Recoverer)
 	hc.router.Use(middleware.Timeout(60 * time.Second))
@@ -190,6 +195,17 @@ func (hc *HTTPServerComponent) registerAllRoutes() error {
 		}
 	}
 	return nil
+}
+
+// dumpRoutes logs all registered routes (method + pattern) to help debugging routing issues.
+func (hc *HTTPServerComponent) dumpRoutes(ctx context.Context) {
+	if hc.router == nil {
+		return
+	}
+	_ = chi.Walk(hc.router, func(method string, route string, handler http.Handler, middlewares ...func(http.Handler) http.Handler) error {
+		logging.Infof(ctx, "route registered: %s %s", method, route)
+		return nil
+	})
 }
 
 func (hc *HTTPServerComponent) applyDefaults() {
