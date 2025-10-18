@@ -1,7 +1,9 @@
 # VERSION
-v0.4.2
+v0.4.3
 
 # Changelog
+- v0.4.3
+  - Replaced magic strings with constants in all cronjob.
 - v0.4.2
   - Replaced  RegisterAutoInferName with registry.RegisterAuto.
 - v0.4.1

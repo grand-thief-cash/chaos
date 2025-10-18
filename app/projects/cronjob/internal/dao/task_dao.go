@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
-	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
@@ -20,7 +20,7 @@ type TaskDao interface {
 	Get(ctx context.Context, id int64) (*model.Task, error)
 	ListEnabled(ctx context.Context) ([]*model.Task, error)
 	UpdateCronAndMeta(ctx context.Context, t *model.Task) error
-	UpdateStatus(ctx context.Context, id int64, status string) error
+	UpdateStatus(ctx context.Context, id int64, status bizConsts.TaskStatus) error
 	SoftDelete(ctx context.Context, id int64) error
 }
 
@@ -64,10 +64,10 @@ func (d *TaskDaoImpl) Create(ctx context.Context, t *model.Task) error {
 		t.Version = 1
 	}
 	if strings.TrimSpace(t.HeadersJSON) == "" {
-		t.HeadersJSON = "{}"
+		t.HeadersJSON = bizConsts.DEFAULT_JSON_STR
 	}
 	if strings.TrimSpace(t.RetryPolicyJSON) == "" {
-		t.RetryPolicyJSON = "{}"
+		t.RetryPolicyJSON = bizConsts.DEFAULT_JSON_STR
 	}
 	return d.db.WithContext(ctx).Create(t).Error
 }
@@ -90,10 +90,10 @@ func (d *TaskDaoImpl) ListEnabled(ctx context.Context) ([]*model.Task, error) {
 
 func (d *TaskDaoImpl) UpdateCronAndMeta(ctx context.Context, t *model.Task) error {
 	if strings.TrimSpace(t.HeadersJSON) == "" {
-		t.HeadersJSON = "{}"
+		t.HeadersJSON = bizConsts.DEFAULT_JSON_STR
 	}
 	if strings.TrimSpace(t.RetryPolicyJSON) == "" {
-		t.RetryPolicyJSON = "{}"
+		t.RetryPolicyJSON = bizConsts.DEFAULT_JSON_STR
 	}
 	updates := map[string]interface{}{
 		"description":          t.Description,
@@ -130,7 +130,7 @@ func (d *TaskDaoImpl) UpdateCronAndMeta(ctx context.Context, t *model.Task) erro
 	return nil
 }
 
-func (d *TaskDaoImpl) UpdateStatus(ctx context.Context, id int64, status string) error {
+func (d *TaskDaoImpl) UpdateStatus(ctx context.Context, id int64, status bizConsts.TaskStatus) error {
 	res := d.db.WithContext(ctx).Model(&model.Task{}).Where("id=? AND deleted=0", id).Updates(map[string]any{"status": status, "version": gorm.Expr("version+1")})
 	return res.Error
 }
