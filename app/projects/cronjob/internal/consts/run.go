@@ -1,0 +1,18 @@
+package consts
+
+// RunStatus 表示任务运行的状态枚举，防止魔法字符串。
+type RunStatus string
+
+const (
+	Scheduled       RunStatus = "SCHEDULED"        // 已调度，等待执行
+	Running         RunStatus = "RUNNING"          // 正在执行
+	Success         RunStatus = "SUCCESS"          // 执行成功
+	Failed          RunStatus = "FAILED"           // 执行失败
+	Timeout         RunStatus = "TIMEOUT"          // 执行超时
+	Retrying        RunStatus = "RETRYING"         // 正在重试
+	CallbackPending RunStatus = "CALLBACK_PENDING" // 等待异步回调
+	CallbackSuccess RunStatus = "CALLBACK_SUCCESS" // 异步回调成功
+	FailedTimeout   RunStatus = "FAILED_TIMEOUT"   // 回调超时失败
+	Canceled        RunStatus = "CANCELED"         // 被取消
+	Skipped         RunStatus = "SKIPPED"          // 被跳过
+)

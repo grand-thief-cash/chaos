@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -153,7 +152,12 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 		return
 	}
 
-	ctx2, cancel := context.WithTimeout(ctx, time.Duration(task.TimeoutSeconds)*time.Second)
+	// derive per-run context with timeout
+	to := task.TimeoutSeconds
+	if to <= 0 {
+		to = 10
+	}
+	ctx2, cancel := context.WithTimeout(ctx, time.Duration(to)*time.Second)
 	e.mu.Lock()
 	e.cancelMap[run.ID] = cancel
 	e.activePerTask[task.ID]++
@@ -173,31 +177,31 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	if task.BodyTemplate != "" {
 		body = bytes.NewBufferString(task.BodyTemplate)
 	}
-	tB, _ := json.Marshal(task)
-	fmt.Println(fmt.Sprintf("task: %s", string(tB)))
 	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, task.TargetURL, body)
-	fmt.Println(fmt.Sprintf("targetURL: %s, HTTPMethod: %s", task.TargetURL, task.HTTPMethod))
 	if err != nil {
 		_ = e.RunDao.MarkFailed(ctx, run.ID, "build request failed")
 		return
 	}
-	client := &http.Client{Timeout: time.Duration(task.TimeoutSeconds) * time.Second}
+
+	client := &http.Client{Timeout: time.Duration(to) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Printf("HTTP request error: %v\n", err)
-		select {
-		case <-ctx2.Done():
-			_ = e.RunDao.MarkFailed(ctx, run.ID, "canceled or timeout")
-		default:
-			_ = e.RunDao.MarkFailed(ctx, run.ID, err.Error())
+		// differentiate error source
+		if ctx2.Err() == context.DeadlineExceeded {
+			_ = e.RunDao.MarkTimeout(ctx, run.ID, "request timeout")
+			return
 		}
+		if ctx2.Err() == context.Canceled {
+			// explicit cancel
+			_ = e.RunDao.MarkCanceled(ctx, run.ID)
+			return
+		}
+		_ = e.RunDao.MarkFailed(ctx, run.ID, err.Error())
 		return
 	}
-	fmt.Printf("Response: %+v\n", resp)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		fmt.Println(resp.StatusCode, string(b))
 		_ = e.RunDao.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
 	} else {
 		_ = e.RunDao.MarkFailed(ctx, run.ID, resp.Status)

@@ -69,6 +69,12 @@ func (d *TaskDaoImpl) Create(ctx context.Context, t *model.Task) error {
 	if strings.TrimSpace(t.RetryPolicyJSON) == "" {
 		t.RetryPolicyJSON = bizConsts.DEFAULT_JSON_STR
 	}
+	if t.OverlapAction == "" {
+		t.OverlapAction = bizConsts.DEFAULT_OVERLAP_ACTION
+	}
+	if t.FailureAction == "" {
+		t.FailureAction = bizConsts.DEFAULT_FAILURE_ACTION
+	}
 	return d.db.WithContext(ctx).Create(t).Error
 }
 
@@ -112,6 +118,8 @@ func (d *TaskDaoImpl) UpdateCronAndMeta(ctx context.Context, t *model.Task) erro
 		"catchup_limit":        t.CatchupLimit,
 		"callback_method":      t.CallbackMethod,
 		"callback_timeout_sec": t.CallbackTimeoutSec,
+		"overlap_action":       t.OverlapAction,
+		"failure_action":       t.FailureAction,
 		"version":              gorm.Expr("version + 1"),
 	}
 	// optimistic lock with version
