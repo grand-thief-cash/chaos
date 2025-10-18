@@ -10,6 +10,13 @@ import (
 
 func init() {
 	cronjobCfg := bizConfig.GetBizConfig()
+	// register task service (cache layer) first so others can depend on it
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, service.NewTaskService(), nil
+	})
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, service.NewRunService(), nil
+	})
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, service.NewExecutor(cronjobCfg.Executor), nil
 	})

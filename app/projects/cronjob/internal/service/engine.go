@@ -19,9 +19,9 @@ import (
 // Engine component; dependencies injected via tags.
 type Engine struct {
 	cfg     config.SchedulerConfig
-	TaskDao dao.TaskDao `infra:"dep:task_dao"`
-	RunDao  dao.RunDao  `infra:"dep:run_dao"`
-	Exec    *Executor   `infra:"dep:executor"`
+	TaskSvc *TaskService `infra:"dep:task_service"`
+	RunDao  dao.RunDao   `infra:"dep:run_dao"`
+	Exec    *Executor    `infra:"dep:executor"`
 	*core.BaseComponent
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
@@ -79,7 +79,7 @@ func (e *Engine) Stop(ctx context.Context) error {
 }
 
 func (e *Engine) scan(ctx context.Context, now time.Time) error {
-	tasks, err := e.TaskDao.ListEnabled(ctx)
+	tasks, err := e.TaskSvc.ListEnabled(ctx)
 	if err != nil {
 		return err
 	}

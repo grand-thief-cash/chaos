@@ -15,7 +15,6 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
-	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
@@ -29,8 +28,8 @@ type Executor struct {
 	*core.BaseComponent
 
 	cfg     config.ExecutorConfig
-	TaskDao dao.TaskDao `infra:"dep:task_dao"`
-	RunDao  dao.RunDao  `infra:"dep:run_dao"`
+	TaskSvc *TaskService `infra:"dep:task_service"`
+	RunSvc  *RunService  `infra:"dep:run_service"`
 	ch      chan *model.TaskRun
 	wg      sync.WaitGroup
 	mu      sync.Mutex
@@ -131,7 +130,7 @@ func (e *Executor) worker(ctx context.Context) {
 				continue
 			}
 			logging.Info(ctx, fmt.Sprintf("task: %d grabbed in worker ok=%v", run.ID, ok))
-			ok2, err := e.RunDao.TransitionToRunning(ctx, run.ID)
+			ok2, err := e.RunSvc.TransitionToRunning(ctx, run.ID)
 			if err != nil || !ok2 {
 				if err != nil {
 					logging.Info(ctx, fmt.Sprintf("transition to running failed for run %d: %v", run.ID, err))
@@ -145,10 +144,10 @@ func (e *Executor) worker(ctx context.Context) {
 
 func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	// load task
-	task, err := e.TaskDao.Get(ctx, run.TaskID)
+	task, err := e.TaskSvc.Get(ctx, run.TaskID)
 	if err != nil {
 		log.Printf("load task %d: %v", run.TaskID, err)
-		_ = e.RunDao.MarkFailed(ctx, run.ID, "load task failed")
+		_ = e.RunSvc.MarkFailed(ctx, run.ID, "load task failed")
 		return
 	}
 
@@ -179,7 +178,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	}
 	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, task.TargetURL, body)
 	if err != nil {
-		_ = e.RunDao.MarkFailed(ctx, run.ID, "build request failed")
+		_ = e.RunSvc.MarkFailed(ctx, run.ID, "build request failed")
 		return
 	}
 
@@ -188,23 +187,23 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	if err != nil {
 		// differentiate error source
 		if ctx2.Err() == context.DeadlineExceeded {
-			_ = e.RunDao.MarkTimeout(ctx, run.ID, "request timeout")
+			_ = e.RunSvc.MarkTimeout(ctx, run.ID, "request timeout")
 			return
 		}
 		if ctx2.Err() == context.Canceled {
 			// explicit cancel
-			_ = e.RunDao.MarkCanceled(ctx, run.ID)
+			_ = e.RunSvc.MarkCanceled(ctx, run.ID)
 			return
 		}
-		_ = e.RunDao.MarkFailed(ctx, run.ID, err.Error())
+		_ = e.RunSvc.MarkFailed(ctx, run.ID, err.Error())
 		return
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		_ = e.RunDao.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
+		_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
 	} else {
-		_ = e.RunDao.MarkFailed(ctx, run.ID, resp.Status)
+		_ = e.RunSvc.MarkFailed(ctx, run.ID, resp.Status)
 	}
 }
 
