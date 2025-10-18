@@ -26,4 +26,9 @@ type MySQLDataSourceConfig struct {
 	ConnMaxLife  time.Duration `yaml:"conn_max_life" json:"conn_max_life"`
 	ConnMaxIdle  time.Duration `yaml:"conn_max_idle" json:"conn_max_idle"`
 	PingOnStart  bool          `yaml:"ping_on_start" json:"ping_on_start"`
+
+	// Migration support: when enabled, executes all .sql files under MigrateDir (non-recursive)
+	// in lexical order on startup after connection and optional ping succeed.
+	MigrateEnabled bool   `yaml:"migrate_enabled" json:"migrate_enabled"`
+	MigrateDir     string `yaml:"migrate_dir" json:"migrate_dir"`
 }

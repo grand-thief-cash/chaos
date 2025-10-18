@@ -3,9 +3,12 @@ package mysqlgorm
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -104,6 +107,21 @@ func (c *GormComponent) Start(ctx context.Context) error {
 			cancel()
 		}
 
+		// Migrations (optional for gorm raw SQL files)
+		if ds.MigrateEnabled {
+			if strings.TrimSpace(ds.MigrateDir) == "" {
+				_ = sqlDB.Close()
+				return fmt.Errorf("mysql_gorm datasource %s migrate_enabled=true but migrate_dir empty", name)
+			}
+			migStart := time.Now()
+			logging.Infof(ctx, "[mysql_gorm] datasource %s running migrations dir=%s", name, ds.MigrateDir)
+			if err := runGormMigrations(ctx, sqlDB, ds.MigrateDir); err != nil {
+				_ = sqlDB.Close()
+				return fmt.Errorf("mysql_gorm datasource %s migrations failed: %w", name, err)
+			}
+			logging.Infof(ctx, "[mysql_gorm] datasource %s migrations completed dur=%s", name, time.Since(migStart))
+		}
+
 		c.mutex.Lock()
 		c.dbs[name] = gormDB
 		c.mutex.Unlock()
@@ -192,6 +210,41 @@ func buildDSN(ds *DataSourceConfig) (string, error) {
 		params.Set(k, v)
 	}
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s", ds.User, ds.Password, ds.Host, port, ds.Database, params.Encode()), nil
+}
+
+// runGormMigrations executes .sql files (non-recursive) in lexical order; each file may contain multiple statements separated by ';'.
+func runGormMigrations(ctx context.Context, db *sql.DB, dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read migrations dir: %w", err)
+	}
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(strings.ToLower(name), ".sql") {
+			files = append(files, filepath.Join(dir, name))
+		}
+	}
+	sort.Strings(files)
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", f, err)
+		}
+		stmts := strings.Split(string(b), ";")
+		for _, s := range stmts {
+			if strings.TrimSpace(s) == "" {
+				continue
+			}
+			if _, err := db.ExecContext(ctx, s); err != nil {
+				return fmt.Errorf("exec %s failed: %w", f, err)
+			}
+		}
+	}
+	return nil
 }
 
 // GORM logger implementation

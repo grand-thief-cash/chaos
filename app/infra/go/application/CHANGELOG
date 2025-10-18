@@ -1,7 +1,26 @@
 # VERSION
-v0.13.1
+v0.15.4
 
 # Changelog
+- v0.15.4
+    - Mysql GORM component support auto-migration when starting.
+- v0.15.3
+    - Edit doc from chapter 1 to chapter 10.
+- v0.15.2
+    - infra/go/application/registry/registry.go Simplification:
+        - Remove RegisterWithDeps and RegisterAutoInferName, keep only Register (with explicit name) and a new RegisterAuto (which automatically infers name and dependencies).
+        - Simplify the Builder struct to only include: Name, Fn, Auto, Deps, and caching fields; remove any redundant flags.
+        - Construction flow: pre-build automatic components -> infer tag-based dependencies -> perform topological sorting -> register.
+- v0.15.1
+    - Added deduplication in autowire process.
+    - Added flag "auto" and dependency inferencing in registry.
+- v0.15.0
+    - Added tag-based dependencies injection, autowired and don't need to inject manually.
+- v0.14.0
+    - Added support for user-declared runtime dependencies.
+    - TODO: support auto-injection of dependencies in components.
+- v0.13.2
+    - Added dumpRoutes in HTTP SERVER component for debugging purpose.
 - v0.13.1
     - Added HTTP SERVER Component usage example in Documents.
 - v0.13.0
@@ -10,7 +29,6 @@ v0.13.1
     - Added ProvideComponent directly.
     - Supplied dependencies for mysql component and gorm component.
     - Doc also updated.
-
 - v0.12.0
     - Changed OS vars to flag arguments.
     - Added biz config support in config manager and app, also provide new Exportable func to users.

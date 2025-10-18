@@ -64,3 +64,12 @@ func (c *BaseComponent) HealthCheck() error {
 	}
 	return nil
 }
+
+// AddDependencies 允许在组件尚未启动前动态扩展其依赖（用于框架外部按需追加启动顺序约束）
+// 注意：应在生命周期 StartAll 调用之前（通常在各自 init()/注册阶段）使用。
+func (c *BaseComponent) AddDependencies(deps ...string) {
+	if len(deps) == 0 {
+		return
+	}
+	c.deps = append(c.deps, deps...)
+}
