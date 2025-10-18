@@ -1,0 +1,51 @@
+package service
+
+import (
+	"context"
+
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
+)
+
+// RunService: thin layer delegating to RunDao (no caching) for consistency with TaskService.
+type RunService struct {
+	*core.BaseComponent
+	RunDao dao.RunDao `infra:"dep:run_dao"`
+}
+
+func NewRunService() *RunService {
+	return &RunService{BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_RUN)}
+}
+
+func (s *RunService) Start(ctx context.Context) error { return s.BaseComponent.Start(ctx) }
+func (s *RunService) Stop(ctx context.Context) error  { return s.BaseComponent.Stop(ctx) }
+
+func (s *RunService) CreateScheduled(ctx context.Context, run *model.TaskRun) error {
+	return s.RunDao.CreateScheduled(ctx, run)
+}
+func (s *RunService) TransitionToRunning(ctx context.Context, runID int64) (bool, error) {
+	return s.RunDao.TransitionToRunning(ctx, runID)
+}
+func (s *RunService) MarkSuccess(ctx context.Context, runID int64, code int, body string) error {
+	return s.RunDao.MarkSuccess(ctx, runID, code, body)
+}
+func (s *RunService) MarkFailed(ctx context.Context, runID int64, errMsg string) error {
+	return s.RunDao.MarkFailed(ctx, runID, errMsg)
+}
+func (s *RunService) MarkCanceled(ctx context.Context, runID int64) error {
+	return s.RunDao.MarkCanceled(ctx, runID)
+}
+func (s *RunService) MarkSkipped(ctx context.Context, runID int64) error {
+	return s.RunDao.MarkSkipped(ctx, runID)
+}
+func (s *RunService) MarkTimeout(ctx context.Context, runID int64, errMsg string) error {
+	return s.RunDao.MarkTimeout(ctx, runID, errMsg)
+}
+func (s *RunService) Get(ctx context.Context, id int64) (*model.TaskRun, error) {
+	return s.RunDao.Get(ctx, id)
+}
+func (s *RunService) ListByTask(ctx context.Context, taskID int64, limit int) ([]*model.TaskRun, error) {
+	return s.RunDao.ListByTask(ctx, taskID, limit)
+}

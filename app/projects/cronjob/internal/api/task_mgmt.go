@@ -11,17 +11,16 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
-	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/service"
 )
 
 type TaskMgmtController struct {
 	*core.BaseComponent
-	TaskDao dao.TaskDao       `infra:"dep:task_dao"`
-	RunDao  dao.RunDao        `infra:"dep:run_dao"`
-	Exec    *service.Executor `infra:"dep:executor"`
-	Sched   *service.Engine   `infra:"dep:scheduler_engine"`
+	TaskSvc *service.TaskService `infra:"dep:task_service"`
+	RunSvc  *service.RunService  `infra:"dep:run_service"`
+	Exec    *service.Executor    `infra:"dep:executor"`
+	Sched   *service.Engine      `infra:"dep:scheduler_engine"`
 }
 
 func NewTaskMgmtController() *TaskMgmtController {
@@ -71,7 +70,7 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 		writeErr(w, 400, "CronExpr/Name/TargetURL cannot be empty")
 		return
 	}
-	if err := tmc.TaskDao.Create(r.Context(), t); err != nil {
+	if err := tmc.TaskSvc.Create(r.Context(), t); err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task creation failed: %v", err))
 		writeErr(w, 500, err.Error())
 		return
@@ -80,12 +79,12 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 }
 
 func (tmc *TaskMgmtController) listTasks(w http.ResponseWriter, r *http.Request) {
-	list, _ := tmc.TaskDao.ListEnabled(r.Context())
+	list, _ := tmc.TaskSvc.ListEnabled(r.Context())
 	writeJSON(w, list)
 }
 
 func (tmc *TaskMgmtController) getTask(w http.ResponseWriter, r *http.Request, id int64) {
-	t, err := tmc.TaskDao.Get(r.Context(), id)
+	t, err := tmc.TaskSvc.Get(r.Context(), id)
 	if err != nil {
 		logging.Error(r.Context(), fmt.Sprintf("Task get failed: %v", err))
 		writeErr(w, 404, err.Error())
@@ -110,7 +109,7 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 		writeErr(w, 400, err.Error())
 		return
 	}
-	t, err := tmc.TaskDao.Get(ctx, id)
+	t, err := tmc.TaskSvc.Get(ctx, id)
 	if err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task get failed: %v", err))
 		writeErr(w, 404, err.Error())
@@ -137,7 +136,7 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	if req.TimeoutSeconds > 0 {
 		t.TimeoutSeconds = req.TimeoutSeconds
 	}
-	if err := tmc.TaskDao.UpdateCronAndMeta(ctx, t); err != nil {
+	if err := tmc.TaskSvc.UpdateCronAndMeta(ctx, t); err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task update failed: %v", err))
 		writeErr(w, 500, err.Error())
 		return
@@ -146,12 +145,13 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 }
 
 func (tmc *TaskMgmtController) deleteTask(w http.ResponseWriter, r *http.Request, id int64) {
-	_ = tmc.TaskDao.SoftDelete(r.Context(), id)
+	_ = tmc.TaskSvc.SoftDelete(r.Context(), id)
 	writeJSON(w, map[string]any{"deleted": true})
 }
 
 func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Request, id int64) {
-	t, err := tmc.TaskDao.Get(r.Context(), id)
+	// r.Context() used below for task retrieval and run creation
+	t, err := tmc.TaskSvc.Get(r.Context(), id)
 	if err != nil {
 		logging.Error(r.Context(), fmt.Sprintf("Task triggered failed: %v", err))
 		writeErr(w, 404, err.Error())
@@ -162,8 +162,8 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 		writeErr(w, 409, "CONCURRENCY_LIMIT")
 		return
 	}
-	run := &model.TaskRun{TaskID: t.ID, ScheduledTime: time.Now().UTC().Truncate(time.Second), Status: model.RunStatusScheduled, Attempt: 1}
-	if err := tmc.RunDao.CreateScheduled(r.Context(), run); err != nil {
+	run := &model.TaskRun{TaskID: t.ID, ScheduledTime: time.Now().UTC().Truncate(time.Second), Status: bizConsts.Scheduled, Attempt: 1}
+	if err := tmc.RunSvc.CreateScheduled(r.Context(), run); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
@@ -172,12 +172,12 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 }
 
 func (tmc *TaskMgmtController) listRuns(w http.ResponseWriter, r *http.Request, taskID int64) {
-	list, _ := tmc.RunDao.ListByTask(r.Context(), taskID, 50)
+	list, _ := tmc.RunSvc.ListByTask(r.Context(), taskID, 50)
 	writeJSON(w, list)
 }
 
 func (tmc *TaskMgmtController) getRun(w http.ResponseWriter, r *http.Request, runID int64) {
-	run, err := tmc.RunDao.Get(r.Context(), runID)
+	run, err := tmc.RunSvc.Get(r.Context(), runID)
 	if err != nil {
 		logging.Error(r.Context(), fmt.Sprintf("Task get run failed: %v", err))
 		writeErr(w, 404, err.Error())
@@ -187,7 +187,7 @@ func (tmc *TaskMgmtController) getRun(w http.ResponseWriter, r *http.Request, ru
 }
 
 func (tmc *TaskMgmtController) updateStatus(w http.ResponseWriter, r *http.Request, id int64, status bizConsts.TaskStatus) {
-	err := tmc.TaskDao.UpdateStatus(r.Context(), id, status)
+	err := tmc.TaskSvc.UpdateStatus(r.Context(), id, status)
 	if err != nil {
 		logging.Error(r.Context(), fmt.Sprintf("Task update status failed: %v", err))
 		writeErr(w, 500, err.Error())
@@ -197,6 +197,16 @@ func (tmc *TaskMgmtController) updateStatus(w http.ResponseWriter, r *http.Reque
 }
 
 func (tmc *TaskMgmtController) cancelRun(w http.ResponseWriter, r *http.Request, runID int64) {
+	// use context for potential future logging/metrics
+	_ = r.Context()
 	tmc.Exec.CancelRun(runID)
 	writeJSON(w, map[string]any{"canceled": true})
+}
+
+func (tmc *TaskMgmtController) refreshCache(w http.ResponseWriter, r *http.Request) {
+	if err := tmc.TaskSvc.Refresh(r.Context()); err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"refreshed": true})
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -34,7 +33,7 @@ func init() {
 			getID := func(r *http.Request) int64 {
 				idParam := chi.URLParam(r, "id")
 				var id int64
-				fmt.Sscanf(idParam, "%d", &id)
+				_, _ = fmt.Sscanf(idParam, "%d", &id)
 				return id
 			}
 
@@ -72,7 +71,7 @@ func init() {
 			getRunID := func(r *http.Request) int64 {
 				idParam := chi.URLParam(r, "id")
 				var id int64
-				fmt.Sscanf(idParam, "%d", &id)
+				_, _ = fmt.Sscanf(idParam, "%d", &id)
 				return id
 			}
 			r.Get("/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +81,9 @@ func init() {
 				taskMgmtCtrl.cancelRun(w, r, getRunID(r))
 			})
 		})
+
+		// management / cache ops
+		r.Post("/api/v1/tasks/cache/refresh", func(w http.ResponseWriter, r *http.Request) { taskMgmtCtrl.refreshCache(w, r) })
 
 		return nil
 	})
@@ -120,14 +122,4 @@ func writeJSON(w http.ResponseWriter, v any) {
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	w.WriteHeader(code)
 	writeJSON(w, map[string]string{"error": msg})
-}
-
-func pathParts(p string) []string {
-	var r []string
-	for _, seg := range strings.Split(p, "/") {
-		if seg != "" {
-			r = append(r, seg)
-		}
-	}
-	return r
 }
