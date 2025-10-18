@@ -23,8 +23,9 @@ type Engine struct {
 	RunDao  dao.RunDao  `infra:"dep:run_dao"`
 	Exec    *Executor   `infra:"dep:executor"`
 	*core.BaseComponent
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	lastScanSec time.Time // 上次扫描的秒级时间戳（截断到秒）
 }
 
 func NewEngine(cfg config.SchedulerConfig) *Engine {
@@ -46,6 +47,7 @@ func (e *Engine) Start(ctx context.Context) error {
 	}
 	loopCtx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
+	e.lastScanSec = time.Now().Truncate(time.Second)
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
@@ -82,24 +84,131 @@ func (e *Engine) scan(ctx context.Context, now time.Time) error {
 		return err
 	}
 	sec := now.Truncate(time.Second)
+	// 构造从 lastScanSec+1 到当前 sec 的秒列表（包含当前秒）
+	var candidateSeconds []time.Time
+	// This loop generates a list of all second-level timestamps from the next second after e.lastScanSec up to and including the current second (sec),
+	// and appends them to candidateSeconds.
+	for tcur := e.lastScanSec.Add(time.Second); !tcur.After(sec); tcur = tcur.Add(time.Second) {
+		candidateSeconds = append(candidateSeconds, tcur)
+	}
+	e.lastScanSec = sec
+
 	for _, t := range tasks {
-		if !shouldFire(sec, t.CronExpr) {
-			continue
-		}
-		logging.Info(ctx, fmt.Sprintf("task: %d should run", t.ID))
-		if t.MaxConcurrency > 0 && t.ConcurrencyPolicy == bizConsts.ConcurrencySkip && e.Exec.ActiveCount(t.ID) >= t.MaxConcurrency {
-			run := &model.TaskRun{TaskID: t.ID, ScheduledTime: sec, Status: model.RunStatusScheduled, Attempt: 1}
-			if err := e.RunDao.CreateScheduled(ctx, run); err == nil {
-				_ = e.RunDao.MarkSkipped(ctx, run.ID)
+		// 过滤匹配 Cron 的秒
+		var matched []time.Time
+		for _, ts := range candidateSeconds {
+			if shouldFire(ts, t.CronExpr) {
+				matched = append(matched, ts)
 			}
+		}
+		if len(matched) == 0 {
 			continue
 		}
-		run := &model.TaskRun{TaskID: t.ID, ScheduledTime: sec, Status: model.RunStatusScheduled, Attempt: 1}
-		if err := e.RunDao.CreateScheduled(ctx, run); err != nil {
-			continue
+		// 应用 MisfirePolicy
+		var toSchedule []time.Time
+		switch t.MisfirePolicy {
+		case bizConsts.MisfireFireNow:
+			toSchedule = matched
+		case bizConsts.MisfireSkip:
+			// 仅调度当前最新秒（如果包含当前）
+			for _, m := range matched {
+				if m.Equal(sec) { // only current second
+					toSchedule = append(toSchedule, m)
+				}
+			}
+		case bizConsts.MisfireCatchUpLimited:
+			limit := t.CatchupLimit
+			if limit <= 0 || limit > len(matched) {
+				limit = len(matched)
+			}
+			toSchedule = matched[len(matched)-limit:]
+		default:
+			toSchedule = matched
 		}
-		logging.Info(ctx, fmt.Sprintf("task: %d prepared enqueued", t.ID))
-		e.Exec.Enqueue(run)
+
+		// 获取最近一次 run（用于策略判断）
+		var lastRun *model.TaskRun
+		runs, _ := e.RunDao.ListByTask(ctx, t.ID, 1)
+		if len(runs) > 0 {
+			lastRun = runs[0]
+		}
+
+		for _, fireTime := range toSchedule {
+			logging.Info(ctx, fmt.Sprintf("task %d evaluating fire at %s", t.ID, fireTime.Format(time.RFC3339)))
+
+			// Overlap 检测：上一轮仍 RUNNING 并且 start_time 在该触发时间之前
+			overlap := lastRun != nil && lastRun.Status == bizConsts.Running
+
+			// Failure 检测：上一轮已失败/超时/取消
+			failedPrev := false
+			if lastRun != nil {
+				switch lastRun.Status {
+				case bizConsts.Failed, bizConsts.Timeout, bizConsts.FailedTimeout, bizConsts.Canceled:
+					failedPrev = true
+				}
+			}
+
+			// 处理 OverlapAction
+			ignoreConcurrency := false
+			if overlap {
+				switch t.OverlapAction {
+				case bizConsts.OverlapSkip:
+					// 记录一次 scheduled+skipped
+					run := &model.TaskRun{TaskID: t.ID, ScheduledTime: fireTime, Status: bizConsts.Scheduled, Attempt: 1}
+					if err := e.RunDao.CreateScheduled(ctx, run); err == nil {
+						_ = e.RunDao.MarkSkipped(ctx, run.ID)
+					}
+					continue
+				case bizConsts.OverlapCancelPrev:
+					if lastRun != nil {
+						// 主动取消上一轮
+						e.Exec.CancelRun(lastRun.ID)
+						_ = e.RunDao.MarkCanceled(ctx, lastRun.ID)
+					}
+				case bizConsts.OverlapParallel:
+					ignoreConcurrency = true
+				case bizConsts.OverlapAllow:
+					// 按原逻辑继续
+				}
+			}
+
+			attempt := 1
+			if failedPrev {
+				switch t.FailureAction {
+				case bizConsts.FailureSkip:
+					run := &model.TaskRun{TaskID: t.ID, ScheduledTime: fireTime, Status: bizConsts.Scheduled, Attempt: lastRun.Attempt + 1}
+					if err := e.RunDao.CreateScheduled(ctx, run); err == nil {
+						_ = e.RunDao.MarkSkipped(ctx, run.ID)
+					}
+					continue
+				case bizConsts.FailureRetry:
+					attempt = lastRun.Attempt + 1
+				case bizConsts.FailureRunNew:
+					attempt = 1
+				}
+			}
+
+			// 并发策略 (如果没有 ignoreConcurrency)
+			if !ignoreConcurrency && t.MaxConcurrency > 0 && e.Exec.ActiveCount(t.ID) >= t.MaxConcurrency {
+				if t.ConcurrencyPolicy == bizConsts.ConcurrencySkip {
+					run := &model.TaskRun{TaskID: t.ID, ScheduledTime: fireTime, Status: bizConsts.Scheduled, Attempt: attempt}
+					if err := e.RunDao.CreateScheduled(ctx, run); err == nil {
+						_ = e.RunDao.MarkSkipped(ctx, run.ID)
+					}
+					continue
+				}
+				// QUEUE 策略：仍然入队（当前实现与 parallel 类似），PARALLEL 已允许直接入队。
+			}
+
+			run := &model.TaskRun{TaskID: t.ID, ScheduledTime: fireTime, Status: bizConsts.Scheduled, Attempt: attempt}
+			if err := e.RunDao.CreateScheduled(ctx, run); err != nil {
+				logging.Info(ctx, fmt.Sprintf("create scheduled run failed task=%d time=%s err=%v", t.ID, fireTime, err))
+				continue
+			}
+			logging.Info(ctx, fmt.Sprintf("task %d scheduled run %d at %s attempt=%d", t.ID, run.ID, fireTime.Format(time.RFC3339), attempt))
+			e.Exec.Enqueue(run)
+			lastRun = run // 更新 lastRun 以便后续 fireTime 策略判断
+		}
 	}
 	return nil
 }

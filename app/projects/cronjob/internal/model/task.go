@@ -25,10 +25,12 @@ type Task struct {
 	RetryPolicyJSON    string                   // 重试策略 JSON（占位，Phase2 实现，例如 {max_retries,...}）
 	MaxConcurrency     int                      // 单任务允许运行的最大并发数（<=0 视为不限制）
 	ConcurrencyPolicy  consts.ConcurrencyPolicy // 并发策略：QUEUE/SKIP/PARALLEL
-	MisfirePolicy      consts.MisfirePolicy     // Misfire 策略占位（FIRE_NOW/SKIP/CATCH_UP_LIMITED，尚未实现）
+	MisfirePolicy      consts.MisfirePolicy     // Misfire 策略占位（FIRE_NOW/SKIP/CATCH_UP_LIMITED，尚未实现完整）
 	CatchupLimit       int                      // Misfire 追赶的最大次数（MisfirePolicy=CATCH_UP_LIMITED 时使用）
 	CallbackMethod     string                   // 异步任务回调使用的 HTTP 方法（预留）
 	CallbackTimeoutSec int                      // 异步回调等待超时时间（秒，预留）
+	OverlapAction      consts.OverlapAction     // 新增：上一轮仍在运行时的处理策略
+	FailureAction      consts.FailureAction     // 新增：上一轮失败/超时/取消时的处理策略
 	Status             consts.TaskStatus        // 任务状态：ENABLED / DISABLED
 	Version            int                      // 乐观锁版本（更新时 +1，用于并发修改控制）
 	CreatedAt          time.Time                // 创建时间

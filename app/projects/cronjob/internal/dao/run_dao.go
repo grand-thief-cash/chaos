@@ -23,6 +23,7 @@ type RunDao interface {
 	MarkFailed(ctx context.Context, runID int64, errMsg string) error
 	MarkCanceled(ctx context.Context, runID int64) error
 	MarkSkipped(ctx context.Context, runID int64) error
+	MarkTimeout(ctx context.Context, runID int64, errMsg string) error
 	Get(ctx context.Context, id int64) (*model.TaskRun, error)
 	ListByTask(ctx context.Context, taskID int64, limit int) ([]*model.TaskRun, error)
 }
@@ -59,7 +60,7 @@ func (d *runDaoImpl) Stop(ctx context.Context) error {
 
 func (r *runDaoImpl) CreateScheduled(ctx context.Context, run *model.TaskRun) error {
 	if run.Status == "" {
-		run.Status = model.RunStatusScheduled
+		run.Status = bizConsts.Scheduled
 	}
 	if run.Attempt == 0 {
 		run.Attempt = 1
@@ -71,24 +72,28 @@ func (r *runDaoImpl) CreateScheduled(ctx context.Context, run *model.TaskRun) er
 }
 
 func (r *runDaoImpl) TransitionToRunning(ctx context.Context, runID int64) (bool, error) {
-	res := r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, model.RunStatusScheduled).Updates(map[string]any{"status": model.RunStatusRunning, "start_time": gorm.Expr("NOW()")})
+	res := r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.Scheduled).Updates(map[string]any{"status": bizConsts.Running, "start_time": gorm.Expr("NOW()")})
 	return res.RowsAffected == 1 && res.Error == nil, res.Error
 }
 
 func (r *runDaoImpl) MarkSuccess(ctx context.Context, runID int64, code int, body string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=?", runID).Updates(map[string]any{"status": model.RunStatusSuccess, "response_code": code, "response_body": body, "end_time": gorm.Expr("NOW()")}).Error
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=?", runID).Updates(map[string]any{"status": bizConsts.Success, "response_code": code, "response_body": body, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) MarkFailed(ctx context.Context, runID int64, errMsg string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []model.RunStatus{model.RunStatusRunning, model.RunStatusScheduled}).Updates(map[string]any{"status": model.RunStatusFailed, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Failed, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) MarkCanceled(ctx context.Context, runID int64) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []model.RunStatus{model.RunStatusScheduled, model.RunStatusRunning}).Updates(map[string]any{"status": model.RunStatusCanceled, "end_time": gorm.Expr("NOW()")}).Error
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running}).Updates(map[string]any{"status": bizConsts.Canceled, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) MarkSkipped(ctx context.Context, runID int64) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, model.RunStatusScheduled).Updates(map[string]any{"status": model.RunStatusSkipped, "end_time": gorm.Expr("NOW()")}).Error
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.Scheduled).Updates(map[string]any{"status": bizConsts.Skipped, "end_time": gorm.Expr("NOW()")}).Error
+}
+
+func (r *runDaoImpl) MarkTimeout(ctx context.Context, runID int64, errMsg string) error {
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Timeout, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) Get(ctx context.Context, id int64) (*model.TaskRun, error) {
