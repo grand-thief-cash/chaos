@@ -114,8 +114,6 @@ func (d *TaskDaoImpl) UpdateCronAndMeta(ctx context.Context, t *model.Task) erro
 		"retry_policy_json":    t.RetryPolicyJSON,
 		"max_concurrency":      t.MaxConcurrency,
 		"concurrency_policy":   t.ConcurrencyPolicy,
-		"misfire_policy":       t.MisfirePolicy,
-		"catchup_limit":        t.CatchupLimit,
 		"callback_method":      t.CallbackMethod,
 		"callback_timeout_sec": t.CallbackTimeoutSec,
 		"overlap_action":       t.OverlapAction,

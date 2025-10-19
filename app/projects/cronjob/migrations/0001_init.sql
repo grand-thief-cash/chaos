@@ -1,4 +1,4 @@
--- Migration: initial schema
+-- Migration: initial schema (misfire columns removed)
 
 CREATE TABLE IF NOT EXISTS tasks (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -15,8 +15,6 @@ CREATE TABLE IF NOT EXISTS tasks (
   retry_policy_json JSON NULL,
   max_concurrency INT NOT NULL DEFAULT 1,
   concurrency_policy ENUM('QUEUE','SKIP','PARALLEL') NOT NULL DEFAULT 'QUEUE',
-  misfire_policy ENUM('FIRE_NOW','SKIP','CATCH_UP_LIMITED') NOT NULL DEFAULT 'FIRE_NOW',
-  catchup_limit INT NOT NULL DEFAULT 0,
   callback_method VARCHAR(8) DEFAULT 'POST',
   callback_timeout_sec INT DEFAULT 300,
   overlap_action ENUM('ALLOW','SKIP','CANCEL_PREV','PARALLEL') NOT NULL DEFAULT 'ALLOW',
@@ -66,7 +64,6 @@ CREATE TABLE IF NOT EXISTS async_callbacks (
   CONSTRAINT fk_callbacks_run FOREIGN KEY (task_run_id) REFERENCES task_runs(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Optional lock table for future distributed scheduling
 CREATE TABLE IF NOT EXISTS scheduler_locks (
   lock_name VARCHAR(64) PRIMARY KEY,
   owner_id VARCHAR(128) NOT NULL,

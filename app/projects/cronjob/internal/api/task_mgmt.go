@@ -30,13 +30,25 @@ func NewTaskMgmtController() *TaskMgmtController {
 func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req struct {
-		Name           string `json:"name"`
-		Description    string `json:"description"`
-		CronExpr       string `json:"cron_expr"`
-		ExecType       string `json:"exec_type"`
-		HTTPMethod     string `json:"http_method"`
-		TargetURL      string `json:"target_url"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
+		Name               string `json:"name"`
+		Description        string `json:"description"`
+		CronExpr           string `json:"cron_expr"`
+		Timezone           string `json:"timezone"`
+		ExecType           string `json:"exec_type"`
+		HTTPMethod         string `json:"http_method"`
+		TargetURL          string `json:"target_url"`
+		HeadersJSON        string `json:"headers_json"`
+		BodyTemplate       string `json:"body_template"`
+		TimeoutSeconds     int    `json:"timeout_seconds"`
+		RetryPolicyJSON    string `json:"retry_policy_json"`
+		MaxConcurrency     int    `json:"max_concurrency"`
+		ConcurrencyPolicy  string `json:"concurrency_policy"`
+		CallbackMethod     string `json:"callback_method"`
+		CallbackTimeoutSec int    `json:"callback_timeout_sec"`
+		OverlapAction      string `json:"overlap_action"`
+		FailureAction      string `json:"failure_action"`
+		Status             string `json:"status"`
+		Deleted            int    `json:"deleted"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task creation json decode failed: %v", err))
@@ -47,24 +59,24 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 		Name:               strings.TrimSpace(req.Name),
 		Description:        req.Description,
 		CronExpr:           model.NormalizeCron(req.CronExpr),
-		Timezone:           "UTC",
+		Timezone:           defaultOr(req.Timezone, "UTC"),
 		ExecType:           bizConsts.ExecType(req.ExecType),
 		HTTPMethod:         strings.ToUpper(req.HTTPMethod),
 		TargetURL:          req.TargetURL,
-		HeadersJSON:        bizConsts.DEFAULT_JSON_STR,
-		BodyTemplate:       "",
+		HeadersJSON:        defaultOr(req.HeadersJSON, bizConsts.DEFAULT_JSON_STR),
+		BodyTemplate:       req.BodyTemplate,
 		TimeoutSeconds:     req.TimeoutSeconds,
-		RetryPolicyJSON:    bizConsts.DEFAULT_JSON_STR,
-		MaxConcurrency:     1,
-		ConcurrencyPolicy:  bizConsts.ConcurrencyQueue,
-		MisfirePolicy:      bizConsts.MisfireFireNow,
-		CatchupLimit:       0,
-		CallbackMethod:     "POST",
-		CallbackTimeoutSec: 300,
-		Status:             bizConsts.ENABLED,
+		RetryPolicyJSON:    defaultOr(req.RetryPolicyJSON, bizConsts.DEFAULT_JSON_STR),
+		MaxConcurrency:     defaultInt(req.MaxConcurrency, 1),
+		ConcurrencyPolicy:  bizConsts.ConcurrencyPolicy(req.ConcurrencyPolicy),
+		CallbackMethod:     defaultOr(req.CallbackMethod, "POST"),
+		CallbackTimeoutSec: defaultInt(req.CallbackTimeoutSec, 300),
+		OverlapAction:      bizConsts.OverlapAction(req.OverlapAction),
+		FailureAction:      bizConsts.FailureAction(req.FailureAction),
+		Status:             bizConsts.DISABLED,
 		Version:            1,
-		CreatedAt:          time.Now().UTC(),
-		UpdatedAt:          time.Now().UTC(),
+		//CreatedAt:          time.Now().UTC(),
+		//UpdatedAt:          time.Now().UTC(),
 	}
 	if t.CronExpr == "" || t.Name == "" || t.TargetURL == "" {
 		writeErr(w, 400, "CronExpr/Name/TargetURL cannot be empty")
@@ -96,13 +108,24 @@ func (tmc *TaskMgmtController) getTask(w http.ResponseWriter, r *http.Request, i
 func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request, id int64) {
 	ctx := r.Context()
 	var req struct {
-		Name           string `json:"name"`
-		Description    string `json:"description"`
-		CronExpr       string `json:"cron_expr"`
-		ExecType       string `json:"exec_type"`
-		HTTPMethod     string `json:"http_method"`
-		TargetURL      string `json:"target_url"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
+		Name               string `json:"name"`
+		Description        string `json:"description"`
+		CronExpr           string `json:"cron_expr"`
+		Timezone           string `json:"timezone"`
+		ExecType           string `json:"exec_type"`
+		HTTPMethod         string `json:"http_method"`
+		TargetURL          string `json:"target_url"`
+		HeadersJSON        string `json:"headers_json"`
+		BodyTemplate       string `json:"body_template"`
+		TimeoutSeconds     int    `json:"timeout_seconds"`
+		RetryPolicyJSON    string `json:"retry_policy_json"`
+		MaxConcurrency     int    `json:"max_concurrency"`
+		ConcurrencyPolicy  string `json:"concurrency_policy"`
+		CallbackMethod     string `json:"callback_method"`
+		CallbackTimeoutSec int    `json:"callback_timeout_sec"`
+		OverlapAction      string `json:"overlap_action"`
+		FailureAction      string `json:"failure_action"`
+		Status             string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task update json decode failed: %v", err))
@@ -135,6 +158,18 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	}
 	if req.TimeoutSeconds > 0 {
 		t.TimeoutSeconds = req.TimeoutSeconds
+	}
+	if req.MaxConcurrency >= 0 {
+		t.MaxConcurrency = req.MaxConcurrency
+	}
+	if req.ConcurrencyPolicy != "" {
+		t.ConcurrencyPolicy = bizConsts.ConcurrencyPolicy(req.ConcurrencyPolicy)
+	}
+	if req.OverlapAction != "" {
+		t.OverlapAction = bizConsts.OverlapAction(req.OverlapAction)
+	}
+	if req.FailureAction != "" {
+		t.FailureAction = bizConsts.FailureAction(req.FailureAction)
 	}
 	if err := tmc.TaskSvc.UpdateCronAndMeta(ctx, t); err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task update failed: %v", err))
@@ -209,4 +244,20 @@ func (tmc *TaskMgmtController) refreshCache(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, map[string]any{"refreshed": true})
+}
+
+// defaultOr returns s if not empty, otherwise def
+func defaultOr(s, def string) string {
+	if strings.TrimSpace(s) != "" {
+		return s
+	}
+	return def
+}
+
+// defaultInt returns i if not zero, otherwise def
+func defaultInt(i, def int) int {
+	if i != 0 {
+		return i
+	}
+	return def
 }

@@ -2,8 +2,7 @@ server:
   host: 0.0.0.0
   port: 18800
   graceful_timeout: 10s
-mysql:
-  dsn: "root:123456@tcp(127.0.0.1:13306)/cronjob?charset=utf8mb4&parseTime=True&loc=Local"
+
 
 # config.yaml
 app_info:
@@ -31,16 +30,12 @@ mysql_gorm:
       port: 13306
       user: root
       password: 123456
-      database: cronjob
+      database: cronjob_dev
       max_open_conns: 3
-      max_idle_conns: 2
+      max_idle_conns: 5
       ping_on_start: true
-#    analytics:
-#      dsn: user:pwd@tcp(analytics-mysql:3306)/analytics?parseTime=true&charset=utf8mb4
-#      max_open_conns: 30
-#      max_idle_conns: 5
-#      ping_on_start: true
-
+      migrate_enabled: true
+      migrate_dir: ./migrations
 
 http_server:
   enabled: true
@@ -60,7 +55,7 @@ telemetry:
   stdout_file: ./logs/telemetry.log
 biz_config:
   scheduler:
-    poll_interval: 1s
+    poll_interval: 30s
     ahead_seconds: 30
     batch_limit: 200
     enable_seconds_field: true
