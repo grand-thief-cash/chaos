@@ -1,7 +1,14 @@
 # VERSION
-v0.6.0
+v0.7.0
 
 # Changelog
+- v0.7.0
+    - Redesigned scheduler engine to acquire runnable tasks more accurately.
+        - Removed misfired tasks handling from scheduler and datasource.
+        - Added overlap handling strategy in scheduler.
+        - Added failure handling strategy in scheduler.
+        - Added workflow of scan logic in documents.
+    - Transitioned table migration in boot by configuration.
 - v0.6.0
   - Added Task Service to decouple api and task dao.
   - Added Run Service to decouple api and task dao.

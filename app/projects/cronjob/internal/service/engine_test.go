@@ -58,7 +58,7 @@ func (r *stubRunDao) ListByTask(ctx context.Context, taskID int64, limit int) ([
 			out = append(out, ru)
 		}
 	}
-	// latest first (already appended in order; reverse)
+	// latest first (reverse)
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
@@ -84,18 +84,10 @@ func (s *stubExecutor) CancelRun(id int64) { s.canceled = append(s.canceled, id)
 
 // Test overlap SKIP
 func TestEngineOverlapSkip(t *testing.T) {
-	stubTask := &model.Task{ID: 1, CronExpr: "* * * * * *", OverlapAction: bizConsts.OverlapSkip, FailureAction: bizConsts.FailureRunNew, MisfirePolicy: bizConsts.MisfireFireNow, MaxConcurrency: 1}
+	stubTask := &model.Task{ID: 1, CronExpr: "* * * * * *", OverlapAction: bizConsts.OverlapSkip, FailureAction: bizConsts.FailureRunNew, MaxConcurrency: 1}
 	runDao := &stubRunDao{}
 	// existing running run
 	runDao.runs = append(runDao.runs, &model.TaskRun{ID: 1, TaskID: 1, ScheduledTime: time.Now().Add(-10 * time.Second), Status: bizConsts.Running, Attempt: 1})
-	// assign stub executor via unsafe conversion not ideal; instead adapt minimal methods
-	// We'll temporarily create a wrapper EngineWithStub pattern here by monkey patching Exec through interface requirements.
-	// For testing we rely on only ActiveCount/Enqueue/CancelRun which stubExecutor provides via embedding.
-	// So we create a fake Executor pointer using type conversion disabled; Instead simpler: define interface with needed methods but engine expects *Executor.
-	// Workaround: we create zero Executor and replace methods via stub not feasible; choose simpler: simulate logic manually
-	// Directly call internal scheduling decisions replicating e.scan subset.
-
-	// We'll invoke scan-like logic manually due to *Executor type restriction.
 	sec := time.Now().Truncate(time.Second)
 	fireTime := sec
 	// overlap -> should create scheduled then mark skipped, no enqueue
@@ -109,7 +101,7 @@ func TestEngineOverlapSkip(t *testing.T) {
 
 // Test failure retry attempt increment
 func TestFailureRetryIncrement(t *testing.T) {
-	stubTask := &model.Task{ID: 2, CronExpr: "* * * * * *", OverlapAction: bizConsts.OverlapAllow, FailureAction: bizConsts.FailureRetry, MisfirePolicy: bizConsts.MisfireFireNow}
+	stubTask := &model.Task{ID: 2, CronExpr: "* * * * * *", OverlapAction: bizConsts.OverlapAllow, FailureAction: bizConsts.FailureRetry}
 	runDao := &stubRunDao{}
 	runDao.runs = append(runDao.runs, &model.TaskRun{ID: 10, TaskID: 2, ScheduledTime: time.Now().Add(-5 * time.Second), Status: bizConsts.Failed, Attempt: 2})
 	fireTime := time.Now().Truncate(time.Second)

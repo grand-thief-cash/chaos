@@ -33,108 +33,26 @@
 ## 未来扩展
 - failure_action 计划增加 BACKOFF、HALF_OPEN 等模式。
 - overlap_action 计划支持最大并行重叠数限制。
-- Misfire 分布式锁、分片调度。
 
 ## 使用方式
 在创建 / 更新 Task 时设置两个字段：overlap_action、failure_action；未设置默认 ALLOW / RUN_NEW。迁移脚本 `0001_init.sql` 直接包含对应列（旧的 `0002_add_overlap_failure.sql` 已废弃为 no-op）。
 
 ---
-## 调度引擎 (Scheduler Engine) 工作流程
 
-### 1. Start 阶段
-Engine.Start() 关键步骤：
-1. 组件激活，记录当前时间截断到秒 `lastScanSec = now.Truncate(second)`。
-2. 创建后台 goroutine：使用 ticker（周期 `cfg.PollInterval`，默认 1s）。
-3. 每次 ticker tick 调用 `scan(loopCtx, now)`。
-4. Stop() 时取消 context，等待 goroutine 退出。
+### `scan` function execution flow
 
-ASCII 示意：
-```
-+--------------------+          +---------------------+
-| application start  |          | Engine.Start        |
-+----------+---------+          +----------+----------+
-           |                               |
-           v                               v
-    init components                lastScanSec = now(sec)
-           |                               |
-           v                               v
-   start executor                 spawn scan loop goroutine
-           |                               |
-           v                               v
-      ticker tick ------------------> scan()
-```
+1. Get all enabled tasks (`ListEnabled`).
+2. Log current scan time and task count.
+3. For each task, check if it should fire (`shouldFire`).
+4. Query recent task run records (`ListByTask`).
+5. Check for running/scheduled instances, handle concurrency policy.
+6. Find last valid execution (not SCHEDULED/SKIPPED).
+7. If last failed, handle failure policy.
+8. Check concurrency limit, handle concurrency policy.
+9. Create scheduled record (`CreateScheduled`), enqueue for execution (`Enqueue`).
 
-### 2. scan() 调度流程
-scan(now) 目标：找出从上次扫描到本次扫描之间“应该触发”的时间点，并为每个任务生成对应的 Run（或跳过/取消）。
 
-核心步骤：
-1. `sec = now.Truncate(second)` 获取当前秒。
-2. 构造时间窗口：`candidateSeconds = (lastScanSec+1s ... sec)`，包括当前秒，避免漏掉间隔内的触发。
-3. 更新 `lastScanSec = sec`。
-4. 查询所有 ENABLED 任务。
-5. 对每个任务：
-   - 遍历 candidateSeconds，使用简化 cron 匹配函数 `shouldFire(ts, cron_expr)` 收集匹配秒列表 `matched`。
-   - 根据 `misfire_policy` 转换为最终调度列表：`toSchedule`。
-   - 查询最近一次运行（ListByTask limit=1）获取 lastRun，用于 overlap/failure 策略判断。
-   - 对于每一个 fireTime in toSchedule：
-     1. 检测 overlap: `lastRun.Status == RUNNING`。
-     2. 检测 failure: `lastRun.Status in {FAILED, TIMEOUT, FAILED_TIMEOUT, CANCELED}`。
-     3. 应用 OverlapAction：可能 SKIP / CANCEL_PREV / PARALLEL / ALLOW。
-     4. 应用 FailureAction：决定 attempt（RUN_NEW=1, RETRY=lastRun.Attempt+1, SKIP=直接标记跳过）。
-     5. 应用 ConcurrencyPolicy（除非被 PARALLEL 覆盖 ignoreConcurrency=true）：
-        - 超过并发上限且 policy=SKIP => SCHEDULED+SKIPPED。
-        - 超过并发上限且 policy=QUEUE => 仍入队（当前简单实现）。
-     6. CreateScheduled() 写入 run，记录 attempt。
-     7. 入队 Executor.Enqueue(run)（如果不是跳过）。
-     8. 更新 lastRun=run 以便同一个 scan 内后续触发秒继续参考最新运行。
 
-ASCII 决策流：
-```
-           +--------------------+
-           | candidateSeconds   |
-           +----------+---------+
-                      |
-                      v
-                [cron match]
-                      |
-                      v
-                misfire policy
-                      |
-                      v
-                 toSchedule list
-                      |
-          +-----------+-----------+
-          |                       |
-       for each fireTime      (next)
-          |
-          v
-     load lastRun
-          |
-          v
-  overlap? lastRun.RUNNING ---- yes ----> apply overlap_action
-          |                                 |
-          no                                v
-          |                          SKIP? -> record skipped (end)
-          v                                CANCEL_PREV? -> cancel + continue
-    failure? (FAILED/TIMEOUT/...)           PARALLEL? -> ignore concurrency
-          |                                 ALLOW? -> normal
-          v
-  apply failure_action (attempt / skip)
-          |
-          v
-  concurrency check (unless ignored)
-          |
-          v
-  CreateScheduled(run)
-          |
-          v
-  skipped? yes -> MarkSkipped
-          |
-          no
-          |
-          v
-  Enqueue -> executor
-```
 
 ### 3. 执行阶段与超时
 Executor.worker：
@@ -167,12 +85,6 @@ overlap_action=CANCEL_PREV：在发现上一轮 RUNNING 时：
 - 调用 executor.CancelRun(lastRun.ID) 触发 context.Cancel()
 - MarkCanceled(lastRun.ID)（如果尚未结束）。
 
-### 8. Misfire 场景示例
-假设 lastScanSec=10:00:00，本次 scan 时间=10:00:05，pollInterval=1s，但由于某些阻塞实际 5 秒后才执行：
-- candidateSeconds = [10:00:01,10:00:02,10:00:03,10:00:04,10:00:05]
-- 若任务 Cron 每秒触发且 misfire_policy=FIRE_NOW：全部补 5 次 fire。
-- 若 misfire_policy=CATCH_UP_LIMITED 且 catchup_limit=2：只补 [10:00:04,10:00:05]。
-- 若 misfire_policy=SKIP：只调度 10:00:05。
 
 ### 9. 关键边界情况
 - 任务被禁用（status=DISABLED）：ListEnabled 不返回，立即停止调度。
