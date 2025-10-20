@@ -109,7 +109,7 @@ type RunDaoIface interface {
 type ExecutorIface interface {
 	Enqueue(*model.TaskRun)
 	ActiveCount(taskID int64) int
-	CancelRun(id int64)
+	CancelRun(ctx context.Context, id int64)
 }
 
 // Dependencies injected into handlers

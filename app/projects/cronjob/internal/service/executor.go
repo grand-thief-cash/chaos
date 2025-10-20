@@ -81,15 +81,23 @@ func (e *Executor) Stop(ctx context.Context) error {
 	if !e.IsActive() { // already stopped
 		return nil
 	}
+	// Snapshot active run IDs to cancel before stopping
+	var activeIDs []int64
+	e.mu.Lock()
+	for rid := range e.cancelMap {
+		activeIDs = append(activeIDs, rid)
+	}
+	e.mu.Unlock()
+	for _, rid := range activeIDs {
+		e.CancelRun(rid)
+	}
 	if e.cancel != nil {
 		e.cancel()
 	}
 	// drain channel by closing (workers exit on ctx cancel anyway). Avoid panic on double close.
 	e.mu.Lock()
-	ch := e.ch
-	if ch != nil {
+	if e.ch != nil {
 		close(e.ch)
-		// mark nil to avoid re-close
 		e.ch = nil
 	}
 	e.mu.Unlock()
@@ -178,6 +186,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	}
 	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, task.TargetURL, body)
 	if err != nil {
+		logging.Error(ctx, fmt.Sprintf("create request for task failed %d: %v", task.ID, err))
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, "build request failed")
 		return
 	}
@@ -187,6 +196,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	if err != nil {
 		// differentiate error source
 		if ctx2.Err() == context.DeadlineExceeded {
+			logging.Error(ctx, fmt.Sprintf("task %d timeout exceeded", task.ID))
 			_ = e.RunSvc.MarkTimeout(ctx, run.ID, "request timeout")
 			return
 		}
@@ -195,11 +205,13 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 			_ = e.RunSvc.MarkCanceled(ctx, run.ID)
 			return
 		}
+		logging.Error(ctx, fmt.Sprintf("task %d request failed %d: %v", task.ID, run.ID, err))
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, err.Error())
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
+	logging.Debug(ctx, fmt.Sprintf("task: %d resp.StatusCode :%d, response body: %s", task.ID, resp.StatusCode, b))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
 	} else {
