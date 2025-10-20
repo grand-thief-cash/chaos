@@ -37,8 +37,8 @@ func (s *RunService) MarkFailed(ctx context.Context, runID int64, errMsg string)
 func (s *RunService) MarkCanceled(ctx context.Context, runID int64) error {
 	return s.RunDao.MarkCanceled(ctx, runID)
 }
-func (s *RunService) MarkSkipped(ctx context.Context, runID int64) error {
-	return s.RunDao.MarkSkipped(ctx, runID)
+func (s *RunService) MarkSkipped(ctx context.Context, runID int64, skipType bizConsts.RunStatus) error {
+	return s.RunDao.MarkSkipped(ctx, runID, skipType)
 }
 func (s *RunService) MarkTimeout(ctx context.Context, runID int64, errMsg string) error {
 	return s.RunDao.MarkTimeout(ctx, runID, errMsg)

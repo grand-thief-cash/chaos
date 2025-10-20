@@ -193,15 +193,21 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	// concurrency skip policy enforcement for manual trigger
-	if t.ConcurrencyPolicy == bizConsts.ConcurrencySkip && t.MaxConcurrency > 0 && tmc.Exec.ActiveCount(t.ID) >= t.MaxConcurrency {
+	activeCount := tmc.Exec.ActiveCount(t.ID)
+	maxConcurrent := t.MaxConcurrency
+	if t.ConcurrencyPolicy == bizConsts.ConcurrencySkip && t.MaxConcurrency > 0 && activeCount >= maxConcurrent {
+		errMsg := fmt.Sprintf("Task trigger concurrency limit reached: task_id=%d active=%d max=%d", t.ID, activeCount, maxConcurrent)
+		logging.Error(r.Context(), errMsg)
 		writeErr(w, 409, "CONCURRENCY_LIMIT")
 		return
 	}
 	run := &model.TaskRun{TaskID: t.ID, ScheduledTime: time.Now().UTC().Truncate(time.Second), Status: bizConsts.Scheduled, Attempt: 1}
 	if err := tmc.RunSvc.CreateScheduled(r.Context(), run); err != nil {
+		logging.Error(r.Context(), fmt.Sprintf("Task trigger failed: %v", err))
 		writeErr(w, 500, err.Error())
 		return
 	}
+	logging.Info(r.Context(), fmt.Sprintf("Task trigger enqueueing: id=%d", t.ID))
 	tmc.Exec.Enqueue(run)
 	writeJSON(w, map[string]any{"run_id": run.ID})
 }

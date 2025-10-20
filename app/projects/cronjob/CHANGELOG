@@ -1,7 +1,15 @@
 # VERSION
-v0.7.0
+v0.8.0
 
 # Changelog
+- v0.8.0
+    - Refactored scheduler scan() logic, removed batch fire logic.
+    - Added cancel logic in cronjob shutdown.
+    - Added json tag in Task/Run model.
+    - Added poc project for cronjob.
+    - Added limitation for trigger task api.
+    - Changed skip type to accurate skip.
+    - Set run status to skip immediately once decide skip.
 - v0.7.0
     - Redesigned scheduler engine to acquire runnable tasks more accurately.
         - Removed misfired tasks handling from scheduler and datasource.

@@ -14,7 +14,6 @@ const (
 type ConcurrencyPolicy string
 
 const (
-	ConcurrencyQueue    ConcurrencyPolicy = "QUEUE"
 	ConcurrencySkip     ConcurrencyPolicy = "SKIP"
 	ConcurrencyParallel ConcurrencyPolicy = "PARALLEL"
 )
@@ -27,10 +26,10 @@ const (
 type OverlapAction string
 
 const (
-	OverlapAllow      OverlapAction = "ALLOW"
-	OverlapSkip       OverlapAction = "SKIP"
-	OverlapCancelPrev OverlapAction = "CANCEL_PREV"
-	OverlapParallel   OverlapAction = "PARALLEL"
+	OverlapActionAllow      OverlapAction = "ALLOW"
+	OverlapActionSkip       OverlapAction = "SKIP"
+	OverlapActionCancelPrev OverlapAction = "CANCEL_PREV"
+	OverlapActionParallel   OverlapAction = "PARALLEL"
 )
 
 // FailureAction 针对最近一次“有效执行”(非 SKIPPED / SCHEDULED) 失败 (FAILED / TIMEOUT / FAILED_TIMEOUT / CANCELED) 时的策略
@@ -40,9 +39,9 @@ const (
 type FailureAction string
 
 const (
-	FailureRunNew FailureAction = "RUN_NEW"
-	FailureSkip   FailureAction = "SKIP"
-	FailureRetry  FailureAction = "RETRY"
+	FailureActionRunNew FailureAction = "RUN_NEW"
+	FailureActionSkip   FailureAction = "SKIP"
+	FailureActionRetry  FailureAction = "RETRY"
 )
 
 // ExecType 执行类型
@@ -57,6 +56,6 @@ const (
 
 const (
 	DEFAULT_JSON_STR                     = "{}"
-	DEFAULT_OVERLAP_ACTION OverlapAction = OverlapAllow
-	DEFAULT_FAILURE_ACTION FailureAction = FailureRunNew
+	DEFAULT_OVERLAP_ACTION OverlapAction = OverlapActionAllow
+	DEFAULT_FAILURE_ACTION FailureAction = FailureActionRunNew
 )

@@ -15,4 +15,7 @@ const (
 	FailedTimeout   RunStatus = "FAILED_TIMEOUT"   // 回调超时失败
 	Canceled        RunStatus = "CANCELED"         // 被取消
 	Skipped         RunStatus = "SKIPPED"          // 被跳过
+	FailureSkip     RunStatus = "FAILURE_SKIP"     // 因失败跳过
+	ConcurrentSkip  RunStatus = "CONCURRENT_SKIP"  // 因并发限制跳过
+	OverlapSkip     RunStatus = "OVERLAP_SKIP"     // 因重叠限制跳过
 )
