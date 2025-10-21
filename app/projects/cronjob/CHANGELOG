@@ -1,7 +1,32 @@
 # VERSION
-v0.4.2
+v0.8.0
 
 # Changelog
+- v0.8.0
+    - Refactored scheduler scan() logic, removed batch fire logic.
+    - Added cancel logic in cronjob shutdown.
+    - Added json tag in Task/Run model.
+    - Added poc project for cronjob.
+    - Added limitation for trigger task api.
+    - Changed skip type to accurate skip.
+    - Set run status to skip immediately once decide skip.
+- v0.7.0
+    - Redesigned scheduler engine to acquire runnable tasks more accurately.
+        - Removed misfired tasks handling from scheduler and datasource.
+        - Added overlap handling strategy in scheduler.
+        - Added failure handling strategy in scheduler.
+        - Added workflow of scan logic in documents.
+    - Transitioned table migration in boot by configuration.
+- v0.6.0
+  - Added Task Service to decouple api and task dao.
+  - Added Run Service to decouple api and task dao.
+  - Service Task registered.
+  - Added mem cache for Enabled Task, query will read from cache first.
+  - Scheduler will read from mem cache to get enabled tasks.
+- v0.5.0
+  - Added task scan strategies on overlap and failure situations.
+- v0.4.3
+  - Replaced magic strings with constants in all cronjob.
 - v0.4.2
   - Replaced  RegisterAutoInferName with registry.RegisterAuto.
 - v0.4.1

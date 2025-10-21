@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -18,11 +19,13 @@ type RunDao interface {
 	// Embed component so registry builders can return a RunDao where core.Component is required
 	core.Component
 	CreateScheduled(ctx context.Context, run *model.TaskRun) error
+	CreateSkipped(ctx context.Context, run *model.TaskRun, skipType bizConsts.RunStatus) error // new helper to directly create a skipped run
 	TransitionToRunning(ctx context.Context, runID int64) (bool, error)
 	MarkSuccess(ctx context.Context, runID int64, code int, body string) error
 	MarkFailed(ctx context.Context, runID int64, errMsg string) error
 	MarkCanceled(ctx context.Context, runID int64) error
-	MarkSkipped(ctx context.Context, runID int64) error
+	MarkSkipped(ctx context.Context, runID int64, skipType bizConsts.RunStatus) error
+	MarkTimeout(ctx context.Context, runID int64, errMsg string) error
 	Get(ctx context.Context, id int64) (*model.TaskRun, error)
 	ListByTask(ctx context.Context, taskID int64, limit int) ([]*model.TaskRun, error)
 }
@@ -59,36 +62,55 @@ func (d *runDaoImpl) Stop(ctx context.Context) error {
 
 func (r *runDaoImpl) CreateScheduled(ctx context.Context, run *model.TaskRun) error {
 	if run.Status == "" {
-		run.Status = model.RunStatusScheduled
+		run.Status = bizConsts.Scheduled
 	}
 	if run.Attempt == 0 {
 		run.Attempt = 1
 	}
 	if strings.TrimSpace(run.RequestHeaders) == "" { // JSON column requires valid document
-		run.RequestHeaders = "{}"
+		run.RequestHeaders = bizConsts.DEFAULT_JSON_STR
 	}
 	return r.db.WithContext(ctx).Create(run).Error
 }
 
+// CreateSkipped creates a run directly in a skipped terminal state (e.g. CONCURRENT_SKIP/OVERLAP_SKIP/FAILURE_SKIP)
+// avoiding the two-step CreateScheduled + MarkSkipped update. end_time is set to NOW().
+func (r *runDaoImpl) CreateSkipped(ctx context.Context, run *model.TaskRun, skipType bizConsts.RunStatus) error {
+	if run.Attempt == 0 {
+		run.Attempt = 1
+	}
+	if strings.TrimSpace(run.RequestHeaders) == "" {
+		run.RequestHeaders = bizConsts.DEFAULT_JSON_STR
+	}
+	now := time.Now()
+	run.Status = skipType
+	run.EndTime = &now
+	return r.db.WithContext(ctx).Create(run).Error
+}
+
 func (r *runDaoImpl) TransitionToRunning(ctx context.Context, runID int64) (bool, error) {
-	res := r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, model.RunStatusScheduled).Updates(map[string]any{"status": model.RunStatusRunning, "start_time": gorm.Expr("NOW()")})
+	res := r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.Scheduled).Updates(map[string]any{"status": bizConsts.Running, "start_time": gorm.Expr("NOW()")})
 	return res.RowsAffected == 1 && res.Error == nil, res.Error
 }
 
 func (r *runDaoImpl) MarkSuccess(ctx context.Context, runID int64, code int, body string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=?", runID).Updates(map[string]any{"status": model.RunStatusSuccess, "response_code": code, "response_body": body, "end_time": gorm.Expr("NOW()")}).Error
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=?", runID).Updates(map[string]any{"status": bizConsts.Success, "response_code": code, "response_body": body, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) MarkFailed(ctx context.Context, runID int64, errMsg string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []model.RunStatus{model.RunStatusRunning, model.RunStatusScheduled}).Updates(map[string]any{"status": model.RunStatusFailed, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Failed, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) MarkCanceled(ctx context.Context, runID int64) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []model.RunStatus{model.RunStatusScheduled, model.RunStatusRunning}).Updates(map[string]any{"status": model.RunStatusCanceled, "end_time": gorm.Expr("NOW()")}).Error
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running}).Updates(map[string]any{"status": bizConsts.Canceled, "end_time": gorm.Expr("NOW()")}).Error
 }
 
-func (r *runDaoImpl) MarkSkipped(ctx context.Context, runID int64) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, model.RunStatusScheduled).Updates(map[string]any{"status": model.RunStatusSkipped, "end_time": gorm.Expr("NOW()")}).Error
+func (r *runDaoImpl) MarkSkipped(ctx context.Context, runID int64, skipType bizConsts.RunStatus) error {
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.Scheduled).Updates(map[string]any{"status": skipType, "end_time": gorm.Expr("NOW()")}).Error
+}
+
+func (r *runDaoImpl) MarkTimeout(ctx context.Context, runID int64, errMsg string) error {
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Timeout, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) Get(ctx context.Context, id int64) (*model.TaskRun, error) {
