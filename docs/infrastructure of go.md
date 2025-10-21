@@ -95,6 +95,190 @@
 |  声明 Dependencies() 决定启动顺序                        |
 +----------------------------------------------------------+
 ```
+```mermaid
+graph TD
+    %% High-Level Layered Architecture
+    subgraph L1[Application Layer]
+        App[App\n- flags/env\n- boot\n- Run/Shutdown]
+        ConfigMgr[ConfigManager\n- load/parse config]
+        CLI[Run Mode Decision\n basic vs enhanced ]
+    end
+
+    subgraph L2[Core Orchestration Layer]
+        Cont[Container\n- register/resolve\n- topo sort\n- validate]
+        LM[LifecycleManager\n- StartAll/StopAll\n- timeout\n- rollback]
+        HooksM[Hooks Manager\n- phases\n- priority ordering]
+        AutoWire[Autowire\n- tag scan\n- field injection\n- append runtime deps]
+    end
+
+    subgraph L3[Assembly Layer]
+        Registry[Registry\n- builders list\n- auto name inference\n- build-time dep topo\n- runtime dep extension]
+        Builders[Component Builders\n init + registry.Register ]
+    end
+
+    subgraph L4[Components Layer]
+        Logging[logging]
+        HTTPServer[http_server]
+        HTTPClients[http_clients]
+        GRPCServer[grpc_server]
+        GRPCClients[grpc_clients]
+        MySQL[mysql]
+        Gorm[mysql_gorm]
+        Redis[redis]
+        Metrics[prometheus]
+        Telemetry[telemetry]
+        Biz[Business Components\n DAO/Service ]
+    end
+
+    subgraph L5[External Resources]
+        OS[OS Signals / Win Ctrl Handler]
+        DB[(MySQL / GORM)]
+        Cache[(Redis)]
+        Net[(HTTP / gRPC Networks)]
+        Prom[(Prometheus Scraper)]
+        Trace[(Tracing Backend)]
+    end
+
+    %% Flows
+    App --> ConfigMgr
+    App --> Registry
+    App --> LM
+    App --> HooksM
+    App --> AutoWire
+    Registry --> Builders
+    Registry --> Cont
+    AutoWire --> Cont
+    Cont --> L4
+    LM --> Cont
+    HooksM --> LM
+
+    %% Components depend on external resources
+    MySQL --> DB
+    Gorm --> DB
+    Redis --> Cache
+    HTTPServer --> Net
+    HTTPClients --> Net
+    GRPCServer --> Net
+    GRPCClients --> Net
+    Metrics --> Prom
+    Telemetry --> Trace
+    Biz --> Logging
+    Biz --> MySQL
+    Biz --> Redis
+
+    %% Runtime signal flow
+    OS --> App
+
+    %% Styling
+    style L1 fill:#fff5d6,stroke:#333
+    style L2 fill:#e8f5ff,stroke:#036
+    style L3 fill:#f8e8ff,stroke:#606
+    style L4 fill:#eefce8,stroke:#060
+    style L5 fill:#f0f0f0,stroke:#555
+    style AutoWire fill:#ffe0e0,stroke:#900
+    style Registry fill:#f3d6ff,stroke:#606
+    style Cont fill:#e0ffe9,stroke:#060
+    style LM fill:#d6ecff,stroke:#036
+    style HooksM fill:#d6ecff,stroke:#036
+
+
+```
+
+
+```mermaid
+graph TD
+    A[App] --> Cfg[ConfigManager]
+    A --> Cont[Container]
+    A --> LM[LifecycleManager]
+    A --> HookMgr[Global Hook Manager]
+    A --> Reg[Registry]
+    A --> AW[Autowire]
+    HookMgr --> LM
+    Reg --> Cont
+    AW --> Cont
+    subgraph BuildPhase
+        Reg -.build & infer names/deps.-> Builders[Component Builders]
+        Builders --> Reg
+        Reg -->|Register components| Cont
+        AW -->|Inject deps, may append runtime deps| Components
+    end
+    subgraph Runtime
+        LM -->|Start/Stop order| Components
+        HookMgr -->|Execute hooks| LM
+    end
+    subgraph Components
+        Comp1[Component -> BaseComponent]
+        Comp2[Component ...]
+    end
+    Cont -->|Resolve by name| Comp1
+    Cont --> Comp2
+    style A fill:#ffd,stroke:#333
+    style Cont fill:#efe,stroke:#060
+    style LM fill:#def,stroke:#036
+    style HookMgr fill:#def,stroke:#036
+    style Reg fill:#fdf,stroke:#606
+    style AW fill:#fdd,stroke:#600
+
+
+```
+```mermaid
+flowchart LR
+    subgraph Boot
+        B1[Start Run / RunWithContext]
+        B2[boot: once.Do]
+        B3[LoadConfig]
+        B4[BuildAndRegisterAll]
+        B5[Autowire.InjectAll]
+        B6[boot complete]
+    end
+    subgraph BuildAndRegisterAll Steps
+        S1[Auto builders pre-build -> infer name]
+        S2[Infer dep tags for auto builders]
+        S3[Topo sort builders]
+        S4[Register components]
+        S5[Apply runtime dep extensions]
+    end
+    B4 --> S1 --> S2 --> S3 --> S4 --> S5 --> B5
+    B1 --> B2 --> B3 --> B4 --> B5 --> B6
+```
+
+```mermaid
+sequenceDiagram
+participant OS as OS/Caller
+participant App
+participant Registry
+participant Autowire
+participant LM as LifecycleManager
+participant Hooks as HookManager
+participant C as Container
+participant Comps as Components
+
+    OS->>App: Run()
+    App->>App: boot() (once)
+    App->>Registry: BuildAndRegisterAll(cfg, container)
+    Registry->>C: Register(name, component)
+    Registry->>Registry: applyRuntimeDepExtensions()
+    App->>Autowire: InjectAll(container)
+    Autowire->>Comps: Set struct fields + AddDependencies()
+    App->>LM: StartAll(ctx)
+    LM->>Hooks: Execute(BeforeStart)
+    LM->>C: ValidateDependencies()
+    loop ordered components
+        LM->>Comps: Start(ctx with timeout)
+        Comps-->>LM: ok / error
+    end
+    LM->>Hooks: Execute(AfterStart)
+    App-->>OS: Running (blocked on ctx.Done)
+    OS-->>App: Cancel context (signal or Shutdown())
+    App->>LM: StopAll()
+    LM->>Hooks: Execute(BeforeShutdown)
+    loop reverse order
+        LM->>Comps: Stop(ctx with timeout)
+    end
+    LM->>Hooks: Execute(AfterShutdown)
+    App-->>OS: Run returns
+
+```
 
 ### 2.2 启动数据流 (Boot Sequence Flow)
 1. App: 读取配置文件 -> 构造 Container & LifecycleManager。
