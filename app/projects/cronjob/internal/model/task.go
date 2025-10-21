@@ -3,56 +3,38 @@ package model
 import (
 	"strings"
 	"time"
+
+	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 )
 
-// ExecType 表示任务执行类型：同步 (SYNC) 或 异步 (ASYNC)
-type ExecType string
-
-const (
-	ExecTypeSync  ExecType = "SYNC"  // 同步执行：一次 HTTP 请求完成后立即得到结果
-	ExecTypeAsync ExecType = "ASYNC" // 异步执行：初始请求后等待回调（Phase2 实现）
-)
-
-// ConcurrencyPolicy 并发策略
-// QUEUE: 达到上限后排队等待 (Phase2 会实现真正排队)
-// SKIP: 达到上限直接跳过（标记 SKIPPED 或触发 CONCURRENCY_LIMIT）
-// PARALLEL: 不限制，直接并行
-type ConcurrencyPolicy string
-
-const (
-	ConcurrencyQueue    ConcurrencyPolicy = "QUEUE"    // 达到并发上限时排队等待执行
-	ConcurrencySkip     ConcurrencyPolicy = "SKIP"     // 达到并发上限时直接跳过该任务
-	ConcurrencyParallel ConcurrencyPolicy = "PARALLEL" //不限制并发，任务可直接并行执行
-)
-
-// Task 描述一个可调度的定时任务配置，字段已按当前 Phase1 / 规划中的未来能力预留。
+// Task 描述一个可调度的定时任务配置。
 type Task struct {
-	ID                 int64             // 主键 ID
-	Name               string            // 任务唯一名称（业务可读标识）
-	Description        string            // 任务说明文字
-	CronExpr           string            // 规范化后的 6 字段 Cron 表达式（秒 分 时 日 月 周）
-	Timezone           string            // 时区（未来用于按配置时区解析 Cron；当前默认 UTC）
-	ExecType           ExecType          // 执行类型：SYNC/ASYNC（异步回调暂未实现）
-	HTTPMethod         string            // 下游 HTTP 请求方法，如 GET/POST
-	TargetURL          string            // 下游调用目标 URL（含协议）
-	HeadersJSON        string            // 以 JSON 字符串形式存储的额外请求头 (map[string]string)
-	BodyTemplate       string            // 请求体模板（未来可支持变量渲染；当前原样发送）
-	TimeoutSeconds     int               // 单次执行超时时间（秒）
-	RetryPolicyJSON    string            // 重试策略 JSON（占位，Phase2 实现，例如 {max_retries,...}）
-	MaxConcurrency     int               // 单任务允许运行的最大并发数（<=0 视为不限制）
-	ConcurrencyPolicy  ConcurrencyPolicy // 并发策略：QUEUE/SKIP/PARALLEL
-	MisfirePolicy      string            // Misfire 策略占位（FIRE_NOW/SKIP/CATCH_UP_LIMITED，尚未实现）
-	CatchupLimit       int               // Misfire 追赶的最大次数（MisfirePolicy=CATCH_UP_LIMITED 时使用）
-	CallbackMethod     string            // 异步任务回调使用的 HTTP 方法（预留）
-	CallbackTimeoutSec int               // 异步回调等待超时时间（秒，预留）
-	Status             string            // 任务状态：ENABLED / DISABLED
-	Version            int               // 乐观锁版本（更新时 +1，用于并发修改控制）
-	CreatedAt          time.Time         // 创建时间
-	UpdatedAt          time.Time         // 最近更新时间
-	Deleted            int               // 软删除标志位：0 表示未删除，1 表示已删除
+	ID                 int64                    `json:"id"`                   // 主键 ID
+	Name               string                   `json:"name"`                 // 任务唯一名称（业务可读标识）
+	Description        string                   `json:"description"`          // 任务说明文字
+	CronExpr           string                   `json:"cron_expr"`            // 规范化后的 6 字段 Cron 表达式（秒 分 时 日 月 周）
+	Timezone           string                   `json:"timezone"`             // 时区（未来用于按配置时区解析 Cron；当前默认 UTC）
+	ExecType           consts.ExecType          `json:"exec_type"`            // 执行类型：SYNC/ASYNC（异步回调暂未实现）
+	HTTPMethod         string                   `json:"http_method"`          // 下游 HTTP 请求方法，如 GET/POST
+	TargetURL          string                   `json:"target_url"`           // 下游调用目标 URL（含协议）
+	HeadersJSON        string                   `json:"headers_json"`         // 以 JSON 字符串格式存储的额外请求头
+	BodyTemplate       string                   `json:"body_template"`        // 请求体模板
+	TimeoutSeconds     int                      `json:"timeout_seconds"`      // 单次执行超时时间（秒）
+	RetryPolicyJSON    string                   `json:"retry_policy_json"`    // 重试策略 JSON（占位，未来使用）
+	MaxConcurrency     int                      `json:"max_concurrency"`      // 单任务允许运行的最大并发数（<=0 视为不限制）
+	ConcurrencyPolicy  consts.ConcurrencyPolicy `json:"concurrency_policy"`   // 并发策略：QUEUE/SKIP/PARALLEL
+	CallbackMethod     string                   `json:"callback_method"`      // 异步任务回调使用的 HTTP 方法（预留）
+	CallbackTimeoutSec int                      `json:"callback_timeout_sec"` // 异步回调等待超时时间
+	OverlapAction      consts.OverlapAction     `json:"overlap_action"`       // 上一轮仍未完成时的处理策略
+	FailureAction      consts.FailureAction     `json:"failure_action"`       // 上一轮失败/超时/取消后的处理策略
+	Status             consts.TaskStatus        `json:"status"`               // 任务状态：ENABLED / DISABLED
+	Version            int                      `json:"version"`              // 乐观锁版本（更新时 +1）
+	CreatedAt          time.Time                `json:"created_at"`           // 创建时间
+	UpdatedAt          time.Time                `json:"updated_at"`           // 最近更新时间
+	Deleted            int                      `json:"deleted"`              // 软删除标志位：0 未删除，1 已删除
 }
 
-// NormalizeCron ���准化 Cron 表达式：如果是 5 字段则自动补前导秒 0
+// NormalizeCron 规范化 Cron 表达式：如果是 5 字段则自动补前导秒 0
 func NormalizeCron(expr string) string {
 	parts := strings.Fields(expr)
 	if len(parts) == 5 { // prepend 0 seconds
