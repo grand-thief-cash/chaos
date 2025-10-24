@@ -1,0 +1,40 @@
+<nz-layout>
+  <nz-header class="header-bar">
+    <div class="logo"></div>
+    <ul nz-menu nzTheme="dark" nzMode="horizontal" class="header-menu">
+      <li nz-menu-item *ngFor="let nav of navItems" [routerLink]="nav.path" routerLinkActive="ant-menu-item-selected" [nzSelected]="router.url.startsWith(nav.path)">
+        <span nz-icon [nzType]="nav.icon"></span>
+        <span>{{ nav.label }}</span>
+      </li>
+    </ul>
+  </nz-header>
+  <nz-layout>
+    <nz-sider nzWidth="200px" nzTheme="dark" [nzCollapsed]="isCollapsed" [nzCollapsedWidth]="0">
+      <ul nz-menu nzMode="inline" class="sider-menu">
+        <li nz-submenu *ngFor="let group of sideMenuGroups" [nzTitle]="group.title" [nzIcon]="group.icon" [nzOpen]="group.open">
+          <ul>
+            <li nz-menu-item *ngFor="let item of group.items" [routerLink]="item.route" routerLinkActive="ant-menu-item-selected" [nzSelected]="router.url===item.route">
+              {{ item.label }}
+            </li>
+          </ul>
+        </li>
+      </ul>
+    </nz-sider>
+    <nz-layout class="inner-layout">
+      <div class="breadcrumb-bar">
+        <button nz-button nzType="text" (click)="toggleSider()" class="sider-toggle-btn">
+          <span nz-icon [nzType]="siderToggleIcon"></span>
+        </button>
+        <nz-breadcrumb>
+          <nz-breadcrumb-item *ngFor="let bc of (breadcrumbs$ | async); let last = last">
+            <a *ngIf="!last" [routerLink]="bc.url">{{ bc.label }}</a>
+            <span *ngIf="last">{{ bc.label }}</span>
+          </nz-breadcrumb-item>
+        </nz-breadcrumb>
+      </div>
+      <nz-content style="padding: 16px;">
+        <router-outlet></router-outlet>
+      </nz-content>
+    </nz-layout>
+  </nz-layout>
+</nz-layout>
