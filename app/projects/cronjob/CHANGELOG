@@ -1,7 +1,11 @@
 # VERSION
-v0.8.0
+v0.9.0
 
 # Changelog
+- v0.9.0
+    - Added docker build support.
+    - Added CI/CD pipeline for cronjob project.
+    - Added docker-compose file for deployment.
 - v0.8.0
     - Refactored scheduler scan() logic, removed batch fire logic.
     - Added cancel logic in cronjob shutdown.

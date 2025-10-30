@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.24 as builder
+WORKDIR /app
+COPY ../../app/projects/cronjob .
+ARG VERSION=dev
+RUN go mod tidy && go build -ldflags "-X 'main.Version=${VERSION}'" -o cronjob ./cmd/main.go
+
+FROM debian:bullseye-slim
+WORKDIR /app
+COPY --from=builder /app/cronjob ./cronjob
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/logs ./logs
+EXPOSE 8080
+CMD ["./cronjob", "--env=product", "--config=config/config.yaml"]
