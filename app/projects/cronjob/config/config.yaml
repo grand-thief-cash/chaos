@@ -50,7 +50,7 @@ telemetry:
   enabled: true
   service_name: demo-service
   exporter: stdout         # stdout|otlp
-  sample_ratio: 1.0        # 0~1; adjust for sampling
+  sample_ratio: 0        # 0~1; adjust for sampling
   stdout_pretty: false     # false keeps exporter output compact
   stdout_file: ./logs/telemetry.log
 biz_config:
