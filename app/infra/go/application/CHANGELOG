@@ -1,7 +1,12 @@
 # VERSION
-v0.15.4
+v0.16.0
 
 # Changelog
+- v0.16.0
+    - Added postgresql GORM component.
+- v0.15.5
+    - Documentation updated: Added diagrams for arch/components/sequences...
+    - BUT not finished yet.
 - v0.15.4
     - Mysql GORM component support auto-migration when starting.
 - v0.15.3
