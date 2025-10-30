@@ -1,7 +1,9 @@
 # VERSION
-v0.16.0
+v0.16.1
 
 # Changelog
+- v0.16.1
+    - Allow all origins and common methods/headers in http server
 - v0.16.0
     - Added postgresql GORM component.
 - v0.15.5
