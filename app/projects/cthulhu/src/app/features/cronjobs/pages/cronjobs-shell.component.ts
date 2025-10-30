@@ -5,7 +5,12 @@ import {RouterOutlet} from '@angular/router';
   selector: 'cronjobs-shell',
   standalone: true,
   imports: [RouterOutlet],
-  template: `<div class="cronjobs-shell"><router-outlet></router-outlet></div>`
+  template: `<div class="cronjobs-shell">
+    <nav class="sub-nav">
+      <!-- Could later add routerLink buttons -->
+    </nav>
+    <router-outlet></router-outlet>
+  </div>`
 })
 export class CronjobsShellComponent {
   constructor() {

@@ -92,6 +92,10 @@ src/
         pages/
         components/
         state/
+      cronjobs/          # 新增：定时任务管理
+        pages/           # 页面级组件 (TaskListPage, TaskDetailPage)
+        components/      # 局部组件 (TaskCard, TaskFilter)
+        state/           # 局部 signal store / rx state
 
     plugins/             # 可选: 后续第三方/实验性功能的自包含包 (当前可留空)
 
@@ -139,6 +143,7 @@ src/
   - `/backtest`
   - `/analytics`
   - `/admin`
+  - `/cronjobs` (新增：定时任务管理)
 - 可选添加 preloading 策略：对常用模块使用自定义 Preload (后续再加)。
 
 ## 6. 状态管理策略（初期）
@@ -378,3 +383,21 @@ pages/
 
 ### TL;DR
 “能继续嵌套” ≠ “应该继续嵌套”。保持 2 层限制让迁移路径简单；超出时，通过组件、路由扁平化或独立 Feature 分解复杂度。
+
+## 附录：Cron Jobs Feature 结构说明（新增）
+
+本次实现将原先的 mock `overview` 页面移除，替换为：
+- `TaskListPageComponent` (`pages/task-list.page.ts`): 列出后端 `Task`，支持启用/禁用、手动触发、刷新缓存。
+- `TaskDetailPageComponent` (`pages/task-detail.page.ts`): 展示单个任务详情与最近运行 `TaskRun` 列表，支持刷新、手动触发、状态切换。
+- 路由调整：`/cronjobs/tasks` 与 `/cronjobs/task/:id`，保持浅层级，后续如需扩展运行日志细分视图优先通过组件内 Tab 或拆分独立 Feature。
+- 数据访问：`CronjobsApiService` 对接后端 REST `/api/v1/tasks` 与 `/api/v1/runs` 等端点，前端模型与 Go 结构体字段一一对应（使用 snake_case 保持兼容）。
+- 状态管理：`CronjobsStore` 使用 Angular signals，以 task_id 为 key 缓存运行记录，避免重复请求；提供 `enable/disable/trigger/refreshCache` 操作方法。
+
+后续可扩展项：
+1. 创建/编辑任务表单（需要对 `headers_json` 与 `retry_policy_json` 做结构化编辑器）。
+2. 运行记录过滤与分页（当前直接全量显示）。
+3. 失败运行的高亮与统计（可在 store 中增加派生 computed）。
+4. 长轮询或 SSE 实时刷新运行状态。
+5. 权限与审计：操作（手动触发、启用/禁用）加入确认与权限校验。
+
+设计守则回顾：保持 2 层 pages 深度；复杂子域（如 logs 未来细分）达到扩展阈值后抽取为新 Feature，而不是继续加深目录。

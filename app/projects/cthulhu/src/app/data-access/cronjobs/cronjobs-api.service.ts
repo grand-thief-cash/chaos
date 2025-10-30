@@ -1,51 +1,48 @@
 import {Injectable} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
-import {Observable, of} from 'rxjs';
-import {delay} from 'rxjs/operators';
-import {Cronjob} from '../../features/cronjobs/models/cronjob.model';
-
-// 后续真实调用可使用 environment.baseApiUrl 拼接
-// const API_BASE = '/api/cronjobs';
+import {Observable} from 'rxjs';
+import {Task, TaskRun} from '../../features/cronjobs/models/cronjob.model';
+import {environment} from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class CronjobsApiService {
+  private API_BASE = environment.cronjobApiBase;
   constructor(private _http: HttpClient) {}
 
-  list(): Observable<Cronjob[]> {
-    const data = [
-      { id: 'demo-1', name: 'Daily Sync', schedule: '0 0 * * *', status: 'active' } satisfies Cronjob
-    ];
-    return of<Cronjob[]>(data).pipe(delay(300));
-    // return this.http.get<Cronjob[]>(API_BASE);
+  listTasks(): Observable<Task[]> {
+    return this._http.get<Task[]>(`${this.API_BASE}/tasks`);
   }
-
-  get(id: string): Observable<Cronjob> {
-    const item = { id, name: 'Daily Sync', schedule: '0 0 * * *', status: 'active' } as Cronjob;
-    return of<Cronjob>(item).pipe(delay(200));
-    // return this.http.get<Cronjob>(`${API_BASE}/${id}`);
+  getTask(id: number): Observable<Task> {
+    return this._http.get<Task>(`${this.API_BASE}/tasks/${id}`);
   }
-
-  create(payload: Partial<Cronjob>): Observable<Cronjob> {
-    const created: Cronjob = {
-      id: 'new-id',
-      name: payload.name || 'New',
-      schedule: payload.schedule || '* * * * *',
-      status: 'inactive'
-    };
-    return of(created).pipe(delay(200));
+  createTask(payload: Partial<Task>): Observable<{ id: number; name: string }> {
+    return this._http.post<{ id: number; name: string }>(`${this.API_BASE}/tasks`, payload);
   }
-
-  update(id: string, payload: Partial<Cronjob>): Observable<Cronjob> {
-    const updated: Cronjob = {
-      id,
-      name: payload.name || 'Updated',
-      schedule: payload.schedule || '* * * * *',
-      status: (payload.status as Cronjob['status']) || 'active'
-    };
-    return of(updated).pipe(delay(200));
+  updateTask(id: number, payload: Partial<Task>): Observable<{ updated: boolean }> {
+    return this._http.put<{ updated: boolean }>(`${this.API_BASE}/tasks/${id}`, payload);
   }
-
-  delete(_id: string): Observable<void> {
-    return of<void>(undefined).pipe(delay(150));
+  deleteTask(id: number): Observable<{ deleted: boolean }> {
+    return this._http.delete<{ deleted: boolean }>(`${this.API_BASE}/tasks/${id}`);
+  }
+  enableTask(id: number): Observable<{ updated: boolean }> {
+    return this._http.patch<{ updated: boolean }>(`${this.API_BASE}/tasks/${id}/enable`, {});
+  }
+  disableTask(id: number): Observable<{ updated: boolean }> {
+    return this._http.patch<{ updated: boolean }>(`${this.API_BASE}/tasks/${id}/disable`, {});
+  }
+  triggerTask(id: number): Observable<{ run_id: number }> {
+    return this._http.post<{ run_id: number }>(`${this.API_BASE}/tasks/${id}/trigger`, {});
+  }
+  listRuns(taskId: number): Observable<TaskRun[]> {
+    return this._http.get<TaskRun[]>(`${this.API_BASE}/tasks/${taskId}/runs`);
+  }
+  getRun(runId: number): Observable<TaskRun> {
+    return this._http.get<TaskRun>(`${this.API_BASE}/runs/${runId}`);
+  }
+  cancelRun(runId: number): Observable<{ canceled: boolean }> {
+    return this._http.post<{ canceled: boolean }>(`${this.API_BASE}/runs/${runId}/cancel`, {});
+  }
+  refreshCache(): Observable<{ refreshed: boolean }> {
+    return this._http.post<{ refreshed: boolean }>(`${this.API_BASE}/tasks/cache/refresh`, {});
   }
 }

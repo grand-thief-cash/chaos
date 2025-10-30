@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
+    "start": "ng serve --configuration development",
     "build": "ng build",
+    "ng build prod": "--configuration production",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
@@ -21,6 +22,7 @@
     "@angular/router": "^17.3.0",
     "@ant-design/icons-angular": "^17.0.0",
     "@ctrl/tinycolor": "^4.2.0",
+    "cron-parser": "^4.9.0",
     "dayjs": "^1.11.10",
     "echarts": "^5.5.0",
     "ng-zorro-antd": "^17.0.0",
