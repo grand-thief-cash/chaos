@@ -1,7 +1,9 @@
 # VERSION
-v0.2.1
+v0.3.0
 
 # Changelog
+- v0.3.0
+    - Added progress page for cronjob tasks in the Cthulhu project.
 - v0.2.1
     - Extend cronjob list tasks using parameters accordingly.
 - v0.2.0
