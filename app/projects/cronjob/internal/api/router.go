@@ -74,11 +74,23 @@ func init() {
 				_, _ = fmt.Sscanf(idParam, "%d", &id)
 				return id
 			}
+			r.Get("/active", func(w http.ResponseWriter, r *http.Request) { // list active pending runs
+				taskMgmtCtrl.listActiveRuns(w, r)
+			})
 			r.Get("/{id}", func(w http.ResponseWriter, r *http.Request) {
 				taskMgmtCtrl.getRun(w, r, getRunID(r))
 			})
+			r.Get("/{id}/progress", func(w http.ResponseWriter, r *http.Request) { // ephemeral progress
+				taskMgmtCtrl.getRunProgress(w, r, getRunID(r))
+			})
+			r.Post("/{id}/progress", func(w http.ResponseWriter, r *http.Request) { // update ephemeral progress
+				taskMgmtCtrl.setRunProgress(w, r, getRunID(r))
+			})
 			r.Post("/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
 				taskMgmtCtrl.cancelRun(w, r, getRunID(r))
+			})
+			r.Post("/{id}/callback", func(w http.ResponseWriter, r *http.Request) { // finalize async
+				taskMgmtCtrl.finalizeCallback(w, r, getRunID(r))
 			})
 		})
 

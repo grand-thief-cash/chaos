@@ -3,11 +3,14 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
@@ -37,6 +40,7 @@ type Executor struct {
 	// In execute we create timeout contexts per run; cancelMap stores per-run cancel funcs.
 	cancelMap     map[int64]context.CancelFunc // runID -> cancel func
 	activePerTask map[int64]int                // taskID -> running count
+	Progress      *RunProgressManager          `infra:"dep:run_progress_mgr"`
 }
 
 func NewExecutor(cfg config.ExecutorConfig) *Executor {
@@ -197,7 +201,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 		// differentiate error source
 		if ctx2.Err() == context.DeadlineExceeded {
 			logging.Error(ctx, fmt.Sprintf("task %d timeout exceeded", task.ID))
-			_ = e.RunSvc.MarkTimeout(ctx, run.ID, "request timeout")
+			_ = e.RunSvc.MarkTimeout(ctx, run.ID, "request_timeout")
 			return
 		}
 		if ctx2.Err() == context.Canceled {
@@ -205,17 +209,46 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 			_ = e.RunSvc.MarkCanceled(ctx, run.ID)
 			return
 		}
-		logging.Error(ctx, fmt.Sprintf("task %d request failed %d: %v", task.ID, run.ID, err))
-		_ = e.RunSvc.MarkFailed(ctx, run.ID, err.Error())
+		// network error classification
+		msg := err.Error()
+		var opErr *net.OpError
+		if errors.As(err, &opErr) {
+			// check inner error types
+			switch {
+			case errors.Is(opErr.Err, syscall.ECONNREFUSED):
+				msg = "connection_refused"
+			case errors.Is(opErr.Err, syscall.ETIMEDOUT):
+				msg = "connect_timeout"
+			case errors.Is(opErr.Err, syscall.ENETUNREACH):
+				msg = "network_unreachable"
+			case errors.Is(opErr.Err, syscall.EHOSTUNREACH):
+				msg = "host_unreachable"
+			}
+		} else if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
+			msg = "request_timeout"
+		}
+		logging.Error(ctx, fmt.Sprintf("task %d request failed %d classified=%s raw=%v", task.ID, run.ID, msg, err))
+		_ = e.RunSvc.MarkFailed(ctx, run.ID, msg)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
 	logging.Debug(ctx, fmt.Sprintf("task: %d resp.StatusCode :%d, response body: %s", task.ID, resp.StatusCode, b))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
+		if task.ExecType == bizConsts.ExecTypeAsync { // async first phase success -> callback pending
+			_ = e.RunSvc.MarkCallbackPending(ctx, run.ID)
+			// do NOT clear progress; waiting for callback phase
+		} else {
+			_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
+			if e.Progress != nil {
+				e.Progress.Clear(run.ID)
+			}
+		}
 	} else {
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, resp.Status)
+		if e.Progress != nil {
+			e.Progress.Clear(run.ID)
+		}
 	}
 }
 

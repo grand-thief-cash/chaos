@@ -1,7 +1,11 @@
 # VERSION
-v0.9.1
+v0.10.0
 
 # Changelog
+- v0.10.0
+    - Supported async task reporting.
+    - Added task progress callback.
+    - Added periodic task status updater.
 - v0.9.1
     - Extend Task List API by adding parameters to filter tasks.
 - v0.9.0
