@@ -22,6 +22,9 @@ type TaskDao interface {
 	UpdateCronAndMeta(ctx context.Context, t *model.Task) error
 	UpdateStatus(ctx context.Context, id int64, status bizConsts.TaskStatus) error
 	SoftDelete(ctx context.Context, id int64) error
+	// ListFiltered allows querying tasks by multiple optional filters.
+	ListFiltered(ctx context.Context, f *model.TaskListFilters, limit, offset int) ([]*model.Task, error)
+	CountFiltered(ctx context.Context, f *model.TaskListFilters) (int64, error)
 }
 
 type TaskDaoImpl struct {
@@ -143,4 +146,78 @@ func (d *TaskDaoImpl) UpdateStatus(ctx context.Context, id int64, status bizCons
 
 func (d *TaskDaoImpl) SoftDelete(ctx context.Context, id int64) error {
 	return d.db.WithContext(ctx).Model(&model.Task{}).Where("id=?", id).Update("deleted", 1).Error
+}
+
+func (d *TaskDaoImpl) ListFiltered(ctx context.Context, f *model.TaskListFilters, limit, offset int) ([]*model.Task, error) {
+	var list []*model.Task
+	db := d.db.WithContext(ctx).Model(&model.Task{}).Where("deleted=0")
+	if f != nil {
+		if f.Status != "" {
+			db = db.Where("status=?", f.Status)
+		}
+		if f.NameLike != "" {
+			like := fmt.Sprintf("%%%s%%", f.NameLike)
+			db = db.Where("name LIKE ?", like)
+		}
+		if f.DescriptionLike != "" {
+			like := fmt.Sprintf("%%%s%%", f.DescriptionLike)
+			db = db.Where("description LIKE ?", like)
+		}
+		if f.CreatedFrom != nil {
+			db = db.Where("created_at >= ?", f.CreatedFrom)
+		}
+		if f.CreatedTo != nil {
+			db = db.Where("created_at <= ?", f.CreatedTo)
+		}
+		if f.UpdatedFrom != nil {
+			db = db.Where("updated_at >= ?", f.UpdatedFrom)
+		}
+		if f.UpdatedTo != nil {
+			db = db.Where("updated_at <= ?", f.UpdatedTo)
+		}
+	}
+	if limit > 0 {
+		db = db.Limit(limit)
+	}
+	if offset > 0 {
+		db = db.Offset(offset)
+	}
+	if err := db.Order("id DESC").Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (d *TaskDaoImpl) CountFiltered(ctx context.Context, f *model.TaskListFilters) (int64, error) {
+	var cnt int64
+	db := d.db.WithContext(ctx).Model(&model.Task{}).Where("deleted=0")
+	if f != nil {
+		if f.Status != "" {
+			db = db.Where("status=?", f.Status)
+		}
+		if f.NameLike != "" {
+			like := fmt.Sprintf("%%%s%%", f.NameLike)
+			db = db.Where("name LIKE ?", like)
+		}
+		if f.DescriptionLike != "" {
+			like := fmt.Sprintf("%%%s%%", f.DescriptionLike)
+			db = db.Where("description LIKE ?", like)
+		}
+		if f.CreatedFrom != nil {
+			db = db.Where("created_at >= ?", f.CreatedFrom)
+		}
+		if f.CreatedTo != nil {
+			db = db.Where("created_at <= ?", f.CreatedTo)
+		}
+		if f.UpdatedFrom != nil {
+			db = db.Where("updated_at >= ?", f.UpdatedFrom)
+		}
+		if f.UpdatedTo != nil {
+			db = db.Where("updated_at <= ?", f.UpdatedTo)
+		}
+	}
+	if err := db.Count(&cnt).Error; err != nil {
+		return 0, err
+	}
+	return cnt, nil
 }

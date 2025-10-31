@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -91,8 +92,55 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 }
 
 func (tmc *TaskMgmtController) listTasks(w http.ResponseWriter, r *http.Request) {
-	list, _ := tmc.TaskSvc.ListEnabled(r.Context())
-	writeJSON(w, list)
+	q := r.URL.Query()
+	filters := &model.TaskListFilters{}
+	statusRaw := strings.TrimSpace(q.Get("status"))
+	if statusRaw != "" {
+		up := strings.ToUpper(statusRaw)
+		if up == string(bizConsts.ENABLED) || up == string(bizConsts.DISABLED) {
+			filters.Status = up
+		} else {
+			writeErr(w, 400, "invalid status")
+			return
+		}
+	}
+	if v := strings.TrimSpace(q.Get("name")); v != "" {
+		filters.NameLike = v
+	}
+	if v := strings.TrimSpace(q.Get("description")); v != "" {
+		filters.DescriptionLike = v
+	}
+	parseTime := func(key string) *time.Time {
+		if s := strings.TrimSpace(q.Get(key)); s != "" {
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return &t
+			}
+		}
+		return nil
+	}
+	filters.CreatedFrom = parseTime("created_from")
+	filters.CreatedTo = parseTime("created_to")
+	filters.UpdatedFrom = parseTime("updated_from")
+	filters.UpdatedTo = parseTime("updated_to")
+	limit := 50
+	if v := strings.TrimSpace(q.Get("limit")); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i > 0 && i <= 500 {
+			limit = i
+		}
+	}
+	offset := 0
+	if v := strings.TrimSpace(q.Get("offset")); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i >= 0 {
+			offset = i
+		}
+	}
+	list, err := tmc.TaskSvc.ListFiltered(r.Context(), filters, limit, offset)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	total, _ := tmc.TaskSvc.CountFiltered(r.Context(), filters)
+	writeJSON(w, map[string]any{"items": list, "total": total, "limit": limit, "offset": offset})
 }
 
 func (tmc *TaskMgmtController) getTask(w http.ResponseWriter, r *http.Request, id int64) {
