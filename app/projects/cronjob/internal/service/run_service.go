@@ -53,9 +53,6 @@ func (s *RunService) ListByTask(ctx context.Context, taskID int64, limit int) ([
 func (s *RunService) MarkCallbackPending(ctx context.Context, runID int64) error {
 	return s.RunDao.MarkCallbackPending(ctx, runID)
 }
-func (s *RunService) MarkCallbackSuccess(ctx context.Context, runID int64, code int, body string) error {
-	return s.RunDao.MarkCallbackSuccess(ctx, runID, code, body)
-}
 func (s *RunService) MarkFailedTimeout(ctx context.Context, runID int64, errMsg string) error {
 	return s.RunDao.MarkFailedTimeout(ctx, runID, errMsg)
 }

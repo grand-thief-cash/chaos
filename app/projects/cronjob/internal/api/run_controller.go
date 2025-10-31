@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/service"
@@ -126,6 +127,7 @@ func (c *RunMgmtController) getRunProgress(w http.ResponseWriter, r *http.Reques
 }
 
 func (c *RunMgmtController) setRunProgress(w http.ResponseWriter, r *http.Request, runID int64) {
+	logging.Debug(r.Context(), fmt.Sprintf("Setting run progress for run: %d", runID))
 	if c.Progress == nil {
 		writeErr(w, 400, "progress_not_enabled")
 		return
@@ -155,6 +157,7 @@ func (c *RunMgmtController) setRunProgress(w http.ResponseWriter, r *http.Reques
 	switch run.Status {
 	case bizConsts.Scheduled, bizConsts.Running, bizConsts.CallbackPending:
 	default:
+		logging.Warn(r.Context(), fmt.Sprintf("Unknown run_status: %s", run.Status))
 		writeErr(w, 400, "run_not_active")
 		return
 	}
@@ -187,7 +190,7 @@ func (c *RunMgmtController) finalizeCallback(w http.ResponseWriter, r *http.Requ
 		if req.Code == 0 {
 			req.Code = 200
 		}
-		if err := c.RunSvc.MarkCallbackSuccess(r.Context(), runID, req.Code, req.Body); err != nil {
+		if err := c.RunSvc.MarkSuccess(r.Context(), runID, req.Code, req.Body); err != nil {
 			writeErr(w, 500, err.Error())
 			return
 		}
@@ -287,7 +290,7 @@ func (c *RunMgmtController) cleanupRuns(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]any{"deleted": deleted})
 }
 
-var allowedStatuses = map[bizConsts.RunStatus]struct{}{bizConsts.Scheduled: {}, bizConsts.Running: {}, bizConsts.Success: {}, bizConsts.Failed: {}, bizConsts.Timeout: {}, bizConsts.Retrying: {}, bizConsts.CallbackPending: {}, bizConsts.CallbackSuccess: {}, bizConsts.CallbackFailed: {}, bizConsts.FailedTimeout: {}, bizConsts.Canceled: {}, bizConsts.Skipped: {}, bizConsts.FailureSkip: {}, bizConsts.ConcurrentSkip: {}, bizConsts.OverlapSkip: {}}
+var allowedStatuses = map[bizConsts.RunStatus]struct{}{bizConsts.Scheduled: {}, bizConsts.Running: {}, bizConsts.Success: {}, bizConsts.Failed: {}, bizConsts.Timeout: {}, bizConsts.Retrying: {}, bizConsts.CallbackPending: {}, bizConsts.CallbackFailed: {}, bizConsts.FailedTimeout: {}, bizConsts.Canceled: {}, bizConsts.Skipped: {}, bizConsts.FailureSkip: {}, bizConsts.ConcurrentSkip: {}, bizConsts.OverlapSkip: {}}
 
 // validate statuses; returns slice or error
 func validateStatuses(list []bizConsts.RunStatus) ([]bizConsts.RunStatus, error) {
@@ -338,4 +341,13 @@ func (c *RunMgmtController) taskRunStats(w http.ResponseWriter, r *http.Request,
 		avgExecMs = sumExec / execSamples
 	}
 	writeJSON(w, map[string]any{"task_id": taskID, "total_runs": total, "status_distribution": dist, "status_ratios": ratios, "avg_wait_ms": avgWaitMs, "avg_exec_ms": avgExecMs, "sample_size": len(list)})
+}
+
+func (c *RunMgmtController) listAllRunProgress(w http.ResponseWriter, r *http.Request) {
+	if c.Progress == nil {
+		writeJSON(w, map[string]any{"items": []any{}, "enabled": false})
+		return
+	}
+	list := c.Progress.List()
+	writeJSON(w, map[string]any{"items": list, "enabled": true, "count": len(list)})
 }

@@ -9,8 +9,6 @@ import (
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
-	//bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
-	//"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/model"
 )
 
 func init() {
@@ -27,6 +25,7 @@ func init() {
 		// 路由分组
 		r.Route("/get_answer", func(r chi.Router) {
 			r.Get("/", pocCtrl.giveAnswer)
+			r.Get("/progress", pocCtrl.giveAnswerAndProgress)
 
 			getID := func(r *http.Request) int64 {
 				idParam := chi.URLParam(r, "id")

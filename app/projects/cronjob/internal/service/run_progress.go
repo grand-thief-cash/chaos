@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -82,4 +83,16 @@ func (rpm *RunProgressManager) AttemptCleanup(ctx context.Context, ttl time.Dura
 		}
 	}
 	rpm.mu.Unlock()
+}
+
+// List returns all current progress entries sorted by most recently updated.
+func (rpm *RunProgressManager) List() []*RunProgress {
+	rpm.mu.RLock()
+	defer rpm.mu.RUnlock()
+	out := make([]*RunProgress, 0, len(rpm.data))
+	for _, p := range rpm.data {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
+	return out
 }
