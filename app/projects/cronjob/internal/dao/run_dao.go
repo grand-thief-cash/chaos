@@ -40,8 +40,9 @@ type RunDao interface {
 	DeleteKeepRecent(ctx context.Context, taskID int64, keep int) (int64, error)
 	DeleteByIDs(ctx context.Context, ids []int64) (int64, error)
 	ListIDsOffset(ctx context.Context, taskID int64, offset, limit int) ([]int64, error)
-	ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error)
-	ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error)
+	ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) ([]*model.TaskRun, error)
+	ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) ([]*model.TaskRun, error)
+	CountStatusByTask(ctx context.Context, taskID int64) (map[bizConsts.RunStatus]int64, error)
 }
 
 type runDaoImpl struct {
@@ -284,17 +285,29 @@ func (r *runDaoImpl) ListIDsOffset(ctx context.Context, taskID int64, offset, li
 	return ids, nil
 }
 
-func (r *runDaoImpl) ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error) {
+func resolveTimeField(tf string) string {
+	switch strings.ToLower(tf) {
+	case "start", "start_time":
+		return "start_time"
+	case "end", "end_time":
+		return "end_time"
+	default:
+		return "scheduled_time"
+	}
+}
+
+func (r *runDaoImpl) ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) ([]*model.TaskRun, error) {
 	var list []*model.TaskRun
+	col := resolveTimeField(timeField)
 	q := r.db.WithContext(ctx).Where("task_id=?", taskID)
 	if len(statuses) > 0 {
 		q = q.Where("status IN ?", statuses)
 	}
 	if from != nil {
-		q = q.Where("scheduled_time >= ?", *from)
+		q = q.Where(col+" >= ?", *from)
 	}
 	if to != nil {
-		q = q.Where("scheduled_time <= ?", *to)
+		q = q.Where(col+" <= ?", *to)
 	}
 	q = q.Order("id DESC")
 	if offset > 0 {
@@ -309,18 +322,19 @@ func (r *runDaoImpl) ListByTaskFiltered(ctx context.Context, taskID int64, statu
 	return list, nil
 }
 
-func (r *runDaoImpl) ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error) {
+func (r *runDaoImpl) ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) ([]*model.TaskRun, error) {
 	base := []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running, bizConsts.CallbackPending}
 	if len(statuses) > 0 {
 		base = statuses
 	}
 	var list []*model.TaskRun
+	col := resolveTimeField(timeField)
 	q := r.db.WithContext(ctx).Where("status IN ?", base)
 	if from != nil {
-		q = q.Where("scheduled_time >= ?", *from)
+		q = q.Where(col+" >= ?", *from)
 	}
 	if to != nil {
-		q = q.Where("scheduled_time <= ?", *to)
+		q = q.Where(col+" <= ?", *to)
 	}
 	q = q.Order("id DESC")
 	if offset > 0 {
@@ -333,4 +347,22 @@ func (r *runDaoImpl) ListActiveFiltered(ctx context.Context, statuses []bizConst
 		return nil, err
 	}
 	return list, nil
+}
+
+func (r *runDaoImpl) CountStatusByTask(ctx context.Context, taskID int64) (map[bizConsts.RunStatus]int64, error) {
+	rows, err := r.db.WithContext(ctx).Model(&model.TaskRun{}).Select("status, COUNT(*) cnt").Where("task_id=?", taskID).Group("status").Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	res := make(map[bizConsts.RunStatus]int64)
+	for rows.Next() {
+		var status string
+		var cnt int64
+		if err := rows.Scan(&status, &cnt); err != nil {
+			return nil, err
+		}
+		res[bizConsts.RunStatus(status)] = cnt
+	}
+	return res, nil
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,7 +25,7 @@ func NewRunMgmtController() *RunMgmtController {
 	return &RunMgmtController{BaseComponent: core.NewBaseComponent(bizConsts.COMP_CTRL_RUN_MGMT)}
 }
 
-func parseRunFilters(r *http.Request) (statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) {
+func parseRunFilters(r *http.Request) (statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) {
 	q := r.URL.Query()
 	limit = 50
 	if v := q.Get("limit"); v != "" {
@@ -57,13 +58,20 @@ func parseRunFilters(r *http.Request) (statuses []bizConsts.RunStatus, from, to 
 	}
 	from = parseTime("from")
 	to = parseTime("to")
+	timeField = strings.TrimSpace(strings.ToLower(q.Get("time_field"))) // scheduled_time|start_time|end_time
 	return
 }
 
 // listRunsByTask lists recent runs for a task (migrated from task controller)
 func (c *RunMgmtController) listRunsByTask(w http.ResponseWriter, r *http.Request, taskID int64) {
-	statuses, from, to, limit, offset := parseRunFilters(r)
-	list, err := c.RunSvc.ListByTaskFiltered(r.Context(), taskID, statuses, from, to, limit, offset)
+	statuses, from, to, limit, offset, timeField := parseRunFilters(r)
+	if len(statuses) > 0 {
+		if _, err := validateStatuses(statuses); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+	}
+	list, err := c.RunSvc.ListByTaskFiltered(r.Context(), taskID, statuses, from, to, limit, offset, timeField)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -72,8 +80,14 @@ func (c *RunMgmtController) listRunsByTask(w http.ResponseWriter, r *http.Reques
 }
 
 func (c *RunMgmtController) listActiveRuns(w http.ResponseWriter, r *http.Request) {
-	statuses, from, to, limit, offset := parseRunFilters(r)
-	list, err := c.RunSvc.ListActiveFiltered(r.Context(), statuses, from, to, limit, offset)
+	statuses, from, to, limit, offset, timeField := parseRunFilters(r)
+	if len(statuses) > 0 {
+		if _, err := validateStatuses(statuses); err != nil {
+			writeErr(w, 400, err.Error())
+			return
+		}
+	}
+	list, err := c.RunSvc.ListActiveFiltered(r.Context(), statuses, from, to, limit, offset, timeField)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
@@ -209,11 +223,13 @@ func (c *RunMgmtController) summaryRuns(w http.ResponseWriter, r *http.Request) 
 	// simple aggregate: total runs and terminal percentages per task
 	aggregates := make(map[int64]map[string]any)
 	for taskID, total := range counts {
-		aggregates[taskID] = map[string]any{"total_runs": total}
+		dist, _ := c.RunSvc.CountStatusByTask(r.Context(), taskID)
+		aggregates[taskID] = map[string]any{"total_runs": total, "status_distribution": dist}
 	}
+	// remove approximate terminal ratio block or keep; we keep for now adding after dist
 	// naive: re-query recent runs per task limited to e.g. 1000 to estimate terminal portion
 	for taskID := range counts {
-		list, _ := c.RunSvc.ListByTaskFiltered(r.Context(), taskID, nil, nil, nil, 1000, 0)
+		list, _ := c.RunSvc.ListByTaskFiltered(r.Context(), taskID, nil, nil, nil, 1000, 0, "scheduled_time")
 		var termCnt int
 		for _, run := range list {
 			for _, ts := range terminal {
@@ -269,4 +285,57 @@ func (c *RunMgmtController) cleanupRuns(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, map[string]any{"deleted": deleted})
+}
+
+var allowedStatuses = map[bizConsts.RunStatus]struct{}{bizConsts.Scheduled: {}, bizConsts.Running: {}, bizConsts.Success: {}, bizConsts.Failed: {}, bizConsts.Timeout: {}, bizConsts.Retrying: {}, bizConsts.CallbackPending: {}, bizConsts.CallbackSuccess: {}, bizConsts.CallbackFailed: {}, bizConsts.FailedTimeout: {}, bizConsts.Canceled: {}, bizConsts.Skipped: {}, bizConsts.FailureSkip: {}, bizConsts.ConcurrentSkip: {}, bizConsts.OverlapSkip: {}}
+
+// validate statuses; returns slice or error
+func validateStatuses(list []bizConsts.RunStatus) ([]bizConsts.RunStatus, error) {
+	for _, s := range list {
+		if _, ok := allowedStatuses[s]; !ok {
+			return nil, fmt.Errorf("invalid_status_%s", s)
+		}
+	}
+	return list, nil
+}
+
+// Task runs stats endpoint
+func (c *RunMgmtController) taskRunStats(w http.ResponseWriter, r *http.Request, taskID int64) {
+	dist, err := c.RunSvc.CountStatusByTask(r.Context(), taskID)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	var total int64
+	for _, v := range dist {
+		total += v
+	}
+	ratios := make(map[bizConsts.RunStatus]float64)
+	if total > 0 {
+		for k, v := range dist {
+			ratios[k] = float64(v) / float64(total)
+		}
+	}
+	// latency: average wait (start-scheduled) & exec (end-start)
+	list, _ := c.RunSvc.ListByTaskFiltered(r.Context(), taskID, nil, nil, nil, 1000, 0, "scheduled_time")
+	var sumWait, sumExec, waitSamples, execSamples int64
+	for _, run := range list {
+		if run.StartTime != nil && run.ScheduledTime.After(time.Time{}) {
+			sumWait += run.StartTime.Sub(run.ScheduledTime).Milliseconds()
+			waitSamples++
+		}
+		if run.StartTime != nil && run.EndTime != nil {
+			sumExec += run.EndTime.Sub(*run.StartTime).Milliseconds()
+			execSamples++
+		}
+	}
+	avgWaitMs := int64(0)
+	if waitSamples > 0 {
+		avgWaitMs = sumWait / waitSamples
+	}
+	avgExecMs := int64(0)
+	if execSamples > 0 {
+		avgExecMs = sumExec / execSamples
+	}
+	writeJSON(w, map[string]any{"task_id": taskID, "total_runs": total, "status_distribution": dist, "status_ratios": ratios, "avg_wait_ms": avgWaitMs, "avg_exec_ms": avgExecMs, "sample_size": len(list)})
 }

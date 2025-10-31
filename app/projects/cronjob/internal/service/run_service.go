@@ -71,9 +71,12 @@ func (s *RunService) ListCallbackPendingExpired(ctx context.Context, limit int) 
 func (s *RunService) MarkCallbackPendingWithDeadline(ctx context.Context, runID int64, deadline time.Time) error {
 	return s.RunDao.MarkCallbackPendingWithDeadline(ctx, runID, deadline)
 }
-func (s *RunService) ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error) {
-	return s.RunDao.ListByTaskFiltered(ctx, taskID, statuses, from, to, limit, offset)
+func (s *RunService) ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) ([]*model.TaskRun, error) {
+	return s.RunDao.ListByTaskFiltered(ctx, taskID, statuses, from, to, limit, offset, timeField)
 }
-func (s *RunService) ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error) {
-	return s.RunDao.ListActiveFiltered(ctx, statuses, from, to, limit, offset)
+func (s *RunService) ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) ([]*model.TaskRun, error) {
+	return s.RunDao.ListActiveFiltered(ctx, statuses, from, to, limit, offset, timeField)
+}
+func (s *RunService) CountStatusByTask(ctx context.Context, taskID int64) (map[bizConsts.RunStatus]int64, error) {
+	return s.RunDao.CountStatusByTask(ctx, taskID)
 }
