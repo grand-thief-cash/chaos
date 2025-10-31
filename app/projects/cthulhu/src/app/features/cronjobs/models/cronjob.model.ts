@@ -8,7 +8,6 @@ export type RunStatus =
   | 'TIMEOUT'
   | 'RETRYING'
   | 'CALLBACK_PENDING'
-  | 'CALLBACK_SUCCESS'
   | 'FAILED_TIMEOUT'
   | 'CANCELED'
   | 'SKIPPED'

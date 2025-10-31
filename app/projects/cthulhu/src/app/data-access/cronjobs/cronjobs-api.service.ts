@@ -105,4 +105,9 @@ export class CronjobsApiService {
   setRunProgress(runId: number, payload: { current?: number; total?: number; message?: string }){ return this._http.post<any>(`${this.API_BASE}/runs/${runId}/progress`, payload); }
   finalizeCallback(runId: number, payload: { result: string; code?: number; body?: string; error_message?: string }){ return this._http.post<any>(`${this.API_BASE}/runs/${runId}/callback`, payload); }
   cleanupRuns(payload: any){ return this._http.post<any>(`${this.API_BASE}/runs/cleanup`, payload); }
+  listAllRunProgress(){
+    return this._http.get<any>(`${this.API_BASE}/runs/progress`).pipe(
+      map(resp => resp?.items || [])
+    );
+  }
 }
