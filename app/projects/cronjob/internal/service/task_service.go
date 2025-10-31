@@ -143,3 +143,11 @@ func (s *TaskService) Refresh(ctx context.Context) error {
 	s.mu.Unlock()
 	return nil
 }
+
+func (s *TaskService) ListFiltered(ctx context.Context, f *model.TaskListFilters, limit, offset int) ([]*model.Task, error) {
+	return s.TaskDao.ListFiltered(ctx, f, limit, offset)
+}
+
+func (s *TaskService) CountFiltered(ctx context.Context, f *model.TaskListFilters) (int64, error) {
+	return s.TaskDao.CountFiltered(ctx, f)
+}
