@@ -1,7 +1,7 @@
 import {Component, OnInit} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {CronjobsStore} from '../state/cronjobs.store';
-import {RouterLink} from '@angular/router';
+import {Router, RouterLink} from '@angular/router';
 import {NzTableModule} from 'ng-zorro-antd/table';
 import {NzButtonModule} from 'ng-zorro-antd/button';
 import {NzBadgeModule} from 'ng-zorro-antd/badge';
@@ -25,7 +25,7 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
         <button nz-button nzType="default" (click)="reload()">刷新</button>
         <button nz-button nzType="default" (click)="toggleFilters()">{{showFilters? '收起筛选':'展开筛选'}}</button>
         <button nz-button nzType="default" (click)="refreshCache()">刷新缓存</button>
-        <button nz-button nzType="primary" [routerLink]="['/cronjobs/task','new']">新建任务</button>
+        <button nz-button nzType="primary" [routerLink]="['/cronjobs/tasks','new']">新建任务</button>
       </div>
     </div>
     <div class="filters" *ngIf="showFilters">
@@ -84,7 +84,7 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
       <tbody>
         <tr *ngFor="let t of store.pagedTasks()">
           <td>{{t.id}}</td>
-          <td><a [routerLink]="['/cronjobs/task', t.id]">{{t.name}}</a><div class="desc" *ngIf="t.description">{{t.description}}</div></td>
+          <td><a [routerLink]="['/cronjobs/tasks', t.id]">{{t.name}}</a><div class="desc" *ngIf="t.description">{{t.description}}</div></td>
           <td>{{t.cron_expr}}</td>
           <td>
             <nz-badge [nzStatus]="t.status==='ENABLED' ? 'success' : 'default'" [nzText]="t.status==='ENABLED'?'启用':'禁用'"></nz-badge>
@@ -95,7 +95,8 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
           <td class="ops">
             <button nz-button nzSize="small" (click)="toggle(t)">{{t.status==='ENABLED'?'禁用':'启用'}}</button>
             <button nz-button nzSize="small" (click)="trigger(t)">触发</button>
-            <button nz-button nzSize="small" [routerLink]="['/cronjobs/task', t.id, 'edit']">编辑</button>
+            <button nz-button nzSize="small" [routerLink]="['/cronjobs/tasks', t.id, 'edit']">编辑</button>
+            <button nz-button nzSize="small" (click)="clone(t)">基于此创建</button>
             <button nz-button nzSize="small" nzDanger nz-popconfirm nzPopconfirmTitle="确认删除该任务?" (nzOnConfirm)="remove(t)">删除</button>
           </td>
         </tr>
@@ -135,7 +136,7 @@ export class TaskListPageComponent implements OnInit {
   updatedFrom = '';
   updatedTo = '';
   showFilters = true;
-  constructor(public store: CronjobsStore, private msg: NzMessageService) {}
+  constructor(public store: CronjobsStore, private msg: NzMessageService, private router: Router) {}
   ngOnInit(){ this.store.loadTasks(); }
   toggleFilters(){ this.showFilters = !this.showFilters; }
   reload(){ this.store.loadTasks(true); }
@@ -163,6 +164,20 @@ export class TaskListPageComponent implements OnInit {
   clearFilters(){
     this.search=''; this.desc=''; this.status='ALL'; this.createdFrom=''; this.createdTo=''; this.updatedFrom=''; this.updatedTo='';
     this.store.resetFilters();
+  }
+  clone(t: any){
+    // 过滤掉不应复制的字段
+    const allowedKeys = [
+      'name','description','cron_expr','timezone','exec_type','http_method','target_url','headers_json','body_template','timeout_seconds','retry_policy_json','max_concurrency','concurrency_policy','callback_method','callback_timeout_sec','overlap_action','failure_action','status'
+    ];
+    const template: any = {};
+    for(const k of allowedKeys){ template[k] = t[k]; }
+    // 名称附加后缀避免重复
+    if(template.name) template.name = template.name + ' copy';
+    // 状态统一初始为 ENABLED
+    template.status = 'ENABLED';
+    // 导航状态传递模板
+    this.router.navigate(['/cronjobs/tasks','new'], { state: { template } });
   }
   private toRFC3339(local: string): string | undefined {
     if(!local) return undefined;

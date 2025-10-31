@@ -2,7 +2,7 @@ import {Injectable} from '@angular/core';
 import {ActivatedRoute, NavigationEnd, Route, Router} from '@angular/router';
 import {filter} from 'rxjs/operators';
 
-export interface SideMenuItem { label: string; route: string; selectedMatchExact?: boolean; }
+export interface SideMenuItem { label: string; route: string; selectedMatchExact?: boolean; order?: number; }
 export interface SideMenuGroup { title: string; icon: string | null; items: SideMenuItem[]; open?: boolean; }
 
 interface MenuGroupMeta { title: string; icon?: string; }
@@ -43,21 +43,15 @@ export class SideMenuService {
     const children = (shellConfig.children || []) as Route[];
 
     const items: SideMenuItem[] = [];
-    const metaMap: Record<string, MenuItemMeta> = {};
     // 遍历 shell 路由的子路由，收集每个子路由的菜单元数据，过滤掉隐藏项或重定向项。
     for (const child of children) {
       const meta: MenuItemMeta | undefined = (child.data as any)?.['menu'];
       if (!child.path || !meta || meta.hide) continue; // 跳过重定向或隐藏
-      metaMap[child.path] = meta;
-      items.push({ label: meta.label, route: `/${firstSegment}/${child.path}`, selectedMatchExact: true });
+      items.push({ label: meta.label, route: `/${firstSegment}/${child.path}`, selectedMatchExact: true, order: meta.order ?? 0 });
     }
-    // 按菜单项的顺序进行排序。
-    items.sort((a, b) => {
-      const ap = a.route.split('/').pop()!;
-      const bp = b.route.split('/').pop()!;
-      return (metaMap[ap]?.order ?? 0) - (metaMap[bp]?.order ?? 0);
-    });
-    // 如果有有效的分组元数据和菜单项，则将其缓存到 cache 中，供菜单组件使用。
+    // 按菜单项的顺序进行排序（直接使用携带的 order）。
+    items.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
     if (groupMeta && items.length) {
       this.cache[firstSegment] = [ { title: groupMeta.title, icon: groupMeta.icon || null, open: true, items } ];
     }
