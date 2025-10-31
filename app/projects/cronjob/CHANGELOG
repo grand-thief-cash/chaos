@@ -1,9 +1,14 @@
 # VERSION
-v0.11.0
+v0.12.0
 
 # Changelog
+- v0.12.0
+    - Added run deletion by trunk rather than hard delte.
+    - Added pagination for run list and active runs
+    - Removed dry-run for run deletion.
+    - Added summary of runs.
 - v0.11.0
-    - Added configuation for CallbackTimeoutScanner
+    - Added configuration for CallbackTimeoutScanner
     - Refactored controller of task mgmt and added run mgmt controller.
     - Move logic of controller to service layer.
     - Added RUN clean up job using date & number of items.

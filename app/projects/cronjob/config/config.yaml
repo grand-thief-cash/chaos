@@ -53,9 +53,18 @@ telemetry:
   sample_ratio: 0        # 0~1; adjust for sampling
   stdout_pretty: false     # false keeps exporter output compact
   stdout_file: ./logs/telemetry.log
+
 biz_config:
   scheduler:
     poll_interval: 3s
   executor:
     worker_pool_size: 1
     request_timeout: 5s
+  callback_scanner:
+    interval: 30s
+    batch_limit: 500
+  cleanup:
+    enabled: true
+    interval: 1h
+    max_age: 720h       # 30 days
+    max_per_task: 1000  # keep recent 1000 per task

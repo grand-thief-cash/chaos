@@ -2,13 +2,11 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/service"
@@ -26,44 +24,61 @@ func NewRunMgmtController() *RunMgmtController {
 	return &RunMgmtController{BaseComponent: core.NewBaseComponent(bizConsts.COMP_CTRL_RUN_MGMT)}
 }
 
-func init() {
-	http_server.RegisterRoutes(func(r chi.Router, c *core.Container) error {
-		comp, err := c.Resolve(bizConsts.COMP_CTRL_RUN_MGMT)
-		if err != nil {
-			return err
+func parseRunFilters(r *http.Request) (statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) {
+	q := r.URL.Query()
+	limit = 50
+	if v := q.Get("limit"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i > 0 && i <= 500 {
+			limit = i
 		}
-		ctrl, ok := comp.(*RunMgmtController)
-		if !ok {
-			return fmt.Errorf("run_mgmt_ctrl type assertion failed")
+	}
+	if v := q.Get("offset"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i >= 0 {
+			offset = i
 		}
-
-		// Run centric routes
-		r.Route("/api/v1/runs", func(r chi.Router) {
-			getRunID := func(r *http.Request) int64 {
-				var id int64
-				_, _ = fmt.Sscanf(chi.URLParam(r, "id"), "%d", &id)
-				return id
+	}
+	if v := q.Get("status"); v != "" {
+		parts := strings.Split(v, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(strings.ToUpper(p))
+			if p == "" {
+				continue
 			}
-			r.Get("/active", ctrl.listActiveRuns)
-			r.Get("/summary", ctrl.summaryRuns)
-			r.Post("/cleanup", ctrl.cleanupRuns)
-			r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) { ctrl.getRun(w, req, getRunID(req)) })
-			r.Post("/{id}/cancel", func(w http.ResponseWriter, req *http.Request) { ctrl.cancelRun(w, req, getRunID(req)) })
-			r.Get("/{id}/progress", func(w http.ResponseWriter, req *http.Request) { ctrl.getRunProgress(w, req, getRunID(req)) })
-			r.Post("/{id}/progress", func(w http.ResponseWriter, req *http.Request) { ctrl.setRunProgress(w, req, getRunID(req)) })
-			r.Post("/{id}/callback", func(w http.ResponseWriter, req *http.Request) { ctrl.finalizeCallback(w, req, getRunID(req)) })
-		})
+			statuses = append(statuses, bizConsts.RunStatus(p))
+		}
+	}
+	parseTime := func(key string) *time.Time {
+		if s := strings.TrimSpace(q.Get(key)); s != "" {
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return &t
+			}
+		}
 		return nil
-	})
+	}
+	from = parseTime("from")
+	to = parseTime("to")
+	return
 }
 
-func (c *RunMgmtController) listActiveRuns(w http.ResponseWriter, r *http.Request) {
-	list, err := c.RunSvc.ListActive(r.Context(), 200)
+// listRunsByTask lists recent runs for a task (migrated from task controller)
+func (c *RunMgmtController) listRunsByTask(w http.ResponseWriter, r *http.Request, taskID int64) {
+	statuses, from, to, limit, offset := parseRunFilters(r)
+	list, err := c.RunSvc.ListByTaskFiltered(r.Context(), taskID, statuses, from, to, limit, offset)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, map[string]any{"items": list})
+	writeJSON(w, map[string]any{"items": list, "limit": limit, "offset": offset})
+}
+
+func (c *RunMgmtController) listActiveRuns(w http.ResponseWriter, r *http.Request) {
+	statuses, from, to, limit, offset := parseRunFilters(r)
+	list, err := c.RunSvc.ListActiveFiltered(r.Context(), statuses, from, to, limit, offset)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"items": list, "limit": limit, "offset": offset})
 }
 
 func (c *RunMgmtController) getRun(w http.ResponseWriter, r *http.Request, runID int64) {
@@ -183,12 +198,40 @@ func (c *RunMgmtController) finalizeCallback(w http.ResponseWriter, r *http.Requ
 }
 
 func (c *RunMgmtController) summaryRuns(w http.ResponseWriter, r *http.Request) {
-	counts, err := c.Cleanup.Summary(r.Context(), 10000)
+	counts, err := c.Cleanup.Summary(r.Context(), 100000)
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, map[string]any{"counts": counts})
+	// gather terminal stats per task
+	result := make(map[string]any)
+	terminal := []bizConsts.RunStatus{bizConsts.Success, bizConsts.Failed, bizConsts.FailedTimeout, bizConsts.Canceled}
+	// simple aggregate: total runs and terminal percentages per task
+	aggregates := make(map[int64]map[string]any)
+	for taskID, total := range counts {
+		aggregates[taskID] = map[string]any{"total_runs": total}
+	}
+	// naive: re-query recent runs per task limited to e.g. 1000 to estimate terminal portion
+	for taskID := range counts {
+		list, _ := c.RunSvc.ListByTaskFiltered(r.Context(), taskID, nil, nil, nil, 1000, 0)
+		var termCnt int
+		for _, run := range list {
+			for _, ts := range terminal {
+				if run.Status == ts {
+					termCnt++
+					break
+				}
+			}
+		}
+		if len(list) > 0 {
+			aggregates[taskID]["terminal_ratio_estimate"] = float64(termCnt) / float64(len(list))
+		} else {
+			aggregates[taskID]["terminal_ratio_estimate"] = 0.0
+		}
+	}
+	result["counts"] = counts
+	result["aggregates"] = aggregates
+	writeJSON(w, result)
 }
 
 func (c *RunMgmtController) cleanupRuns(w http.ResponseWriter, r *http.Request) {
