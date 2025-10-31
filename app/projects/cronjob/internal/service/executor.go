@@ -188,7 +188,8 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	if task.BodyTemplate != "" {
 		body = bytes.NewBufferString(task.BodyTemplate)
 	}
-	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, task.TargetURL, body)
+	urlWithRunID := fmt.Sprintf("%s?run_id=%d", task.TargetURL, run.ID)
+	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, urlWithRunID, body)
 	if err != nil {
 		logging.Error(ctx, fmt.Sprintf("create request for task failed %d: %v", task.ID, err))
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, "build request failed")
@@ -235,14 +236,15 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	b, _ := io.ReadAll(resp.Body)
 	logging.Debug(ctx, fmt.Sprintf("task: %d resp.StatusCode :%d, response body: %s", task.ID, resp.StatusCode, b))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		if task.ExecType == bizConsts.ExecTypeAsync { // async first phase success -> callback pending
+		if task.ExecType == bizConsts.ExecTypeAsync { // async first phase success -> callback pending (never mark Success here)
 			deadline := time.Now().Add(time.Duration(task.CallbackTimeoutSec) * time.Second)
 			if task.CallbackTimeoutSec <= 0 {
 				deadline = time.Now().Add(5 * time.Minute)
 			}
+			logging.Info(ctx, fmt.Sprintf("run %d async phase1 succeeded; transitioning to CALLBACK_PENDING until deadline %s", run.ID, deadline.Format(time.RFC3339)))
 			_ = e.RunSvc.MarkCallbackPendingWithDeadline(ctx, run.ID, deadline)
-			// do NOT clear progress; waiting for callback phase
-		} else {
+			// progress retained for callback phase; external callback should clear if desired
+		} else { // sync final success
 			_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
 			if e.Progress != nil {
 				e.Progress.Clear(run.ID)

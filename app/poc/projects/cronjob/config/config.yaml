@@ -5,7 +5,7 @@ app_info:
   env: "development"  # development, production
 logging:
   enabled: true
-  level: "INFO"
+  level: "DEBUG"
   format: "json"  # json 或 console
   output: "stdout"  # stdout, stderr, file
   file_config:
@@ -18,8 +18,8 @@ logging:
 http_server:
   enabled: true
   address: ":19998"
-  read_timeout: 10s
-  write_timeout: 10s
+  read_timeout: 3s
+  write_timeout: 600s
   idle_timeout: 60s
   graceful_timeout: 60s
   enable_health: true

@@ -1,7 +1,10 @@
 # VERSION
-v0.12.1
+v0.12.2
 
 # Changelog
+- v0.12.2
+    - Removed callback success status for cronjob.
+    - Added api for fetching all progress of runs.
 - v0.12.1
     - Replaced DeleteKeepRecent with chunked deletion to avoid large data deletion issue.
     - Extended Summary of runs to show statistics by status.

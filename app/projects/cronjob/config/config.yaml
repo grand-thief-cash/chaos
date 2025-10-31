@@ -11,7 +11,7 @@ app_info:
 
 logging:
   enabled: true
-  level: "INFO"
+  level: "DEBUG"
   format: "json"  # json 或 console
   output: "stdout"  # stdout, stderr, file
   file_config:
@@ -56,10 +56,10 @@ telemetry:
 
 biz_config:
   scheduler:
-    poll_interval: 3s
+    poll_interval: 60s
   executor:
     worker_pool_size: 1
-    request_timeout: 5s
+    request_timeout: 60s
   callback_scanner:
     interval: 30s
     batch_limit: 500

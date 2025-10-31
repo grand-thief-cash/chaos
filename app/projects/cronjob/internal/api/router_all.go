@@ -63,6 +63,8 @@ func init() {
 				_, _ = fmt.Sscanf(chi.URLParam(r, "id"), "%d", &id)
 				return id
 			}
+			// list all in-memory progress first
+			r.Get("/progress", runCtrl.listAllRunProgress)
 			r.Get("/active", runCtrl.listActiveRuns)
 			r.Get("/summary", runCtrl.summaryRuns)
 			r.Post("/cleanup", runCtrl.cleanupRuns)
