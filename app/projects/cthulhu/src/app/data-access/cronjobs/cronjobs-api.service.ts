@@ -30,11 +30,14 @@ export class CronjobsApiService {
     });
     return this._http.get<any>(`${this.API_BASE}/tasks`, { params }).pipe(
       map(resp => {
-        // backward compatibility: if resp is array
+        console.debug('[CronjobsApiService] listTasks raw resp', resp);
         if (Array.isArray(resp)) {
           return { items: resp as Task[], total: resp.length, limit: q.limit || resp.length, offset: q.offset || 0 };
         }
-        return resp as TaskListResponse;
+        // fallback keys: data, list
+        const items = resp?.items || resp?.data || resp?.list || [];
+        const total = resp?.total ?? (Array.isArray(items)? items.length: 0);
+        return { items, total, limit: resp?.limit ?? q.limit ?? items.length, offset: resp?.offset ?? q.offset ?? 0 } as TaskListResponse;
       })
     );
   }
@@ -60,7 +63,13 @@ export class CronjobsApiService {
     return this._http.post<{ run_id: number }>(`${this.API_BASE}/tasks/${id}/trigger`, {});
   }
   listRuns(taskId: number): Observable<TaskRun[]> {
-    return this._http.get<TaskRun[]>(`${this.API_BASE}/tasks/${taskId}/runs`);
+    return this._http.get<any>(`${this.API_BASE}/tasks/${taskId}/runs`).pipe(
+      map(resp => {
+        console.debug('[CronjobsApiService] listRuns raw resp', resp);
+        if (Array.isArray(resp)) return resp as TaskRun[];
+        return (resp?.items || resp?.data || resp?.list || []) as TaskRun[];
+      })
+    );
   }
   getRun(runId: number): Observable<TaskRun> {
     return this._http.get<TaskRun>(`${this.API_BASE}/runs/${runId}`);
@@ -71,4 +80,29 @@ export class CronjobsApiService {
   refreshCache(): Observable<{ refreshed: boolean }> {
     return this._http.post<{ refreshed: boolean }>(`${this.API_BASE}/tasks/cache/refresh`, {});
   }
+  listRunsFiltered(taskId: number, q: { status?: string; from?: string; to?: string; limit?: number; offset?: number; time_field?: string } = {}) {
+    let params = new HttpParams();
+    Object.entries(q).forEach(([k,v])=> { if(v!==undefined && v!==null && v!==''){ params = params.set(k, String(v)); } });
+    return this._http.get<any>(`${this.API_BASE}/tasks/${taskId}/runs`, { params });
+  }
+  taskRunStats(taskId: number){
+    return this._http.get<any>(`${this.API_BASE}/tasks/${taskId}/runs/stats`);
+  }
+  listActiveRuns(q: { status?: string; from?: string; to?: string; limit?: number; offset?: number; time_field?: string } = {}){
+    let params = new HttpParams();
+    Object.entries(q).forEach(([k,v])=> { if(v!==undefined && v!==null && v!==''){ params = params.set(k, String(v)); } });
+    return this._http.get<any>(`${this.API_BASE}/runs/active`, { params }).pipe(
+      map(resp => {
+        console.debug('[CronjobsApiService] listActiveRuns raw resp', resp);
+        return Array.isArray(resp) ? resp : (resp?.items || []);
+      })
+    );
+  }
+  runsSummary(){
+    return this._http.get<any>(`${this.API_BASE}/runs/summary`);
+  }
+  runProgress(runId: number){ return this._http.get<any>(`${this.API_BASE}/runs/${runId}/progress`); }
+  setRunProgress(runId: number, payload: { current?: number; total?: number; message?: string }){ return this._http.post<any>(`${this.API_BASE}/runs/${runId}/progress`, payload); }
+  finalizeCallback(runId: number, payload: { result: string; code?: number; body?: string; error_message?: string }){ return this._http.post<any>(`${this.API_BASE}/runs/${runId}/callback`, payload); }
+  cleanupRuns(payload: any){ return this._http.post<any>(`${this.API_BASE}/runs/cleanup`, payload); }
 }
