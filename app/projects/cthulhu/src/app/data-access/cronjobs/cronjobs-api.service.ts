@@ -1,16 +1,42 @@
 import {Injectable} from '@angular/core';
-import {HttpClient} from '@angular/common/http';
-import {Observable} from 'rxjs';
+import {HttpClient, HttpParams} from '@angular/common/http';
+import {map, Observable} from 'rxjs';
 import {Task, TaskRun} from '../../features/cronjobs/models/cronjob.model';
 import {environment} from '../../../environments/environment';
+
+export interface TaskListResponse { items: Task[]; total: number; limit: number; offset: number; }
+export interface TaskListQuery {
+  status?: 'ENABLED' | 'DISABLED';
+  name?: string;
+  description?: string;
+  created_from?: string; // RFC3339
+  created_to?: string;
+  updated_from?: string;
+  updated_to?: string;
+  limit?: number;
+  offset?: number;
+}
 
 @Injectable({ providedIn: 'root' })
 export class CronjobsApiService {
   private API_BASE = environment.cronjobApiBase;
   constructor(private _http: HttpClient) {}
 
-  listTasks(): Observable<Task[]> {
-    return this._http.get<Task[]>(`${this.API_BASE}/tasks`);
+  listTasks(q: TaskListQuery = {}): Observable<TaskListResponse> {
+    let params = new HttpParams();
+    Object.entries(q).forEach(([k,v])=> {
+      if (v === undefined || v === null || v === '') return;
+      params = params.set(k, String(v));
+    });
+    return this._http.get<any>(`${this.API_BASE}/tasks`, { params }).pipe(
+      map(resp => {
+        // backward compatibility: if resp is array
+        if (Array.isArray(resp)) {
+          return { items: resp as Task[], total: resp.length, limit: q.limit || resp.length, offset: q.offset || 0 };
+        }
+        return resp as TaskListResponse;
+      })
+    );
   }
   getTask(id: number): Observable<Task> {
     return this._http.get<Task>(`${this.API_BASE}/tasks/${id}`);
