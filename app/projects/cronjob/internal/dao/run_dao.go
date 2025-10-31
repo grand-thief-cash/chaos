@@ -34,6 +34,10 @@ type RunDao interface {
 	ListByTask(ctx context.Context, taskID int64, limit int) ([]*model.TaskRun, error)
 	ListActive(ctx context.Context, limit int) ([]*model.TaskRun, error) // list currently active/pending runs
 	ListCallbackPendingExpired(ctx context.Context, limit int) ([]*model.TaskRun, error)
+	CountPerTask(ctx context.Context, limit int) (map[int64]int, error)
+	DeleteOlderThan(ctx context.Context, taskID int64, deadline time.Time) (int64, error)
+	DeleteKeepRecent(ctx context.Context, taskID int64, keep int) (int64, error)
+	DeleteByIDs(ctx context.Context, ids []int64) (int64, error)
 }
 
 type runDaoImpl struct {
@@ -177,4 +181,80 @@ func (r *runDaoImpl) ListCallbackPendingExpired(ctx context.Context, limit int) 
 		return nil, err
 	}
 	return list, nil
+}
+
+func (r *runDaoImpl) CountPerTask(ctx context.Context, limit int) (map[int64]int, error) {
+	rows, err := r.db.WithContext(ctx).Model(&model.TaskRun{}).Select("task_id, COUNT(*) as cnt").Group("task_id").Order("cnt DESC").Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	res := make(map[int64]int)
+	for rows.Next() {
+		var taskID int64
+		var cnt int
+		if err := rows.Scan(&taskID, &cnt); err != nil {
+			return nil, err
+		}
+		res[taskID] = cnt
+		if limit > 0 && len(res) >= limit {
+			break
+		}
+	}
+	return res, nil
+}
+
+func (r *runDaoImpl) DeleteOlderThan(ctx context.Context, taskID int64, deadline time.Time) (int64, error) {
+	q := r.db.WithContext(ctx).Where("scheduled_time < ?", deadline)
+	if taskID > 0 {
+		q = q.Where("task_id=?", taskID)
+	}
+	res := q.Delete(&model.TaskRun{})
+	return res.RowsAffected, res.Error
+}
+
+func (r *runDaoImpl) DeleteKeepRecent(ctx context.Context, taskID int64, keep int) (int64, error) {
+	if keep <= 0 { // delete all for task or all tasks
+		if taskID > 0 {
+			res := r.db.WithContext(ctx).Where("task_id=?", taskID).Delete(&model.TaskRun{})
+			return res.RowsAffected, res.Error
+		}
+		res := r.db.WithContext(ctx).Delete(&model.TaskRun{})
+		return res.RowsAffected, res.Error
+	}
+	// delete older than top keep ids
+	if taskID > 0 {
+		var ids []int64
+		if err := r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("task_id=?", taskID).Order("id DESC").Offset(keep).Pluck("id", &ids).Error; err != nil {
+			return 0, err
+		}
+		if len(ids) == 0 {
+			return 0, nil
+		}
+		res := r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.TaskRun{})
+		return res.RowsAffected, res.Error
+	}
+	// global scenario: iterate tasks
+	counts, err := r.CountPerTask(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	for tid := range counts {
+		var ids []int64
+		if err := r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("task_id=?", tid).Order("id DESC").Offset(keep).Pluck("id", &ids).Error; err != nil {
+			continue
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		res := r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.TaskRun{})
+		total += res.RowsAffected
+	}
+	return total, nil
+}
+
+func (r *runDaoImpl) DeleteByIDs(ctx context.Context, ids []int64) (int64, error) {
+	res := r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.TaskRun{})
+	return res.RowsAffected, res.Error
 }

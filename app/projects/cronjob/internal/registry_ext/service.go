@@ -1,8 +1,6 @@
 package registry_ext
 
 import (
-	"time"
-
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
@@ -29,6 +27,9 @@ func init() {
 		return true, service.NewRunProgressManager(), nil
 	})
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, service.NewCallbackTimeoutScanner(30 * time.Second), nil
+		return true, service.NewCallbackTimeoutScanner(cronjobCfg.CallbackScanner.Interval, cronjobCfg.CallbackScanner.BatchLimit), nil
+	})
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, service.NewRunCleanupService(cronjobCfg.Cleanup), nil
 	})
 }

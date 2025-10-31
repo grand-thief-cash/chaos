@@ -1,7 +1,12 @@
 # VERSION
-v0.10.0
+v0.11.0
 
 # Changelog
+- v0.11.0
+    - Added configuation for CallbackTimeoutScanner
+    - Refactored controller of task mgmt and added run mgmt controller.
+    - Move logic of controller to service layer.
+    - Added RUN clean up job using date & number of items.
 - v0.10.0
     - Supported async task reporting.
     - Added task progress callback.

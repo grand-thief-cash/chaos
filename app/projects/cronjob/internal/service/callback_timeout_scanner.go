@@ -15,17 +15,21 @@ import (
 
 type CallbackTimeoutScanner struct {
 	*core.BaseComponent
-	RunSvc   *RunService         `infra:"dep:run_service"`
-	Progress *RunProgressManager `infra:"dep:run_progress_mgr"`
-	interval time.Duration
-	cancel   context.CancelFunc
+	RunSvc     *RunService         `infra:"dep:run_service"`
+	Progress   *RunProgressManager `infra:"dep:run_progress_mgr"`
+	interval   time.Duration
+	batchLimit int
+	cancel     context.CancelFunc
 }
 
-func NewCallbackTimeoutScanner(interval time.Duration) *CallbackTimeoutScanner {
+func NewCallbackTimeoutScanner(interval time.Duration, batchLimit int) *CallbackTimeoutScanner {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
-	return &CallbackTimeoutScanner{BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_CALLBACK_SCANNER), interval: interval}
+	if batchLimit <= 0 {
+		batchLimit = 500
+	}
+	return &CallbackTimeoutScanner{BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_CALLBACK_SCANNER), interval: interval, batchLimit: batchLimit}
 }
 
 func (c *CallbackTimeoutScanner) Start(ctx context.Context) error {
@@ -65,7 +69,7 @@ func (c *CallbackTimeoutScanner) loop(ctx context.Context) {
 }
 
 func (c *CallbackTimeoutScanner) scan(ctx context.Context) {
-	expired, err := c.RunSvc.ListCallbackPendingExpired(ctx, 500)
+	expired, err := c.RunSvc.ListCallbackPendingExpired(ctx, c.batchLimit)
 	if err != nil {
 		logging.Error(ctx, "callback scanner list expired failed: "+err.Error())
 		return
