@@ -14,6 +14,9 @@ func init() {
 	registry.ExtendRuntimeDependencies(appconsts.COMPONENT_HTTP_SERVER, api.NewRunMgmtController().Name())
 
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, api.NewTaskMgmtController(), nil
+	})
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, api.NewRunMgmtController(), nil
 	})
 }

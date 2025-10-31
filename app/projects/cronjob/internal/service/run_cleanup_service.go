@@ -77,7 +77,23 @@ func (s *RunCleanupService) CleanupByKeep(ctx context.Context, taskID int64, kee
 	if keep < 0 {
 		return 0, fmt.Errorf("invalid keep")
 	}
-	return s.RunDao.DeleteKeepRecent(ctx, taskID, keep)
+	if taskID > 0 { // single task chunked
+		return s.CleanupByKeepChunked(ctx, taskID, keep, 500)
+	}
+	// global: iterate tasks and chunk each
+	counts, err := s.Summary(ctx, 100000)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	for tid, cnt := range counts {
+		if cnt <= keep {
+			continue
+		}
+		deleted, _ := s.CleanupByKeepChunked(ctx, tid, keep, 500)
+		total += deleted
+	}
+	return total, nil
 }
 
 // CleanupByIDs deletes specified run IDs

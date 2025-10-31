@@ -53,6 +53,7 @@ func init() {
 			r.Post("/{id}/trigger", func(w http.ResponseWriter, req *http.Request) { taskCtrl.triggerTask(w, req, getTaskID(req)) })
 			// migrated run listing
 			r.Get("/{id}/runs", func(w http.ResponseWriter, req *http.Request) { runCtrl.listRunsByTask(w, req, getTaskID(req)) })
+			r.Get("/{id}/runs/stats", func(w http.ResponseWriter, req *http.Request) { runCtrl.taskRunStats(w, req, getTaskID(req)) })
 		})
 
 		// Run routes
