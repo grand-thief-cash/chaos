@@ -66,34 +66,6 @@ func init() {
 			})
 		})
 
-		// runs 资源: 同样避免嵌套路由遮蔽 /{id}
-		r.Route("/api/v1/runs", func(r chi.Router) {
-			getRunID := func(r *http.Request) int64 {
-				idParam := chi.URLParam(r, "id")
-				var id int64
-				_, _ = fmt.Sscanf(idParam, "%d", &id)
-				return id
-			}
-			r.Get("/active", func(w http.ResponseWriter, r *http.Request) { // list active pending runs
-				taskMgmtCtrl.listActiveRuns(w, r)
-			})
-			r.Get("/{id}", func(w http.ResponseWriter, r *http.Request) {
-				taskMgmtCtrl.getRun(w, r, getRunID(r))
-			})
-			r.Get("/{id}/progress", func(w http.ResponseWriter, r *http.Request) { // ephemeral progress
-				taskMgmtCtrl.getRunProgress(w, r, getRunID(r))
-			})
-			r.Post("/{id}/progress", func(w http.ResponseWriter, r *http.Request) { // update ephemeral progress
-				taskMgmtCtrl.setRunProgress(w, r, getRunID(r))
-			})
-			r.Post("/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
-				taskMgmtCtrl.cancelRun(w, r, getRunID(r))
-			})
-			r.Post("/{id}/callback", func(w http.ResponseWriter, r *http.Request) { // finalize async
-				taskMgmtCtrl.finalizeCallback(w, r, getRunID(r))
-			})
-		})
-
 		// management / cache ops
 		r.Post("/api/v1/tasks/cache/refresh", func(w http.ResponseWriter, r *http.Request) { taskMgmtCtrl.refreshCache(w, r) })
 

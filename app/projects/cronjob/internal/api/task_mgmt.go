@@ -266,16 +266,6 @@ func (tmc *TaskMgmtController) listRuns(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, list)
 }
 
-func (tmc *TaskMgmtController) getRun(w http.ResponseWriter, r *http.Request, runID int64) {
-	run, err := tmc.RunSvc.Get(r.Context(), runID)
-	if err != nil {
-		logging.Error(r.Context(), fmt.Sprintf("Task get run failed: %v", err))
-		writeErr(w, 404, err.Error())
-		return
-	}
-	writeJSON(w, run)
-}
-
 func (tmc *TaskMgmtController) updateStatus(w http.ResponseWriter, r *http.Request, id int64, status bizConsts.TaskStatus) {
 	err := tmc.TaskSvc.UpdateStatus(r.Context(), id, status)
 	if err != nil {
@@ -286,133 +276,12 @@ func (tmc *TaskMgmtController) updateStatus(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, map[string]any{"updated": true})
 }
 
-func (tmc *TaskMgmtController) listActiveRuns(w http.ResponseWriter, r *http.Request) {
-	limit := 100
-	list, err := tmc.RunSvc.ListActive(r.Context(), limit)
-	if err != nil {
-		writeErr(w, 500, err.Error())
-		return
-	}
-	writeJSON(w, map[string]any{"items": list, "limit": limit})
-}
-
-func (tmc *TaskMgmtController) getRunProgress(w http.ResponseWriter, r *http.Request, runID int64) {
-	if tmc.Progress == nil {
-		writeJSON(w, map[string]any{"run_id": runID, "percent": 0, "message": "progress_not_enabled"})
-		return
-	}
-	p := tmc.Progress.Get(runID)
-	if p == nil {
-		writeJSON(w, map[string]any{"run_id": runID, "percent": 0, "message": "no_progress"})
-		return
-	}
-	writeJSON(w, p)
-}
-
-func (tmc *TaskMgmtController) setRunProgress(w http.ResponseWriter, r *http.Request, runID int64) {
-	if tmc.Progress == nil {
-		writeErr(w, 400, "progress_not_enabled")
-		return
-	}
-	var req struct {
-		Current int64  `json:"current"`
-		Total   int64  `json:"total"`
-		Message string `json:"message"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, err.Error())
-		return
-	}
-	// basic validation
-	if req.Total < 0 || req.Current < 0 {
-		writeErr(w, 400, "negative_values_not_allowed")
-		return
-	}
-	if req.Total == 0 && req.Current > 0 {
-		writeErr(w, 400, "current_requires_total")
-		return
-	}
-	// Validate run exists & is active
-	run, err := tmc.RunSvc.Get(r.Context(), runID)
-	if err != nil {
-		writeErr(w, 404, "run_not_found")
-		return
-	}
-	switch run.Status {
-	case bizConsts.Scheduled, bizConsts.Running, bizConsts.CallbackPending:
-	default:
-		writeErr(w, 400, "run_not_active")
-		return
-	}
-	tmc.Progress.Set(runID, req.Current, req.Total, req.Message)
-	writeJSON(w, map[string]any{"updated": true})
-}
-
-func (tmc *TaskMgmtController) cancelRun(w http.ResponseWriter, r *http.Request, runID int64) {
-	// use context for potential future logging/metrics
-	_ = r.Context()
-	tmc.Exec.CancelRun(runID)
-	if tmc.Progress != nil { // clear ephemeral progress
-		tmc.Progress.Clear(runID)
-	}
-	writeJSON(w, map[string]any{"canceled": true})
-}
-
 func (tmc *TaskMgmtController) refreshCache(w http.ResponseWriter, r *http.Request) {
 	if err := tmc.TaskSvc.Refresh(r.Context()); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
 	writeJSON(w, map[string]any{"refreshed": true})
-}
-
-func (tmc *TaskMgmtController) finalizeCallback(w http.ResponseWriter, r *http.Request, runID int64) {
-	var req struct {
-		Result string `json:"result"` // success | failed_timeout | failed
-		Code   int    `json:"code"`
-		Body   string `json:"body"`
-		Error  string `json:"error_message"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, err.Error())
-		return
-	}
-	run, err := tmc.RunSvc.Get(r.Context(), runID)
-	if err != nil {
-		writeErr(w, 404, "run_not_found")
-		return
-	}
-	if run.Status != bizConsts.CallbackPending {
-		writeErr(w, 400, "run_not_in_callback_pending")
-		return
-	}
-	switch strings.ToLower(strings.TrimSpace(req.Result)) {
-	case "success":
-		if req.Code == 0 {
-			req.Code = 200
-		}
-		if err := tmc.RunSvc.MarkCallbackSuccess(r.Context(), runID, req.Code, req.Body); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-	case "failed_timeout":
-		if err := tmc.RunSvc.MarkFailedTimeout(r.Context(), runID, defaultOr(req.Error, "callback_deadline_exceeded")); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-	case "failed":
-		if err := tmc.RunSvc.MarkCallbackFailed(r.Context(), runID, defaultOr(req.Error, "callback_failed")); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
-	default:
-		writeErr(w, 400, "invalid_result")
-		return
-	}
-	if tmc.Progress != nil {
-		tmc.Progress.Clear(runID)
-	}
-	writeJSON(w, map[string]any{"updated": true})
 }
 
 // defaultOr returns s if not empty, otherwise def
