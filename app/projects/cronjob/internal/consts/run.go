@@ -12,6 +12,7 @@ const (
 	Retrying        RunStatus = "RETRYING"         // 正在重试
 	CallbackPending RunStatus = "CALLBACK_PENDING" // 等待异步回调
 	CallbackSuccess RunStatus = "CALLBACK_SUCCESS" // 异步回调成功
+	CallbackFailed  RunStatus = "CALLBACK_FAILED"  // 异步回调失败（非超时）
 	FailedTimeout   RunStatus = "FAILED_TIMEOUT"   // 回调超时失败
 	Canceled        RunStatus = "CANCELED"         // 被取消
 	Skipped         RunStatus = "SKIPPED"          // 被跳过

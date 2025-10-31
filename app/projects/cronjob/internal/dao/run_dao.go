@@ -26,8 +26,14 @@ type RunDao interface {
 	MarkCanceled(ctx context.Context, runID int64) error
 	MarkSkipped(ctx context.Context, runID int64, skipType bizConsts.RunStatus) error
 	MarkTimeout(ctx context.Context, runID int64, errMsg string) error
+	MarkCallbackPending(ctx context.Context, runID int64) error
+	MarkCallbackSuccess(ctx context.Context, runID int64, code int, body string) error
+	MarkFailedTimeout(ctx context.Context, runID int64, errMsg string) error
+	MarkCallbackFailed(ctx context.Context, runID int64, errMsg string) error
 	Get(ctx context.Context, id int64) (*model.TaskRun, error)
 	ListByTask(ctx context.Context, taskID int64, limit int) ([]*model.TaskRun, error)
+	ListActive(ctx context.Context, limit int) ([]*model.TaskRun, error) // list currently active/pending runs
+	ListCallbackPendingExpired(ctx context.Context, limit int) ([]*model.TaskRun, error)
 }
 
 type runDaoImpl struct {
@@ -113,6 +119,22 @@ func (r *runDaoImpl) MarkTimeout(ctx context.Context, runID int64, errMsg string
 	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Timeout, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
 }
 
+func (r *runDaoImpl) MarkCallbackPending(ctx context.Context, runID int64) error {
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.CallbackPending, "callback_deadline": time.Now().Add(5 * time.Minute)}).Error
+}
+
+func (r *runDaoImpl) MarkCallbackSuccess(ctx context.Context, runID int64, code int, body string) error {
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.CallbackPending).Updates(map[string]any{"status": bizConsts.CallbackSuccess, "response_code": code, "response_body": body, "end_time": gorm.Expr("NOW()")}).Error
+}
+
+func (r *runDaoImpl) MarkFailedTimeout(ctx context.Context, runID int64, errMsg string) error {
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.CallbackPending).Updates(map[string]any{"status": bizConsts.FailedTimeout, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+}
+
+func (r *runDaoImpl) MarkCallbackFailed(ctx context.Context, runID int64, errMsg string) error {
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.CallbackPending).Updates(map[string]any{"status": bizConsts.CallbackFailed, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+}
+
 func (r *runDaoImpl) Get(ctx context.Context, id int64) (*model.TaskRun, error) {
 	var run model.TaskRun
 	if err := r.db.WithContext(ctx).Where("id=?", id).First(&run).Error; err != nil {
@@ -124,6 +146,30 @@ func (r *runDaoImpl) Get(ctx context.Context, id int64) (*model.TaskRun, error) 
 func (r *runDaoImpl) ListByTask(ctx context.Context, taskID int64, limit int) ([]*model.TaskRun, error) {
 	var list []*model.TaskRun
 	q := r.db.WithContext(ctx).Where("task_id=?", taskID).Order("id DESC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (r *runDaoImpl) ListActive(ctx context.Context, limit int) ([]*model.TaskRun, error) {
+	var list []*model.TaskRun
+	q := r.db.WithContext(ctx).Where("status IN ?", []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running, bizConsts.CallbackPending}).Order("id DESC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (r *runDaoImpl) ListCallbackPendingExpired(ctx context.Context, limit int) ([]*model.TaskRun, error) {
+	var list []*model.TaskRun
+	q := r.db.WithContext(ctx).Where("status=? AND callback_deadline IS NOT NULL AND callback_deadline < NOW()", bizConsts.CallbackPending).Order("id ASC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
