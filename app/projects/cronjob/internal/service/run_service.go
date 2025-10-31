@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
@@ -66,4 +67,13 @@ func (s *RunService) MarkCallbackFailed(ctx context.Context, runID int64, errMsg
 }
 func (s *RunService) ListCallbackPendingExpired(ctx context.Context, limit int) ([]*model.TaskRun, error) {
 	return s.RunDao.ListCallbackPendingExpired(ctx, limit)
+}
+func (s *RunService) MarkCallbackPendingWithDeadline(ctx context.Context, runID int64, deadline time.Time) error {
+	return s.RunDao.MarkCallbackPendingWithDeadline(ctx, runID, deadline)
+}
+func (s *RunService) ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error) {
+	return s.RunDao.ListByTaskFiltered(ctx, taskID, statuses, from, to, limit, offset)
+}
+func (s *RunService) ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error) {
+	return s.RunDao.ListActiveFiltered(ctx, statuses, from, to, limit, offset)
 }

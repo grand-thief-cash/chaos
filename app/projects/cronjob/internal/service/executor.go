@@ -236,7 +236,11 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	logging.Debug(ctx, fmt.Sprintf("task: %d resp.StatusCode :%d, response body: %s", task.ID, resp.StatusCode, b))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if task.ExecType == bizConsts.ExecTypeAsync { // async first phase success -> callback pending
-			_ = e.RunSvc.MarkCallbackPending(ctx, run.ID)
+			deadline := time.Now().Add(time.Duration(task.CallbackTimeoutSec) * time.Second)
+			if task.CallbackTimeoutSec <= 0 {
+				deadline = time.Now().Add(5 * time.Minute)
+			}
+			_ = e.RunSvc.MarkCallbackPendingWithDeadline(ctx, run.ID, deadline)
 			// do NOT clear progress; waiting for callback phase
 		} else {
 			_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))

@@ -90,10 +90,6 @@ func (s *RunCleanupService) CleanupByIDs(ctx context.Context, ids []int64) (int6
 
 // autoCleanup executes configured cleanup policies
 func (s *RunCleanupService) autoCleanup(ctx context.Context) {
-	if s.cfg.DryRun {
-		logging.Info(ctx, "run cleanup dry-run skip actual deletes")
-		return
-	}
 	if s.cfg.MaxAge > 0 {
 		deleted, err := s.CleanupByAge(ctx, 0, s.cfg.MaxAge)
 		if err != nil {
@@ -103,17 +99,51 @@ func (s *RunCleanupService) autoCleanup(ctx context.Context) {
 		}
 	}
 	if s.cfg.MaxPerTask > 0 {
-		// naive: we only support global keep by iterating tasks summary
 		counts, err := s.Summary(ctx, 10000)
-		if err == nil {
-			var totalDeleted int64
-			for taskID := range counts {
-				deleted, _ := s.CleanupByKeep(ctx, taskID, s.cfg.MaxPerTask)
-				totalDeleted += deleted
-			}
-			logging.Info(ctx, fmt.Sprintf("auto cleanup keep per task totalDeleted=%d", totalDeleted))
-		} else {
+		if err != nil {
 			logging.Error(ctx, "summary for keep failed: "+err.Error())
+			return
 		}
+		var totalDeleted int64
+		for taskID, cnt := range counts {
+			if cnt <= s.cfg.MaxPerTask {
+				continue
+			}
+			deleted, _ := s.CleanupByKeepChunked(ctx, taskID, s.cfg.MaxPerTask, 500)
+			totalDeleted += deleted
+		}
+		logging.Info(ctx, fmt.Sprintf("auto cleanup keep per task totalDeleted=%d", totalDeleted))
 	}
+}
+
+// CleanupByKeepChunked deletes older runs keeping only the most recent 'keep' runs using chunk batches.
+func (s *RunCleanupService) CleanupByKeepChunked(ctx context.Context, taskID int64, keep, chunk int) (int64, error) {
+	if keep < 0 {
+		return 0, fmt.Errorf("invalid keep")
+	}
+	if chunk <= 0 {
+		chunk = 500
+	}
+	// list ids beyond keep in batches
+	var totalDeleted int64
+	for {
+		ids, err := s.RunDao.ListIDsOffset(ctx, taskID, keep, chunk) // new helper; will add
+		if err != nil {
+			return totalDeleted, err
+		}
+		if len(ids) == 0 {
+			break
+		}
+		deleted, err2 := s.RunDao.DeleteByIDs(ctx, ids)
+		if err2 != nil {
+			return totalDeleted, err2
+		}
+		totalDeleted += deleted
+		if len(ids) < chunk {
+			break
+		}
+		// small throttle
+		time.Sleep(50 * time.Millisecond)
+	}
+	return totalDeleted, nil
 }

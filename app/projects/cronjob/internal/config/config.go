@@ -33,7 +33,6 @@ type CleanupConfig struct {
 	Interval   time.Duration `yaml:"interval"`     // background cleanup interval
 	MaxAge     time.Duration `yaml:"max_age"`      // auto delete runs older than MaxAge
 	MaxPerTask int           `yaml:"max_per_task"` // auto keep recent N per task
-	DryRun     bool          `yaml:"dry_run"`      // log only
 }
 
 type BizConfig struct {

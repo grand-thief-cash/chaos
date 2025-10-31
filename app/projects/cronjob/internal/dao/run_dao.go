@@ -30,6 +30,7 @@ type RunDao interface {
 	MarkCallbackSuccess(ctx context.Context, runID int64, code int, body string) error
 	MarkFailedTimeout(ctx context.Context, runID int64, errMsg string) error
 	MarkCallbackFailed(ctx context.Context, runID int64, errMsg string) error
+	MarkCallbackPendingWithDeadline(ctx context.Context, runID int64, deadline time.Time) error
 	Get(ctx context.Context, id int64) (*model.TaskRun, error)
 	ListByTask(ctx context.Context, taskID int64, limit int) ([]*model.TaskRun, error)
 	ListActive(ctx context.Context, limit int) ([]*model.TaskRun, error) // list currently active/pending runs
@@ -38,6 +39,9 @@ type RunDao interface {
 	DeleteOlderThan(ctx context.Context, taskID int64, deadline time.Time) (int64, error)
 	DeleteKeepRecent(ctx context.Context, taskID int64, keep int) (int64, error)
 	DeleteByIDs(ctx context.Context, ids []int64) (int64, error)
+	ListIDsOffset(ctx context.Context, taskID int64, offset, limit int) ([]int64, error)
+	ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error)
+	ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error)
 }
 
 type runDaoImpl struct {
@@ -137,6 +141,10 @@ func (r *runDaoImpl) MarkFailedTimeout(ctx context.Context, runID int64, errMsg 
 
 func (r *runDaoImpl) MarkCallbackFailed(ctx context.Context, runID int64, errMsg string) error {
 	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.CallbackPending).Updates(map[string]any{"status": bizConsts.CallbackFailed, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+}
+
+func (r *runDaoImpl) MarkCallbackPendingWithDeadline(ctx context.Context, runID int64, deadline time.Time) error {
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.CallbackPending, "callback_deadline": deadline}).Error
 }
 
 func (r *runDaoImpl) Get(ctx context.Context, id int64) (*model.TaskRun, error) {
@@ -246,10 +254,12 @@ func (r *runDaoImpl) DeleteKeepRecent(ctx context.Context, taskID int64, keep in
 			continue
 		}
 		if len(ids) == 0 {
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 		res := r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.TaskRun{})
 		total += res.RowsAffected
+		time.Sleep(500 * time.Millisecond) // throttle to reduce DB pressure
 	}
 	return total, nil
 }
@@ -257,4 +267,70 @@ func (r *runDaoImpl) DeleteKeepRecent(ctx context.Context, taskID int64, keep in
 func (r *runDaoImpl) DeleteByIDs(ctx context.Context, ids []int64) (int64, error) {
 	res := r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.TaskRun{})
 	return res.RowsAffected, res.Error
+}
+
+func (r *runDaoImpl) ListIDsOffset(ctx context.Context, taskID int64, offset, limit int) ([]int64, error) {
+	var ids []int64
+	q := r.db.WithContext(ctx).Model(&model.TaskRun{}).Order("id DESC").Offset(offset)
+	if taskID > 0 {
+		q = q.Where("task_id=?", taskID)
+	}
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func (r *runDaoImpl) ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error) {
+	var list []*model.TaskRun
+	q := r.db.WithContext(ctx).Where("task_id=?", taskID)
+	if len(statuses) > 0 {
+		q = q.Where("status IN ?", statuses)
+	}
+	if from != nil {
+		q = q.Where("scheduled_time >= ?", *from)
+	}
+	if to != nil {
+		q = q.Where("scheduled_time <= ?", *to)
+	}
+	q = q.Order("id DESC")
+	if offset > 0 {
+		q = q.Offset(offset)
+	}
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (r *runDaoImpl) ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int) ([]*model.TaskRun, error) {
+	base := []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running, bizConsts.CallbackPending}
+	if len(statuses) > 0 {
+		base = statuses
+	}
+	var list []*model.TaskRun
+	q := r.db.WithContext(ctx).Where("status IN ?", base)
+	if from != nil {
+		q = q.Where("scheduled_time >= ?", *from)
+	}
+	if to != nil {
+		q = q.Where("scheduled_time <= ?", *to)
+	}
+	q = q.Order("id DESC")
+	if offset > 0 {
+		q = q.Offset(offset)
+	}
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
 }
