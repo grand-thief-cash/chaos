@@ -69,3 +69,48 @@ export interface TaskSummary extends Task {
 }
 
 export interface RunSummary extends TaskRun {}
+
+export interface RunProgress {
+  run_id: number;
+  percent: number;
+  message?: string;
+  current?: number;
+  total?: number;
+}
+
+export interface TaskRunStats {
+  task_id: number;
+  total_runs: number;
+  status_distribution: Record<string, number>;
+  status_ratios: Record<string, number>;
+  avg_wait_ms: number;
+  avg_exec_ms: number;
+  sample_size: number;
+}
+
+export interface RunsSummaryAggregate {
+  total_runs: number;
+  status_distribution: Record<string, number>;
+  terminal_ratio_estimate?: number;
+}
+export interface RunsSummaryResponse {
+  counts: Record<string, number>;
+  aggregates: Record<string, RunsSummaryAggregate>;
+}
+
+export type CleanupMode = 'age' | 'count' | 'ids';
+export interface CleanupAgeRequest {
+  mode: 'age';
+  task_id?: number;
+  max_age_seconds: number;
+}
+export interface CleanupCountRequest {
+  mode: 'count';
+  task_id?: number;
+  keep: number;
+}
+export interface CleanupIdsRequest {
+  mode: 'ids';
+  ids: number[];
+}
+export type CleanupRequest = CleanupAgeRequest | CleanupCountRequest | CleanupIdsRequest;

@@ -1,7 +1,13 @@
 # VERSION
-v0.2.0
+v0.3.0
 
 # Changelog
+- v0.3.0
+    - Added pages for:
+        - Cronjob /run/active
+        - Cronjob /run/summary
+        - Cronjob /run/:runId
+        - Cronjob /maintenance
 - v0.2.0
     - Added cronjob pages for in the Cthulhu project.
 - v0.1.0

@@ -6,7 +6,8 @@ import {NzBadgeModule} from 'ng-zorro-antd/badge';
 import {NzTableModule} from 'ng-zorro-antd/table';
 import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
 import {NzPaginationModule} from 'ng-zorro-antd/pagination';
-import {RUN_STATUS_BADGE} from '../../cronjobs/cronjobs.constants';
+import {RUN_STATUS_BADGE} from '../cronjobs.constants';
+import {CronjobsApiService} from '../../../data-access/cronjobs/cronjobs-api.service';
 import {CronjobsStore} from '../state/cronjobs.store';
 
 @Component({
@@ -33,6 +34,21 @@ import {CronjobsStore} from '../state/cronjobs.store';
       <button nz-button nzType="primary" [routerLink]="['/cronjobs/task', task()?.id, 'edit']">编辑</button>
       <button nz-button nzType="link" [routerLink]="['/cronjobs/tasks']">返回列表</button>
     </div>
+    <h3>运行统计</h3>
+    <div *ngIf="statsLoading(); else statsTpl">统计加载中...</div>
+    <ng-template #statsTpl>
+      <div *ngIf="stats(); else noStatsTpl" class="stats">
+        <div><strong>总运行数:</strong> {{stats()?.total_runs}}</div>
+        <div><strong>平均等待(ms):</strong> {{stats()?.avg_wait_ms}}</div>
+        <div><strong>平均执行(ms):</strong> {{stats()?.avg_exec_ms}}</div>
+        <div class="dist">
+          <div *ngFor="let kv of distEntries()">
+            <nz-badge [nzStatus]="RUN_STATUS_BADGE[kv.key].status || 'default'" [nzText]="kv.key + ':' + kv.value"></nz-badge>
+          </div>
+        </div>
+      </div>
+      <ng-template #noStatsTpl><div>暂无统计数据</div></ng-template>
+    </ng-template>
     <h3>最近运行记录</h3>
     <div *ngIf="runsLoading(); else runsTpl">运行记录加载中...</div>
     <ng-template #runsTpl>
@@ -40,7 +56,7 @@ import {CronjobsStore} from '../state/cronjobs.store';
         <thead><tr><th>ID</th><th>Scheduled</th><th>Status</th><th>Start</th><th>End</th><th>Attempt</th></tr></thead>
         <tbody>
           <tr *ngFor="let r of pagedRuns()">
-            <td>{{r.id}}</td>
+            <td><a [routerLink]="['/cronjobs/run', r.id]">{{r.id}}</a></td>
             <td>{{r.scheduled_time}}</td>
             <td>
               <nz-badge [nzStatus]="RUN_STATUS_BADGE[r.status].status || 'default'" [nzText]="RUN_STATUS_BADGE[r.status].text || r.status"></nz-badge>
@@ -66,6 +82,8 @@ import {CronjobsStore} from '../state/cronjobs.store';
     .actions { margin-bottom: 24px; }
     .runs-table { width: 100%; margin-top: 16px; }
     .runs-pager { margin-top: 12px; display:flex; justify-content:center; }
+    .stats { margin: 12px 0 24px; }
+    .dist { display:flex; flex-wrap:wrap; gap:4px; }
   `]
 })
 export class TaskDetailPageComponent implements OnInit {
@@ -77,13 +95,20 @@ export class TaskDetailPageComponent implements OnInit {
   runPageSize = computed(()=> this.store.runPageSize(this.taskId()||0)());
   runsLoading = computed(()=> this.store.loadingRunsFor(this.taskId()||0)());
   RUN_STATUS_BADGE = RUN_STATUS_BADGE;
-  constructor(private route: ActivatedRoute, public store: CronjobsStore, private msg: NzMessageService) {}
+  private _stats = signal<any | null>(null);
+  private _statsLoading = signal(false);
+  stats = computed(()=> this._stats());
+  statsLoading = computed(()=> this._statsLoading());
+  constructor(private route: ActivatedRoute, public store: CronjobsStore, private msg: NzMessageService, private api: CronjobsApiService) {}
   ngOnInit(){
     const id = Number(this.route.snapshot.paramMap.get('id')); this.taskId.set(id);
     this.store.loadTasks();
     this.store.loadRuns(id);
+    this.loadStats();
   }
-  reloadRuns(){ if(this.taskId()) this.store.loadRuns(this.taskId()!, true); }
+  loadStats(){ if(!this.taskId()) return; this._statsLoading.set(true); this.api.taskRunStats(this.taskId()!).subscribe({ next: s=> this._stats.set(s), error: ()=> this._statsLoading.set(false), complete: ()=> this._statsLoading.set(false) }); }
+  distEntries(){ const st = this.stats(); if(!st) return []; return Object.entries(st.status_distribution || {}).map(([key,value])=> ({ key, value })); }
+  reloadRuns(){ if(this.taskId()) { this.store.loadRuns(this.taskId()!, true); this.loadStats(); } }
   manualTrigger(){ if(this.taskId()) this.store.trigger(this.taskId()!).subscribe({ next: ()=> { this.msg.success('触发成功'); this.reloadRuns(); }, error: ()=> this.msg.error('触发失败'), }); }
   toggleStatus(){ const t = this.task(); if(!t) return; const obs = t.status==='ENABLED'? this.store.disable(t.id): this.store.enable(t.id); obs.subscribe(()=> this.store.loadTasks(true)); }
   onRunPage(i: number){ if(this.taskId()) this.store.setRunPage(this.taskId()!, i); }
