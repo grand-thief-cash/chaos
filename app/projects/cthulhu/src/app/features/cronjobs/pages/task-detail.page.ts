@@ -1,6 +1,6 @@
 import {Component, computed, OnInit, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
-import {ActivatedRoute, RouterLink} from '@angular/router';
+import {ActivatedRoute, RouterLink, RouterOutlet} from '@angular/router';
 import {NzButtonModule} from 'ng-zorro-antd/button';
 import {NzBadgeModule} from 'ng-zorro-antd/badge';
 import {NzTableModule} from 'ng-zorro-antd/table';
@@ -13,9 +13,9 @@ import {CronjobsStore} from '../state/cronjobs.store';
 @Component({
   selector: 'cron-task-detail-page',
   standalone: true,
-  imports: [CommonModule, RouterLink, NzButtonModule, NzBadgeModule, NzTableModule, NzPaginationModule, NzMessageModule],
+  imports: [CommonModule, RouterLink, RouterOutlet, NzButtonModule, NzBadgeModule, NzTableModule, NzPaginationModule, NzMessageModule],
   template: `
-  <div *ngIf="task(); else loadingTpl" class="task-detail">
+  <div *ngIf="!showingRunDetail && task(); else loadingOrChild" class="task-detail">
     <h2>任务详情: {{task()?.name}} <small>#{{task()?.id}}</small></h2>
     <div class="meta">
       <div><strong>Cron:</strong> {{task()?.cron_expr}}</div>
@@ -31,7 +31,7 @@ import {CronjobsStore} from '../state/cronjobs.store';
       <button nz-button nzType="default" (click)="reloadRuns()">刷新运行记录</button>
       <button nz-button nzType="default" (click)="manualTrigger()">手动触发</button>
       <button nz-button nzType="default" (click)="toggleStatus()">{{task()?.status==='ENABLED'?'禁用':'启用'}}</button>
-      <button nz-button nzType="primary" [routerLink]="['/cronjobs/task', task()?.id, 'edit']">编辑</button>
+      <button nz-button nzType="primary" [routerLink]="['/cronjobs/tasks', task()?.id, 'edit']">编辑</button>
       <button nz-button nzType="link" [routerLink]="['/cronjobs/tasks']">返回列表</button>
     </div>
     <h3>运行统计</h3>
@@ -56,7 +56,7 @@ import {CronjobsStore} from '../state/cronjobs.store';
         <thead><tr><th>ID</th><th>Scheduled</th><th>Status</th><th>Start</th><th>End</th><th>Attempt</th></tr></thead>
         <tbody>
           <tr *ngFor="let r of pagedRuns()">
-            <td><a [routerLink]="['/cronjobs/run', r.id]">{{r.id}}</a></td>
+            <td><a [routerLink]="['runs', r.id]">{{r.id}}</a></td>
             <td>{{r.scheduled_time}}</td>
             <td>
               <nz-badge [nzStatus]="RUN_STATUS_BADGE[r.status].status || 'default'" [nzText]="RUN_STATUS_BADGE[r.status].text || r.status"></nz-badge>
@@ -74,6 +74,11 @@ import {CronjobsStore} from '../state/cronjobs.store';
       <ng-template #emptyRunsTpl><div>暂无运行记录</div></ng-template>
     </ng-template>
   </div>
+  <ng-template #loadingOrChild>
+    <ng-container *ngIf="showingRunDetail; else loadingTpl">
+      <router-outlet></router-outlet>
+    </ng-container>
+  </ng-template>
   <ng-template #loadingTpl><div>详情加载中...</div></ng-template>
   `,
   styles: [`
@@ -100,6 +105,7 @@ export class TaskDetailPageComponent implements OnInit {
   stats = computed(()=> this._stats());
   statsLoading = computed(()=> this._statsLoading());
   constructor(private route: ActivatedRoute, public store: CronjobsStore, private msg: NzMessageService, private api: CronjobsApiService) {}
+  get showingRunDetail(): boolean { return !!this.route.firstChild && this.route.firstChild.routeConfig?.path === 'runs'; }
   ngOnInit(){
     const id = Number(this.route.snapshot.paramMap.get('id')); this.taskId.set(id);
     this.store.loadTasks();
