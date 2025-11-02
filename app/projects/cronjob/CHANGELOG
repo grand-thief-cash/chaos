@@ -1,0 +1,89 @@
+# VERSION
+v0.12.3
+
+# Changelog
+- v0.12.3
+    - Changed Dockerfile
+- v0.12.2
+    - Removed callback success status for cronjob.
+    - Added api for fetching all progress of runs.
+- v0.12.1
+    - Replaced DeleteKeepRecent with chunked deletion to avoid large data deletion issue.
+    - Extended Summary of runs to show statistics by status.
+    - Added stats api to show accurate distribution of runs by status.
+    - Added non-total progress to show borderless tasks' progress.
+    - Added status validation in listRunsByTask / listActiveRuns.
+- v0.12.0
+    - Added run deletion by trunk rather than hard delete.
+    - Added pagination for run list and active runs
+    - Removed dry-run for run deletion.
+    - Added summary of runs.
+- v0.11.0
+    - Added configuration for CallbackTimeoutScanner
+    - Refactored controller of task mgmt and added run mgmt controller.
+    - Move logic of controller to service layer.
+    - Added RUN clean up job using date & number of items.
+- v0.10.0
+    - Supported async task reporting.
+    - Added task progress callback.
+    - Added periodic task status updater.
+- v0.9.1
+    - Extend Task List API by adding parameters to filter tasks.
+- v0.9.0
+    - Added docker build support.
+    - Added CI/CD pipeline for cronjob project.
+    - Added docker-compose file for deployment.
+- v0.8.0
+    - Refactored scheduler scan() logic, removed batch fire logic.
+    - Added cancel logic in cronjob shutdown.
+    - Added json tag in Task/Run model.
+    - Added poc project for cronjob.
+    - Added limitation for trigger task api.
+    - Changed skip type to accurate skip.
+    - Set run status to skip immediately once decide skip.
+- v0.7.0
+    - Redesigned scheduler engine to acquire runnable tasks more accurately.
+        - Removed misfired tasks handling from scheduler and datasource.
+        - Added overlap handling strategy in scheduler.
+        - Added failure handling strategy in scheduler.
+        - Added workflow of scan logic in documents.
+    - Transitioned table migration in boot by configuration.
+- v0.6.0
+  - Added Task Service to decouple api and task dao.
+  - Added Run Service to decouple api and task dao.
+  - Service Task registered.
+  - Added mem cache for Enabled Task, query will read from cache first.
+  - Scheduler will read from mem cache to get enabled tasks.
+- v0.5.0
+  - Added task scan strategies on overlap and failure situations.
+- v0.4.3
+  - Replaced magic strings with constants in all cronjob.
+- v0.4.2
+  - Replaced  RegisterAutoInferName with registry.RegisterAuto.
+- v0.4.1
+  - Transitioned run_dao and task_dao to tag-based dependency injection.
+  - Updated api by removing manual dependency injection.
+  - Use auto reolve in registry_ext/*.go
+- v0.4.0
+  - Transitioned executor component and shceduler to tag-based dependency injection.
+- v0.3.1
+  - Added extend runtime dependencies for http server component.
+- v0.3.0
+  - Transitioned cronjob project to use new infra framework structure.
+  - Replaced magic numbers with constants for better code readability.
+- v0.2.3 [Unfinished]
+  - Runnable version of cronjob using infra framework.
+  - HTTP server haven't been transitioned yet.
+- v0.2.2 [Unfinished]
+  - Transiting cronjob project to infra based project.
+- v0.2.1
+  - Renamed rr to runDao; renamed tr to taskDao
+  - Added comments for cancelMap in Executor
+- v0.2.0
+  - Changed cronjob DAO to GROM driver.
+- v0.1.1
+  - Fixed create cronjob api, added fields in TaskDao
+  - Added comments for Task & Run models, also updated in README.md
+  - Rename *respository to *Dao.
+- v0.1.0
+  - Initial version of cronjob, it's running

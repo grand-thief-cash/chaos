@@ -1,0 +1,134 @@
+# config.yaml
+app_info:
+  app_name: "go_poc_server"
+  env: "development"  # development, production
+
+logging:
+  enabled: true
+  level: "INFO"
+  format: "json"  # json 或 console
+  output: "stdout"  # stdout, stderr, file
+  file_config:
+    dir: "./logs"       # 不配置 filename, 自动使用 app_info.app_name
+  rotate_config:
+    enabled: true
+    max_age: 360h  # 15天 (15 * 24h)
+    cleanup_enabled: true
+    rotate_interval: 24h  # 24h >= 一天 -> 采用 <app_name>.log.YYYYMMDD 格式
+
+
+grpc_clients:
+  enabled: false
+  default_timeout: 30s
+  enable_health_check: true
+  health_check_interval: 60s
+  clients:
+    user_service:
+      host: "localhost"
+      port: 50051
+      secure: false
+      timeout: 10s
+    order_service:
+      host: "order.example.com"
+      port: 50052
+      secure: true
+      credentials_path: "/path/to/cert.pem"
+
+grpc_server:
+  enabled: true
+  address: ":50051"
+  max_recv_msg_size: 4194304
+  max_send_msg_size: 4194304
+  graceful_timeout: 10s
+  enable_reflection: true
+  enable_health: true
+
+mysql:
+  enabled: false
+  data_sources:
+    primary:
+      host: 192.168.31.35
+      port: 3306
+      user: root
+      password: 123456
+      database: quant_product
+      max_open_conns: 3
+      max_idle_conns: 2
+      ping_on_start: true
+
+mysql_gorm:
+  enabled: false
+  data_sources:
+    primary:
+      host: 192.168.31.35
+      port: 3306
+      user: root
+      password: 123456
+      database: quant_product
+      max_open_conns: 3
+      max_idle_conns: 2
+      ping_on_start: true
+#    analytics:
+#      dsn: user:pwd@tcp(analytics-mysql:3306)/analytics?parseTime=true&charset=utf8mb4
+#      max_open_conns: 30
+#      max_idle_conns: 5
+#      ping_on_start: true
+
+
+http_server:
+  enabled: true
+  address: ":9999"
+  read_timeout: 10s
+  write_timeout: 10s
+  idle_timeout: 60s
+  graceful_timeout: 10s
+  enable_health: true
+
+redis:
+  enabled: false
+  mode: single          # single | cluster | sentinel
+  addresses:
+    - 192.168.31.35:6379
+  username: ""
+  password: "123456"
+  db: 0
+  pool_size: 20
+  min_idle_conns: 5
+  conn_max_lifetime: 0s      # 0 = no limit
+  conn_max_idle_time: 300s
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+  # For sentinel mode:
+  # mode: sentinel
+  # addresses: [127.0.0.1:26379,127.0.0.1:26380]
+  # sentinel_master: mymaster
+  # For cluster mode:
+  # mode: cluster
+  # addresses: [127.0.0.1:7000,127.0.0.1:7001,127.0.0.1:7002]
+
+prometheus:
+  enabled: false
+  address: ":9090"
+  path: /metrics
+  namespace: myapp
+  subsystem: core
+  collect_go_metrics: true
+  collect_process: true
+
+telemetry:
+  enabled: true
+  service_name: demo-service
+  exporter: stdout         # stdout|otlp
+  sample_ratio: 1.0        # 0~1; adjust for sampling
+  stdout_pretty: false     # false keeps exporter output compact
+#  stdout_file: ./logs/telemetry.log  # separate file; omit to print to stdout
+  # otlp:
+  #   endpoint: 127.0.0.1:4317
+  #   insecure: true
+  #   timeout: 5s
+
+biz_config:
+  test_config:
+    name: test
+    age: 18

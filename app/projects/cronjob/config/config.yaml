@@ -1,0 +1,70 @@
+server:
+  host: 0.0.0.0
+  port: 18800
+  graceful_timeout: 10s
+
+
+# config.yaml
+app_info:
+  app_name: "cronjob"
+  env: "development"  # development, production
+
+logging:
+  enabled: true
+  level: "DEBUG"
+  format: "json"  # json 或 console
+  output: "stdout"  # stdout, stderr, file
+  file_config:
+    dir: "./logs"       # 不配置 filename, 自动使用 app_info.app_name
+  rotate_config:
+    enabled: true
+    max_age: 48h  # 15天 (15 * 24h)
+    cleanup_enabled: true
+    rotate_interval: 24h  # 24h >= 一天 -> 采用 <app_name>.log.YYYYMMDD 格式
+
+mysql_gorm:
+  enabled: true
+  data_sources:
+    cronjob:
+      host: 127.0.0.1
+      port: 13306
+      user: root
+      password: 123456
+      database: cronjob_dev
+      max_open_conns: 3
+      max_idle_conns: 5
+      ping_on_start: true
+      migrate_enabled: true
+      migrate_dir: ./migrations
+
+http_server:
+  enabled: true
+  address: ":9999"
+  read_timeout: 10s
+  write_timeout: 10s
+  idle_timeout: 60s
+  graceful_timeout: 10s
+  enable_health: true
+
+telemetry:
+  enabled: true
+  service_name: demo-service
+  exporter: stdout         # stdout|otlp
+  sample_ratio: 0        # 0~1; adjust for sampling
+  stdout_pretty: false     # false keeps exporter output compact
+  stdout_file: ./logs/telemetry.log
+
+biz_config:
+  scheduler:
+    poll_interval: 60s
+  executor:
+    worker_pool_size: 1
+    request_timeout: 60s
+  callback_scanner:
+    interval: 30s
+    batch_limit: 500
+  cleanup:
+    enabled: false
+    interval: 1h
+    max_age: 720h       # 30 days
+    max_per_task: 1000  # keep recent 1000 per task

@@ -1,0 +1,34 @@
+
+# config.yaml
+app_info:
+  app_name: "poc-cronjob"
+  env: "development"  # development, production
+logging:
+  enabled: true
+  level: "DEBUG"
+  format: "json"  # json 或 console
+  output: "stdout"  # stdout, stderr, file
+  file_config:
+    dir: "./logs"       # 不配置 filename, 自动使用 app_info.app_name
+  rotate_config:
+    enabled: true
+    max_age: 12h  # 15天 (15 * 24h)
+    cleanup_enabled: true
+    rotate_interval: 24h  # 24h >= 一天 -> 采用 <app_name>.log.YYYYMMDD 格式
+http_server:
+  enabled: true
+  address: ":19998"
+  read_timeout: 3s
+  write_timeout: 600s
+  idle_timeout: 60s
+  graceful_timeout: 60s
+  enable_health: true
+
+telemetry:
+  enabled: true
+  service_name: demo-service
+  exporter: stdout         # stdout|otlp
+  sample_ratio: 1.0        # 0~1; adjust for sampling
+  stdout_pretty: false     # false keeps exporter output compact
+  stdout_file: ./logs/telemetry.log
+

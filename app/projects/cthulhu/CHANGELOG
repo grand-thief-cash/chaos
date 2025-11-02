@@ -1,0 +1,19 @@
+# VERSION
+v0.3.1
+
+# Changelog
+- v0.3.1
+    - Added page for cronjob progress
+    - Fixed a bug of generating breadcrumbs.
+    - Transformed cronjob pages to layered structure.
+    - Added Template button for quickly creating new cronjob pages from existing ones.
+- v0.3.0
+    - Added pages for:
+        - Cronjob /run/active
+        - Cronjob /run/summary
+        - Cronjob /run/:runId
+        - Cronjob /maintenance
+- v0.2.0
+    - Added cronjob pages for in the Cthulhu project.
+- v0.1.0
+    - Initial structure of the Cthulhu project.
