@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+// 包名：服务名.分类.子服务.版本
+package pylon.api.heartbeat.v1;
+
+// 指定生成的 Go 包路径（根据你的实际模块名调整）
+option go_package = "pylon/api/heartbeat/v1;heartbeatv1";
+
+// 导入第三方依赖（示例：如需时间戳）
+import "google/protobuf/timestamp.proto";
+
+// 服务定义
+service HeartbeatService {
+    // 单次心跳检测
+    rpc CheckHeartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+
+    // （可选）流式心跳检测
+    rpc StreamHeartbeat (stream HeartbeatRequest) returns (stream HeartbeatResponse);
+}
+
+// 请求消息
+message HeartbeatRequest {
+    string message = 1;  // 客户端消息
+    google.protobuf.Timestamp sent_at = 2;  // 使用第三方的时间戳
+}
+
+// 响应消息
+message HeartbeatResponse {
+    string response = 1;                // 服务端回复
+    google.protobuf.Timestamp replied_at = 2;  // 响应时间戳
+    Status status = 3;                  // 状态枚举
+
+    enum Status {
+        UNKNOWN = 0;
+        HEALTHY = 1;
+        WARNING = 2;
+    }
+}

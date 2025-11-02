@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package pylon.api.stockZhA.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "pylon/api/stock_zh_a/v1;stockzhv1";
+
+service DataProcessService {
+    // StockZhAList operations
+    rpc GetAllStockList(google.protobuf.Empty) returns (StockListResponse);
+    rpc GetStockListByCodes(StockCodesRequest) returns (StockListResponse);
+    rpc UpdateStockName(UpdateStockNameRequest) returns (UpdateStockNameResponse);
+    rpc BulkInsertStockList(BulkInsertStockListRequest) returns (BulkInsertResponse);
+    rpc GetAllStockCodes(google.protobuf.Empty) returns (StockCodesResponse);
+
+    // StockZhAHist operations
+    rpc InsertStockHist(InsertStockHistRequest) returns (InsertStockHistResponse);
+    rpc BulkInsertStockHist(BulkInsertStockHistRequest) returns (BulkInsertResponse);
+    rpc BatchGetLatestTradeDates(BatchGetLatestTradeDatesRequest) returns (BatchGetLatestTradeDatesResponse);
+}
+
+// Common messages
+message StockCodeInfo {
+    string code = 1;
+    string name = 2;
+}
+
+message StockZHAHistData {
+    string stock_code = 1;
+    google.protobuf.Timestamp trade_date = 2;
+    double open_price = 3;
+    double close_price = 4;
+    double high_price = 5;
+    double low_price = 6;
+    int64 volume = 7;
+    double turnover = 8;
+    double amplitude = 9;
+    double pct_change = 10;
+    double change_amount = 11;
+    double turnover_rate = 12;
+}
+
+// StockZhAList requests/responses
+message StockListResponse {
+    repeated StockCodeInfo stocks = 1;
+}
+
+message StockCodesRequest {
+    repeated string codes = 1;
+}
+
+message UpdateStockNameRequest {
+    string code = 1;
+    string new_name = 2;
+}
+
+message UpdateStockNameResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message BulkInsertStockListRequest {
+    repeated StockCodeInfo stocks = 1;
+}
+
+message StockCodesResponse {
+    repeated string codes = 1;
+}
+
+// StockZhAHist requests/responses
+message InsertStockHistRequest {
+    StockZHAHistData data = 1;
+    string table_suffix = 2;
+}
+
+message InsertStockHistResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message BulkInsertStockHistRequest {
+    repeated StockZHAHistData data = 1;
+    string table_suffix = 2;
+}
+
+message BatchGetLatestTradeDatesRequest {
+    repeated string stock_codes = 1;
+    string table_suffix = 2;
+}
+
+message BatchGetLatestTradeDatesResponse {
+    map<string, google.protobuf.Timestamp> latest_dates = 1;
+}
+
+// Common response
+message BulkInsertResponse {
+    int32 inserted_count = 1;
+    int32 duplicated_count = 2;
+    string message = 3;
+}

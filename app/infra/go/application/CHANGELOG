@@ -1,0 +1,149 @@
+# VERSION
+v0.16.1
+
+# Changelog
+- v0.16.1
+    - Allow all origins and common methods/headers in http server
+- v0.16.0
+    - Added postgresql GORM component.
+- v0.15.5
+    - Documentation updated: Added diagrams for arch/components/sequences...
+    - BUT not finished yet.
+- v0.15.4
+    - Mysql GORM component support auto-migration when starting.
+- v0.15.3
+    - Edit doc from chapter 1 to chapter 10.
+- v0.15.2
+    - infra/go/application/registry/registry.go Simplification:
+        - Remove RegisterWithDeps and RegisterAutoInferName, keep only Register (with explicit name) and a new RegisterAuto (which automatically infers name and dependencies).
+        - Simplify the Builder struct to only include: Name, Fn, Auto, Deps, and caching fields; remove any redundant flags.
+        - Construction flow: pre-build automatic components -> infer tag-based dependencies -> perform topological sorting -> register.
+- v0.15.1
+    - Added deduplication in autowire process.
+    - Added flag "auto" and dependency inferencing in registry.
+- v0.15.0
+    - Added tag-based dependencies injection, autowired and don't need to inject manually.
+- v0.14.0
+    - Added support for user-declared runtime dependencies.
+    - TODO: support auto-injection of dependencies in components.
+- v0.13.2
+    - Added dumpRoutes in HTTP SERVER component for debugging purpose.
+- v0.13.1
+    - Added HTTP SERVER Component usage example in Documents.
+- v0.13.0
+    - Added extendable component by adding registry builders.
+    - Also provided ability for dynamic customized component.
+    - Added ProvideComponent directly.
+    - Supplied dependencies for mysql component and gorm component.
+    - Doc also updated.
+- v0.12.0
+    - Changed OS vars to flag arguments.
+    - Added biz config support in config manager and app, also provide new Exportable func to users.
+- v0.11.7
+    - Added stop log for open telemetry component.
+    - Temporarily removed runEnhanced() in app.go.
+- v0.11.6
+    - Remove ServiceName from HTTPServerConfig
+    - Use APPName as ServiceName
+    - Added traceparent in http server/client component
+    - Added http client demo in main.go and config.yaml
+- v0.11.5
+    - Change name of logging out put file to "{appname}.log.20250101"
+    - HTTP server/client componet removed "trace_id" and use w3c standard trace
+- v0.11.4
+    - Adjuested grpc server/client component to make compatible with otel & logging.
+    - Added README.md for grpc server/client component.
+- v0.11.3
+    - Added InstallWindowsCtrlHandler for non-windows platform to avoid build error.
+- v0.11.2
+    - Fixed bug of cannot stopAll(); App.Shutdown will not call stopAll() when need to shutdown.
+- v0.11.1
+    - Design of "TraceID" changed to industry in logging component.
+    - Added "span_id" in logging component.
+    - Renamed filename such as "*_component.go" in each component folder to "component.go" to keep it unified.
+- v0.11.0
+    - Added doc: "Infrastructure of Go"
+- v0.10.4
+  - Refactored the components registration logic in app.go
+  - Updated shutdown Run() logic to support different platforms.
+- v0.10.3
+  - Fixed unused global hook manager
+  - Replace hard code consts "grpc_clients" in component registration with consts in consts package.
+  - Added err check in Telemetry registration.
+  - Fixed repeated signal management code in application.
+  - Provided gorm component an individual config rather than using mysql config.
+  - Updated logic in starting failure handling.
+- v0.10.2
+  - Updated go mod version
+- v0.10.1
+  - Change Go version to 1.23.0
+- v0.10.0
+  - Added http client component.
+- v0.9.0
+  - Added GORM component.
+  - Replaced some const value in grpc client component
+- v0.8.1
+  - GRPC server/client component switched to use open telemetry.
+- v0.8.0
+  - Added open telemetry component.
+  - Modified http server component to use open telemetry and removed manual traceid handling.
+  - Added goimports setup scripts in scripts folder.
+- v0.7.0
+  - Added prometheus metrics component.
+  - Added documents for prometheus metrics component.
+- v0.6.5
+  - Adjusted traceid key to "trace-id" and added it in consts file.
+  - Adjusted the tidy_go.bat script.
+- v0.6.4
+  - Added the go mod tidy script in scripts folder.
+  - Adjusted the order of imports in some files.
+- v0.6.3
+  - Refined grpc client component, added "ConnectOnStart" option to control whether to connect when starting the component.
+  - Verified grpc client component in poc client.
+  - Versified grpc server component in poc application.
+  - Added Unusable go mod scripts in scripts folder.
+- v0.6.2
+  - poc/application: Added mysql, redis dependencies[Not tested].
+- v0.6.1
+  - Tested GRPC server component.
+  - In application poc, craeted echo service and registered to GRPC server.
+  - Added a client in poc to test GRPC server and it works.
+  - Adjusted order of imports in some files.
+  - Added replace in infra/common/go.mod to make local import work.
+- v0.6.0
+  - Added GRPC server component.
+  - Refactored poc structure to makes it more consistent with the structure of the infra.
+  - Changed the structure of "common" in infrastructure, but this may be changed later...
+- v0.5.0
+  - Added Redis component.
+- v0.4.1
+  - Added customized dependencies in each component.
+  - Replaced component name using consts.
+  - Simplified register process handler func to http server
+  - Removed "Register http handler func after run", this violates the whole booting process.
+- v0.4.0
+  - Added http server component (Init version and non-testable).
+  - RunWithContext() blocks until the provided context is done and on context cancellation it triggers graceful shutdown.
+- v0.3.0
+  - Fixed logging callerSkip, not the caller in log is correct.
+  - Added Mysql components
+- v0.2.2
+  - Replaced go log before init logging component.
+- v0.2.1
+  - Added logging component to support global logging across the application(Except core).
+- v0.2.0
+  - A basic version of application module has beed added.
+  - Added initial setup for application module.
+  - Available commands: start, stop
+  - Integrated logging and configuration management.
+- v0.1.2[Unfinished]
+  - Refactored codebase for improved performance and readability.
+- v0.1.1
+  - Reconstructed the infra_go module for better modularity and maintainability.
+  - update go.mod and go.sum to include latest dependencies.
+- v0.1.0
+  - Initial release of the infra_go module.
+  - Added basic infrastructure setup for Go applications.
+  - Included example configurations for common use cases.
+  - Implemented logging and error handling utilities.
+  - Added poc_go for testing infra_go functionalities.

@@ -1,0 +1,28 @@
+<application>
+    <component name="ProjectFileExternalStorage">
+        <fileWatcherSettings>
+            <option name="watchers">
+                <map>
+                    <entry key="goimports">
+                        <value>
+                            <TaskOptions isEnabled="true">
+                                <option name="arguments" value="-w $FilePathRelativeToProjectRoot$" />
+                                <option name="checkSyntaxErrors" value="true" />
+                                <option name="description" value="Format Go imports using goimports" />
+                                <option name="exitCodeBehavior" value="ERROR" />
+                                <option name="fileExtension" value="go" />
+                                <option name="immediateSync" value="true" />
+                                <option name="name" value="goimports" />
+                                <option name="output" value="" />
+                                <option name="program" value="goimports" />
+                                <option name="scopeName" value="Current File" />
+                                <option name="trackOnlyRoot" value="false" />
+                                <option name="workingDir" value="$ProjectFileDir$" />
+                            </TaskOptions>
+                        </value>
+                    </entry>
+                </map>
+            </option>
+        </fileWatcherSettings>
+    </component>
+</application>
