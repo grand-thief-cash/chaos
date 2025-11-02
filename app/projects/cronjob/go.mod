@@ -67,4 +67,4 @@ require (
 	gorm.io/driver/postgres v1.6.0 // indirect
 )
 
-replace github.com/grand-thief-cash/chaos/app/infra/go/application => ./../../infra/go/application
+//replace github.com/grand-thief-cash/chaos/app/infra/go/application => ./../../infra/go/application
