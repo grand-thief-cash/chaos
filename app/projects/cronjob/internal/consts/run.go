@@ -19,3 +19,12 @@ const (
 	ConcurrentSkip  RunStatus = "CONCURRENT_SKIP"  // 因并发限制跳过
 	OverlapSkip     RunStatus = "OVERLAP_SKIP"     // 因重叠限制跳过
 )
+
+const (
+	CallBackPrgsEndpoint = "/api/v1/runs/%d/progress"
+	CallBackResEndpoint  = "/api/v1/runs/%d/callback"
+)
+
+var (
+	LocalIP = ""
+)

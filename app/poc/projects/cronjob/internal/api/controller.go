@@ -52,21 +52,28 @@ func (tmc *POCController) giveAnswerAndProgress(w http.ResponseWriter, r *http.R
 	if runID == 0 {
 		logging.Error(r.Context(), "run_id is required")
 	}
+	//fmt.Printf("Request Headers: %+v\n", r.Header)
+	ip := r.Header.Get("X-Caller-Ip")
+	port := r.Header.Get("X-Caller-Port")
+	addr := fmt.Sprintf("http://%s%s", ip, port)
+	progressEndpoint := r.Header.Get("X-Callback-Progress")
+	resEndpoint := r.Header.Get("X-Callback-Res")
+	progressEndpoint = fmt.Sprintf(progressEndpoint, runID)
+	progressCallbackURL := fmt.Sprintf("%s%s", addr, progressEndpoint)
+	resEndpoint = fmt.Sprintf(resEndpoint, runID)
+	resCallbackURL := fmt.Sprintf("%s%s", addr, resEndpoint)
+
 	go func() {
 		steps := 20
 		ctx := context.Background()
-		cronAddr := q.Get("cron_addr")
-		if cronAddr == "" {
-			cronAddr = "http://localhost:9999"
-		}
 
 		client := &http.Client{}
 		reportProgress := func(current int, msg string) error {
 			payload := map[string]any{"current": current, "total": steps, "message": msg}
 			b, _ := json.Marshal(payload)
-			url := fmt.Sprintf("%s/api/v1/runs/%d/progress", cronAddr, runID)
-			logging.Debug(ctx, fmt.Sprintf("Prepared progress report: %s", url))
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+
+			logging.Debug(ctx, fmt.Sprintf("Prepared progress report: %s", progressCallbackURL))
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, progressCallbackURL, bytes.NewReader(b))
 			if err != nil {
 				return err
 			}
@@ -92,11 +99,17 @@ func (tmc *POCController) giveAnswerAndProgress(w http.ResponseWriter, r *http.R
 		}
 
 		for i := 1; i <= steps; i++ {
-			reportProgress(i, fmt.Sprintf("step %d/%d", i, steps))
+			err := reportProgress(i, fmt.Sprintf("step %d/%d", i, steps))
+			if err != nil {
+				logging.Error(ctx, fmt.Sprintf("Error reporting progress: %+v", err))
+			}
 			time.Sleep(time.Duration(rand.Intn(2)) * time.Second)
 		}
 		go func() {
-			reportCallback(cronAddr+"/api/v1/runs", runID, "success", 200, "all steps done", "")
+			err := reportCallback(resCallbackURL, "success", 200, "all steps done", "")
+			if err != nil {
+				logging.Error(ctx, fmt.Sprintf("Error reporting callback: %+v", err))
+			}
 		}()
 	}()
 
@@ -104,7 +117,7 @@ func (tmc *POCController) giveAnswerAndProgress(w http.ResponseWriter, r *http.R
 	writeJSON(w, resp)
 }
 
-func reportCallback(apiURL string, runID int64, result string, code int, body, errorMessage string) error {
+func reportCallback(apiURL string, result string, code int, body, errorMessage string) error {
 	payload := map[string]any{
 		"result":        result,       // "success", "failed", "failed_timeout"
 		"code":          code,         // HTTP code, e.g. 200
@@ -112,8 +125,7 @@ func reportCallback(apiURL string, runID int64, result string, code int, body, e
 		"error_message": errorMessage, // error details if any
 	}
 	data, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/%d/callback", apiURL, runID)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}

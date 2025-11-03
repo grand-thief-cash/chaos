@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -155,7 +156,7 @@ func (e *Executor) worker(ctx context.Context) {
 }
 
 func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
-	// load task
+	// 1. 加载任务
 	task, err := e.TaskSvc.Get(ctx, run.TaskID)
 	if err != nil {
 		log.Printf("load task %d: %v", run.TaskID, err)
@@ -163,99 +164,151 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 		return
 	}
 
-	// derive per-run context with timeout
-	to := task.TimeoutSeconds
-	if to <= 0 {
-		to = 10
-	}
-	ctx2, cancel := context.WithTimeout(ctx, time.Duration(to)*time.Second)
-	e.mu.Lock()
-	e.cancelMap[run.ID] = cancel
-	e.activePerTask[task.ID]++
-	e.mu.Unlock()
-	defer func() {
-		cancel()
-		e.mu.Lock()
-		delete(e.cancelMap, run.ID)
-		e.activePerTask[task.ID]--
-		if e.activePerTask[task.ID] <= 0 {
-			delete(e.activePerTask, task.ID)
-		}
-		e.mu.Unlock()
-	}()
+	// 2. 准备 per-run 上下文 & 资源清理逻辑
+	runCtx, cleanup, timeoutSec := e.startRunContext(ctx, task, run.ID)
+	defer cleanup()
 
-	var body io.Reader
-	if task.BodyTemplate != "" {
-		body = bytes.NewBufferString(task.BodyTemplate)
-	}
-	urlWithRunID := fmt.Sprintf("%s?run_id=%d", task.TargetURL, run.ID)
-	req, err := http.NewRequestWithContext(ctx2, task.HTTPMethod, urlWithRunID, body)
+	// 3. 构建 HTTP 请求
+	req, err := e.buildRequest(runCtx, task, run)
 	if err != nil {
 		logging.Error(ctx, fmt.Sprintf("create request for task failed %d: %v", task.ID, err))
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, "build request failed")
 		return
 	}
 
-	client := &http.Client{Timeout: time.Duration(to) * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		// differentiate error source
-		if ctx2.Err() == context.DeadlineExceeded {
-			logging.Error(ctx, fmt.Sprintf("task %d timeout exceeded", task.ID))
-			_ = e.RunSvc.MarkTimeout(ctx, run.ID, "request_timeout")
-			return
-		}
-		if ctx2.Err() == context.Canceled {
-			// explicit cancel
+	// 4. 执行 HTTP 调用 (含分类错误)
+	resp, body, classify, err := e.doHTTP(runCtx, task, run, timeoutSec, req)
+	if err != nil { // 发生传输层或上下文相关异常
+		switch classify {
+		case "canceled":
 			_ = e.RunSvc.MarkCanceled(ctx, run.ID)
-			return
+		case "request_timeout":
+			// DeadlineExceeded 时按超时处理
+			_ = e.RunSvc.MarkTimeout(ctx, run.ID, classify)
+		default:
+			_ = e.RunSvc.MarkFailed(ctx, run.ID, classify)
 		}
-		// network error classification
-		msg := err.Error()
-		var opErr *net.OpError
-		if errors.As(err, &opErr) {
-			// check inner error types
-			switch {
-			case errors.Is(opErr.Err, syscall.ECONNREFUSED):
-				msg = "connection_refused"
-			case errors.Is(opErr.Err, syscall.ETIMEDOUT):
-				msg = "connect_timeout"
-			case errors.Is(opErr.Err, syscall.ENETUNREACH):
-				msg = "network_unreachable"
-			case errors.Is(opErr.Err, syscall.EHOSTUNREACH):
-				msg = "host_unreachable"
-			}
-		} else if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
-			msg = "request_timeout"
-		}
-		logging.Error(ctx, fmt.Sprintf("task %d request failed %d classified=%s raw=%v", task.ID, run.ID, msg, err))
-		_ = e.RunSvc.MarkFailed(ctx, run.ID, msg)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
-	b, _ := io.ReadAll(resp.Body)
-	logging.Debug(ctx, fmt.Sprintf("task: %d resp.StatusCode :%d, response body: %s", task.ID, resp.StatusCode, b))
+
+	// 5. 处理业务响应 (同步 or 异步)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		if task.ExecType == bizConsts.ExecTypeAsync { // async first phase success -> callback pending (never mark Success here)
+		if task.ExecType == bizConsts.ExecTypeAsync { // 异步第一阶段成功
 			deadline := time.Now().Add(time.Duration(task.CallbackTimeoutSec) * time.Second)
 			if task.CallbackTimeoutSec <= 0 {
 				deadline = time.Now().Add(5 * time.Minute)
 			}
 			logging.Info(ctx, fmt.Sprintf("run %d async phase1 succeeded; transitioning to CALLBACK_PENDING until deadline %s", run.ID, deadline.Format(time.RFC3339)))
 			_ = e.RunSvc.MarkCallbackPendingWithDeadline(ctx, run.ID, deadline)
-			// progress retained for callback phase; external callback should clear if desired
-		} else { // sync final success
-			_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(b))
+			// 进度信息保留，等待回调
+		} else {
+			_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(body))
 			if e.Progress != nil {
 				e.Progress.Clear(run.ID)
 			}
 		}
-	} else {
+	} else { // 非 2xx
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, resp.Status)
 		if e.Progress != nil {
 			e.Progress.Clear(run.ID)
 		}
 	}
+}
+
+// startRunContext 计算任务超时时间，创建带超时的上下文，并登记取消函数 + 运行中计数。
+// 返回：子上下文、清理函数（负责取消与计数回收）、timeout(秒)
+func (e *Executor) startRunContext(parent context.Context, task *model.Task, runID int64) (context.Context, func(), int) {
+	to := task.TimeoutSeconds
+	if to <= 0 {
+		to = 10
+	}
+	runCtx, cancel := context.WithTimeout(parent, time.Duration(to)*time.Second)
+
+	e.mu.Lock()
+	e.cancelMap[runID] = cancel
+	e.activePerTask[task.ID]++
+	e.mu.Unlock()
+
+	cleanup := func() {
+		cancel()
+		e.mu.Lock()
+		delete(e.cancelMap, runID)
+		e.activePerTask[task.ID]--
+		if e.activePerTask[task.ID] <= 0 {
+			delete(e.activePerTask, task.ID)
+		}
+		e.mu.Unlock()
+	}
+	return runCtx, cleanup, to
+}
+
+// buildRequest 根据任务配置构建 HTTP 请求。当前仅支持在 URL 上附带 run_id 参数与 body_template 文本体。
+func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *model.TaskRun) (*http.Request, error) {
+	var body io.Reader
+	if task.BodyTemplate != "" {
+		body = bytes.NewBufferString(task.BodyTemplate)
+	}
+	urlWithRunID := fmt.Sprintf("%s?run_id=%d", task.TargetURL, run.ID)
+	req, err := http.NewRequestWithContext(ctx, task.HTTPMethod, urlWithRunID, body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get local IP
+	req.Header.Set("X-Caller-IP", bizConsts.LocalIP)
+	req.Header.Set("X-Caller-Port", application.GetApp().GetConfig().HTTPServer.Address) // 新增端口
+	// Optionally set callback endpoint if available
+	req.Header.Set("X-Callback-Progress", bizConsts.CallBackPrgsEndpoint)
+	req.Header.Set("X-Callback-Res", bizConsts.CallBackResEndpoint)
+
+	return req, nil
+}
+
+// doHTTP 执行 HTTP 请求并读取响应 Body。
+// 返回：resp(成功时)/nil, body(成功时), 分类字符串(错误时), error
+func (e *Executor) doHTTP(ctx context.Context, task *model.Task, run *model.TaskRun, timeoutSec int, req *http.Request) (*http.Response, []byte, string, error) {
+	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
+	resp, err := client.Do(req)
+	if err != nil { // 需要分类
+		classify := e.classifyNetError(ctx, err)
+		logging.Error(ctx, fmt.Sprintf("task %d request failed %d classified=%s raw=%v", task.ID, run.ID, classify, err))
+		return nil, nil, classify, err
+	}
+	b, _ := io.ReadAll(resp.Body)
+	// 注意：调用者仍负责 resp.Body 的关闭，本处只是预读。
+	// 将 body 放入日志 (调试级别)
+	logging.Debug(ctx, fmt.Sprintf("task: %d resp.StatusCode :%d, response body: %s", task.ID, resp.StatusCode, b))
+	return resp, b, "", nil
+}
+
+// classifyNetError 按既有逻辑对网络/上下文错误进行归类。
+func (e *Executor) classifyNetError(ctx context.Context, err error) string {
+	// 优先检查上下文状态
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "request_timeout"
+	}
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return "canceled"
+	}
+	// 尝试按底层网络错误分类
+	msg := err.Error()
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		switch {
+		case errors.Is(opErr.Err, syscall.ECONNREFUSED):
+			msg = "connection_refused"
+		case errors.Is(opErr.Err, syscall.ETIMEDOUT):
+			msg = "connect_timeout"
+		case errors.Is(opErr.Err, syscall.ENETUNREACH):
+			msg = "network_unreachable"
+		case errors.Is(opErr.Err, syscall.EHOSTUNREACH):
+			msg = "host_unreachable"
+		}
+	} else if nErr, ok := err.(net.Error); ok && nErr.Timeout() {
+		msg = "request_timeout"
+	}
+	return msg
 }
 
 func (e *Executor) CancelRun(id int64) {
