@@ -14,15 +14,17 @@ WORKDIR /app
 # 复制带版本号的可执行文件
 COPY cronjob-app-v${VERSION} ./cronjob-app
 
+COPY migrations ./migrations
+
 # 创建配置目录
 RUN mkdir -p /app/config
 
 # 设置环境变量默认值
 ENV APP_ENV=production
-ENV APP_CONFIG_PATH=/app/config/config.yaml
+ENV APP_CONFIG_PATH=/app/config.yaml
 
 # 暴露端口
 EXPOSE 8082
 
-# 启动命令，支持环境变量配置
-CMD ["/app/cronjob-app", "-config=${APP_CONFIG_PATH}", "-env=${APP_ENV}"]
+# 使用 shell 格式启动命令，这样环境变量会被展开
+CMD /app/cronjob-app -config=${APP_CONFIG_PATH} -env=${APP_ENV}
