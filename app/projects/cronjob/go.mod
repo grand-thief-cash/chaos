@@ -5,8 +5,8 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/grand-thief-cash/chaos/app/infra/go/application v0.0.0-00010101000000-000000000000
-	github.com/grand-thief-cash/chaos/app/infra/go/common v0.0.0-00010101000000-000000000000
+	github.com/grand-thief-cash/chaos/app/infra/go/application v0.1.0
+	github.com/grand-thief-cash/chaos/app/infra/go/common v0.1.0
 )
 
 require (
@@ -69,5 +69,4 @@ require (
 )
 
 //replace github.com/grand-thief-cash/chaos/app/infra/go/application => ./../../infra/go/application
-//
 //replace github.com/grand-thief-cash/chaos/app/infra/go/common => ./../../infra/go/common
