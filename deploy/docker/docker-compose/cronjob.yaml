@@ -13,3 +13,9 @@ services:
       - /home/machine/data_volume/cronjob/config:/app/config:ro
       - /home/machine/data_volume/cronjob/logs:/app/logs
     restart: unless-stopped
+    # 明确指定不使用构建
+    build:
+      context: .
+      dockerfile: Dockerfile-cronjob
+    # 或者完全禁用构建
+    # pull_policy: never
