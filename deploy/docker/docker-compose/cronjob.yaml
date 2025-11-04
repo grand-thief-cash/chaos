@@ -1,17 +1,21 @@
 version: '3.8'
+
 services:
   cronjob:
-    build:
-      context: ../../../app/projects/cronjob
-      dockerfile: ../../../deploy/docker/dockerfile/Dockerfile-cronjob
-    container_name: cronjob
-    working_dir: /app
-    command: ["./cronjob", "--env=product", "--config=config/config.yaml"]
+    image: cronjob:${VERSION:-latest}
+    container_name: cronjob-app
     ports:
-      - "8080:8080"
-    volumes:
-      - ../../../app/projects/cronjob/logs:/app/logs
-      - ../../../app/projects/cronjob/config/config.yaml:/app/config/config.yaml
+      - "8082:8082"
     environment:
-      - ENV=product
+      - APP_ENV=production
+      - APP_CONFIG_PATH=/app/config/config.yaml
+    volumes:
+      - /home/machine/data_volume/cronjob/config:/app/config:ro
+      - /home/machine/data_volume/cronjob/logs:/app/logs
     restart: unless-stopped
+    # 明确指定不使用构建
+    build:
+      context: .
+      dockerfile: Dockerfile-cronjob
+    # 或者完全禁用构建
+    # pull_policy: never
