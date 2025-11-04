@@ -68,6 +68,6 @@ require (
 	gorm.io/gorm v1.31.0
 )
 
-replace github.com/grand-thief-cash/chaos/app/infra/go/application => ./../../infra/go/application
-
-replace github.com/grand-thief-cash/chaos/app/infra/go/common => ./../../infra/go/common
+//replace github.com/grand-thief-cash/chaos/app/infra/go/application => ./../../infra/go/application
+//
+//replace github.com/grand-thief-cash/chaos/app/infra/go/common => ./../../infra/go/common

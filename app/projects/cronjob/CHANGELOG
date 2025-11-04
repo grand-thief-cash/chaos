@@ -1,8 +1,8 @@
 # VERSION
-v0.12.6
+v0.12.7
 
 # Changelog
-- v0.12.6
+- v0.12.7
     - Changed deployment files.
 - v0.12.4
     - Refactored cronjob executor, added callback info in req header.
