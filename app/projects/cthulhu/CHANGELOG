@@ -1,7 +1,11 @@
 # VERSION
-v0.3.1
+v0.3.2
 
 # Changelog
+- v0.3.2
+    - Increased budgets in angular.json
+    - Use ip in prod env instead of domain name for backend URL.
+    - Changed build cmd in package.json.
 - v0.3.1
     - Added page for cronjob progress
     - Fixed a bug of generating breadcrumbs.
