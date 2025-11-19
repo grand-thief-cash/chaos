@@ -10,6 +10,7 @@ import {TopNavItem, TopNavService} from "../../../core/services/top-nav.service"
 import {SideMenuGroup, SideMenuService} from "../../../core/services/side-menu.service";
 import {BreadcrumbItem, BreadcrumbService} from "../../../core/services/breadcrumb.service";
 import {NzButtonModule} from 'ng-zorro-antd/button';
+import {ErrorBannerComponent} from '../errors/error-banner.component';
 
 @Component({
   selector: 'app-layout',
@@ -30,10 +31,11 @@ import {NzButtonModule} from 'ng-zorro-antd/button';
     NzMenuDirective,
     NzSubMenuComponent,
     NzIconModule, // 确保图标功能可用
-    NzButtonModule // 新增按钮模块
+    NzButtonModule, // 新增按钮模块
+    ErrorBannerComponent // 全局错误提示
   ],
   templateUrl: './app-layout.component.html',
-  styleUrl: './app-layout.component.scss'
+  styleUrls: ['./app-layout.component.scss']
 })
 export class AppLayoutComponent {
   navItems: TopNavItem[] = []; // 顶部导航来源于 TopNavService

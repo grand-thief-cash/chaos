@@ -1,7 +1,9 @@
 # VERSION
-v0.3.2
+v0.3.3
 
 # Changelog
+- v0.3.3
+    - Added global error banner and error notifiacation for displaying error message.
 - v0.3.2
     - Increased budgets in angular.json
     - Use ip in prod env instead of domain name for backend URL.
