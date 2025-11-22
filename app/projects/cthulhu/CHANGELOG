@@ -1,7 +1,10 @@
 # VERSION
-v0.3.4
+v0.3.5
 
 # Changelog
+- v0.3.5
+    - Allowed dev env to be access from any ip.
+    - Added deploy script for cthulhu
 - v0.3.4
     - Use dropdown list to replace hand-writing input in tast creation page.
     - Fixed error banner not shown issue.
