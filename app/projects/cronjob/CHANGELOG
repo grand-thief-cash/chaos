@@ -4,6 +4,8 @@ v0.12.7
 # Changelog
 - v0.12.7
     - Changed deployment files.
+- v0.12.6
+    - Changed docker compose file to llimit log size.
 - v0.12.5
     - Changed infra version to v1.0.0 in go.mod
 - v0.12.4
