@@ -1,0 +1,14 @@
+.error-banner {
+  margin-bottom: 12px;
+  .error-banner__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .error-banner__actions { text-align: right; }
+  nz-alert {
+    // override default width to stretch
+    width: 100%;
+  }
+}
+
