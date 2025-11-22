@@ -1,7 +1,11 @@
 # VERSION
-v0.3.3
+v0.3.4
 
 # Changelog
+- v0.3.4
+    - Use dropdown list to replace hand-writing input in tast creation page.
+    - Fixed error banner not shown issue.
+    - Set task progress page fresh auto.
 - v0.3.3
     - Added global error banner and error notifiacation for displaying error message.
 - v0.3.2

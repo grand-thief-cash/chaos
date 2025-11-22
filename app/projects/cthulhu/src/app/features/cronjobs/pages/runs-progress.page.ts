@@ -1,4 +1,4 @@
-import {Component, computed, OnInit, signal} from '@angular/core';
+import {Component, computed, OnDestroy, OnInit, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {CronjobsApiService} from '../../../data-access/cronjobs/cronjobs-api.service';
 import {NzTableModule} from 'ng-zorro-antd/table';
@@ -50,23 +50,32 @@ import {RouterLink} from '@angular/router';
     nz-progress { width:140px; }
   `]
 })
-export class RunsProgressPageComponent implements OnInit {
+export class RunsProgressPageComponent implements OnInit, OnDestroy {
   private _progresses = signal<any[]>([]);
   private _autoRefresh = signal(false);
   progresses = computed(()=> this._progresses());
   autoRefresh = computed(()=> this._autoRefresh());
   private intervalHandle: any;
   constructor(private api: CronjobsApiService) {}
-  ngOnInit(){ this.reload(); }
+  ngOnInit(){
+    this.reload();
+    // 默认开启自动刷新
+    this._autoRefresh.set(true);
+    this.startInterval();
+  }
   reload(){ this.api.listAllRunProgress().subscribe(items => { this._progresses.set(items); }); }
   autoToggle(){
     this._autoRefresh.set(!this._autoRefresh());
     if(this._autoRefresh()){
-      this.intervalHandle = setInterval(()=> this.reload(), 2000);
-    } else if(this.intervalHandle){
-      clearInterval(this.intervalHandle);
+      this.startInterval();
+    } else {
+      this.clearIntervalHandle();
     }
   }
-  ngOnDestroy(){ if(this.intervalHandle){ clearInterval(this.intervalHandle); } }
+  private startInterval(){
+    this.clearIntervalHandle();
+    this.intervalHandle = setInterval(()=> this.reload(), 1500);
+  }
+  private clearIntervalHandle(){ if(this.intervalHandle){ clearInterval(this.intervalHandle); this.intervalHandle = null; } }
+  ngOnDestroy(){ this.clearIntervalHandle(); }
 }
-

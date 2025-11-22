@@ -44,7 +44,28 @@ export function buildRecord(err: HttpErrorResponse, map: StatusMessageMap): Erro
   } else {
     message = map[err.status] || map.default || '请求失败，请稍后重试';
   }
-  const rawMessage = (err.error && typeof err.error === 'object' && 'message' in err.error) ? String(err.error.message) : (typeof err.error === 'string' ? err.error : undefined);
+  const raw = err.error;
+  let rawMessage: string | undefined;
+  if (raw) {
+    if (typeof raw === 'string') {
+      rawMessage = raw;
+    } else if (typeof raw === 'object') {
+      // 优先 message 字段，其次 error 字段
+      if ('message' in raw && raw.message) {
+        rawMessage = String(raw.message);
+      } else if ('error' in raw && raw.error) {
+        rawMessage = String((raw as any).error);
+      } else {
+        // 提取可读的简单键值对
+        const keys = Object.keys(raw).filter(k => typeof (raw as any)[k] !== 'object');
+        if (keys.length) {
+          rawMessage = keys.map(k => `${k}: ${(raw as any)[k]}`).join(', ');
+        } else {
+          try { rawMessage = JSON.stringify(raw).substring(0, 300); } catch { /* ignore */ }
+        }
+      }
+    }
+  }
   return {
     id,
     status: err.status,
@@ -56,4 +77,3 @@ export function buildRecord(err: HttpErrorResponse, map: StatusMessageMap): Erro
     severity: deriveSeverity(err.status)
   };
 }
-
