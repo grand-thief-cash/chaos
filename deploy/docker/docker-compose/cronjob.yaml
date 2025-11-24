@@ -1,22 +1,17 @@
-version: '3.8'
 services:
   cronjob:
-    build:
-      context: ../../../app/projects/cronjob
-      dockerfile: ../../../deploy/docker/dockerfile/Dockerfile-cronjob
+    image: cronjob:v0.12.6
     container_name: cronjob
-    working_dir: /app
-    command: ["./cronjob", "--env=product", "--config=config/config.yaml"]
+    restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8082:8082"
     volumes:
-      - ../../../app/projects/cronjob/logs:/app/logs
-      - ../../../app/projects/cronjob/config/config.yaml:/app/config/config.yaml
+      - /home/machine/data_volume/cronjob/logs:/app/logs
+      - /home/machine/data_volume/cronjob/config:/app/config
     environment:
       - ENV=product
-    restart: unless-stopped
     logging:
       driver: json-file
       options:
-        max-size: "10m"   # 单个日志文件最大10MB
-        max-file: "5"     # 保留最多5个轮换文件
+        max-size: "10m"
+        max-file: "5"
