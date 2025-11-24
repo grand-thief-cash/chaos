@@ -5,8 +5,8 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/grand-thief-cash/chaos/app/infra/go/application v0.1.0
-	github.com/grand-thief-cash/chaos/app/infra/go/common v0.1.0
+	github.com/grand-thief-cash/chaos/app/infra/go/application v1.0.0
+	github.com/grand-thief-cash/chaos/app/infra/go/common v1.0.0
 )
 
 require (
@@ -67,6 +67,3 @@ require (
 	gorm.io/driver/postgres v1.6.0 // indirect
 	gorm.io/gorm v1.31.0
 )
-
-//replace github.com/grand-thief-cash/chaos/app/infra/go/application => ./../../infra/go/application
-//replace github.com/grand-thief-cash/chaos/app/infra/go/common => ./../../infra/go/common
