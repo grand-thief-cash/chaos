@@ -3,12 +3,14 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -204,15 +206,11 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 			// 进度信息保留，等待回调
 		} else {
 			_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(body))
-			if e.Progress != nil {
-				e.Progress.Clear(run.ID)
-			}
+			// progress cleanup deferred to scanner
 		}
 	} else { // 非 2xx
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, resp.Status)
-		if e.Progress != nil {
-			e.Progress.Clear(run.ID)
-		}
+		// progress cleanup deferred to scanner
 	}
 }
 
@@ -243,25 +241,51 @@ func (e *Executor) startRunContext(parent context.Context, task *model.Task, run
 	return runCtx, cleanup, to
 }
 
-// buildRequest 根据任务配置构建 HTTP 请求。当前仅支持在 URL 上附带 run_id 参数与 body_template 文本体。
+// buildRequest 根据任务配置构建 HTTP 请求。调整：不再在 URL 上附带 run_id 参数；使用 JSON 包含 meta(A) 与 body(B)。
 func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *model.TaskRun) (*http.Request, error) {
-	var body io.Reader
-	if task.BodyTemplate != "" {
-		body = bytes.NewBufferString(task.BodyTemplate)
+	// A: meta 信息 (run 相关)
+	ce := config.GetBizConfig().CallbackEndpoints
+	progressPath := ce.ProgressPath
+	callbackPath := ce.CallbackPath
+	if progressPath == "" {
+		progressPath = "/runs/{run_id}/progress"
 	}
-	urlWithRunID := fmt.Sprintf("%s?run_id=%d", task.TargetURL, run.ID)
-	req, err := http.NewRequestWithContext(ctx, task.HTTPMethod, urlWithRunID, body)
+	if callbackPath == "" {
+		callbackPath = "/runs/{run_id}/callback"
+	}
+	progressPath = strings.ReplaceAll(progressPath, "{run_id}", fmt.Sprintf("%d", run.ID))
+	callbackPath = strings.ReplaceAll(callbackPath, "{run_id}", fmt.Sprintf("%d", run.ID))
+	meta := map[string]any{
+		"run_id":             run.ID,
+		"task_id":            task.ID,
+		"exec_type":          task.ExecType,
+		"callback_endpoints": map[string]any{"progress": progressPath, "callback": callbackPath},
+	}
+	// B: 业务 body, 来自 task.BodyTemplate (保留原始字符串或 JSON)
+	var bodyVal any = nil
+	if task.BodyTemplate != "" {
+		var js any
+		if err := json.Unmarshal([]byte(task.BodyTemplate), &js); err == nil { // 有效 JSON
+			bodyVal = js
+		} else {
+			bodyVal = task.BodyTemplate
+		}
+	}
+	payload := map[string]any{"meta": meta, "body": bodyVal}
+	buf, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal outbound payload failed: %w", err)
+	}
+	// URL 不再附带 run_id
+	urlFinal := task.TargetURL
+	req, err := http.NewRequestWithContext(ctx, task.HTTPMethod, urlFinal, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
 	}
-
-	// Get local IP
+	// Headers: caller identity
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Caller-IP", bizConsts.LocalIP)
-	req.Header.Set("X-Caller-Port", application.GetApp().GetConfig().HTTPServer.Address) // 新增端口
-	// Optionally set callback endpoint if available
-	req.Header.Set("X-Callback-Progress", bizConsts.CallBackPrgsEndpoint)
-	req.Header.Set("X-Callback-Res", bizConsts.CallBackResEndpoint)
-
+	req.Header.Set("X-Caller-Port", application.GetApp().GetConfig().HTTPServer.Address)
 	return req, nil
 }
 
