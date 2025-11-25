@@ -17,7 +17,8 @@ import {RouterLink} from '@angular/router';
       <h2>运行进度总览</h2>
       <div class="actions">
         <button nz-button nzType="default" (click)="reload()">刷新</button>
-        <button nz-button nzType="dashed" (click)="autoToggle()">{{autoRefresh() ? '停止自动刷新' : '自动刷新'}}</button>
+        <button nz-button nzType="dashed" (click)="autoToggle()">{{autoRefresh() ? '停止自动刷新' : '自动刷新'}}
+        </button>
       </div>
       <nz-table nzBordered [nzData]="progresses()" *ngIf="progresses().length; else emptyTpl">
         <thead>
@@ -32,16 +33,24 @@ import {RouterLink} from '@angular/router';
         </thead>
         <tbody>
           <tr *ngFor="let p of progresses()">
-            <td><a [routerLink]="['/cronjobs/run', p.run_id]">{{p.run_id}}</a></td>
+            <!-- 修正跳转链接，指向任务详情的运行明细：/cronjobs/tasks/:taskId/runs/:runId -->
+            <td><a [routerLink]="['/cronjobs/tasks', p.task_id, 'runs', p.run_id]">{{p.run_id}}</a></td>
             <td>{{p.current}}</td>
             <td>{{p.total}}</td>
-            <td><nz-progress [nzPercent]="p.percent" [nzStatus]="p.percent===100 ? 'success':'active'" [nzStrokeWidth]="8" [nzShowInfo]="true"></nz-progress></td>
-            <td>{{p.message || '-'}}</td>
-            <td>{{p.updated_at | date:'yyyy-MM-dd HH:mm:ss'}}</td>
+            <td>
+              <nz-progress [nzPercent]="p.percent" [nzStatus]="p.percent===100 ? 'success':'active'" [nzStrokeWidth]="8"
+                           [nzShowInfo]="true"></nz-progress>
+            </td>
+            <td>{{p.message || '-'}}
+            </td>
+            <td>{{p.updated_at | date:'yyyy-MM-dd HH:mm:ss'}}
+            </td>
           </tr>
         </tbody>
       </nz-table>
-      <ng-template #emptyTpl><div>暂无进度数据</div></ng-template>
+      <ng-template #emptyTpl>
+        <div>暂无进度数据</div>
+      </ng-template>
     </div>
   `,
   styles: [`
@@ -53,29 +62,29 @@ import {RouterLink} from '@angular/router';
 export class RunsProgressPageComponent implements OnInit, OnDestroy {
   private _progresses = signal<any[]>([]);
   private _autoRefresh = signal(false);
-  progresses = computed(()=> this._progresses());
-  autoRefresh = computed(()=> this._autoRefresh());
+  progresses = computed(() => this._progresses());
+  autoRefresh = computed(() => this._autoRefresh());
   private intervalHandle: any;
   constructor(private api: CronjobsApiService) {}
-  ngOnInit(){
+  ngOnInit() {
     this.reload();
     // 默认开启自动刷新
     this._autoRefresh.set(true);
     this.startInterval();
   }
-  reload(){ this.api.listAllRunProgress().subscribe(items => { this._progresses.set(items); }); }
-  autoToggle(){
+  reload() { this.api.listAllRunProgress().subscribe(items => { this._progresses.set(items); }); }
+  autoToggle() {
     this._autoRefresh.set(!this._autoRefresh());
-    if(this._autoRefresh()){
+    if (this._autoRefresh()) {
       this.startInterval();
     } else {
       this.clearIntervalHandle();
     }
   }
-  private startInterval(){
+  private startInterval() {
     this.clearIntervalHandle();
-    this.intervalHandle = setInterval(()=> this.reload(), 1500);
+    this.intervalHandle = setInterval(() => this.reload(), 1500);
   }
-  private clearIntervalHandle(){ if(this.intervalHandle){ clearInterval(this.intervalHandle); this.intervalHandle = null; } }
-  ngOnDestroy(){ this.clearIntervalHandle(); }
+  private clearIntervalHandle() { if (this.intervalHandle) { clearInterval(this.intervalHandle); this.intervalHandle = null; } }
+  ngOnDestroy() { this.clearIntervalHandle(); }
 }
