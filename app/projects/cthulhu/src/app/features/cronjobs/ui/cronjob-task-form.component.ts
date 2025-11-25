@@ -93,7 +93,9 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
       <nz-form-item>
         <nz-form-label>并发策略</nz-form-label>
         <nz-form-control>
-          <input nz-input formControlName="concurrency_policy" />
+          <nz-select formControlName="concurrency_policy">
+            <nz-option *ngFor="let opt of concurrencyPolicies" [nzValue]="opt" [nzLabel]="opt"></nz-option>
+          </nz-select>
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
@@ -111,13 +113,17 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
       <nz-form-item>
         <nz-form-label>Overlap Action</nz-form-label>
         <nz-form-control>
-          <input nz-input formControlName="overlap_action" />
+          <nz-select formControlName="overlap_action">
+            <nz-option *ngFor="let opt of overlapActions" [nzValue]="opt" [nzLabel]="opt"></nz-option>
+          </nz-select>
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
         <nz-form-label>Failure Action</nz-form-label>
         <nz-form-control>
-          <input nz-input formControlName="failure_action" />
+          <nz-select formControlName="failure_action">
+            <nz-option *ngFor="let opt of failureActions" [nzValue]="opt" [nzLabel]="opt"></nz-option>
+          </nz-select>
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
@@ -153,6 +159,9 @@ export class CronjobTaskFormComponent implements OnChanges { // 实现 OnChanges
   @Output() save = new EventEmitter<Partial<Task>>();
   @Output() cancel = new EventEmitter<void>();
 
+  concurrencyPolicies = ['PARALLEL','SKIP'];
+  overlapActions = ['ALLOW','SKIP','CANCEL_PREV','PARALLEL'];
+  failureActions = ['RUN_NEW','SKIP','RETRY'];
   form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(128)]],
     description: [''],
@@ -169,8 +178,8 @@ export class CronjobTaskFormComponent implements OnChanges { // 实现 OnChanges
     concurrency_policy: ['PARALLEL'],
     callback_method: ['POST'],
     callback_timeout_sec: [10],
-    overlap_action: ['SKIP'],
-    failure_action: ['ALERT'],
+    overlap_action: ['ALLOW'],
+    failure_action: ['RUN_NEW'],
     status: ['ENABLED']
   });
 
