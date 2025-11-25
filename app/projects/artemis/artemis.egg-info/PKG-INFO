@@ -1,0 +1,30 @@
+Metadata-Version: 2.4
+Name: artemis
+Version: 0.1.0
+Summary: Artemis multi-source data pull framework (phase 1)
+Author: Artemis Team
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.110.0
+Requires-Dist: uvicorn>=0.23.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: pydantic>=2.6.0
+Requires-Dist: PyYAML>=6.0.0
+Requires-Dist: python-dotenv>=1.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+
+Minimal scaffold for internal TaskUnit-based data pulling service.
+
+## Quick start
+
+```bash
+pip install -e .[dev]
+python run_server.py
+```
+
+POST http://localhost:8000/tasks/pull_stock_quotes/run to trigger sample task.
+# Artemis (Phase 1)
+
+
