@@ -1,0 +1,19 @@
+<!-- Error notification banner; shows latest HTTP errors -->
+<div class="error-banner" *ngIf="(records$ | async) as records">
+  <ng-container *ngIf="records.length; else noErrors">
+    <div class="error-banner__list">
+      <nz-alert *ngFor="let r of records; trackBy: trackById"
+                nzCloseable
+                (nzOnClose)="dismiss(r.id)"
+                [nzType]="alertType(r.severity)"
+                [nzMessage]="r.message"
+                [nzDescription]="formatDescription(r)">
+      </nz-alert>
+    </div>
+    <div class="error-banner__actions">
+      <button nz-button nzType="link" (click)="clearAll()">清空</button>
+    </div>
+  </ng-container>
+  <ng-template #noErrors></ng-template>
+</div>
+
