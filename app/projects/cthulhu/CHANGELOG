@@ -1,7 +1,10 @@
 # VERSION
-v0.3.5
+v0.3.6
 
 # Changelog
+- v0.3.6
+    - Jump to cronjob progress page after manually triggering a cronjob.
+    - Fixed a bug of checking run details in progress page.
 - v0.3.5
     - Allowed dev env to be access from any ip.
     - Added deploy script for cthulhu

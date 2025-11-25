@@ -1,6 +1,6 @@
 import {Component, computed, OnInit, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
-import {ActivatedRoute, RouterLink, RouterOutlet} from '@angular/router';
+import {ActivatedRoute, Router, RouterLink, RouterOutlet} from '@angular/router';
 import {NzButtonModule} from 'ng-zorro-antd/button';
 import {NzBadgeModule} from 'ng-zorro-antd/badge';
 import {NzTableModule} from 'ng-zorro-antd/table';
@@ -104,7 +104,7 @@ export class TaskDetailPageComponent implements OnInit {
   private _statsLoading = signal(false);
   stats = computed(()=> this._stats());
   statsLoading = computed(()=> this._statsLoading());
-  constructor(private route: ActivatedRoute, public store: CronjobsStore, private msg: NzMessageService, private api: CronjobsApiService) {}
+  constructor(private route: ActivatedRoute, public store: CronjobsStore, private msg: NzMessageService, private api: CronjobsApiService, private router: Router) {}
   get showingRunDetail(): boolean { return !!this.route.firstChild && this.route.firstChild.routeConfig?.path === 'runs'; }
   ngOnInit(){
     const id = Number(this.route.snapshot.paramMap.get('id')); this.taskId.set(id);
@@ -115,7 +115,10 @@ export class TaskDetailPageComponent implements OnInit {
   loadStats(){ if(!this.taskId()) return; this._statsLoading.set(true); this.api.taskRunStats(this.taskId()!).subscribe({ next: s=> this._stats.set(s), error: ()=> this._statsLoading.set(false), complete: ()=> this._statsLoading.set(false) }); }
   distEntries(){ const st = this.stats(); if(!st) return []; return Object.entries(st.status_distribution || {}).map(([key,value])=> ({ key, value })); }
   reloadRuns(){ if(this.taskId()) { this.store.loadRuns(this.taskId()!, true); this.loadStats(); } }
-  manualTrigger(){ if(this.taskId()) this.store.trigger(this.taskId()!).subscribe({ next: ()=> { this.msg.success('触发成功'); this.reloadRuns(); }, error: ()=> this.msg.error('触发失败'), }); }
+  manualTrigger(){ if(this.taskId()) this.store.trigger(this.taskId()!).subscribe({ next: ()=> { this.msg.success('触发成功'); this.reloadRuns();
+    // 触发成功后跳转到运行进度页面
+    this.router.navigate(['/cronjobs/runs/progress']);
+  }, error: ()=> this.msg.error('触发失败'), }); }
   toggleStatus(){ const t = this.task(); if(!t) return; const obs = t.status==='ENABLED'? this.store.disable(t.id): this.store.enable(t.id); obs.subscribe(()=> this.store.loadTasks(true)); }
   onRunPage(i: number){ if(this.taskId()) this.store.setRunPage(this.taskId()!, i); }
   onRunPageSize(size: number){ if(this.taskId()) this.store.setRunPageSize(this.taskId()!, size); }
