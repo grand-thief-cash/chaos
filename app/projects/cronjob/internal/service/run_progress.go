@@ -65,26 +65,6 @@ func (rpm *RunProgressManager) Clear(runID int64) {
 	rpm.mu.Unlock()
 }
 
-// AttemptCleanup removes stale progress objects older than ttl.
-func (rpm *RunProgressManager) AttemptCleanup(ctx context.Context, ttl time.Duration) {
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
-	}
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
-	now := time.Now()
-	rpm.mu.Lock()
-	for id, p := range rpm.data {
-		if now.Sub(p.Updated) > ttl {
-			delete(rpm.data, id)
-		}
-	}
-	rpm.mu.Unlock()
-}
-
 // List returns all current progress entries sorted by most recently updated.
 func (rpm *RunProgressManager) List() []*RunProgress {
 	rpm.mu.RLock()

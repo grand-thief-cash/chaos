@@ -77,3 +77,9 @@ func (s *RunService) ListActiveFiltered(ctx context.Context, statuses []bizConst
 func (s *RunService) CountStatusByTask(ctx context.Context, taskID int64) (map[bizConsts.RunStatus]int64, error) {
 	return s.RunDao.CountStatusByTask(ctx, taskID)
 }
+func (s *RunService) ListSyncRunningStuck(ctx context.Context, startBefore time.Time, updatedBefore time.Time, limit int) ([]*model.TaskRun, error) {
+	return s.RunDao.ListSyncRunningStuck(ctx, startBefore, updatedBefore, limit)
+}
+func (s *RunService) ListByIDs(ctx context.Context, ids []int64) ([]*model.TaskRun, error) {
+	return s.RunDao.ListByIDs(ctx, ids)
+}

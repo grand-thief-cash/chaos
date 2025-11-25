@@ -1,7 +1,11 @@
 # VERSION
-v0.12.7
+v0.12.8
 
 # Changelog
+- v0.12.8
+    - Extend callback_time_scanner functionality to a assembled scanner, which support sync/async/progress callback.
+    - Sync run stuck config is added.
+    - Graceful clean-up is added in new Scanner as well.
 - v0.12.7
     - Replaced jenkins deployment and use python as a substitute.
     - Added go mod tidy in tidy_to.sh

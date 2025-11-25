@@ -109,25 +109,71 @@ ASCII 示意：
 scan(now) 目标：找出从上次扫描到本次扫描之间“应该触发”的时间点，并为每个任务生成对应的 Run（或跳过/取消）。
 
 核心步骤：
-1. `sec = now.Truncate(second)` 获取当前秒。
-2. 构造时间窗口：`candidateSeconds = (lastScanSec+1s ... sec)`，包括当前秒，避免漏掉间隔内的触发。
-3. 更新 `lastScanSec = sec`。
-4. 查询所有 ENABLED 任务。
-5. 对每个任务：
-  - 遍历 candidateSeconds，使用简化 cron 匹配函数 `shouldFire(ts, cron_expr)` 收集匹配秒列表 `matched`。
-  - 根据 `misfire_policy` 转换为最终调度列表：`toSchedule`。
-  - 查询最近一次运行（ListByTask limit=1）获取 lastRun，用于 overlap/failure 策略判断。
-  - 对于每一个 fireTime in toSchedule：
-    1. 检测 overlap: `lastRun.Status == RUNNING`。
-    2. 检测 failure: `lastRun.Status in {FAILED, TIMEOUT, FAILED_TIMEOUT, CANCELED}`。
-    3. 应用 OverlapAction：可能 SKIP / CANCEL_PREV / PARALLEL / ALLOW。
-    4. 应用 FailureAction：决定 attempt（RUN_NEW=1, RETRY=lastRun.Attempt+1, SKIP=直接标记跳过）。
-    5. 应用 ConcurrencyPolicy（除非被 PARALLEL 覆盖 ignoreConcurrency=true）：
-      - 超过并发上限且 policy=SKIP => SCHEDULED+SKIPPED。
-      - 超过并发上限且 policy=QUEUE => 仍入队（当前简单实现）。
-    6. CreateScheduled() 写入 run，记录 attempt。
-    7. 入队 Executor.Enqueue(run)（如果不是跳过）。
-    8. 更新 lastRun=run 以便同一个 scan 内后续触发秒继续参考最新运行。
+总体约束
+- 以当前 poll tick 的时间点为准，不做补偿回溯：每次只判断是否在当前秒应触发。
+- 时间粒度为秒：调用 `now = now.Truncate(time.Second)`，并按秒去重与匹配。
+- 仅当 `shouldFire(now, task.CronExpr)` 返回 `true` 时才考虑调度该任务（支持兼容 5/6 字段 cron 的复杂表达式）。
+
+主要步骤（高层）
+1. 读取任务列表
+    - 调用 `e.TaskSvc.ListEnabled(ctx)` 获取所有启用任务。
+    - 记录 tick 日志：任务数量与当前时间。
+
+2. 对每个任务做触发判断
+    - 使用 `shouldFire`（高级 cron 匹配）决定是否本秒触发，若否跳过。
+
+3. 读取最近运行记录用于决策
+    - 调用 `e.RunDao.ListByTask(ctx, task.ID, 50)` 拉取最多 50 条最近记录。
+    - 构建 `existing` 映射：键为 `ScheduledTime.Unix()`，用于快速判断当前秒是否已有记录（去重）。
+    - 计算 `lastEffective`：第一个「非跳过类」的最近运行（排除 `Scheduled`, `FailureSkip`, `ConcurrentSkip`, `OverlapSkip`）。用于判断上次是否是失败、和计算 attempt。
+
+4. 去重（同秒已存在则跳过）
+    - 如果 `existing[now.Unix()]` 存在，则不再创建新调度。
+
+5. Overlap（重叠）策略判定
+    - 计算 `hasPending`：检查历史记录中 `ScheduledTime <= now` 且 `Status` 为 `Running` 或 `Scheduled` 的记录。
+    - 收集 `pendingRunningIDs`（状态为 `Running` 的 id），用于 `CancelPrev` 操作。
+    - 根据 `task.OverlapAction`：
+        - `OverlapActionSkip`：创建一条跳过记录 `CreateSkipped(..., OverlapSkip)`，记录 attempt（通过 `nextAttempt`），并跳过后续调度。
+        - `OverlapActionCancelPrev`：对 `pendingRunningIDs` 调用 `e.Exec.CancelRun(rid)` 取消以前运行，然后继续调度新任务。
+        - `OverlapActionParallel`：设置 `ignoreConcurrency = true`（后续并发限制忽略）。
+        - `OverlapActionAllow`：什么也不做（允许重叠但不并行放宽）。
+
+6. Failure（上次失败）处理与 attempt 计算
+    - 通过 `lastEffective` 和 `isFailureStatus(lastEffective.Status)` 判断 `failedPrev`。
+    - 若上次失败，检查是否已有针对上次失败的跳过记录（`FailureSkip`/`ConcurrentSkip`/`OverlapSkip`）且 attempt 已递增，以避免重复创建跳过记录。
+    - 根据 `task.FailureAction`：
+        - `FailureActionSkip`：若尚未为这次创建过 skip，则创建 `CreateSkipped(..., FailureSkip)` 并跳过；若已经创建过，按逻辑把 attempt 提高两次（见代码 attempt 计算）。
+        - `FailureActionRetry`：将 attempt 设为 `lastEffective.Attempt + 1`（重试）。
+        - `FailureActionRunNew`：把 attempt 设为 `1`（视为全新一次调度）。
+    - `nextAttempt` 辅助：若无上次或未失败则返回 1；否则 `prev.Attempt + 1`。
+
+7. Concurrency（并发/限制）检查
+    - 若没有被 `ignoreConcurrency` 且 `task.MaxConcurrency > 0` 且 `e.Exec.ActiveCount(task.ID) >= task.MaxConcurrency`：
+        - 若 `ConcurrencyPolicy` 为 `ConcurrencySkip`：创建 `CreateSkipped(..., ConcurrentSkip)` 并跳过调度。
+        - 若 `ConcurrencyPolicy` 为 `ConcurrencyParallel`：记录日志并继续（即允许超过限制并行）。
+
+8. 创建调度记录并入队执行
+    - 构造 `run := &model.TaskRun{TaskID: task.ID, ScheduledTime: now, Status: Scheduled, Attempt: attempt}`。
+    - 调用 `e.RunDao.CreateScheduled(ctx, run)`：失败则记录日志并跳过。
+    - 成功后调用 `e.Exec.Enqueue(run)` 将任务放到执行器队列执行，并记录日志。
+
+辅助决策/函数
+- isFailureStatus：把 `Failed`, `Timeout`, `FailedTimeout`, `Canceled` 视为失败状态。
+- toInt、shouldFire、matchField、matchSegment 等：负责解析和判断复杂 cron 表达式（支持 `*`, `?`, 逗号列表, 范围 `a-b`, 步长 `/n`, 起始+步长 `a/n` 等）。
+- RunDao API：`ListByTask`, `CreateSkipped`, `CreateScheduled` 等用于持久化决策结果（尤其是跳过记录用于幂等与统计）。
+- Executor API：`ActiveCount(taskID)` 用于并发计数，`CancelRun(rid)` 用于取消正在运行的实例，`Enqueue(run)` 用于提交执行。
+
+错误处理与日志
+- 对 `TaskSvc.ListEnabled`、`RunDao.*`、`CreateScheduled` 等操作的错误会被适当返回或记录日志；`scan` 在 tick goroutine 中调用时若返回错误会被记录并继续下一次 tick（不会停止整个 scheduler loop）。
+
+拓展/注意点（实现语义）
+- 以秒为单位去重：若已有同秒的调度记录（不论状态），不会再次创建调度，避免重复触发。
+- 对“跳过”会显式写入一条跳过类型的 `TaskRun`，以记录为何跳过（concurrency/overlap/failure）。
+- `overlap cancel prev` 是通过执行器的 cancel 接口去尝试终止旧的运行，而不是直接改写旧记录状态（具体变更由 Executor/RunDao 进一步处理）。
+- 不做历史补偿：若 poll 间隔遗漏某个触发秒点（例如因为停机），不会回填执行。
+
+以上即 `scan` 的完整执行策略要点与各决策分支的行为。
 
 ```mermaid
 flowchart TD
