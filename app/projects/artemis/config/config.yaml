@@ -1,0 +1,35 @@
+server:
+  host: 0.0.0.0
+  port: 18000
+  access_log: false
+logging:
+  enabled: true
+  level: INFO
+  format: json
+  output: file # options: stdout|stderr|file (if 'file', file_config applies)
+  include_caller: true
+  file_config:
+    dir: ./logs
+    filename: artemis
+  rotate_config:
+    enabled: true
+    rotate_interval: 1d # unit decides suffix pattern automatically (m->YYYYMMDDHHMM)
+    max_age: 72h
+    cleanup_enabled: true
+telemetry:
+  enabled: true
+  service_name: artemis
+  sampling: always
+  otlp:
+    protocol: http   # http | grpc
+    endpoint: #http://localhost:4318/v1/traces
+    headers: {}
+    timeout_ms: 5000
+    # insecure only used for grpc; ignored for http
+http_client:
+  timeout_seconds: 5
+  verify_ssl: true
+  headers: {}
+callback:
+  override_host: "127.0.0.1"        # 若非空则强制使用该 host 回调 (优先级最高)
+  override_port: 9999          # 若 >0 则强制使用该端口
