@@ -107,9 +107,7 @@ func (c *RunMgmtController) getRun(w http.ResponseWriter, r *http.Request, runID
 
 func (c *RunMgmtController) cancelRun(w http.ResponseWriter, r *http.Request, runID int64) {
 	c.Exec.CancelRun(runID)
-	if c.Progress != nil {
-		c.Progress.Clear(runID)
-	}
+	// progress cleanup deferred to scanner (removed Clear)
 	writeJSON(w, map[string]any{"canceled": true})
 }
 
@@ -208,9 +206,7 @@ func (c *RunMgmtController) finalizeCallback(w http.ResponseWriter, r *http.Requ
 		writeErr(w, 400, "invalid_result")
 		return
 	}
-	if c.Progress != nil {
-		c.Progress.Clear(runID)
-	}
+	// progress cleanup deferred to scanner (removed Clear)
 	writeJSON(w, map[string]any{"updated": true})
 }
 

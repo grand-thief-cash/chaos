@@ -27,7 +27,7 @@ func init() {
 		return true, service.NewRunProgressManager(), nil
 	})
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, service.NewCallbackTimeoutScanner(cronjobCfg.CallbackScanner.Interval, cronjobCfg.CallbackScanner.BatchLimit), nil
+		return true, service.NewRunScanner(cronjobCfg.Scanner), nil
 	})
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, service.NewRunCleanupService(cronjobCfg.Cleanup), nil
