@@ -42,6 +42,9 @@ type RunDao interface {
 	ListByTaskFiltered(ctx context.Context, taskID int64, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) ([]*model.TaskRun, error)
 	ListActiveFiltered(ctx context.Context, statuses []bizConsts.RunStatus, from, to *time.Time, limit, offset int, timeField string) ([]*model.TaskRun, error)
 	CountStatusByTask(ctx context.Context, taskID int64) (map[bizConsts.RunStatus]int64, error)
+	// NEW methods
+	ListSyncRunningStuck(ctx context.Context, startBefore time.Time, updatedBefore time.Time, limit int) ([]*model.TaskRun, error)
+	ListByIDs(ctx context.Context, ids []int64) ([]*model.TaskRun, error)
 }
 
 type runDaoImpl struct {
@@ -108,7 +111,8 @@ func (r *runDaoImpl) TransitionToRunning(ctx context.Context, runID int64) (bool
 }
 
 func (r *runDaoImpl) MarkSuccess(ctx context.Context, runID int64, code int, body string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=?", runID).Updates(map[string]any{"status": bizConsts.Success, "response_code": code, "response_body": body, "end_time": gorm.Expr("NOW()")}).Error
+	// Add status guard to avoid overwriting TIMEOUT/FAILED states set by scanner concurrently.
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.CallbackPending}).Updates(map[string]any{"status": bizConsts.Success, "response_code": code, "response_body": body, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) MarkFailed(ctx context.Context, runID int64, errMsg string) error {
@@ -182,6 +186,38 @@ func (r *runDaoImpl) ListCallbackPendingExpired(ctx context.Context, limit int) 
 		q = q.Limit(limit)
 	}
 	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// NEW: list RUNNING sync runs whose start_time & updated_at are older than thresholds (potentially stuck)
+func (r *runDaoImpl) ListSyncRunningStuck(ctx context.Context, startBefore time.Time, updatedBefore time.Time, limit int) ([]*model.TaskRun, error) {
+	var list []*model.TaskRun
+	// join tasks to filter exec_type = SYNC
+	q := r.db.WithContext(ctx).Model(&model.TaskRun{}).
+		Joins("JOIN tasks ON tasks.id = task_runs.task_id").
+		Where("task_runs.status = ?", bizConsts.Running).
+		Where("tasks.exec_type = ?", bizConsts.ExecTypeSync).
+		Where("task_runs.start_time IS NOT NULL AND task_runs.start_time < ?", startBefore).
+		Where("task_runs.updated_at < ?", updatedBefore).
+		Order("task_runs.id ASC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if err := q.Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// NEW: bulk fetch runs by IDs
+func (r *runDaoImpl) ListByIDs(ctx context.Context, ids []int64) ([]*model.TaskRun, error) {
+	if len(ids) == 0 {
+		return []*model.TaskRun{}, nil
+	}
+	var list []*model.TaskRun
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&list).Error; err != nil {
 		return nil, err
 	}
 	return list, nil

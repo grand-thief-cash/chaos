@@ -23,9 +23,11 @@ type ExecutorConfig struct {
 	RequestTimeout time.Duration `yaml:"request_timeout"`
 }
 
-type CallbackScannerConfig struct {
-	Interval   time.Duration `yaml:"interval"`
-	BatchLimit int           `yaml:"batch_limit"`
+type ScannerConfig struct {
+	Interval                    time.Duration `yaml:"interval"`
+	BatchLimit                  int           `yaml:"batch_limit"`
+	SyncRunStuckTimeoutSeconds  int           `yaml:"sync_run_stuck_timeout_seconds"` // RUNNING SYNC runs exceeding this age considered stuck; 0 disables
+	ProgressCleanupGraceSeconds int           `yaml:"progress_cleanup_grace_seconds"` // grace after terminal end_time before progress cleared; 0 immediate
 }
 
 type CleanupConfig struct {
@@ -35,13 +37,17 @@ type CleanupConfig struct {
 	MaxPerTask int           `yaml:"max_per_task"` // auto keep recent N per task
 }
 
+type CallbackEndpointsConfig struct {
+	ProgressPath string `yaml:"progress_path"` // e.g. /runs/{run_id}/progress
+	CallbackPath string `yaml:"callback_path"` // e.g. /runs/{run_id}/callback
+}
+
 type BizConfig struct {
-	//Server    ServerConfig    `yaml:"server"`
-	//MySQL     MySQLConfig     `yaml:"mysql"`
-	Scheduler       SchedulerConfig       `yaml:"scheduler"`
-	Executor        ExecutorConfig        `yaml:"executor"`
-	CallbackScanner CallbackScannerConfig `yaml:"callback_scanner"`
-	Cleanup         CleanupConfig         `yaml:"cleanup"`
+	Scheduler         SchedulerConfig         `yaml:"scheduler"`
+	Executor          ExecutorConfig          `yaml:"executor"`
+	Scanner           ScannerConfig           `yaml:"scanner"`
+	Cleanup           CleanupConfig           `yaml:"cleanup"`
+	CallbackEndpoints CallbackEndpointsConfig `yaml:"callback_endpoints"`
 }
 
 func init() {

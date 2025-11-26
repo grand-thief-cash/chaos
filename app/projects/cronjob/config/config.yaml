@@ -54,11 +54,16 @@ biz_config:
   executor:
     worker_pool_size: 1
     request_timeout: 60s
-  callback_scanner:
+  scanner:
     interval: 30s
     batch_limit: 500
+    sync_run_stuck_timeout_seconds: 900          # 超过此执行秒数仍 RUNNING (同步) 视为卡死; 0 关闭
+    progress_cleanup_grace_seconds: 60           # 终止状态后延迟清理进度; 0 立即
   cleanup:
     enabled: false
     interval: 1h
     max_age: 720h       # 30 days
     max_per_task: 1000  # keep recent 1000 per task
+  callback_endpoints:
+    progress_path: "/api/v1/runs/{run_id}/progress"
+    callback_path: "/api/v1/runs/{run_id}/callback"
