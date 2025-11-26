@@ -25,6 +25,10 @@ class JsonFormatter(logging.Formatter):
             if frame:
                 fi = inspect.getframeinfo(frame)
                 base['caller'] = f"{fi.filename}:{fi.lineno}"
+        if 'run_id' in base or 'task_code' in base:
+            base['event_type'] = 'task'
+        else:
+            base['event_type'] = 'log'
         return json.dumps(base, ensure_ascii=False)
 
 def _apply_config(force: bool = False):

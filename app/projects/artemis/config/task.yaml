@@ -1,0 +1,9 @@
+tasks:
+  long_task_example:
+    variants:
+      - match: { mode: "fast" }
+        config:
+          total: 20
+      - match: { mode: "full" }
+        config:
+          total: 50
