@@ -5,11 +5,9 @@ go 1.24.0
 toolchain go1.24.7
 
 require (
-	github.com/grand-thief-cash/chaos/app/infra/go/application v1.0.0
-	github.com/grand-thief-cash/chaos/app/infra/go/common v1.0.0
-)
-
-require (
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
+	github.com/tidwall/gjson v1.18.0
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -66,4 +64,9 @@ require (
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
 	gorm.io/gorm v1.31.0
+)
+
+require (
+	github.com/grand-thief-cash/chaos/app/infra/go/application v1.0.0
+	github.com/grand-thief-cash/chaos/app/infra/go/common v1.0.0
 )
