@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/grand-thief-cash/chaos/app/infra/go/application"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
@@ -205,8 +207,13 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 			_ = e.RunSvc.MarkCallbackPendingWithDeadline(ctx, run.ID, deadline)
 			// 进度信息保留，等待回调
 		} else {
-			_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(body))
-			// progress cleanup deferred to scanner
+			status := gjson.GetBytes(body, "status").String()
+			errMsg := gjson.GetBytes(body, "error").String()
+			if strings.EqualFold(status, bizConsts.Failed.String()) || strings.TrimSpace(errMsg) != "" {
+				_ = e.RunSvc.MarkFailed(ctx, run.ID, fmt.Sprintf("biz_failed: status=%s error=%s", status, errMsg))
+			} else {
+				_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(body))
+			} // progress cleanup deferred to scanner
 		}
 	} else { // 非 2xx
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, resp.Status)

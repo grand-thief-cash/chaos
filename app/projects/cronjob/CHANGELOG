@@ -1,7 +1,9 @@
 # VERSION
-v0.12.9
+v0.12.10
 
 # Changelog
+- v0.12.10
+    - Adjusted the failure judgement logic in executor: Failed/succeed is determined by response code and msg together.
 - v0.12.9
     - Fixed bug of when async task finalized callback but got wrong response code and status.
 - v0.12.8
