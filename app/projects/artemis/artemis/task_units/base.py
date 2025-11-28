@@ -39,6 +39,10 @@ class BaseTaskUnit:
         # write side effects; override
         pass
 
+    def finalize(self, ctx: TaskContext):
+        """Final hook after sink: safe place to set ctx.stats or emit final metrics."""
+        pass
+
     def _run_phase(self, ctx: TaskContext, name: str, fn, *args, **kwargs):
         """Run a single phase with unified logging & timing.
         Returns (result, duration_ms). Exceptions propagate upward after logging.
@@ -86,20 +90,28 @@ class BaseTaskUnit:
             # sink
             _, d = self._run_phase(ctx, 'sink', self.sink, ctx, processed)
             phase_durations['sink'] = d
+            # finalize (no result expected)
+            _, d = self._run_phase(ctx, 'finalize', self.finalize, ctx)
+            phase_durations['finalize'] = d
 
             ctx.set_status(TaskStatus.SUCCESS.value)
+            # persist durations into stats for external API consumers
+            ctx.stats['phase_durations_ms'] = phase_durations
+            ctx.stats['total_duration_ms'] = sum(phase_durations.values())
             if ctx.logger:
                 ctx.logger.info({
                     'event': 'task_success',
                     'task_code': ctx.task_code,
                     'run_id': ctx.run_id,
                     'durations_ms': phase_durations,
-                    'total_ms': sum(phase_durations.values())
+                    'total_ms': ctx.stats['total_duration_ms']
                 })
         except Exception as e:
             failed_phase = failed_phase or ctx.status or 'unknown'
             ctx.set_status(TaskStatus.FAILED.value)
             ctx.set_error(str(e))
+            # capture partial durations
+            ctx.stats['phase_durations_ms'] = phase_durations
             if ctx.logger:
                 ctx.logger.error({
                     'event': 'task_failed',
