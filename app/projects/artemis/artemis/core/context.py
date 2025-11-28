@@ -45,6 +45,19 @@ class TaskContext:
     def set_error(self, err: str):
         self.error = err
 
+    def stat(self, key: str, value: Any):
+        """Record/overwrite a stat value."""
+        self.stats[key] = value
+
+    def inc_stat(self, key: str, delta: int = 1):
+        """Increment a numeric stat counter."""
+        current = self.stats.get(key, 0)
+        try:
+            self.stats[key] = current + delta
+        except Exception:
+            # fall back to overwrite if non-numeric
+            self.stats[key] = delta
+
     def close(self):
         self.end_ts = time.time()
 
