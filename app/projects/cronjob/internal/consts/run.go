@@ -3,6 +3,8 @@ package consts
 // RunStatus 表示任务运行的状态枚举，防止魔法字符串。
 type RunStatus string
 
+func (s RunStatus) String() string { return string(s) }
+
 const (
 	Scheduled       RunStatus = "SCHEDULED"        // 已调度，等待执行
 	Running         RunStatus = "RUNNING"          // 正在执行

@@ -183,30 +183,28 @@ func (c *RunMgmtController) finalizeCallback(w http.ResponseWriter, r *http.Requ
 		writeErr(w, 400, "run_not_in_callback_pending")
 		return
 	}
+	// If the request payload is valid and accepted, we respond 200 even if internal processing fails.
+	var svcErr error
 	switch strings.ToLower(strings.TrimSpace(req.Result)) {
 	case "success":
 		if req.Code == 0 {
 			req.Code = 200
 		}
-		if err := c.RunSvc.MarkSuccess(r.Context(), runID, req.Code, req.Body); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
+		svcErr = c.RunSvc.MarkSuccess(r.Context(), runID, req.Code, req.Body)
 	case "failed_timeout":
-		if err := c.RunSvc.MarkFailedTimeout(r.Context(), runID, defaultOr(req.Error, "callback_deadline_exceeded")); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
+		svcErr = c.RunSvc.MarkFailedTimeout(r.Context(), runID, defaultOr(req.Error, "callback_deadline_exceeded"))
 	case "failed":
-		if err := c.RunSvc.MarkCallbackFailed(r.Context(), runID, defaultOr(req.Error, "callback_failed")); err != nil {
-			writeErr(w, 500, err.Error())
-			return
-		}
+		svcErr = c.RunSvc.MarkCallbackFailed(r.Context(), runID, defaultOr(req.Error, "callback_failed"))
 	default:
 		writeErr(w, 400, "invalid_result")
 		return
 	}
 	// progress cleanup deferred to scanner (removed Clear)
+	if svcErr != nil {
+		// Return 200 with an error payload to indicate the callback was accepted but internal processing failed
+		writeJSON(w, map[string]any{"updated": false, "error": svcErr.Error()})
+		return
+	}
 	writeJSON(w, map[string]any{"updated": true})
 }
 
