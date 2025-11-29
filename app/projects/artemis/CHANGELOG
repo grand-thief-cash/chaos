@@ -1,7 +1,10 @@
 # VERSION
-v0.2.1
+v0.2.2
 
 # Changelog
+- v0.2.2
+    - Added auto-deploy scripts.
+    - Added docker file and docker compose file.
 - v0.2.1
     - Added stub for stats and enable stats in response.
     - Added stock_zh_a_hist as sample task in examples folder.

@@ -1,0 +1,17 @@
+services:
+  artemis:
+    image: artemis:v0.1.0
+    container_name: artemis
+    restart: unless-stopped
+    ports:
+      - "8084:8084"
+    volumes:
+      - /home/machine/data_volume/artemis/config:/app/config
+      - /home/machine/data_volume/artemis/logs:/app/logs
+    environment:
+      - ENV=production
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
