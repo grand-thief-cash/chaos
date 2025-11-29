@@ -1,10 +1,26 @@
 # VERSION
-v0.1.3
+v0.2.2
 
 # Changelog
+- v0.2.2
+    - Added auto-deploy scripts.
+    - Added docker file and docker compose file.
+- v0.2.1
+    - Added stub for stats and enable stats in response.
+    - Added stock_zh_a_hist as sample task in examples folder.
+    - Added _report_progress in parent task.
+    - Added task check in api route.
+    - Fixed bug of unable passing through exception to http response.
+- v0.2.0
+    - Re-designed the task engine and task workflow.
+    - Simple task run and hierarchical task run supported.
+    - Task parameterized execution supported.
+    - Removed unused sources & sink packages.
+    - Optimized BaseTaskUnit logic and make log more clear.
+    - Extracted task status to ENUM and replaced magic numbers with ENUM.
 - v0.1.3
     - Added global callback to notify cronjob results & progress.
-    - Added overwrited config for cronjob ip/port.
+    - Added overwrite config for cronjob ip/port.
     - Made Artemis and cronjob compatible with each other.
     - Added SYNC/ASYNC mode for task execution.
 - v0.1.2
