@@ -4,7 +4,6 @@ from fastapi import FastAPI
 
 import artemis.task_units.examples.long_task  # noqa
 # Import task units to populate registry
-import artemis.task_units.market.pull_stock_quotes.unit  # noqa
 from artemis.api.http_gateway.routes import router  # registers tasks
 from artemis.core.config import init_config, get_config
 from artemis.log.logger import reconfigure_logging

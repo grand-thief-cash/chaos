@@ -8,6 +8,8 @@ _CONFIG: Dict[str, Any] = {}
 _CONFIG_PATH: Optional[Path] = None
 _ENV: Optional[str] = None
 
+_TASK_VARIANTS_CACHE: Dict[str, Any] = {}
+
 _DEF_PATH_PRIMARY = Path(__file__).parent.parent / 'config' / 'config.yaml'
 _DEF_PATH_SECONDARY = Path(__file__).parent.parent.parent / 'config' / 'config.yaml'
 
@@ -112,3 +114,59 @@ def http_client_config() -> Dict[str, Any]:
 
 def callback_config() -> Dict[str, Any]:
     return get_config().get('callback', {}) or {}
+
+
+_TASK_YAML_PATHS = [
+    Path(__file__).parent.parent / 'config' / 'task.yaml',
+    Path(__file__).parent.parent.parent / 'config' / 'task.yaml',
+]
+
+
+def _load_task_yaml() -> Dict[str, Any]:
+    global _TASK_VARIANTS_CACHE
+    if _TASK_VARIANTS_CACHE:
+        return _TASK_VARIANTS_CACHE
+    for p in _TASK_YAML_PATHS:
+        try:
+            if p.exists():
+                with open(p, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f) or {}
+                    # expect structure: { tasks: { <task_code>: { variants: [ { match: {...}, config: {...} } ] } } }
+                    tasks = (data.get('tasks') or {})
+                    norm: Dict[str, Any] = {}
+                    for code, node in tasks.items():
+                        variants = []
+                        if isinstance(node, dict):
+                            variants = node.get('variants') or []
+                        elif isinstance(node, list):
+                            # backward-compat: list of entries with 'when' or 'match'
+                            variants = node
+                        norm[code] = variants
+                    _TASK_VARIANTS_CACHE = norm
+                    return _TASK_VARIANTS_CACHE
+        except Exception:
+            continue
+    _TASK_VARIANTS_CACHE = {}
+    return _TASK_VARIANTS_CACHE
+
+
+def task_variant(task_code: str, incoming_params: Dict[str, Any]) -> Dict[str, Any]:
+    variants_root = _load_task_yaml()
+    candidates = (variants_root.get(task_code) or [])
+    if not candidates:
+        return {}
+    # Policy: if only one variant exists, accept it without strict match
+    if len(candidates) == 1:
+        return candidates[0].get('config') or {}
+    matches = []
+    for v in candidates:
+        cond = v.get('match') or v.get('when') or {}
+        # require full match of all keys when multiple variants exist
+        if all(incoming_params.get(k) == val for k, val in cond.items()):
+            matches.append(v)
+    if len(matches) == 1:
+        return matches[0].get('config') or {}
+    elif len(matches) == 0:
+        raise ValueError(f"No variant matched for task '{task_code}'")
+    else:
+        raise ValueError(f"Multiple variants matched for task '{task_code}'")

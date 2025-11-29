@@ -1,0 +1,25 @@
+tasks:
+  long_task_example:
+    variants:
+      - match: { mode: "fast" }
+        config:
+          total: 20
+      - match: { mode: "full" }
+        config:
+          total: 50
+  a_share_pull_parent:
+    variants:
+      # 日线 + 不复权
+      - match: { period: "daily", adjust: "" }
+        config:
+          # 子任务使用的基础开始日期，子任务会进一步结合 last_update 计算
+          start_date: "20200101"
+          sink:
+            url: "http://mock-sink.local/ingest"
+      # 日线 + 前复权
+      - match: { period: "daily", adjust: "qfq" }
+        config:
+          start_date: "20200101"
+          sink:
+            url: "http://mock-sink.local/ingest-qfq"
+      # 其他 period/adjust 组合可按需扩展

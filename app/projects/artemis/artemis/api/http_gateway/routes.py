@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from artemis.core.task_engine import TaskEngine
-from artemis.core.task_registry import list_tasks
+from artemis.core.task_registry import list_tasks, get as get_task  # import get for existence check
 from artemis.log.logger import get_logger
 
 router = APIRouter()
@@ -20,6 +20,17 @@ async def tasks():
 
 @router.post('/tasks/{task_code}/run')
 async def run_task(task_code: str, envelope: RunEnvelope, request: Request):
+    """Run a task either synchronously or asynchronously.
+
+    在 HTTP 入口处首先校验 task_code 是否已注册：
+    - 若不存在，直接返回 404，而不是等到 TaskEngine._execute 再发现。
+    - 若存在，再根据 exec_type 调用 run / run_async。
+    """
+    # 先检查任务是否存在
+    if not get_task(task_code):
+        logger.warning({'event': 'task_not_found', 'task_code': task_code})
+        raise HTTPException(status_code=404, detail=f"task '{task_code}' not found")
+
     meta = envelope.meta or {}
     body = envelope.body
     params = body if isinstance(body, dict) else {}
