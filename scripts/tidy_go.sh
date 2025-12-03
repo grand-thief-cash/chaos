@@ -13,6 +13,7 @@ paths=(
     "app/poc/infra/go/client"
     "app/poc/projects/cronjob"
     "app/projects/cronjob"
+    "app/projects/mimir"
 )
 
 # 遍历路径数组并执行 go mod tidy
