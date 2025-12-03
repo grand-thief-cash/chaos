@@ -1,7 +1,9 @@
 # VERSION
-v0.2.1
+v0.3.0
 
 # Changelog
+- v0.3.0
+    - Added stock list fetch for stock ZH
 - v0.2.1
     - Added stub for stats and enable stats in response.
     - Added stock_zh_a_hist as sample task in examples folder.

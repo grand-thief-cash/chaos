@@ -23,3 +23,16 @@ tasks:
           sink:
             url: "http://mock-sink.local/ingest-qfq"
       # 其他 period/adjust 组合可按需扩展
+  stock_a_list_daily:
+    variants:
+      - match: { exchange: "SH" }
+        config:
+          # 上交所 A 股列表
+          exchange: "SH"
+      - match: { exchange: "SZ" }
+        config:
+          # 深交所 A 股列表
+          exchange: "SZ"
+      - match: { exchange: "BJ" }
+        config:
+          exchange: "BJ"
