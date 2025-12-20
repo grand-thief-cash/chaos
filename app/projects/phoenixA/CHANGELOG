@@ -1,6 +1,8 @@
 # VERSION
-- v0.1.0
+- v0.1.1
 
 # Changelog
+- v0.1.1
+    - Added first data schema: stock zh a list.
 - v0.1.0
     - Initial structure of the phoenixA project.
