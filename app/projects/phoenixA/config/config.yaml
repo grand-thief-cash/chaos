@@ -19,7 +19,7 @@ logging:
 mysql_gorm:
   enabled: true
   data_sources:
-    cronjob:
+    security:
       host: 127.0.0.1
       port: 13306
       user: root
@@ -28,7 +28,7 @@ mysql_gorm:
       max_open_conns: 3
       max_idle_conns: 5
       ping_on_start: true
-      migrate_enabled: false
+      migrate_enabled: true
       migrate_dir: ./migrations
 
 http_server:
@@ -43,10 +43,8 @@ http_server:
 telemetry:
   enabled: true
   service_name: demo-service
-  exporter: stdout         # stdout|otlp
-  sample_ratio: 0        # 0~1; adjust for sampling
+  exporter: none           # none|stdout|otlp
+  sample_ratio: 0          # 0~1; adjust for sampling
   stdout_pretty: false     # false keeps exporter output compact
-  stdout_file: ./logs/telemetry.log
 
 biz_config:
-
