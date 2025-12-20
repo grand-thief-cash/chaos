@@ -1,7 +1,11 @@
 # VERSION
-v0.3.0
+v0.3.1
 
 # Changelog
+- v0.3.1
+    - Added control of OTEL
+    - Added middleware to process traceid
+    - Changed some logs of task framework
 - v0.3.0
     - Added stock list fetch for stock ZH
 - v0.2.2
