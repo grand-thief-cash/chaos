@@ -1,0 +1,300 @@
+openapi: 3.0.3
+info:
+  title: phoenixA - zh stock_list API
+  version: 0.1.0
+  description: |
+    Data platform API for China A-share stock list.
+servers:
+  - url: http://localhost:18085
+paths:
+  /api/v1/zh/stock_list/:
+    get:
+      summary: List stock_list
+      parameters:
+        - in: query
+          name: exchange
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 2
+          description: Exchange (SH/SZ/BJ)
+        - in: query
+          name: code
+          schema:
+            type: string
+            pattern: '^[0-9]{6}$'
+          description: Stock code (6 digits)
+        - in: query
+          name: company
+          schema:
+            type: string
+          description: Company name (LIKE match)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 0
+          description: Page size
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+          description: Page offset
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockListResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a stock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Stock'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/zh/stock_list/count:
+    get:
+      summary: Count stocks
+      parameters:
+        - in: query
+          name: exchange
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 2
+        - in: query
+          name: code
+          schema:
+            type: string
+            pattern: '^[0-9]{6}$'
+        - in: query
+          name: company
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/zh/stock_list/batch_upsert:
+    post:
+      summary: Batch upsert stocks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Stock'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RowsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/zh/stock_list/all:
+    delete:
+      summary: Delete all stocks
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RowsResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/zh/stock_list/{code}:
+    get:
+      summary: Get stock by code
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]{6}$'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: Update stock by code
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]{6}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockUpdate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      summary: Update stock by code (partial)
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]{6}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockUpdate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    Stock:
+      type: object
+      required: [code, company, exchange]
+      properties:
+        code:
+          type: string
+          description: 6-digit stock code
+          pattern: '^[0-9]{6}$'
+        company:
+          type: string
+        exchange:
+          type: string
+          description: SH/SZ/BJ
+          minLength: 2
+          maxLength: 2
+    StockUpdate:
+      type: object
+      properties:
+        company:
+          type: string
+        exchange:
+          type: string
+          minLength: 2
+          maxLength: 2
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    OkResponse:
+      type: object
+      properties:
+        data:
+          type: string
+          example: ok
+    RowsResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            rows:
+              type: integer
+              format: int64
+    CountResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            count:
+              type: integer
+              format: int64
+    StockResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Stock'
+    StockListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Stock'
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+

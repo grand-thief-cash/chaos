@@ -19,12 +19,12 @@ logging:
 mysql_gorm:
   enabled: true
   data_sources:
-    cronjob:
+    security:
       host: 127.0.0.1
       port: 13306
       user: root
       password: 123456
-      database: cronjob_dev
+      database: security
       max_open_conns: 3
       max_idle_conns: 5
       ping_on_start: true
@@ -33,7 +33,7 @@ mysql_gorm:
 
 http_server:
   enabled: true
-  address: ":9999"
+  address: ":18085"
   read_timeout: 10s
   write_timeout: 10s
   idle_timeout: 60s
@@ -49,21 +49,4 @@ telemetry:
   stdout_file: ./logs/telemetry.log
 
 biz_config:
-  scheduler:
-    poll_interval: 60s
-  executor:
-    worker_pool_size: 1
-    request_timeout: 60s
-  scanner:
-    interval: 30s
-    batch_limit: 500
-    sync_run_stuck_timeout_seconds: 900          # 超过此执行秒数仍 RUNNING (同步) 视为卡死; 0 关闭
-    progress_cleanup_grace_seconds: 60           # 终止状态后延迟清理进度; 0 立即
-  cleanup:
-    enabled: false
-    interval: 1h
-    max_age: 720h       # 30 days
-    max_per_task: 1000  # keep recent 1000 per task
-  callback_endpoints:
-    progress_path: "/api/v1/runs/{run_id}/progress"
-    callback_path: "/api/v1/runs/{run_id}/callback"
+
