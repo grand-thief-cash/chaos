@@ -6,6 +6,7 @@ import "time"
 type ExporterType string
 
 const (
+	ExporterNone   ExporterType = "none"
 	ExporterStdout ExporterType = "stdout"
 	ExporterOTLP   ExporterType = "otlp"
 )
@@ -32,7 +33,12 @@ func (c *Config) applyDefaults() {
 		c.SampleRatio = 1.0
 	}
 	if c.Exporter == "" {
-		c.Exporter = ExporterStdout
+		// Prefer OTLP if endpoint is configured; otherwise default to no-op to avoid surprising log/file spam.
+		if c.OTLP != nil && c.OTLP.Endpoint != "" {
+			c.Exporter = ExporterOTLP
+		} else {
+			c.Exporter = ExporterNone
+		}
 	}
 	if c.OTLP != nil && c.OTLP.Timeout == "" {
 		c.OTLP.Timeout = "5s"
