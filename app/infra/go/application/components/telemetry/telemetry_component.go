@@ -20,6 +20,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
@@ -117,6 +118,16 @@ func (tc *TelemetryComponent) Start(ctx context.Context) error {
 	return nil
 }
 func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Resource) error {
+	// Explicit no-op exporter: keep tracing APIs usable but emit nothing.
+	if tc.cfg.Exporter == ExporterNone {
+		tc.tp = sdktrace.NewTracerProvider(
+			sdktrace.WithResource(res),
+			sdktrace.WithSampler(sdktrace.NeverSample()),
+		)
+		// No shutdown func needed; provider has no exporter/batcher.
+		return nil
+	}
+
 	var (
 		exp sdktrace.SpanExporter
 		err error
@@ -171,6 +182,14 @@ func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Res
 }
 
 func (tc *TelemetryComponent) initMetrics(ctx context.Context, res *resource.Resource) error {
+	// Explicit no-op exporter: keep metrics APIs usable but emit nothing.
+	if tc.cfg.Exporter == ExporterNone {
+		tc.mp = sdkmetric.NewMeterProvider(
+			sdkmetric.WithResource(res),
+		)
+		return nil
+	}
+
 	var (
 		err  error
 		mExp sdkmetric.Exporter
@@ -271,7 +290,7 @@ func (tc *TelemetryComponent) HealthCheck() error {
 
 func (tc *TelemetryComponent) Tracer(name string) trace.Tracer {
 	if tc.tp == nil {
-		return otel.Tracer(name)
+		return noop.NewTracerProvider().Tracer(name)
 	}
 	return tc.tp.Tracer(name)
 }
