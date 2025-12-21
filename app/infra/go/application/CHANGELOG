@@ -1,7 +1,9 @@
 # VERSION
-v0.16.1
+v0.16.2
 
 # Changelog
+- v0.16.2
+    - Added non-export in telemetry component
 - v0.16.1
     - Allow all origins and common methods/headers in http server
 - v0.16.0
