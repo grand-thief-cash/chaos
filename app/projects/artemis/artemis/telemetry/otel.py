@@ -78,6 +78,11 @@ def init_otel() -> bool:
     provider = TracerProvider(resource=resource, sampler=sampler)
     trace.set_tracer_provider(provider)
 
+    # Set global propagator to W3C Trace Context (standard)
+    from opentelemetry.propagate import set_global_textmap
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+    set_global_textmap(TraceContextTextMapPropagator())
+
     otlp_cfg = cfg.get('otlp') or {}
     protocol = (otlp_cfg.get('protocol') or 'http').lower()
     endpoint = otlp_cfg.get('endpoint') or os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT') or ''

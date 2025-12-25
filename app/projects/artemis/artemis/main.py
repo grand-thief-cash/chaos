@@ -48,4 +48,4 @@ if __name__ == '__main__':
     server_cfg = cfg.get('server', {}) or {}
     host = server_cfg.get('host', '0.0.0.0')
     port = int(server_cfg.get('port', 8000))
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, access_log=False)

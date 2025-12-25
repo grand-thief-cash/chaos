@@ -11,14 +11,37 @@ _reconfigurable_handler: logging.Handler | None = None
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        # Try to get trace info from OTEL
+        trace_id, span_id = None, None
+        try:
+            from artemis.telemetry.otel import current_trace_ids
+            ids = current_trace_ids()
+            trace_id = ids.get('trace_id')
+            span_id = ids.get('span_id')
+        except (ImportError, Exception):
+            pass
+
         base: Dict[str, Any] = {
             'timestamp': self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             'level': record.levelname.lower(),
             'logger': record.name,
-            'message': record.getMessage(),
         }
+
+        if trace_id:
+            base['trace_id'] = trace_id
+        if span_id:
+            base['span_id'] = span_id
+
+        # Handle message
+        msg_obj = record.msg
+        if isinstance(msg_obj, dict):
+            base['message'] = msg_obj
+        else:
+            base['message'] = record.getMessage()
+
         if isinstance(record.args, dict):
             base.update(record.args)
+
         cfg = logging_config()
         if cfg.get('include_caller', True):
             pathname = record.pathname
@@ -27,10 +50,7 @@ class JsonFormatter(logging.Formatter):
             except ValueError:
                 pass
             base['caller'] = f"{pathname}:{record.lineno}"
-        # if 'run_id' in base or 'task_code' in base:
-        #     base['event_type'] = 'task'
-        # else:
-        #     base['event_type'] = 'log'
+
         return json.dumps(base, ensure_ascii=False)
 
 def _apply_config(force: bool = False):

@@ -71,7 +71,7 @@ async def run_task(task_code: str, request: Request):
             {
                 'event': 'task_run_dispatched',
                 'task_code': task_code,
-                'exec_type': meta.exec_type,
+                'exec_type': meta.get('exec_type'),
                 'result': result,
             },
         )

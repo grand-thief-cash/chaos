@@ -27,6 +27,10 @@ class TaskContext:
         self.logger = None  # will be injected
         self.callback = None  # will hold callback client (Noop or HTTP)
 
+    @property
+    def async_mode(self) -> bool:
+        return self.exec_type == 'ASYNC'
+
     def set_logger(self, logger):
         self.logger = logger
 

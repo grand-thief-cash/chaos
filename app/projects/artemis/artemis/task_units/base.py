@@ -55,6 +55,7 @@ class BaseTaskUnit:
         except Exception as e:
             duration_ms = int((time.time() - start) * 1000)
             if ctx.logger:
+                # trace_id/span_id are now auto-injected by JsonFormatter
                 ctx.logger.error({'event': 'phase', 'phase': name, 'action': 'error', 'error': str(e), 'duration_ms': duration_ms, 'run_id': ctx.run_id})
             raise
         duration_ms = int((time.time() - start) * 1000)
