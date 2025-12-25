@@ -141,7 +141,7 @@ def _safe_parse_port(p: str) -> int:
     return 80
 
 
-def build_callback_client(params: Dict[str, Any], logger: Any = None, headers: Dict[str, Any] | None = None) -> BaseCallbackClient:
+def build_callback_client(params: Dict[str, Any], logger: Any = None) -> BaseCallbackClient:
     meta = params.get('_meta') if isinstance(params, dict) else None
     if not isinstance(meta, dict):
         return NoopCallbackClient()

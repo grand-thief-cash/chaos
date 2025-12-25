@@ -16,9 +16,9 @@ class TaskContext:
         self.end_ts: Optional[float] = None
         self.status: str = TaskStatus.PENDING.value
         self.error: Optional[str] = None
-        meta = (self.incoming_params.get('_meta') or {})
-        self.run_id: Optional[str] = meta.get('run_id')
-        self.task_id: Optional[str] = meta.get('task_id')
+        meta = (self.incoming_params.get('meta') or {})
+        self.run_id: Optional[int] = meta.get('run_id')
+        self.task_id: Optional[int] = meta.get('task_id')
         self.exec_type: Optional[str] = meta.get('exec_type')
         self.callback_endpoints: Dict[str, Any] = meta.get('callback_endpoints') or {}
         self.children_total: int = 0

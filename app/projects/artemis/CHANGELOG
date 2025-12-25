@@ -1,7 +1,12 @@
 # VERSION
-v0.3.1
+v0.3.2
 
 # Changelog
+- v0.3.2
+    - Optimized router api logic and removed useless code.
+    - Optimized logger: removed event_type in logger base.
+    - Fixed caller to use real project path rather than os path.
+    - Removed task_meta from models
 - v0.3.1
     - Added control of OTEL
     - Added middleware to process traceid

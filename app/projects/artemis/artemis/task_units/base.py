@@ -1,6 +1,7 @@
 import time
 from typing import Any, Dict
 
+from artemis.core.config import task_default, task_variant
 from artemis.core.context import TaskContext
 from artemis.core.task_status import TaskStatus
 
@@ -16,7 +17,6 @@ class BaseTaskUnit:
 
     def merge_parameters(self, ctx: TaskContext, dynamic_params: Dict[str, Any]):
         # merge defaults + variant + incoming + dynamic
-        from artemis.core.config import task_default, task_variant
         defaults = task_default(ctx.task_code)
         # strict policy: task_variant may raise; let it bubble to fail the phase
         variant_cfg = task_variant(ctx.task_code, ctx.incoming_params)
