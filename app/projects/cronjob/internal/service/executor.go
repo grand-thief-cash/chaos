@@ -263,10 +263,15 @@ func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *mode
 	progressPath = strings.ReplaceAll(progressPath, "{run_id}", fmt.Sprintf("%d", run.ID))
 	callbackPath = strings.ReplaceAll(callbackPath, "{run_id}", fmt.Sprintf("%d", run.ID))
 	meta := map[string]any{
-		"run_id":             run.ID,
-		"task_id":            task.ID,
-		"exec_type":          task.ExecType,
-		"callback_endpoints": map[string]any{"progress": progressPath, "callback": callbackPath},
+		"run_id":    run.ID,
+		"task_id":   task.ID,
+		"exec_type": task.ExecType,
+		"callback_endpoints": map[string]any{
+			"progress":      progressPath,
+			"callback":      callbackPath,
+			"callback_ip":   bizConsts.LocalIP,
+			"callback_port": application.GetApp().GetConfig().HTTPServer.Address,
+		},
 	}
 	// B: 业务 body, 来自 task.BodyTemplate (保留原始字符串或 JSON)
 	var bodyVal any = nil
@@ -291,8 +296,8 @@ func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *mode
 	}
 	// Headers: caller identity
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Caller-IP", bizConsts.LocalIP)
-	req.Header.Set("X-Caller-Port", application.GetApp().GetConfig().HTTPServer.Address)
+	//req.Header.Set("X-Caller-IP", bizConsts.LocalIP)
+	//req.Header.Set("X-Caller-Port", application.GetApp().GetConfig().HTTPServer.Address)
 	return req, nil
 }
 

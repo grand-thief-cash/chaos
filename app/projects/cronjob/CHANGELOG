@@ -1,7 +1,10 @@
 # VERSION
-v0.12.10
+v0.12.11
 
 # Changelog
+- v0.12.11
+    - Removed callback ip & port from header of cronjob executor request and set them in meta.
+    - Upgraded infra version to v0.16.2
 - v0.12.10
     - Adjusted the failure judgement logic in executor: Failed/succeed is determined by response code and msg together.
 - v0.12.9
