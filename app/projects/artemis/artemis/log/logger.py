@@ -1,6 +1,6 @@
-import inspect
 import json
 import logging
+import os
 import sys
 from typing import Any, Dict
 
@@ -21,14 +21,16 @@ class JsonFormatter(logging.Formatter):
             base.update(record.args)
         cfg = logging_config()
         if cfg.get('include_caller', True):
-            frame = record.__dict__.get('frame') or inspect.currentframe()
-            if frame:
-                fi = inspect.getframeinfo(frame)
-                base['caller'] = f"{fi.filename}:{fi.lineno}"
-        if 'run_id' in base or 'task_code' in base:
-            base['event_type'] = 'task'
-        else:
-            base['event_type'] = 'log'
+            pathname = record.pathname
+            try:
+                pathname = os.path.relpath(pathname)
+            except ValueError:
+                pass
+            base['caller'] = f"{pathname}:{record.lineno}"
+        # if 'run_id' in base or 'task_code' in base:
+        #     base['event_type'] = 'task'
+        # else:
+        #     base['event_type'] = 'log'
         return json.dumps(base, ensure_ascii=False)
 
 def _apply_config(force: bool = False):
