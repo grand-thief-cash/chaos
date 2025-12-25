@@ -1,7 +1,11 @@
 # VERSION
-v0.3.2
+v0.3.3
 
 # Changelog
+- v0.3.3
+    - Optimized logger output: Removed traceid & spanid from message field.
+    - Added generation of traceid/spanid in logger when missing, this also compatible with go framework.
+    - Remove useless TraceLogger.
 - v0.3.2
     - Optimized router api logic and removed useless code.
     - Optimized logger: removed event_type in logger base.

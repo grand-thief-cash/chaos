@@ -3,7 +3,6 @@ import threading
 
 from artemis.callback.client import build_callback_client
 from artemis.log.logger import get_logger
-from artemis.log.trace_logger import build_context_logger
 from . import task_registry
 from .context import TaskContext
 from .task_status import TaskStatus  # added for status checks
@@ -50,12 +49,12 @@ class TaskEngine:
             cls = task_registry.get(ctx.task_code)
             if not cls:
                 # 理论上在 HTTP 入口处已经做过校验，这里是兜底防御
-                self.logger.error({'event': 'task_not_found', 'task_code': task_code})
+                self.logger.error({'event': 'task_not_found', 'task_code': ctx.task_code})
                 if async_mode:
                     return None
                 raise ValueError(f"task '{ctx.task_code}' not found")
             base_logger = get_logger(ctx.task_code)
-            ctx.set_logger(build_context_logger(base_logger, ctx))
+            ctx.set_logger(base_logger)
             try:
                 ctx.callback = build_callback_client(ctx.incoming_params, logger=ctx.logger)
             except Exception as e:

@@ -1,7 +1,12 @@
 from fastapi import FastAPI, Request
+from starlette.datastructures import MutableHeaders
+import uuid
+import time
 
 from artemis.telemetry.otel import current_trace_ids
-from artemis.telemetry.tracing import extract_trace
+from artemis.log.logger import get_logger
+
+logger = get_logger("http_access")
 
 
 def add_trace_id_middleware(app: FastAPI) -> None:
@@ -16,31 +21,70 @@ def add_trace_id_middleware(app: FastAPI) -> None:
 
     @app.middleware("http")
     async def add_trace_id_header(request: Request, call_next):  # type: ignore[unused-ignore]
-        # 1) 先让业务逻辑/其他中间件处理请求
+        start_time = time.time()
+
+        # 1) Check/Generate trace context
+        traceparent = request.headers.get("traceparent")
+        trace_id = request.headers.get("X-Trace-Id")
+
+        inject_headers = False
+        new_traceparent = None
+
+        if not traceparent:
+            # No standard traceparent.
+            # If we have X-Trace-Id, try to use it.
+            if trace_id:
+                # Validate length (simple check)
+                if len(trace_id) != 32:
+                    # Invalid length for W3C, generate new one for OTEL
+                    trace_id = uuid.uuid4().hex
+            else:
+                # No trace_id either. Generate one.
+                trace_id = uuid.uuid4().hex
+
+            # Create a dummy parent span ID to form a valid traceparent
+            # This forces OTEL to use our trace_id
+            span_id = uuid.uuid4().hex[:16]
+            new_traceparent = f"00-{trace_id}-{span_id}-01"
+            inject_headers = True
+
+        if inject_headers and new_traceparent:
+            # Modify request headers
+            headers = MutableHeaders(scope=request.scope)
+            headers["traceparent"] = new_traceparent
+            if "X-Trace-Id" not in headers:
+                headers["X-Trace-Id"] = trace_id
+
+        # 2) Process request
         response = await call_next(request)
 
-        trace_id = None
-
-        # 2) 优先从 OTEL 当前 span 中拿 trace_id
+        # 3) Add headers to response
+        # Get the actual trace_id from OTEL context
         ids = current_trace_ids()
-        if ids:
-            trace_id = ids.get("trace_id")
+        final_trace_id = ids.get("trace_id")
+        final_span_id = ids.get("span_id")
 
-        # 3) 如果当前没有有效 span，则从 traceparent 抽取或生成一个 trace_id
-        if not trace_id:
-            try:
-                headers_dict = dict(request.headers)
-                ctx = extract_trace(headers_dict)
-                trace_id = ctx.trace_id
-            except Exception:
-                trace_id = None
+        # Fallback to our generated trace_id if OTEL didn't pick up
+        if not final_trace_id and trace_id:
+            final_trace_id = trace_id
 
-        # 4) 写入响应头，不影响原有 Response 类型/内容
-        if trace_id:
+        if final_trace_id:
             try:
-                response.headers["X-Trace-Id"] = trace_id
+                response.headers["X-Trace-Id"] = final_trace_id
+                if final_span_id:
+                    response.headers["traceparent"] = f"00-{final_trace_id}-{final_span_id}-01"
             except Exception:
-                # 不允许 tracing 影响主流程
                 pass
+
+        # 4) Log access
+        duration_ms = int((time.time() - start_time) * 1000)
+        logger.info({
+            "event": "http_request",
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": duration_ms,
+            "client_ip": request.client.host if request.client else None
+        })
 
         return response

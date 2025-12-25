@@ -52,9 +52,8 @@ class HTTPCallbackClient(BaseCallbackClient):
         self.callback_url = base + callback_path
         self.logger = logger
         self._finalized = False
-        self._traceparent = self._build_traceparent()
 
-    def _build_traceparent(self) -> Optional[str]:
+    def _get_traceparent(self) -> Optional[str]:
         if not trace:
             return None
         try:
@@ -68,8 +67,9 @@ class HTTPCallbackClient(BaseCallbackClient):
 
     def _headers(self) -> Dict[str, str]:
         h = {'Content-Type': 'application/json'}
-        if self._traceparent:
-            h['traceparent'] = self._traceparent
+        tp = self._get_traceparent()
+        if tp:
+            h['traceparent'] = tp
         return h
 
     def _post(self, url: str, payload: Dict[str, Any]) -> bool:
