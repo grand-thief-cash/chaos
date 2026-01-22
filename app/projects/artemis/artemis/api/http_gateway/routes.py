@@ -1,64 +1,44 @@
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
 
+# 确保task注册代码执行
+import artemis.task_units  # noqa: F401 registers tasks
+from artemis.core import registry
 from artemis.core.task_engine import TaskEngine
-from artemis.core.task_registry import list_tasks, get as get_task  # import get for existence check
 from artemis.log.logger import get_logger
+from artemis.models import TaskRunReq
 
 router = APIRouter()
 engine = TaskEngine()
 logger = get_logger('http.routes')
 
-class RunEnvelope(BaseModel):
-    meta: dict
-    body: dict | str | None = None
-
 @router.get('/tasks')
 async def tasks():
     logger.info("/task list requested")
-    return {'tasks': list_tasks()}
+    return {'tasks': registry.list_tasks()}
 
-@router.post('/tasks/{task_code}/run')
-async def run_task(task_code: str, envelope: RunEnvelope, request: Request):
+
+@router.post('/tasks/run')
+async def run_task(request: Request):
     """Run a task either synchronously or asynchronously.
 
-    在 HTTP 入口处首先校验 task_code 是否已注册：
-    - 若不存在，直接返回 404，而不是等到 TaskEngine._execute 再发现。
-    - 若存在，再根据 exec_type 调用 run / run_async。
+    入参由 cronjob 构建：{"meta": {...}, "body": ...}
+    我们在这里统一反序列化/校验/兼容 legacy，然后再交给 TaskEngine。
     """
+    payload = await request.json()
+    task_run_req = TaskRunReq.model_validate(payload)
+
     # 先检查任务是否存在
-    if not get_task(task_code):
+    task_code = task_run_req.task_meta.task_code
+    if not registry.get_task(task_code):
         logger.warning({'event': 'task_not_found', 'task_code': task_code})
         raise HTTPException(status_code=404, detail=f"task '{task_code}' not found")
 
-    meta = envelope.meta or {}
-    body = envelope.body
-    params = body if isinstance(body, dict) else {}
-    exec_type = str(meta.get('exec_type', 'SYNC')).upper()
-    logger.info(
-        {
-            'event': 'task_run_request',
-            'task_code': task_code,
-            'meta_keys': list(meta.keys()),
-            'exec_type': exec_type,
-        }
-    )
+    # meta, body = validate_params(task_req)
+    logger.info({'event': 'task_run_request', "task_code":task_code, "req": task_run_req.model_dump()})
+
     try:
-        headers_dict = dict(request.headers)
-        combined = params.copy()
-        combined['_meta'] = meta
-        if exec_type == 'ASYNC':
-            result = engine.run_async(task_code, combined, headers=headers_dict)
-        else:
-            result = engine.run(task_code, combined, headers=headers_dict)
-        logger.info(
-            {
-                'event': 'task_run_dispatched',
-                'task_code': task_code,
-                'exec_type': exec_type,
-            },
-            extra={'task_code': task_code},
-        )
+        result = engine.run(task_run_req)
+        logger.info({'event': 'task_run_res','task_code': task_code,'result': result})
         return result
     except ValueError as ve:
         logger.warning(

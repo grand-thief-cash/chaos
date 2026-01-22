@@ -1,8 +1,9 @@
 import time
 from typing import Any, Dict
 
+from artemis.consts import TaskStatus
+from artemis.core import cfg_mgr
 from artemis.core.context import TaskContext
-from artemis.core.task_status import TaskStatus
 
 
 class BaseTaskUnit:
@@ -16,10 +17,9 @@ class BaseTaskUnit:
 
     def merge_parameters(self, ctx: TaskContext, dynamic_params: Dict[str, Any]):
         # merge defaults + variant + incoming + dynamic
-        from artemis.core.config import task_default, task_variant
-        defaults = task_default(ctx.task_code)
+        defaults = cfg_mgr.task_default(ctx.task_code)
         # strict policy: task_variant may raise; let it bubble to fail the phase
-        variant_cfg = task_variant(ctx.task_code, ctx.incoming_params)
+        variant_cfg = cfg_mgr.task_variant(ctx.task_code, ctx.incoming_params)
         ctx.params = {**defaults, **variant_cfg, **dynamic_params, **ctx.incoming_params}
         if ctx.logger:
             ctx.logger.info({'event': 'merge_parameters', 'params_keys': list(ctx.params.keys()), 'run_id': ctx.run_id})
@@ -55,6 +55,7 @@ class BaseTaskUnit:
         except Exception as e:
             duration_ms = int((time.time() - start) * 1000)
             if ctx.logger:
+                # trace_id/span_id are now auto-injected by JsonFormatter
                 ctx.logger.error({'event': 'phase', 'phase': name, 'action': 'error', 'error': str(e), 'duration_ms': duration_ms, 'run_id': ctx.run_id})
             raise
         duration_ms = int((time.time() - start) * 1000)

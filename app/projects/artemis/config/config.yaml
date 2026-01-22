@@ -31,5 +31,5 @@ http_client:
   verify_ssl: true
   headers: {}
 callback:
-  override_host: "127.0.0.1"        # 若非空则强制使用该 host 回调 (优先级最高)
-  override_port: 9999          # 若 >0 则强制使用该端口
+  host: "127.0.0.1"        # 若非空则强制使用该 host 回调 (优先级最高)
+  port: 9999          # 若 >0 则强制使用该端口
