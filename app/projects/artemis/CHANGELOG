@@ -1,7 +1,12 @@
 # VERSION
-v0.3.3
+v0.4.0
 
 # Changelog
+- v0.4.0
+    - Simplified Task validation and optimized construction of task execution.
+    - Modelled data structures to substituted dict for better type hinting and code completion.
+    - Migrated callback to core
+    - Added consts folder to support global constants definition.
 - v0.3.3
     - Optimized logger output: Removed traceid & spanid from message field.
     - Added generation of traceid/spanid in logger when missing, this also compatible with go framework.

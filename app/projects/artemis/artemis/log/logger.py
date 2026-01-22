@@ -4,7 +4,7 @@ import os
 import sys
 from typing import Any, Dict
 
-from artemis.core.config import logging_config
+from artemis.core import cfg_mgr
 
 _config_applied = False
 _reconfigurable_handler: logging.Handler | None = None
@@ -42,8 +42,8 @@ class JsonFormatter(logging.Formatter):
         if isinstance(record.args, dict):
             base.update(record.args)
 
-        cfg = logging_config()
-        if cfg.get('include_caller', True):
+        cfg = cfg_mgr.logging_config()
+        if cfg.include_caller:
             pathname = record.pathname
             try:
                 pathname = os.path.relpath(pathname)
@@ -58,12 +58,15 @@ def _apply_config(force: bool = False):
     if _config_applied and not force:
         return
     try:
-        cfg = logging_config()
+        cfg = cfg_mgr.logging_config()
     except Exception:
-        cfg = {}
-    level = getattr(logging, cfg.get('level', 'INFO').upper(), logging.INFO)
-    fmt = cfg.get('format', 'json')
-    output = cfg.get('output', 'stdout')
+        # Fallback empty config/defaults, manual construction if needed
+        # but importing LoggingCfg here might be circular. Just use empty values.
+        cfg = cfg_mgr.LoggingCfg()
+
+    level = getattr(logging, cfg.level.upper(), logging.INFO)
+    fmt = cfg.format
+    output = cfg.output
     if output == 'stderr':
         handler = logging.StreamHandler(sys.stderr)
     else:

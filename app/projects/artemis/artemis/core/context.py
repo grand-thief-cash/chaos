@@ -1,38 +1,41 @@
 import time
 from typing import Any, Dict, Optional
 
-from .task_status import TaskStatus, ALLOWED_TASK_STATUSES
+from artemis.consts import TaskStatus
+from artemis.consts.task_status import ALLOWED_TASK_STATUSES
+from artemis.core.callback import HTTPCallbackClient, NoopCallbackClient, BaseCallbackClient
+from artemis.core.config_manager import cfg_mgr
+from artemis.core.task_registry import registry
+from artemis.log import get_logger
+from artemis.models import TaskRunReq
 
 
 class TaskContext:
     """Unified execution context carrying params, status, counters, and logger.
     """
 
-    def __init__(self, task_code: str, incoming_params: Dict[str, Any]):
-        self.task_code = task_code
-        self.incoming_params = incoming_params or {}
+    def __init__(self, task_run_req: TaskRunReq):
+        # self.task_code = task_run_req.task_meta.task_code
+        self.task_meta = task_run_req.task_meta
+        self.incoming_params = task_run_req.task_body
         self.params: Dict[str, Any] = {}
         self.start_ts = time.time()
         self.end_ts: Optional[float] = None
         self.status: str = TaskStatus.PENDING.value
         self.error: Optional[str] = None
-        meta = (self.incoming_params.get('meta') or {})
-        self.run_id: Optional[int] = meta.get('run_id')
-        self.task_id: Optional[int] = meta.get('task_id')
-        self.exec_type: Optional[str] = meta.get('exec_type')
-        self.callback_endpoints: Dict[str, Any] = meta.get('callback_endpoints') or {}
         self.children_total: int = 0
         self.children_completed: int = 0
         self.stats: Dict[str, Any] = {}
-        self.logger = None  # will be injected
-        self.callback = None  # will hold callback client (Noop or HTTP)
+        self.logger = get_logger(self.task_meta.task_code)  # will be injected
+        try:
+            self.callback = self.build_callback_client()
+        except Exception as e:
+            self.logger.warning({'event':'callback_client_init_failed','error':str(e),'task_code':self.task_code,'run_id': self.run_id})
+        self.exec_cls = registry.get_task(self.task_code)
 
-    @property
-    def async_mode(self) -> bool:
-        return self.exec_type == 'ASYNC'
 
     def set_logger(self, logger):
-        self.logger = logger
+                self.logger = logger
 
     def set_status(self, status: str):
         # validate against known statuses
@@ -75,3 +78,38 @@ class TaskContext:
 
     def is_finished(self) -> bool:
         return self.status in (TaskStatus.SUCCESS.value, TaskStatus.FAILED.value, TaskStatus.CANCELED.value, TaskStatus.SKIPPED.value)
+
+    @property
+    def run_id(self) -> int:
+        return self.task_meta.run_id
+
+    @property
+    def task_code(self) -> str:
+        return self.task_meta.task_code
+    @property
+    def async_mode(self) -> bool:
+        return self.task_meta.async_mode
+    @property
+    def exec_type(self):
+        return self.task_meta.exec_type
+    @property
+    def task_id(self) -> Optional[int]:
+        return self.task_meta.task_id
+
+
+    def build_callback_client(self) -> BaseCallbackClient:
+        progress_path = self.task_meta.callback_endpoints.progress # Correct field name based on definition
+        callback_path = self.task_meta.callback_endpoints.callback # Correct field name based on definition
+        cb_cfg = cfg_mgr.callback_config()
+        if cb_cfg:
+            host = cb_cfg.host
+            ip = cb_cfg.port
+            if host is not None and ip is not None:
+                return HTTPCallbackClient(self.run_id, host, ip, callback_path, progress_path, self.logger)
+
+        host = self.task_meta.callback_endpoints.callback_ip
+        ip = self.task_meta.callback_endpoints.callback_port
+        if host is not None and ip is not None:
+            return HTTPCallbackClient(self.run_id, host, ip, callback_path, progress_path, self.logger)
+
+        return NoopCallbackClient()

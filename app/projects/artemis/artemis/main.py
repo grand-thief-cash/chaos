@@ -2,10 +2,8 @@ import argparse
 
 from fastapi import FastAPI
 
-import artemis.task_units.examples.long_task  # noqa
-# Import task units to populate registry
 from artemis.api.http_gateway.routes import router  # registers tasks
-from artemis.core.config import init_config, get_config
+from artemis.core import cfg_mgr
 from artemis.log.logger import reconfigure_logging
 from artemis.telemetry.middleware import add_trace_id_middleware
 from artemis.telemetry.otel import instrument_fastapi_app, init_otel
@@ -42,10 +40,10 @@ if __name__ == '__main__':
     parser = build_arg_parser()
 
     args = parser.parse_args()
-    init_config(path=args.config, env=args.env)
+    cfg_mgr.init_config(path=args.config, env=args.env)
     reconfigure_logging()
-    cfg = get_config()
-    server_cfg = cfg.get('server', {}) or {}
-    host = server_cfg.get('host', '0.0.0.0')
-    port = int(server_cfg.get('port', 8000))
+    cfg = cfg_mgr.get_config()
+    server_cfg = cfg.server
+    host = server_cfg.host
+    port = server_cfg.port
     uvicorn.run(app, host=host, port=port, access_log=False)
