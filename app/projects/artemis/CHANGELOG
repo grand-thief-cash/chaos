@@ -1,7 +1,21 @@
 # VERSION
-v0.3.1
+v0.4.0
 
 # Changelog
+- v0.4.0
+    - Simplified Task validation and optimized construction of task execution.
+    - Modelled data structures to substituted dict for better type hinting and code completion.
+    - Migrated callback to core
+    - Added consts folder to support global constants definition.
+- v0.3.3
+    - Optimized logger output: Removed traceid & spanid from message field.
+    - Added generation of traceid/spanid in logger when missing, this also compatible with go framework.
+    - Remove useless TraceLogger.
+- v0.3.2
+    - Optimized router api logic and removed useless code.
+    - Optimized logger: removed event_type in logger base.
+    - Fixed caller to use real project path rather than os path.
+    - Removed task_meta from models
 - v0.3.1
     - Added control of OTEL
     - Added middleware to process traceid

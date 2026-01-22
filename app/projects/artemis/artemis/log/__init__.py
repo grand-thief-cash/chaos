@@ -1,4 +1,5 @@
-from .logger import get_logger
-from .trace_logger import build_context_logger
-__all__ = ["get_logger", "build_context_logger"]
+from artemis.log.helpers import log_event
+from artemis.log.logger import get_logger
+__all__ = ["get_logger", "log_event"]
+
 

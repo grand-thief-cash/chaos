@@ -1,34 +1,56 @@
-import inspect
 import json
 import logging
+import os
 import sys
 from typing import Any, Dict
 
-from artemis.core.config import logging_config
+from artemis.core import cfg_mgr
 
 _config_applied = False
 _reconfigurable_handler: logging.Handler | None = None
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        # Try to get trace info from OTEL
+        trace_id, span_id = None, None
+        try:
+            from artemis.telemetry.otel import current_trace_ids
+            ids = current_trace_ids()
+            trace_id = ids.get('trace_id')
+            span_id = ids.get('span_id')
+        except (ImportError, Exception):
+            pass
+
         base: Dict[str, Any] = {
             'timestamp': self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             'level': record.levelname.lower(),
             'logger': record.name,
-            'message': record.getMessage(),
         }
+
+        if trace_id:
+            base['trace_id'] = trace_id
+        if span_id:
+            base['span_id'] = span_id
+
+        # Handle message
+        msg_obj = record.msg
+        if isinstance(msg_obj, dict):
+            base['message'] = msg_obj
+        else:
+            base['message'] = record.getMessage()
+
         if isinstance(record.args, dict):
             base.update(record.args)
-        cfg = logging_config()
-        if cfg.get('include_caller', True):
-            frame = record.__dict__.get('frame') or inspect.currentframe()
-            if frame:
-                fi = inspect.getframeinfo(frame)
-                base['caller'] = f"{fi.filename}:{fi.lineno}"
-        if 'run_id' in base or 'task_code' in base:
-            base['event_type'] = 'task'
-        else:
-            base['event_type'] = 'log'
+
+        cfg = cfg_mgr.logging_config()
+        if cfg.include_caller:
+            pathname = record.pathname
+            try:
+                pathname = os.path.relpath(pathname)
+            except ValueError:
+                pass
+            base['caller'] = f"{pathname}:{record.lineno}"
+
         return json.dumps(base, ensure_ascii=False)
 
 def _apply_config(force: bool = False):
@@ -36,12 +58,15 @@ def _apply_config(force: bool = False):
     if _config_applied and not force:
         return
     try:
-        cfg = logging_config()
+        cfg = cfg_mgr.logging_config()
     except Exception:
-        cfg = {}
-    level = getattr(logging, cfg.get('level', 'INFO').upper(), logging.INFO)
-    fmt = cfg.get('format', 'json')
-    output = cfg.get('output', 'stdout')
+        # Fallback empty config/defaults, manual construction if needed
+        # but importing LoggingCfg here might be circular. Just use empty values.
+        cfg = cfg_mgr.LoggingCfg()
+
+    level = getattr(logging, cfg.level.upper(), logging.INFO)
+    fmt = cfg.format
+    output = cfg.output
     if output == 'stderr':
         handler = logging.StreamHandler(sys.stderr)
     else:

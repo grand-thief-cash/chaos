@@ -1,11 +1,11 @@
 from typing import Any, Dict
 
-from akshare import stock_sh_a_spot_em, stock_sz_a_spot_em, stock_bj_a_spot_em
+import pandas as pd
 
 from artemis.task_units.base import BaseTaskUnit
 
 
-class StockAListDailyTask(BaseTaskUnit):
+class StockZHAListDailyTask(BaseTaskUnit):
     """单任务：每日刷新 A 股列表（上交所/深交所）。
 
     参数约定（ctx.params 最终形态）：
@@ -42,12 +42,18 @@ class StockAListDailyTask(BaseTaskUnit):
         exchange = params.get("exchange")
 
         try:
+            # if exchange == "SH":
+            #     df = stock_sh_a_spot_em()
+            # elif exchange == "SZ":
+            #     df = stock_sz_a_spot_em()
+            # elif exchange == "BJ":
+            #     df = stock_bj_a_spot_em()
             if exchange == "SH":
-                df = stock_sh_a_spot_em()
+                df = pd.DataFrame([{"代码": "600000", "名称": "浦发银行"}])
             elif exchange == "SZ":
-                df = stock_sz_a_spot_em()
+                df = pd.DataFrame([{"代码": "000001", "名称": "平安银行"}])
             elif exchange == "BJ":
-                df = stock_bj_a_spot_em()
+                df = pd.DataFrame([{"代码": "430047", "名称": "创新层"}])
         except Exception as e:
             ctx.logger.error({
                 "event": "stock_a_list_daily_execute_error",
@@ -85,8 +91,4 @@ class StockAListDailyTask(BaseTaskUnit):
 
         ctx.stats["exchange"] = exchange
         ctx.stats["row_count"] = int(count or 0)
-
-
-# register
-
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from artemis.core.config import telemetry_config, environment
+from artemis.core import cfg_mgr
 from artemis.log.logger import get_logger
 
 _OTEL_INITIALIZED = False
@@ -24,8 +24,8 @@ def init_otel() -> bool:
     global _OTEL_INITIALIZED, _meter, _task_duration_hist, _task_run_counter, _task_error_counter
     if _OTEL_INITIALIZED:
         return True
-    cfg = telemetry_config()
-    if not cfg.get('enabled', True):
+    cfg = cfg_mgr.telemetry_config()
+    if not cfg.enabled:
         return False
     log = get_logger('telemetry')
     try:
@@ -43,8 +43,8 @@ def init_otel() -> bool:
     except ImportError:
         return False
 
-    service_name = cfg.get('service_name', 'artemis')
-    sampling_cfg = (cfg.get('sampling') or 'always').lower()
+    service_name = cfg.service_name
+    sampling_cfg = (cfg.sampling or 'always').lower()
     ratio = 1.0
     if sampling_cfg.startswith('ratio:'):
         _, _, ratio_str = sampling_cfg.partition('ratio:')
@@ -62,8 +62,10 @@ def init_otel() -> bool:
         sampler = ParentBased(TraceIdRatioBased(1.0))
 
     import platform, os
-    service_version = cfg.get('service_version') or cfg.get('version') or 'unknown'
-    deployment_env = environment()
+    # service_version = cfg.get('service_version') or cfg.get('version') or 'unknown' # not in model
+    service_version = 'unknown'
+
+    deployment_env = cfg_mgr.environment()
     resource = Resource.create({
         "service.name": service_name,
         "service.version": service_version,
@@ -78,13 +80,20 @@ def init_otel() -> bool:
     provider = TracerProvider(resource=resource, sampler=sampler)
     trace.set_tracer_provider(provider)
 
-    otlp_cfg = cfg.get('otlp') or {}
-    protocol = (otlp_cfg.get('protocol') or 'http').lower()
-    endpoint = otlp_cfg.get('endpoint') or os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT') or ''
-    headers = otlp_cfg.get('headers') or {}
-    timeout_ms = int(otlp_cfg.get('timeout_ms', 5000))
-    insecure = bool(otlp_cfg.get('insecure', False))
-    use_console = bool(cfg.get('use_console_exporters', False))
+    # Set global propagator to W3C Trace Context (standard)
+    from opentelemetry.propagate import set_global_textmap
+    from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+    set_global_textmap(TraceContextTextMapPropagator())
+
+    otlp_cfg = cfg.otlp
+    protocol = otlp_cfg.protocol.lower()
+    endpoint = otlp_cfg.endpoint or os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT') or ''
+    headers = otlp_cfg.headers
+    timeout_ms = otlp_cfg.timeout_ms
+    # insecure = bool(otlp_cfg.get('insecure', False)) # not in model, maybe should be added?
+    # use_console = bool(cfg.get('use_console_exporters', False)) # not in model
+    insecure = False
+    use_console = False
 
     exporter = None
     if endpoint:
@@ -166,8 +175,8 @@ def init_otel() -> bool:
 
 
 def instrument_fastapi_app(app) -> None:
-    cfg = telemetry_config()
-    if not cfg.get('enabled', True):
+    cfg = cfg_mgr.telemetry_config()
+    if not cfg.enabled:
         return
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
