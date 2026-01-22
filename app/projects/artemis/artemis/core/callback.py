@@ -2,11 +2,7 @@ import time
 from typing import Optional, Dict, Any
 
 import httpx
-
-try:
-    from opentelemetry import trace  # type: ignore
-except Exception:  # pragma: no cover
-    trace = None  # type: ignore
+from opentelemetry import trace  # type: ignore
 
 
 class BaseCallbackClient:
@@ -36,20 +32,19 @@ class HTTPCallbackClient(BaseCallbackClient):
     def __init__(
         self,
         run_id: int,
-        caller_ip: str,
-        caller_port: str,
-        override_host: Optional[str],
-        override_port: Optional[int],
+        callback_ip: str,
+        callback_port: int,
         progress_path: str,
         callback_path: str,
         logger: Any = None,
     ):
-        host = override_host or caller_ip
-        port = override_port or _safe_parse_port(caller_port)
-        base = f"http://{host}:{port}"
+        # forced config override > endpoint overrides > params
+        self.host = callback_ip
+        self.port = callback_port
+
         self.run_id = run_id
-        self.progress_url = base + progress_path
-        self.callback_url = base + callback_path
+        self.progress_url = f"http://{self.host}:{self.port}{progress_path}"
+        self.callback_url = f"http://{self.host}:{self.port}{callback_path}"
         self.logger = logger
         self._finalized = False
 
@@ -131,31 +126,18 @@ class HTTPCallbackClient(BaseCallbackClient):
         return self._finalized
 
 
-def _safe_parse_port(p: str) -> int:
-    try:
-        i=int(p)
-        if 0<i<65536:
-            return i
-    except Exception:
-        pass
-    return 80
+# def _safe_parse_port(p: str) -> int:
+#     try:
+#         i=int(p)
+#         if 0<i<65536:
+#             return i
+#     except Exception:
+#         pass
+#     return 80
 
 
-def build_callback_client(params: Dict[str, Any], logger: Any = None) -> BaseCallbackClient:
-    meta = params.get('_meta') if isinstance(params, dict) else None
-    if not isinstance(meta, dict):
-        return NoopCallbackClient()
-    run_id = meta.get('run_id')
-    if not run_id:
-        return NoopCallbackClient()
-    caller_ip = (headers or {}).get('X-Caller-IP') or (headers or {}).get('x-caller-ip') or '127.0.0.1'
-    caller_port = (headers or {}).get('X-Caller-Port') or (headers or {}).get('x-caller-port') or '80'
-    from artemis.core.config import callback_config
-    cb_cfg = callback_config()
-    override_host = cb_cfg.get('override_host') or None
-    ovp = cb_cfg.get('override_port')
-    override_port = ovp if isinstance(ovp,int) and ovp>0 else None
-    endpoints = (meta.get('callback_endpoints') or {})
-    progress_path = endpoints.get('progress') or f"/runs/{run_id}/progress"
-    callback_path = endpoints.get('callback') or f"/runs/{run_id}/callback"
-    return HTTPCallbackClient(run_id, caller_ip, caller_port, override_host, override_port, progress_path, callback_path, logger)
+
+
+
+
+

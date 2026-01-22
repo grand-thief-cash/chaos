@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
+from artemis.consts import TaskStatus
 from artemis.core.context import TaskContext
-from artemis.core.task_status import TaskStatus
 from .base import BaseTaskUnit
 
 
@@ -54,8 +54,8 @@ class ParentTaskUnit(BaseTaskUnit):
                     ctx.logger.info({'event': 'child_start', 'child_index': idx, 'child_key': spec.get('key'), 'run_id': ctx.run_id})
                 try:
                     # resolve child task by key
-                    from artemis.core import task_registry
-                    child_cls = task_registry.get(spec.get('key'))
+                    from artemis.core import registry
+                    child_cls = registry.get_task(spec.get('key'))
                     if not child_cls:
                         raise ValueError(f"child task '{spec.get('key')}' not registered")
                     child_ctx = TaskContext(spec.get('key'), {**spec.get('params', {}), '_meta': {'parent_run_id': ctx.run_id}})

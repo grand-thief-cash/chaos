@@ -1,15 +1,20 @@
 from typing import Type, Dict
 
-_REGISTRY: Dict[str, Type] = {}
+from artemis.consts import TaskCode
 
-def register(task_code: str, cls: Type):
-    if task_code in _REGISTRY:
-        raise ValueError(f"Task '{task_code}' already registered")
-    _REGISTRY[task_code] = cls
 
-def get(task_code: str):
-    return _REGISTRY.get(task_code)
+class TaskRegistry:
+    def __init__(self):
+        self._registry: Dict[TaskCode, Type] = {}
 
-def list_tasks():
-    return list(_REGISTRY.keys())
+    def register(self, task_code: TaskCode, cls: Type):
+        if task_code in self._registry:
+            raise ValueError(f"Task '{task_code}' already registered")
+        self._registry[task_code] = cls
 
+    def get_task(self, task_code: TaskCode):
+        return self._registry.get(task_code)
+
+    def list_tasks(self):
+        return list(self._registry.keys())
+registry = TaskRegistry()
