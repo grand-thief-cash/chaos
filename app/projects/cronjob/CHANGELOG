@@ -1,7 +1,11 @@
 # VERSION
-v0.12.11
+v0.12.12
 
 # Changelog
+- v0.12.12
+    - Fixed bug of failed updating request body of task.
+    - Fixed missing record of cronjob req to downstream.
+    - Fixed missing fields when updating request header and body.
 - v0.12.11
     - Removed callback ip & port from header of cronjob executor request and set them in meta.
     - Upgraded infra version to v0.16.2
