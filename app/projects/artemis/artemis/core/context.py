@@ -15,7 +15,6 @@ class TaskContext:
     """
 
     def __init__(self, task_run_req: TaskRunReq):
-        # self.task_code = task_run_req.task_meta.task_code
         self.task_meta = task_run_req.task_meta
         self.incoming_params = task_run_req.task_body
         self.params: Dict[str, Any] = {}
@@ -27,15 +26,20 @@ class TaskContext:
         self.children_completed: int = 0
         self.stats: Dict[str, Any] = {}
         self.logger = get_logger(self.task_meta.task_code)  # will be injected
+
+        # callback client is best-effort; always set a fallback
         try:
             self.callback = self.build_callback_client()
         except Exception as e:
-            self.logger.warning({'event':'callback_client_init_failed','error':str(e),'task_code':self.task_code,'run_id': self.run_id})
+            self.callback = NoopCallbackClient()
+            if self.logger:
+                self.logger.warning({'event': 'callback_client_init_failed', 'error': str(e), 'task_code': self.task_code, 'run_id': self.run_id})
+
         self.exec_cls = registry.get_task(self.task_code)
 
 
     def set_logger(self, logger):
-                self.logger = logger
+        self.logger = logger
 
     def set_status(self, status: str):
         # validate against known statuses
@@ -98,18 +102,31 @@ class TaskContext:
 
 
     def build_callback_client(self) -> BaseCallbackClient:
-        progress_path = self.task_meta.callback_endpoints.progress # Correct field name based on definition
-        callback_path = self.task_meta.callback_endpoints.callback # Correct field name based on definition
+        # task_meta provides endpoints; config can override host/port
+        progress_path = self.task_meta.callback_endpoints.progress
+        callback_path = self.task_meta.callback_endpoints.callback
+
         cb_cfg = cfg_mgr.callback_config()
-        if cb_cfg:
-            host = cb_cfg.host
-            ip = cb_cfg.port
-            if host is not None and ip is not None:
-                return HTTPCallbackClient(self.run_id, host, ip, callback_path, progress_path, self.logger)
+        if cb_cfg and cb_cfg.host is not None and cb_cfg.port is not None:
+            return HTTPCallbackClient(
+                run_id=self.run_id,
+                callback_ip=cb_cfg.host,
+                callback_port=cb_cfg.port,
+                progress_path=progress_path,
+                callback_path=callback_path,
+                logger=self.logger,
+            )
 
         host = self.task_meta.callback_endpoints.callback_ip
-        ip = self.task_meta.callback_endpoints.callback_port
-        if host is not None and ip is not None:
-            return HTTPCallbackClient(self.run_id, host, ip, callback_path, progress_path, self.logger)
+        port = self.task_meta.callback_endpoints.callback_port
+        if host is not None and port is not None:
+            return HTTPCallbackClient(
+                run_id=self.run_id,
+                callback_ip=host,
+                callback_port=port,
+                progress_path=progress_path,
+                callback_path=callback_path,
+                logger=self.logger,
+            )
 
         return NoopCallbackClient()
