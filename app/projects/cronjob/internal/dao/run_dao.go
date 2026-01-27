@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -45,6 +46,10 @@ type RunDao interface {
 	// NEW methods
 	ListSyncRunningStuck(ctx context.Context, startBefore time.Time, updatedBefore time.Time, limit int) ([]*model.TaskRun, error)
 	ListByIDs(ctx context.Context, ids []int64) ([]*model.TaskRun, error)
+	// Persist outbound request snapshot (headers/body) for a run.
+	UpdateRequestSnapshot(ctx context.Context, runID int64, headersJSON string, body string) error
+	// Persist downstream response snapshot (code/body/error) for observability.
+	UpdateResponseSnapshot(ctx context.Context, runID int64, code *int, body string, errMsg string) error
 }
 
 type runDaoImpl struct {
@@ -223,12 +228,41 @@ func (r *runDaoImpl) ListByIDs(ctx context.Context, ids []int64) ([]*model.TaskR
 	return list, nil
 }
 
+func (r *runDaoImpl) UpdateRequestSnapshot(ctx context.Context, runID int64, headersJSON string, body string) error {
+	if strings.TrimSpace(headersJSON) == "" { // JSON column requires valid document
+		headersJSON = bizConsts.DEFAULT_JSON_STR
+	} else {
+		// validate JSON to avoid DB error; fallback to empty object
+		var tmp any
+		if err := json.Unmarshal([]byte(headersJSON), &tmp); err != nil {
+			headersJSON = bizConsts.DEFAULT_JSON_STR
+		}
+	}
+	// Request snapshot is immutable once built; no status guard needed.
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).
+		Where("id=?", runID).
+		Updates(map[string]any{"request_headers": headersJSON, "request_body": body}).Error
+}
+
+func (r *runDaoImpl) UpdateResponseSnapshot(ctx context.Context, runID int64, code *int, body string, errMsg string) error {
+	updates := map[string]any{"response_body": body}
+	if code != nil {
+		updates["response_code"] = *code
+	}
+	if strings.TrimSpace(errMsg) != "" {
+		updates["error_message"] = errMsg
+	}
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).
+		Where("id=?", runID).
+		Updates(updates).Error
+}
+
 func (r *runDaoImpl) CountPerTask(ctx context.Context, limit int) (map[int64]int, error) {
 	rows, err := r.db.WithContext(ctx).Model(&model.TaskRun{}).Select("task_id, COUNT(*) as cnt").Group("task_id").Order("cnt DESC").Rows()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	res := make(map[int64]int)
 	for rows.Next() {
 		var taskID int64
@@ -385,7 +419,7 @@ func (r *runDaoImpl) CountStatusByTask(ctx context.Context, taskID int64) (map[b
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	res := make(map[bizConsts.RunStatus]int64)
 	for rows.Next() {
 		var status string

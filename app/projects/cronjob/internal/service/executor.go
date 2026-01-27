@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -180,14 +181,17 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 		return
 	}
 
+	// 3.1 记录本次实际发送的 request headers/body
+	e.persistOutboundSnapshot(ctx, run.ID, req)
+
 	// 4. 执行 HTTP 调用 (含分类错误)
 	resp, body, classify, err := e.doHTTP(runCtx, task, run, timeoutSec, req)
-	if err != nil { // 发生传输层或上下文相关异常
+	if err != nil { // 传输层或上下文异常
+		// 没有 HTTP 响应，按分类更新状态
 		switch classify {
 		case "canceled":
 			_ = e.RunSvc.MarkCanceled(ctx, run.ID)
 		case "request_timeout":
-			// DeadlineExceeded 时按超时处理
 			_ = e.RunSvc.MarkTimeout(ctx, run.ID, classify)
 		default:
 			_ = e.RunSvc.MarkFailed(ctx, run.ID, classify)
@@ -196,7 +200,9 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// 5. 处理业务响应 (同步 or 异步)
+	// 5. 统一处理业务响应（同步/异步），并落库响应快照
+	e.persistInboundSnapshot(ctx, run.ID, resp.StatusCode, string(body), "")
+
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if task.ExecType == bizConsts.ExecTypeAsync { // 异步第一阶段成功
 			deadline := time.Now().Add(time.Duration(task.CallbackTimeoutSec) * time.Second)
@@ -205,20 +211,82 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 			}
 			logging.Info(ctx, fmt.Sprintf("run %d async phase1 succeeded; transitioning to CALLBACK_PENDING until deadline %s", run.ID, deadline.Format(time.RFC3339)))
 			_ = e.RunSvc.MarkCallbackPendingWithDeadline(ctx, run.ID, deadline)
-			// 进度信息保留，等待回调
-		} else {
-			status := gjson.GetBytes(body, "status").String()
-			errMsg := gjson.GetBytes(body, "error").String()
-			if strings.EqualFold(status, bizConsts.Failed.String()) || strings.TrimSpace(errMsg) != "" {
-				_ = e.RunSvc.MarkFailed(ctx, run.ID, fmt.Sprintf("biz_failed: status=%s error=%s", status, errMsg))
-			} else {
-				_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(body))
-			} // progress cleanup deferred to scanner
+			return
 		}
-	} else { // 非 2xx
-		_ = e.RunSvc.MarkFailed(ctx, run.ID, resp.Status)
-		// progress cleanup deferred to scanner
+		// 同步：尝试识别业务失败
+		status := gjson.GetBytes(body, "status").String()
+		errMsg := gjson.GetBytes(body, "error").String()
+		if strings.EqualFold(status, bizConsts.Failed.String()) || strings.TrimSpace(errMsg) != "" {
+			_ = e.RunSvc.MarkFailed(ctx, run.ID, fmt.Sprintf("biz_failed: status=%s error=%s", status, errMsg))
+			e.persistInboundSnapshot(ctx, run.ID, resp.StatusCode, string(body), fmt.Sprintf("biz_failed: status=%s error=%s", status, errMsg))
+		} else {
+			_ = e.RunSvc.MarkSuccess(ctx, run.ID, resp.StatusCode, string(body))
+		}
+		return
 	}
+
+	// 非 2xx：记录错误详情并标记失败
+	msg := resp.Status
+	if len(body) > 0 {
+		msg = fmt.Sprintf("%s; body=%s", msg, string(body))
+	}
+	_ = e.RunSvc.MarkFailed(ctx, run.ID, msg)
+	e.persistInboundSnapshot(ctx, run.ID, resp.StatusCode, string(body), msg)
+}
+
+// persistOutboundSnapshot captures the effective request headers/body and stores them into task_runs.
+// It also masks obviously sensitive headers.
+func (e *Executor) persistOutboundSnapshot(ctx context.Context, runID int64, req *http.Request) {
+	if req == nil || e.RunSvc == nil {
+		return
+	}
+
+	// collect headers into a stable JSON map (string->[]string)
+	hdr := map[string][]string{}
+	for k, v := range req.Header {
+		if len(v) == 0 {
+			continue
+		}
+		lk := strings.ToLower(k)
+		if lk == "authorization" || lk == "cookie" || lk == "set-cookie" {
+			hdr[k] = []string{"***"}
+			continue
+		}
+		hdr[k] = v
+	}
+	// stable key order (json.Marshal doesn't guarantee order, but stable order helps diffing in UI).
+	// We'll re-marshal via a sorted-key intermediate.
+	keys := make([]string, 0, len(hdr))
+	for k := range hdr {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	ordered := make(map[string]any, len(keys))
+	for _, k := range keys {
+		ordered[k] = hdr[k]
+	}
+	headersJSON := bizConsts.DEFAULT_JSON_STR
+	if b, err := json.Marshal(ordered); err == nil {
+		headersJSON = string(b)
+	}
+
+	// request body: best-effort. buildRequest always uses bytes.NewReader, so GetBody may be nil.
+	bodyStr := ""
+	if req.GetBody != nil {
+		if rc, err := req.GetBody(); err == nil {
+			bb, _ := io.ReadAll(rc)
+			_ = rc.Close()
+			bodyStr = string(bb)
+		}
+	}
+
+	_ = e.RunSvc.UpdateRequestSnapshot(ctx, runID, headersJSON, bodyStr)
+}
+
+// persistInboundSnapshot stores downstream response snapshot.
+func (e *Executor) persistInboundSnapshot(ctx context.Context, runID int64, code int, body string, errMsg string) {
+	c := code
+	_ = e.RunSvc.UpdateResponseSnapshot(ctx, runID, &c, body, errMsg)
 }
 
 // startRunContext 计算任务超时时间，创建带超时的上下文，并登记取消函数 + 运行中计数。
@@ -294,6 +362,11 @@ func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *mode
 	if err != nil {
 		return nil, err
 	}
+	// Allow re-reading body for persistence without consuming the request stream.
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(buf)), nil
+	}
+
 	// Headers: caller identity
 	req.Header.Set("Content-Type", "application/json")
 	//req.Header.Set("X-Caller-IP", bizConsts.LocalIP)
