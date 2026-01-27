@@ -1,7 +1,10 @@
 # VERSION
-v0.4.0
+v0.4.1
 
 # Changelog
+- v0.4.1
+    - Move task_code to task_run url and adjusted related parameter validation.
+    - Fixed incompatible issue of parent task.
 - v0.4.0
     - Simplified Task validation and optimized construction of task execution.
     - Modelled data structures to substituted dict for better type hinting and code completion.
