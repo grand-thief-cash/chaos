@@ -2,6 +2,7 @@ from typing import Any, Dict
 
 import pandas as pd
 
+from artemis.consts import DeptServices
 from artemis.task_units.base import BaseTaskUnit
 
 
@@ -54,6 +55,8 @@ class StockZHAListDailyTask(BaseTaskUnit):
                 df = pd.DataFrame([{"代码": "000001", "名称": "平安银行"}])
             elif exchange == "BJ":
                 df = pd.DataFrame([{"代码": "430047", "名称": "创新层"}])
+            else:
+                df = pd.DataFrame()
         except Exception as e:
             ctx.logger.error({
                 "event": "stock_a_list_daily_execute_error",
@@ -64,7 +67,7 @@ class StockZHAListDailyTask(BaseTaskUnit):
             raise RuntimeError(f"failed to fetch stock list by exchange {exchange}: {e}")
 
         sub_df = df[["代码", "名称"]]
-        sub_df.columns = ["code", "name"]
+        sub_df.columns = ["code", "company"]
         # 增加交易所列，值与传入的 exchange 一致
         sub_df["exchange"] = exchange
         rows = sub_df.to_dict(orient="records")
@@ -89,6 +92,27 @@ class StockZHAListDailyTask(BaseTaskUnit):
             "run_id": ctx.run_id,
         })
 
+        client = ctx.dept_http.get(DeptServices.PHOENIXA)
+        if client and hasattr(client, 'batch_upsert'):
+             # batch_upsert requires list of dict. `rows` is already list of dict.
+            try:
+                client.batch_upsert(rows, ctx.run_id)
+            except Exception as e:
+                ctx.logger.error({
+                    "event": "stock_a_list_daily_sink_error",
+                    "exchange": exchange,
+                    "error": str(e),
+                    "run_id": ctx.run_id,
+                })
+                # Decide if we want to fail the task if sink fails. Usually yes.
+                raise RuntimeError(f"failed to sink stock list to phoenixA: {e}")
+        elif client:
+             ctx.logger.warning({
+                "event": "stock_a_list_daily_sink_skip",
+                "reason": "client_missing_batch_upsert_method",
+                "client_type": str(type(client)),
+                "run_id": ctx.run_id
+             })
+
         ctx.stats["exchange"] = exchange
         ctx.stats["row_count"] = int(count or 0)
-

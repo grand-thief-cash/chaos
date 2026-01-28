@@ -52,8 +52,38 @@ class HttpClientCfg(BaseModel):
 
 
 class CallbackCfg(BaseModel):
+    """Legacy callback override config (deprecated).
+
+    Use Config.dept_services.cronjob instead.
+    """
+
     host: Optional[str] = None
     port: Optional[int] = None
+
+
+class ServiceEndpointCfg(BaseModel):
+    """Generic service endpoint config.
+
+    Keep it minimal for now (host/port), but we can extend later (scheme/base_path/headers, etc.).
+    """
+
+    host: Optional[str] = None
+    port: Optional[int] = None
+
+
+class DeptServicesCfg(BaseModel):
+    """Dependent services configuration.
+
+    - cronjob: where Artemis reports progress/results
+    - phoenixA: another dependent project service
+
+    We keep both explicit fields for discoverability, and also allow
+    arbitrary future services via `extras`.
+    """
+
+    cronjob: ServiceEndpointCfg = Field(default_factory=ServiceEndpointCfg)
+    phoenixA: ServiceEndpointCfg = Field(default_factory=ServiceEndpointCfg)
+    extras: Dict[str, ServiceEndpointCfg] = Field(default_factory=dict)
 
 
 class Config(BaseModel):
@@ -62,6 +92,12 @@ class Config(BaseModel):
     logging: LoggingCfg = Field(default_factory=LoggingCfg)
     telemetry: TelemetryCfg = Field(default_factory=TelemetryCfg)
     http_client: HttpClientCfg = Field(default_factory=HttpClientCfg)
+
+    # new preferred config
+    dept_services: DeptServicesCfg = Field(default_factory=DeptServicesCfg)
+
+    # legacy (kept for compatibility; will be mapped to dept_services.cronjob when present)
     callback: CallbackCfg = Field(default_factory=CallbackCfg)
+
     task_defaults: Dict[str, Any] = Field(default_factory=dict)
     output_defaults: Dict[str, Any] = Field(default_factory=dict)
