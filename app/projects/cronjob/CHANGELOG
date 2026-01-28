@@ -1,7 +1,11 @@
 # VERSION
-v0.12.12
+v0.12.13
 
 # Changelog
+- v0.12.13
+    - Fixed bug of missing traceid after task entered in channel.
+    - Involve http client component from infra framework.
+    - Dropped pass ip & port in meta of cronjob executor request.
 - v0.12.12
     - Fixed bug of failed updating request body of task.
     - Fixed missing record of cronjob req to downstream.

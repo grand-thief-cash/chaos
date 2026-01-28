@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +18,9 @@ import (
 	"time"
 
 	"github.com/tidwall/gjson"
+	"go.opentelemetry.io/otel/trace"
 
-	"github.com/grand-thief-cash/chaos/app/infra/go/application"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_client"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -39,6 +41,8 @@ type Executor struct {
 	cfg     config.ExecutorConfig
 	TaskSvc *TaskService `infra:"dep:task_service"`
 	RunSvc  *RunService  `infra:"dep:run_service"`
+	// Injected HTTP client with OTEL support
+	HTTPCli *http_client.HTTPClientsComponent `infra:"dep:http_clients"`
 	ch      chan *model.TaskRun
 	wg      sync.WaitGroup
 	mu      sync.Mutex
@@ -123,7 +127,9 @@ func (e *Executor) Enqueue(run *model.TaskRun) { // exposed API
 	}
 	e.mu.Unlock()
 	e.ch <- run
-	logging.Info(context.Background(), fmt.Sprintf("task: %d has enqueued", run.ID))
+	// Log with trace ID
+	logCtx := e.ensureTraceContext(context.Background(), run.TraceID)
+	logging.Info(logCtx, fmt.Sprintf("task: %d has enqueued", run.ID))
 }
 
 func (e *Executor) ActiveCount(taskID int64) int {
@@ -147,15 +153,18 @@ func (e *Executor) worker(ctx context.Context) {
 			if run == nil {
 				continue
 			}
-			logging.Info(ctx, fmt.Sprintf("task: %d grabbed in worker ok=%v", run.ID, ok))
-			ok2, err := e.RunSvc.TransitionToRunning(ctx, run.ID)
+			// Reconstruct trace context for the worker execution scope
+			runCtx := e.ensureTraceContext(context.Background(), run.TraceID)
+
+			logging.Info(runCtx, fmt.Sprintf("task: %d grabbed in worker ok=%v", run.ID, ok))
+			ok2, err := e.RunSvc.TransitionToRunning(runCtx, run.ID)
 			if err != nil || !ok2 {
 				if err != nil {
-					logging.Info(ctx, fmt.Sprintf("transition to running failed for run %d: %v", run.ID, err))
+					logging.Info(runCtx, fmt.Sprintf("transition to running failed for run %d: %v", run.ID, err))
 				}
 				continue
 			}
-			e.execute(ctx, run)
+			e.execute(runCtx, run)
 		}
 	}
 }
@@ -170,7 +179,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	}
 
 	// 2. 准备 per-run 上下文 & 资源清理逻辑
-	runCtx, cleanup, timeoutSec := e.startRunContext(ctx, task, run.ID)
+	runCtx, cleanup, timeoutSec := e.startRunContext(ctx, task, run)
 	defer cleanup()
 
 	// 3. 构建 HTTP 请求
@@ -291,22 +300,27 @@ func (e *Executor) persistInboundSnapshot(ctx context.Context, runID int64, code
 
 // startRunContext 计算任务超时时间，创建带超时的上下文，并登记取消函数 + 运行中计数。
 // 返回：子上下文、清理函数（负责取消与计数回收）、timeout(秒)
-func (e *Executor) startRunContext(parent context.Context, task *model.Task, runID int64) (context.Context, func(), int) {
+func (e *Executor) startRunContext(parent context.Context, task *model.Task, run *model.TaskRun) (context.Context, func(), int) {
+	// The parent context passed here (from worker) should already have trace info via ensureTraceContext.
+	// We can add another span layer specifically for the execution phase if desired, or just use parent.
+	// For simplicity and to ensure trace existence even if called from elsewhere:
+	baseCtx := e.ensureTraceContext(parent, run.TraceID)
+
 	to := task.TimeoutSeconds
 	if to <= 0 {
 		to = 10
 	}
-	runCtx, cancel := context.WithTimeout(parent, time.Duration(to)*time.Second)
+	runCtx, cancel := context.WithTimeout(baseCtx, time.Duration(to)*time.Second)
 
 	e.mu.Lock()
-	e.cancelMap[runID] = cancel
+	e.cancelMap[run.ID] = cancel
 	e.activePerTask[task.ID]++
 	e.mu.Unlock()
 
 	cleanup := func() {
 		cancel()
 		e.mu.Lock()
-		delete(e.cancelMap, runID)
+		delete(e.cancelMap, run.ID)
 		e.activePerTask[task.ID]--
 		if e.activePerTask[task.ID] <= 0 {
 			delete(e.activePerTask, task.ID)
@@ -314,6 +328,33 @@ func (e *Executor) startRunContext(parent context.Context, task *model.Task, run
 		e.mu.Unlock()
 	}
 	return runCtx, cleanup, to
+}
+
+// ensureTraceContext creates a new context with a span context derived from the traceID string.
+// If traceID is empty or invalid, it returns the parent context.
+// It generates a new random SpanID to represent a local operation within that trace.
+func (e *Executor) ensureTraceContext(parent context.Context, traceID string) context.Context {
+	if traceID == "" {
+		return parent
+	}
+	// If parent already has this trace ID, we might just return parent or create a child span.
+	// Here we force creating a new SpanContext to ensure "remote" flag behavior or just fresh span.
+	tid, err := trace.TraceIDFromHex(traceID)
+	if err != nil {
+		return parent
+	}
+
+	// Create a new SpanID
+	var sid trace.SpanID
+	_, _ = rand.Read(sid[:])
+
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    tid,
+		SpanID:     sid,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	})
+	return trace.ContextWithSpanContext(parent, sc)
 }
 
 // buildRequest 根据任务配置构建 HTTP 请求。调整：不再在 URL 上附带 run_id 参数；使用 JSON 包含 meta(A) 与 body(B)。
@@ -335,10 +376,10 @@ func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *mode
 		"task_id":   task.ID,
 		"exec_type": task.ExecType,
 		"callback_endpoints": map[string]any{
-			"progress":      progressPath,
-			"callback":      callbackPath,
-			"callback_ip":   bizConsts.LocalIP,
-			"callback_port": application.GetApp().GetConfig().HTTPServer.Address,
+			"progress": progressPath,
+			"callback": callbackPath,
+			//"callback_ip":   bizConsts.LocalIP,
+			//"callback_port": application.GetApp().GetConfig().HTTPServer.Address,
 		},
 	}
 	// B: 业务 body, 来自 task.BodyTemplate (保留原始字符串或 JSON)
@@ -377,8 +418,18 @@ func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *mode
 // doHTTP 执行 HTTP 请求并读取响应 Body。
 // 返回：resp(成功时)/nil, body(成功时), 分类字符串(错误时), error
 func (e *Executor) doHTTP(ctx context.Context, task *model.Task, run *model.TaskRun, timeoutSec int, req *http.Request) (*http.Response, []byte, string, error) {
-	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
-	resp, err := client.Do(req)
+	var resp *http.Response
+	var err error
+
+	if e.HTTPCli != nil {
+		cli, _ := e.HTTPCli.Client("artemis")
+		resp, err = cli.Client.Do(req)
+	} else {
+		// Fallback if component not injected
+		client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
+		resp, err = client.Do(req)
+	}
+
 	if err != nil { // 需要分类
 		classify := e.classifyNetError(ctx, err)
 		logging.Error(ctx, fmt.Sprintf("task %d request failed %d classified=%s raw=%v", task.ID, run.ID, classify, err))
