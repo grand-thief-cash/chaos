@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 import yaml
 
 from artemis.consts import Env
-from artemis.models import CallbackCfg, Config, HttpClientCfg, LoggingCfg, TelemetryCfg
+from artemis.models import CallbackCfg, Config, DeptServicesCfg, HttpClientCfg, LoggingCfg, TelemetryCfg
 
 
 class ConfigManager:
@@ -82,6 +82,24 @@ class ConfigManager:
 
         # ensure env is correct
         merged['env'] = env_name
+
+        # Backward-compat: map legacy callback.* into dept_services.cronjob when dept_services isn't configured.
+        # Supported legacy shapes:
+        #   callback: { host, port }
+        #   callback: { override_host, override_port }
+        if 'dept_services' not in merged or not merged.get('dept_services'):
+            cb = merged.get('callback') or {}
+            if isinstance(cb, dict):
+                host = cb.get('host') or cb.get('override_host')
+                port = cb.get('port') or cb.get('override_port')
+                if host is not None or port is not None:
+                    merged['dept_services'] = {
+                        'cronjob': {
+                            'host': host,
+                            'port': port,
+                        }
+                    }
+
         self._config = Config(**merged)
         self._config_path = cfg_path
         self._env = env_name
@@ -111,6 +129,9 @@ class ConfigManager:
 
     def callback_config(self) -> Optional[CallbackCfg]:
         return self.get_config().callback
+
+    def dept_services_config(self) -> Optional[DeptServicesCfg]:
+        return self.get_config().dept_services
 
     def _load_task_yaml(self) -> Dict[str, Any]:
         if self._task_variants_cache:

@@ -30,6 +30,11 @@ http_client:
   timeout_seconds: 5
   verify_ssl: true
   headers: {}
-callback:
-  host: "127.0.0.1"        # 若非空则强制使用该 host 回调 (优先级最高)
-  port: 9999          # 若 >0 则强制使用该端口
+
+dept_services:
+  cronjob:
+    host: "127.0.0.1"  # Artemis 回传进度/结果的 CronJob 服务地址
+    port: 9999
+  phoenixA:
+    host: "127.0.0.1"          # 依赖的 phoenixA 服务地址（按需配置）
+    port: 18085
