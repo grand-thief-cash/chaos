@@ -1,7 +1,10 @@
 # VERSION
-v0.4.1
+v0.5.0
 
 # Changelog
+- v0.5.0
+    - Dropped callback in context and use dept_clients as substitution.
+    - Added phoenixA client to sink data.
 - v0.4.1
     - Move task_code to task_run url and adjusted related parameter validation.
     - Fixed incompatible issue of parent task.

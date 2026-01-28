@@ -1,6 +1,6 @@
 import threading
 
-from artemis.consts import TaskStatus, TaskMode
+from artemis.consts import TaskStatus, TaskMode, DeptServices
 from artemis.core import TaskContext
 from artemis.log import get_logger
 from artemis.models import TaskRunReq
@@ -17,6 +17,7 @@ class TaskEngine:
             task.run(ctx)
             return True
         except Exception as e:
+            ctx.logger.error({'event':'task_error','error':str(e),'task_code': ctx.task_code,'run_id': ctx.run_id})
             # 确保 ctx 已经标记失败并带有错误信息
             if ctx.status != TaskStatus.FAILED.value:
                 try:
@@ -28,15 +29,22 @@ class TaskEngine:
                     ctx.set_error(str(e))
                 except Exception:
                     pass
-            if ctx.logger:
-                ctx.logger.error({'event':'task_error','error':str(e),'task_code': ctx.task_code,'run_id': ctx.run_id})
             # async + 顶层任务的失败场景下，触发 finalize_failed 回调
+            cronjob_cli = None
             try:
-                meta = ctx.task_meta
-                # is_top_level = not meta.get('parent_run_id')
-                cb = ctx.callback
-                if ctx.async_mode and cb and not cb.finalized():
-                    cb.finalize_failed(str(e))
+                if getattr(ctx, 'async_mode', False):
+
+                    try:
+                        cronjob_cli = (getattr(ctx, 'dept_http', {}) or {}).get(DeptServices.CRONJOB)
+                    except Exception:
+                        cronjob_cli = None
+
+                    # prefer new design: delegate to dept client
+                    if cronjob_cli and hasattr(cronjob_cli, 'finalized') and not cronjob_cli.finalized(ctx):
+                        cronjob_cli.finalize_failed(ctx, str(e))
+                    # fallback legacy
+                    elif getattr(ctx, 'callback', None) and not ctx.callback.finalized():
+                        ctx.callback.finalize_failed(str(e))
             except Exception as fe:
                 if ctx.logger:
                     ctx.logger.warning({'event':'callback_finalize_failed_error','error':str(fe),'task_code':ctx.task_code,'run_id': ctx.run_id})
@@ -46,14 +54,21 @@ class TaskEngine:
         is_success = self.run_task(ctx)
 
         # async mode: send finalize callback once (if supported and not yet finalized)
-        if async_mode and getattr(ctx, 'callback', None) and not ctx.callback.finalized():
+        if async_mode:
             try:
-                if is_success and ctx.status == TaskStatus.SUCCESS.value:
-                    ctx.callback.finalize_success(code=200, body='task completed successfully')
-                else:
-                    ctx.callback.finalize_failed(error_message=ctx.error or 'task completed failed')
-                if ctx.logger:
-                    ctx.logger.info({'event': 'callback_finalized', 'task_code': ctx.task_code, 'run_id': ctx.run_id, 'result': is_success})
+                cronjob_cli = None
+                try:
+                    cronjob_cli = (getattr(ctx, 'dept_http', {}) or {}).get(DeptServices.CRONJOB)
+                except Exception:
+                    cronjob_cli = None
+
+                if cronjob_cli and not cronjob_cli.finalized(ctx):
+                    if is_success and ctx.status == TaskStatus.SUCCESS.value:
+                        cronjob_cli.finalize_success(ctx, code=200, body='task completed successfully')
+                    else:
+                        cronjob_cli.finalize_failed(ctx, error_message=ctx.error or 'task completed failed')
+                    if ctx.logger:
+                        ctx.logger.info({'event': 'callback_finalized', 'task_code': ctx.task_code, 'run_id': ctx.run_id, 'result': is_success})
             except Exception as fe:
                 if ctx.logger:
                     ctx.logger.warning({'event': 'callback_finalize_error', 'error': str(fe), 'task_code': ctx.task_code, 'run_id': ctx.run_id})
