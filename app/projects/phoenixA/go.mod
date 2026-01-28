@@ -11,7 +11,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
@@ -61,8 +60,9 @@ require (
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
 	gorm.io/gorm v1.31.0
+	github.com/go-chi/chi/v5 v5.2.3
 )
 
-require github.com/grand-thief-cash/chaos/app/infra/go/application v0.16.2
-
-//replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application
+require (
+	github.com/grand-thief-cash/chaos/app/infra/go/application v0.16.2
+)

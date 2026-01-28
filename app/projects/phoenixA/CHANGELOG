@@ -1,7 +1,11 @@
 # VERSION
-- v0.1.1
+- v0.1.2
 
 # Changelog
+- v0.1.2
+    - Cleaned go mod tidy script.
+    - Compressed router_all & openapi routes.
+    - Migrated stock_zh_a_list controller to controller folder.
 - v0.1.1
     - Added first data schema: stock zh a list.
 - v0.1.0
