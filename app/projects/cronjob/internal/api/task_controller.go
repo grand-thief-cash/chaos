@@ -220,6 +220,12 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	if req.FailureAction != "" {
 		t.FailureAction = bizConsts.FailureAction(req.FailureAction)
 	}
+	if req.BodyTemplate != "" {
+		t.BodyTemplate = req.BodyTemplate
+	}
+	if req.HeadersJSON != "" {
+		t.HeadersJSON = req.HeadersJSON
+	}
 	if err := tmc.TaskSvc.UpdateCronAndMeta(ctx, t); err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task update failed: %v", err))
 		writeErr(w, 500, err.Error())

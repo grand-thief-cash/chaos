@@ -83,3 +83,9 @@ func (s *RunService) ListSyncRunningStuck(ctx context.Context, startBefore time.
 func (s *RunService) ListByIDs(ctx context.Context, ids []int64) ([]*model.TaskRun, error) {
 	return s.RunDao.ListByIDs(ctx, ids)
 }
+func (s *RunService) UpdateRequestSnapshot(ctx context.Context, runID int64, headersJSON string, body string) error {
+	return s.RunDao.UpdateRequestSnapshot(ctx, runID, headersJSON, body)
+}
+func (s *RunService) UpdateResponseSnapshot(ctx context.Context, runID int64, code *int, body string, errMsg string) error {
+	return s.RunDao.UpdateResponseSnapshot(ctx, runID, code, body, errMsg)
+}
