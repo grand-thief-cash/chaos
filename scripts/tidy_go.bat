@@ -13,7 +13,7 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b 1
 )
 
-set "paths=app\infra\go\common app\infra\go\application app\poc\infra\go\application app\poc\infra\go\client app\projects\cronjob app\projects\phoenixA app\poc\projects\cronjob app\poc\projects\phoenixA"
+set "paths=app\infra\go\common app\infra\go\application app\poc\infra\go\application app\poc\infra\go\client app\projects\cronjob app\projects\phoenixA app\poc\projects\cronjob"
 
 for %%P in (%paths%) do call :process "%%P"
 exit /b 0

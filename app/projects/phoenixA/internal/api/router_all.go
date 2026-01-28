@@ -3,11 +3,14 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
+	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/controller"
 )
 
 // Unified route registration for phoenixA.
@@ -17,29 +20,56 @@ func init() {
 		if err != nil {
 			return err
 		}
-		stockZhAListController, ok := comp.(*StockZhAListController)
+		stockZhAListCtrl, ok := comp.(*controller.StockZhAListController)
 		if !ok {
 			return fmt.Errorf("stock_zh_a_list_ctrl type assertion failed")
 		}
 
 		// Data-platform style base URI: /api/v1/{market}/{resource}
 		r.Route("/api/v1/zh/stock_list", func(r chi.Router) {
-			r.Get("/", stockZhAListController.list)
-			r.Post("/", stockZhAListController.create)
-			r.Get("/count", stockZhAListController.count)
-			r.Post("/batch_upsert", stockZhAListController.batchUpsert)
-			r.Delete("/all", stockZhAListController.deleteAll)
+			r.Get("/", stockZhAListCtrl.List)
+			r.Post("/", stockZhAListCtrl.Create)
+			r.Get("/count", stockZhAListCtrl.Count)
+			r.Post("/batch_upsert", stockZhAListCtrl.BatchUpsert)
+			r.Delete("/all", stockZhAListCtrl.DeleteAll)
 
 			r.Get("/{code}", func(w http.ResponseWriter, req *http.Request) {
-				stockZhAListController.get(w, req, chi.URLParam(req, "code"))
+				stockZhAListCtrl.Get(w, req, chi.URLParam(req, "code"))
 			})
 			r.Put("/{code}", func(w http.ResponseWriter, req *http.Request) {
-				stockZhAListController.update(w, req, chi.URLParam(req, "code"))
+				stockZhAListCtrl.Update(w, req, chi.URLParam(req, "code"))
 			})
 			r.Patch("/{code}", func(w http.ResponseWriter, req *http.Request) {
-				stockZhAListController.update(w, req, chi.URLParam(req, "code"))
+				stockZhAListCtrl.Update(w, req, chi.URLParam(req, "code"))
 			})
 		})
+
+		r.Get("/openapi.yaml", func(w http.ResponseWriter, req *http.Request) {
+			// Try best-effort to find phoenixA/openapi.yaml based on current working directory.
+			// In this repo, phoenixA is typically run with working dir app/projects/phoenixA.
+			candidates := []string{
+				"openapi.yaml",
+				filepath.Join("app", "projects", "phoenixA", "openapi.yaml"),
+				filepath.Join(".", "app", "projects", "phoenixA", "openapi.yaml"),
+			}
+			var data []byte
+			var err error
+			for _, p := range candidates {
+				if _, stErr := os.Stat(p); stErr == nil {
+					data, err = os.ReadFile(p)
+					break
+				}
+			}
+			if err != nil || data == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte("openapi.yaml not found"))
+				return
+			}
+			w.Header().Set("Content-Type", "application/yaml")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+		})
+
 		return nil
 	})
 }
