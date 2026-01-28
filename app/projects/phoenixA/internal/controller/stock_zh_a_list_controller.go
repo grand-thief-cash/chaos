@@ -1,4 +1,4 @@
-package api
+package controller
 
 import (
 	"context"
@@ -61,7 +61,7 @@ func parseLimitOffset(r *http.Request) (limit, offset int) {
 // ---- handlers ----
 
 // GET /api/v1/stocks
-func (c *StockZhAListController) list(w http.ResponseWriter, r *http.Request) {
+func (c *StockZhAListController) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	limit, offset := parseLimitOffset(r)
 	f := &model.StockZhAListFilters{
@@ -78,7 +78,7 @@ func (c *StockZhAListController) list(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/v1/stocks/{code}
-func (c *StockZhAListController) get(w http.ResponseWriter, r *http.Request, code string) {
+func (c *StockZhAListController) Get(w http.ResponseWriter, r *http.Request, code string) {
 	ctx := r.Context()
 	s, err := c.Svc.Get(ctx, code)
 	if err != nil {
@@ -93,7 +93,7 @@ func (c *StockZhAListController) get(w http.ResponseWriter, r *http.Request, cod
 }
 
 // POST /api/v1/stocks
-func (c *StockZhAListController) create(w http.ResponseWriter, r *http.Request) {
+func (c *StockZhAListController) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req model.StockZhAList
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -108,7 +108,7 @@ func (c *StockZhAListController) create(w http.ResponseWriter, r *http.Request) 
 }
 
 // PUT/PATCH /api/v1/stocks/{code}
-func (c *StockZhAListController) update(w http.ResponseWriter, r *http.Request, code string) {
+func (c *StockZhAListController) Update(w http.ResponseWriter, r *http.Request, code string) {
 	ctx := r.Context()
 	var req model.StockZhAList
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -129,7 +129,7 @@ func (c *StockZhAListController) update(w http.ResponseWriter, r *http.Request, 
 }
 
 // POST /api/v1/stocks/batch_upsert
-func (c *StockZhAListController) batchUpsert(w http.ResponseWriter, r *http.Request) {
+func (c *StockZhAListController) BatchUpsert(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req []*model.StockZhAList
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -145,7 +145,7 @@ func (c *StockZhAListController) batchUpsert(w http.ResponseWriter, r *http.Requ
 }
 
 // DELETE /api/v1/stocks/all
-func (c *StockZhAListController) deleteAll(w http.ResponseWriter, r *http.Request) {
+func (c *StockZhAListController) DeleteAll(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	affected, err := c.Svc.DeleteAll(ctx)
 	if err != nil {
@@ -155,8 +155,8 @@ func (c *StockZhAListController) deleteAll(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"rows": affected}})
 }
 
-// GET /api/v1/stocks/count
-func (c *StockZhAListController) count(w http.ResponseWriter, r *http.Request) {
+// GET /api/v1/stocks/Count
+func (c *StockZhAListController) Count(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	f := &model.StockZhAListFilters{
 		Exchange: r.URL.Query().Get("exchange"),
@@ -168,5 +168,5 @@ func (c *StockZhAListController) count(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"count": cnt}})
+	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"Count": cnt}})
 }
