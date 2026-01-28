@@ -1,7 +1,11 @@
 # VERSION
-v0.3.6
+v0.3.8
 
 # Changelog
+- v0.3.8
+    - Disable auto jump to task progress and added button to jump to task progress page in cronjob app.
+- v0.3.7
+    - Extended run detail page of cronjob tasks, fields is rendering with structured format.
 - v0.3.6
     - Jump to cronjob progress page after manually triggering a cronjob.
     - Fixed a bug of checking run details in progress page.
