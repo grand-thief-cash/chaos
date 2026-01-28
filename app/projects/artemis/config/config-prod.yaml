@@ -30,6 +30,11 @@ http_client:
   timeout_seconds: 5
   verify_ssl: true
   headers: {}
-callback:
-  override_host: "192.168.31.72"        # 若非空则强制使用该 host 回调 (优先级最高)
-  override_port: 8082          # 若 >0 则强制使用该端口
+
+dept_services:
+  cronjob:
+    host: "192.168.31.72"
+    port: 8082
+  phoenixA:
+    host: null
+    port: null

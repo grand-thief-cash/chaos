@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional
 
-from artemis.consts import TaskStatus
-from artemis.core.context import TaskContext
+from artemis.consts import TaskStatus, DeptServices
+from artemis.core import TaskContext
 from artemis.core.task_registry import registry
 from .base import BaseTaskUnit
 
@@ -20,18 +20,31 @@ class ParentTaskUnit(BaseTaskUnit):
         return
 
     def _report_progress(self, ctx: TaskContext, message: Optional[str] = None):
-        """Report parent-level progress based on completed children.
-
-        使用 ctx.callback.progress 把 children_completed/children_total 报出去。
-        如果 callback 是 Noop 或 total 为 0，则直接跳过。
-        """
-        cb = getattr(ctx, "callback", None)
         total = int(getattr(ctx, "children_total", 0) or 0)
-        if not cb or total <= 0:
+        if total <= 0:
             return
+
         current = int(getattr(ctx, "children_completed", 0) or 0)
+
+        cronjob_cli = None
         try:
-            cb.progress(current, total, message=message or f"children {current}/{total} done")
+            cronjob_cli = (getattr(ctx, 'dept_http', {}) or {}).get(DeptServices.CRONJOB)
+        except Exception:
+            cronjob_cli = None
+
+        # preferred new design: delegate to cronjob client
+        if cronjob_cli and hasattr(cronjob_cli, 'progress'):
+            try:
+                cronjob_cli.progress(ctx, current=current, total=total, message=message or f"children {current}/{total} done")
+                return
+            except Exception:
+                pass
+
+        # legacy fallback
+        if not cronjob_cli:
+            return
+        try:
+            cronjob_cli.progress(current, total, message=message or f"children {current}/{total} done")
         except Exception:
             # 进度上报失败不影响主流程
             if ctx.logger:
