@@ -18,9 +18,8 @@ class TaskMeta(BaseModel):
     run_id: int | str = Field(..., description="Run identifier")
     task_id: int | str = Field(..., description="Task identifier")
     exec_type: str = Field(..., description="SYNC|ASYNC")
-    task_code: TaskCode = Field(..., description="Task code")
-    callback_endpoints: CallbackEndpoints = None
-
+    task_code: TaskCode | None = Field(None, description="Task code")
+    callback_endpoints: CallbackEndpoints | None = None
     @field_validator("exec_type")
     @classmethod
     def _normalize_exec_type(cls, v: str) -> str:
@@ -30,7 +29,7 @@ class TaskMeta(BaseModel):
             raise HTTPException(status_code=422, detail="exec_type in meta required")
         return value
 
-    @field_validator("run_id", "task_id", "task_code")
+    @field_validator("run_id", "task_id")
     @classmethod
     def _validate_required_fields(cls, v, info):
         if v is None:

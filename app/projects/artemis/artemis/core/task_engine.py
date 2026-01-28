@@ -1,4 +1,3 @@
-
 import threading
 
 from artemis.consts import TaskStatus, TaskMode
@@ -44,33 +43,32 @@ class TaskEngine:
             return False
 
     def _execute(self, ctx: TaskContext, async_mode: bool = False):
-            is_success = self.run_task(ctx)
+        is_success = self.run_task(ctx)
 
-            if async_mode and ctx.callback and not ctx.callback.finalized():
-                if not ctx.callback or not ctx.callback.finalized():
-                    # callback doesn't support finalization
-                    ctx.logger.error({'event':'callback_not_finalized','task_code': ctx.task_code,'run_id': ctx.run_id, "result": is_success})
+        # async mode: send finalize callback once (if supported and not yet finalized)
+        if async_mode and getattr(ctx, 'callback', None) and not ctx.callback.finalized():
+            try:
+                if is_success and ctx.status == TaskStatus.SUCCESS.value:
+                    ctx.callback.finalize_success(code=200, body='task completed successfully')
                 else:
-                    try:
-                        if is_success and ctx.status == TaskStatus.SUCCESS.value:
-                            ctx.callback.finalize_success(code=200, body='task completed successfully')
-                        else:
-                            ctx.callback.finalize_failed(code=200, body='task completed failed')
-                        ctx.logger.info({'event':'callback_finalized','task_code': ctx.task_code,'run_id': ctx.run_id, "result": is_success})
-                    except Exception as fe:
-                        ctx.logger.warning({'event':'callback_finalize_error','error':str(fe),'task_code': ctx.task_code,'run_id': ctx.run_id})
+                    ctx.callback.finalize_failed(error_message=ctx.error or 'task completed failed')
+                if ctx.logger:
+                    ctx.logger.info({'event': 'callback_finalized', 'task_code': ctx.task_code, 'run_id': ctx.run_id, 'result': is_success})
+            except Exception as fe:
+                if ctx.logger:
+                    ctx.logger.warning({'event': 'callback_finalize_error', 'error': str(fe), 'task_code': ctx.task_code, 'run_id': ctx.run_id})
 
-            # sync 模式：直接返回执行结果，由 HTTP 层决定如何暴露给调用方
-            return {
-                'task_code': ctx.task_code,
-                'duration_ms': ctx.duration_ms(),
-                'stats': ctx.stats,
-                'status': ctx.status,
-                'run_id': ctx.run_id,
-                'task_id': ctx.task_id,
-                'exec_type': ctx.exec_type,
-                'error': ctx.error,
-            }
+        # sync mode: return execution result to HTTP layer
+        return {
+            'task_code': ctx.task_code,
+            'duration_ms': ctx.duration_ms(),
+            'stats': ctx.stats,
+            'status': ctx.status,
+            'run_id': ctx.run_id,
+            'task_id': ctx.task_id,
+            'exec_type': ctx.exec_type,
+            'error': ctx.error,
+        }
 
     def run(self, task_run_req: TaskRunReq) -> dict:
         ctx = TaskContext(task_run_req)
