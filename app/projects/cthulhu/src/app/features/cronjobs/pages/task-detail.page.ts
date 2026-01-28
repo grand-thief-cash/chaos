@@ -30,6 +30,7 @@ import {CronjobsStore} from '../state/cronjobs.store';
     <div class="actions">
       <button nz-button nzType="default" (click)="reloadRuns()">刷新运行记录</button>
       <button nz-button nzType="default" (click)="manualTrigger()">手动触发</button>
+      <button nz-button nzType="default" (click)="goToRunProgress()">查看运行进度</button>
       <button nz-button nzType="default" (click)="toggleStatus()">{{task()?.status==='ENABLED'?'禁用':'启用'}}</button>
       <button nz-button nzType="primary" [routerLink]="['/cronjobs/tasks', task()?.id, 'edit']">编辑</button>
       <button nz-button nzType="link" [routerLink]="['/cronjobs/tasks']">返回列表</button>
@@ -115,10 +116,19 @@ export class TaskDetailPageComponent implements OnInit {
   loadStats(){ if(!this.taskId()) return; this._statsLoading.set(true); this.api.taskRunStats(this.taskId()!).subscribe({ next: s=> this._stats.set(s), error: ()=> this._statsLoading.set(false), complete: ()=> this._statsLoading.set(false) }); }
   distEntries(){ const st = this.stats(); if(!st) return []; return Object.entries(st.status_distribution || {}).map(([key,value])=> ({ key, value })); }
   reloadRuns(){ if(this.taskId()) { this.store.loadRuns(this.taskId()!, true); this.loadStats(); } }
-  manualTrigger(){ if(this.taskId()) this.store.trigger(this.taskId()!).subscribe({ next: ()=> { this.msg.success('触发成功'); this.reloadRuns();
-    // 触发成功后跳转到运行进度页面
+  manualTrigger(){
+    if(this.taskId()) this.store.trigger(this.taskId()!).subscribe({
+      next: ()=> {
+        this.msg.success('触发成功');
+        this.reloadRuns();
+        // 取消自动跳转：让用户在当前页面手动选择是否去“运行进度”页
+      },
+      error: ()=> this.msg.error('触发失败'),
+    });
+  }
+  goToRunProgress(){
     this.router.navigate(['/cronjobs/runs/progress']);
-  }, error: ()=> this.msg.error('触发失败'), }); }
+  }
   toggleStatus(){ const t = this.task(); if(!t) return; const obs = t.status==='ENABLED'? this.store.disable(t.id): this.store.enable(t.id); obs.subscribe(()=> this.store.loadTasks(true)); }
   onRunPage(i: number){ if(this.taskId()) this.store.setRunPage(this.taskId()!, i); }
   onRunPageSize(size: number){ if(this.taskId()) this.store.setRunPageSize(this.taskId()!, size); }
