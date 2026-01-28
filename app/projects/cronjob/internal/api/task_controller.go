@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -257,6 +259,13 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	run := &model.TaskRun{TaskID: t.ID, ScheduledTime: time.Now().UTC().Truncate(time.Second), Status: bizConsts.Scheduled, Attempt: 1}
+
+	// Capture TraceID for async propagation
+	span := trace.SpanFromContext(r.Context())
+	if span.SpanContext().IsValid() {
+		run.TraceID = span.SpanContext().TraceID().String()
+	}
+
 	if err := tmc.RunSvc.CreateScheduled(r.Context(), run); err != nil {
 		logging.Error(r.Context(), fmt.Sprintf("Task trigger failed: %v", err))
 		writeErr(w, 500, err.Error())
