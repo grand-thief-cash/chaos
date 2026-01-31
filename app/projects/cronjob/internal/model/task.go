@@ -15,11 +15,11 @@ type Task struct {
 	CronExpr           string                   `json:"cron_expr"`            // 规范化后的 6 字段 Cron 表达式（秒 分 时 日 月 周）
 	Timezone           string                   `json:"timezone"`             // 时区（未来用于按配置时区解析 Cron；当前默认 UTC）
 	ExecType           consts.ExecType          `json:"exec_type"`            // 执行类型：SYNC/ASYNC（异步回调暂未实现）
-	HTTPMethod         string                   `json:"http_method"`          // 下游 HTTP 请求方法，如 GET/POST
-	TargetURL          string                   `json:"target_url"`           // 下游调用目标 URL（含协议）
+	HTTPMethod         string                   `json:"method"`               // 修改 JSON tag 为 `method`
+	TargetService      string                   `json:"target_service"`       // 下游服务标识 (default "artemis")
+	TargetPath         string                   `json:"target_path"`          // 下游请求路径
 	HeadersJSON        string                   `json:"headers_json"`         // 以 JSON 字符串格式存储的额外请求头
 	BodyTemplate       string                   `json:"body_template"`        // 请求体模板
-	TimeoutSeconds     int                      `json:"timeout_seconds"`      // 单次执行超时时间（秒）
 	RetryPolicyJSON    string                   `json:"retry_policy_json"`    // 重试策略 JSON（占位，未来使用）
 	MaxConcurrency     int                      `json:"max_concurrency"`      // 单任务允许运行的最大并发数（<=0 视为不限制）
 	ConcurrencyPolicy  consts.ConcurrencyPolicy `json:"concurrency_policy"`   // 并发策略：QUEUE/SKIP/PARALLEL

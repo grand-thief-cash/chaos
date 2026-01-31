@@ -39,11 +39,11 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 		CronExpr           string `json:"cron_expr"`
 		Timezone           string `json:"timezone"`
 		ExecType           string `json:"exec_type"`
-		HTTPMethod         string `json:"http_method"`
-		TargetURL          string `json:"target_url"`
+		HTTPMethod         string `json:"method"` // 修改 JSON tag 为 "method"
+		TargetService      string `json:"target_service"`
+		TargetPath         string `json:"target_path"`
 		HeadersJSON        string `json:"headers_json"`
 		BodyTemplate       string `json:"body_template"`
-		TimeoutSeconds     int    `json:"timeout_seconds"`
 		RetryPolicyJSON    string `json:"retry_policy_json"`
 		MaxConcurrency     int    `json:"max_concurrency"`
 		ConcurrencyPolicy  string `json:"concurrency_policy"`
@@ -59,6 +59,7 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 		writeErr(w, 400, err.Error())
 		return
 	}
+
 	t := &model.Task{
 		Name:               strings.TrimSpace(req.Name),
 		Description:        req.Description,
@@ -66,10 +67,10 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 		Timezone:           defaultOr(req.Timezone, "UTC"),
 		ExecType:           bizConsts.ExecType(req.ExecType),
 		HTTPMethod:         strings.ToUpper(req.HTTPMethod),
-		TargetURL:          req.TargetURL,
+		TargetService:      defaultOr(req.TargetService, "artemis"),
+		TargetPath:         req.TargetPath,
 		HeadersJSON:        defaultOr(req.HeadersJSON, bizConsts.DEFAULT_JSON_STR),
 		BodyTemplate:       req.BodyTemplate,
-		TimeoutSeconds:     req.TimeoutSeconds,
 		RetryPolicyJSON:    defaultOr(req.RetryPolicyJSON, bizConsts.DEFAULT_JSON_STR),
 		MaxConcurrency:     defaultInt(req.MaxConcurrency, 1),
 		ConcurrencyPolicy:  bizConsts.ConcurrencyPolicy(req.ConcurrencyPolicy),
@@ -82,8 +83,8 @@ func (tmc *TaskMgmtController) createTask(w http.ResponseWriter, r *http.Request
 		//CreatedAt:          time.Now().UTC(),
 		//UpdatedAt:          time.Now().UTC(),
 	}
-	if t.CronExpr == "" || t.Name == "" || t.TargetURL == "" {
-		writeErr(w, 400, "CronExpr/Name/TargetURL cannot be empty")
+	if t.CronExpr == "" || t.Name == "" || t.TargetService == "" || t.TargetPath == "" {
+		writeErr(w, 400, "CronExpr/Name/TargetService/TargetPath cannot be empty")
 		return
 	}
 	if err := tmc.TaskSvc.Create(r.Context(), t); err != nil {
@@ -164,11 +165,11 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 		CronExpr           string `json:"cron_expr"`
 		Timezone           string `json:"timezone"`
 		ExecType           string `json:"exec_type"`
-		HTTPMethod         string `json:"http_method"`
-		TargetURL          string `json:"target_url"`
+		HTTPMethod         string `json:"method"` // 修改 JSON tag 为 "method"
+		TargetService      string `json:"target_service"`
+		TargetPath         string `json:"target_path"`
 		HeadersJSON        string `json:"headers_json"`
 		BodyTemplate       string `json:"body_template"`
-		TimeoutSeconds     int    `json:"timeout_seconds"`
 		RetryPolicyJSON    string `json:"retry_policy_json"`
 		MaxConcurrency     int    `json:"max_concurrency"`
 		ConcurrencyPolicy  string `json:"concurrency_policy"`
@@ -183,6 +184,7 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 		writeErr(w, 400, err.Error())
 		return
 	}
+
 	t, err := tmc.TaskSvc.Get(ctx, id)
 	if err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task get failed: %v", err))
@@ -195,8 +197,11 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	if req.ExecType != "" {
 		t.ExecType = bizConsts.ExecType(req.ExecType)
 	}
-	if req.TargetURL != "" {
-		t.TargetURL = req.TargetURL
+	if req.TargetService != "" {
+		t.TargetService = req.TargetService
+	}
+	if req.TargetPath != "" {
+		t.TargetPath = req.TargetPath
 	}
 	if req.HTTPMethod != "" {
 		t.HTTPMethod = strings.ToUpper(req.HTTPMethod)
@@ -206,9 +211,6 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	}
 	if req.CronExpr != "" {
 		t.CronExpr = model.NormalizeCron(req.CronExpr)
-	}
-	if req.TimeoutSeconds > 0 {
-		t.TimeoutSeconds = req.TimeoutSeconds
 	}
 	if req.MaxConcurrency >= 0 {
 		t.MaxConcurrency = req.MaxConcurrency
@@ -227,6 +229,12 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	}
 	if req.HeadersJSON != "" {
 		t.HeadersJSON = req.HeadersJSON
+	}
+	if req.CallbackMethod != "" {
+		t.CallbackMethod = req.CallbackMethod
+	}
+	if req.CallbackTimeoutSec > 0 {
+		t.CallbackTimeoutSec = req.CallbackTimeoutSec
 	}
 	if err := tmc.TaskSvc.UpdateCronAndMeta(ctx, t); err != nil {
 		logging.Error(ctx, fmt.Sprintf("Task update failed: %v", err))
@@ -258,7 +266,15 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 		writeErr(w, 409, "CONCURRENCY_LIMIT")
 		return
 	}
-	run := &model.TaskRun{TaskID: t.ID, ScheduledTime: time.Now().UTC().Truncate(time.Second), Status: bizConsts.Scheduled, Attempt: 1}
+
+	// FIX: 手动触发时，也需要从 Task 把快照字段填充到 TaskRun，否则 Executor 执行时会拿到空的 target/body
+	// Use factory for consistency
+	run := tmc.TaskSvc.CreateTaskRun(t, time.Now().UTC().Truncate(time.Second), 1)
+	if run.TargetService == "" {
+		logging.Error(r.Context(), fmt.Sprintf("triggerTask: target_service is empty for task_id=%d", t.ID))
+		writeErr(w, 400, "target_service_empty")
+		return
+	}
 
 	// Capture TraceID for async propagation
 	span := trace.SpanFromContext(r.Context())

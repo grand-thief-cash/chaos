@@ -1,4 +1,4 @@
--- Migration: initial schema (misfire columns removed)
+-- Migration: initial schema (merged with client refactor)
 
 CREATE TABLE IF NOT EXISTS tasks (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -8,10 +8,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
   exec_type ENUM('SYNC','ASYNC') NOT NULL DEFAULT 'SYNC',
   http_method VARCHAR(8) NOT NULL DEFAULT 'GET',
-  target_url VARCHAR(512) NOT NULL,
+  target_service VARCHAR(64) NOT NULL DEFAULT 'artemis',
+  target_path VARCHAR(512) NOT NULL DEFAULT '',
   headers_json JSON NULL,
   body_template TEXT NULL,
-  timeout_seconds INT NOT NULL DEFAULT 10,
   retry_policy_json JSON NULL,
   max_concurrency INT NOT NULL DEFAULT 1,
   concurrency_policy ENUM('QUEUE','SKIP','PARALLEL') NOT NULL DEFAULT 'QUEUE',
@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS task_runs (
   status ENUM('SCHEDULED','RUNNING','SUCCESS','FAILED','TIMEOUT','RETRYING','CALLBACK_PENDING','CALLBACK_SUCCESS','CALLBACK_FAILED','FAILED_TIMEOUT','CANCELED','SKIPPED',
   'FAILURE_SKIP','CONCURRENT_SKIP','OVERLAP_SKIP') NOT NULL DEFAULT 'SCHEDULED',
   attempt INT NOT NULL DEFAULT 1,
+  target_service VARCHAR(64) NOT NULL DEFAULT 'artemis',
+  target_path VARCHAR(512) NOT NULL DEFAULT '',
+  method VARCHAR(16) NOT NULL DEFAULT 'POST',
+  exec_type VARCHAR(16) NOT NULL DEFAULT 'SYNC',
   request_headers JSON NULL,
   request_body MEDIUMTEXT NULL,
   response_code INT NULL,

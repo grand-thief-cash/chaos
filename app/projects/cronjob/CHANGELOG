@@ -1,7 +1,15 @@
 # VERSION
-v0.12.13
+v0.13.0
 
 # Changelog
+- v0.13.0
+    - Involve HTTP client component from infra framework to support http request in cronjob executor.
+    - Upgraded infra framework version to v0.16.2
+    - Support multiple downstream invocation in cronjob.
+    - Using target service and target path to replace target URL.
+    - Optimized executor flow.
+    - Added new clients query for frontend to fetch available target services and their APIs.
+    - Removed timeout seconds from task run.
 - v0.12.13
     - Fixed bug of missing traceid after task entered in channel.
     - Involve http client component from infra framework.

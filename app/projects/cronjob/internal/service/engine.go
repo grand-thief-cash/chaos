@@ -189,7 +189,13 @@ func (e *Engine) scan(ctx context.Context, now time.Time) error {
 			}
 		}
 		// schedule normal
-		run := &model.TaskRun{TaskID: task.ID, ScheduledTime: now, Status: bizConsts.Scheduled, Attempt: attempt}
+		// 使用 TaskService.CreateTaskRun 工厂方法
+		run := e.TaskSvc.CreateTaskRun(task, now, attempt)
+		if run.TargetService == "" {
+			logging.Error(ctx, fmt.Sprintf("task %d target_service is empty, skipping", task.ID))
+			continue
+		}
+
 		if err := e.RunDao.CreateScheduled(ctx, run); err != nil {
 			logging.Info(ctx, fmt.Sprintf("task %d create scheduled failed err=%v", task.ID, err))
 			continue

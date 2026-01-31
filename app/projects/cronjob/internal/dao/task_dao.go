@@ -110,10 +110,10 @@ func (d *TaskDaoImpl) UpdateCronAndMeta(ctx context.Context, t *model.Task) erro
 		"timezone":             t.Timezone,
 		"exec_type":            t.ExecType,
 		"http_method":          t.HTTPMethod,
-		"target_url":           t.TargetURL,
+		"target_service":       t.TargetService, // 修正：补充 target_service
+		"target_path":          t.TargetPath,    // 修正：补充 target_path
 		"headers_json":         t.HeadersJSON,
 		"body_template":        t.BodyTemplate,
-		"timeout_seconds":      t.TimeoutSeconds,
 		"retry_policy_json":    t.RetryPolicyJSON,
 		"max_concurrency":      t.MaxConcurrency,
 		"concurrency_policy":   t.ConcurrencyPolicy,
