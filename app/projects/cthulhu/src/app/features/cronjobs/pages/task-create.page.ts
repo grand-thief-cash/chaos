@@ -9,11 +9,12 @@ import {CronjobTaskFormComponent} from '../ui/cronjob-task-form.component';
   standalone: true,
   imports: [CommonModule, CronjobTaskFormComponent],
   template: `<h2>新建任务</h2>
-  <cronjob-task-form [value]="template" (save)="create($event)" (cancel)="back()"></cronjob-task-form>`
+  <cronjob-task-form [value]="template" (save)="create($event)" (cancel)="back()" [api]="api"></cronjob-task-form>`
 })
 export class TaskCreatePageComponent {
   template: any = history.state?.template || null;
-  constructor(private api: CronjobsApiService, private router: Router) {}
+  api: CronjobsApiService;
+  constructor(api: CronjobsApiService, private router: Router) { this.api = api; }
   create(payload: any){
     this.api.createTask(payload).subscribe({
       next: (res)=> this.router.navigate(['/cronjobs/tasks', res.id]),
@@ -22,3 +23,4 @@ export class TaskCreatePageComponent {
   }
   back(){ this.router.navigate(['/cronjobs/tasks']); }
 }
+// 传递 api 给表单组件以便其拉取 target_service 列表
