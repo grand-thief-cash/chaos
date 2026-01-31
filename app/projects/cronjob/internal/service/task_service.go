@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -150,4 +151,21 @@ func (s *TaskService) ListFiltered(ctx context.Context, f *model.TaskListFilters
 
 func (s *TaskService) CountFiltered(ctx context.Context, f *model.TaskListFilters) (int64, error) {
 	return s.TaskDao.CountFiltered(ctx, f)
+}
+
+// CreateTaskRun 从 Task 创建 TaskRun，统一初始化逻辑
+func (s *TaskService) CreateTaskRun(task *model.Task, scheduledTime time.Time, attempt int) *model.TaskRun {
+	return &model.TaskRun{
+		TaskID:             task.ID,
+		ScheduledTime:      scheduledTime,
+		Status:             bizConsts.Scheduled,
+		Attempt:            attempt,
+		TargetService:      task.TargetService,
+		TargetPath:         task.TargetPath,
+		Method:             task.HTTPMethod,
+		ExecType:           task.ExecType,
+		CallbackTimeoutSec: task.CallbackTimeoutSec,
+		RequestHeaders:     task.HeadersJSON,
+		RequestBody:        task.BodyTemplate,
+	}
 }

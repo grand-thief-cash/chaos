@@ -30,6 +30,14 @@ func init() {
 		if !ok {
 			return fmt.Errorf("run_mgmt_ctrl type assertion failed")
 		}
+		compMeta, err := c.Resolve(bizConsts.COMP_CTRL_META_MGMT)
+		if err != nil {
+			return err
+		}
+		metaCtrl, ok := compMeta.(*MetaController)
+		if !ok {
+			return fmt.Errorf("meta_mgmt_ctrl type assertion failed")
+		}
 
 		// Task routes
 		r.Route("/api/v1/tasks", func(r chi.Router) {
@@ -73,6 +81,11 @@ func init() {
 			r.Get("/{id}/progress", func(w http.ResponseWriter, req *http.Request) { runCtrl.getRunProgress(w, req, getRunID(req)) })
 			r.Post("/{id}/progress", func(w http.ResponseWriter, req *http.Request) { runCtrl.setRunProgress(w, req, getRunID(req)) })
 			r.Post("/{id}/callback", func(w http.ResponseWriter, req *http.Request) { runCtrl.finalizeCallback(w, req, getRunID(req)) })
+		})
+
+		// Meta routes
+		r.Route("/api/v1/meta", func(r chi.Router) {
+			r.Get("/clients", metaCtrl.ListClients)
 		})
 
 		// management/cache ops

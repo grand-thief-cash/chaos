@@ -11,5 +11,6 @@ const (
 	COMP_SVC_RUN_PROGRESS     = "run_progress_mgr" // ephemeral progress manager
 	COMP_SVC_CALLBACK_SCANNER = "callback_timeout_scanner"
 	COMP_CTRL_RUN_MGMT        = "run_mgmt_ctrl"
-	COMP_SVC_RUN_CLEANUP      = "run_cleanup" // background run cleanup
+	COMP_CTRL_META_MGMT       = "meta_mgmt_ctrl" // new: meta controller for frontend
+	COMP_SVC_RUN_CLEANUP      = "run_cleanup"    // background run cleanup
 )
