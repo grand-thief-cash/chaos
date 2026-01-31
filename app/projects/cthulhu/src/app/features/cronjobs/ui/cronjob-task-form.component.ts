@@ -49,15 +49,23 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
-        <nz-form-label>HTTP Method</nz-form-label>
+        <nz-form-label>Method</nz-form-label>
         <nz-form-control>
-          <input nz-input formControlName="http_method" />
+          <input nz-input formControlName="method" />
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
-        <nz-form-label>Target URL</nz-form-label>
+        <nz-form-label>Target Service</nz-form-label>
         <nz-form-control nzHasFeedback [nzErrorTip]="'必填'">
-          <input nz-input formControlName="target_url" />
+          <nz-select formControlName="target_service">
+            <nz-option *ngFor="let service of targetServices" [nzValue]="service" [nzLabel]="service"></nz-option>
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label>Target Path</nz-form-label>
+        <nz-form-control nzHasFeedback [nzErrorTip]="'必填'">
+          <input nz-input formControlName="target_path" />
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
@@ -70,12 +78,6 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
         <nz-form-label>Body模板</nz-form-label>
         <nz-form-control>
           <textarea nz-input formControlName="body_template" rows="2"></textarea>
-        </nz-form-control>
-      </nz-form-item>
-      <nz-form-item>
-        <nz-form-label>超时(秒)</nz-form-label>
-        <nz-form-control>
-          <nz-input-number formControlName="timeout_seconds" [nzMin]="1" />
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
@@ -154,7 +156,8 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
     .actions { margin-top: 16px; display:flex; gap:12px; }
   `]
 })
-export class CronjobTaskFormComponent implements OnChanges { // 实现 OnChanges
+export class CronjobTaskFormComponent implements OnChanges {
+  @Input() api: any;
   @Input() value: Partial<Task> | null = null;
   @Output() save = new EventEmitter<Partial<Task>>();
   @Output() cancel = new EventEmitter<void>();
@@ -168,11 +171,11 @@ export class CronjobTaskFormComponent implements OnChanges { // 实现 OnChanges
     cron_expr: ['', Validators.required],
     timezone: ['UTC'],
     exec_type: ['SYNC'],
-    http_method: ['GET'],
-    target_url: ['', Validators.required],
+    method: ['GET'], // 新增
+    target_service: ['', Validators.required], // 新增
+    target_path: ['', Validators.required], // 新增
     headers_json: ['{}'],
     body_template: [''],
-    timeout_seconds: [30],
     retry_policy_json: ['{}'],
     max_concurrency: [1],
     concurrency_policy: ['PARALLEL'],
@@ -183,10 +186,24 @@ export class CronjobTaskFormComponent implements OnChanges { // 实现 OnChanges
     status: ['ENABLED']
   });
 
+  // 下拉选项数据
+  targetServices: string[] = [];
   constructor(private fb: FormBuilder, private msg: NzMessageService) {}
   ngOnChanges(changes: SimpleChanges){
     if(this.value){
       this.form.patchValue(this.value);
+    }
+  }
+  ngOnInit() {
+    // 拉取 targetService 列表
+    // 这里假设有 CronjobsApiService 注入
+    if ((this as any).api && typeof (this as any).api.listClients === 'function') {
+      (this as any).api.listClients().subscribe({
+        next: (list: string[]) => this.targetServices = list,
+        error: () => this.targetServices = ['artemis']
+      });
+    } else {
+      this.targetServices = ['artemis'];
     }
   }
   submit(){

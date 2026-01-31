@@ -1,7 +1,9 @@
 # VERSION
-v0.3.8
+v0.3.9
 
 # Changelog
+- v0.3.9
+    - Changed cronjob task edit page to support multiple downstream invocations.
 - v0.3.8
     - Disable auto jump to task progress and added button to jump to task progress page in cronjob app.
 - v0.3.7
