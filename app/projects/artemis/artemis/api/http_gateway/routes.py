@@ -16,7 +16,16 @@ logger = get_logger('http.routes')
 @router.get('/tasks')
 async def tasks():
     logger.info("/task list requested")
-    return {'tasks': registry.list_tasks()}
+    raw = registry.list_tasks()
+    tasks = []
+    for code, cls in raw.items():
+        code_val = getattr(code, 'value', str(code))
+        tasks.append({
+            'task_code': code_val,
+            'impl': getattr(cls, '__name__', str(cls)),
+            'module': getattr(cls, '__module__', ''),
+        })
+    return {'tasks': tasks}
 
 
 @router.post('/tasks/run/{task_code}')

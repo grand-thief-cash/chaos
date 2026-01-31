@@ -15,6 +15,7 @@ class TaskRegistry:
     def get_task(self, task_code: TaskCode):
         return self._registry.get(task_code)
 
-    def list_tasks(self):
-        return list(self._registry.keys())
+    def list_tasks(self) -> Dict[TaskCode, Type]:
+        """Return a shallow copy of the registry mapping TaskCode to implementation class."""
+        return dict(self._registry)
 registry = TaskRegistry()
