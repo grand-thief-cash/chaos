@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"sort"
@@ -42,13 +41,12 @@ type Executor struct {
 	TaskSvc *TaskService `infra:"dep:task_service"`
 	RunSvc  *RunService  `infra:"dep:run_service"`
 	// Injected HTTP client with OTEL support
-	HTTPCli *http_client.HTTPClientsComponent `infra:"dep:http_clients"`
-	ch      chan *model.TaskRun
-	wg      sync.WaitGroup
-	mu      sync.Mutex
-	cancel  context.CancelFunc
-	// In execute we create timeout contexts per run; cancelMap stores per-run cancel funcs.
-	cancelMap     map[int64]context.CancelFunc // runID -> cancel func
+	HTTPCli       *http_client.HTTPClientsComponent `infra:"dep:http_clients"`
+	ch            chan *model.TaskRun
+	wg            sync.WaitGroup
+	mu            sync.Mutex
+	cancel        context.CancelFunc
+	cancelMap     map[int64]context.CancelFunc // runID -> cancel func 	// In execute we create timeout contexts per run; cancelMap stores per-run cancel funcs.
 	activePerTask map[int64]int                // taskID -> running count
 	Progress      *RunProgressManager          `infra:"dep:run_progress_mgr"`
 }
@@ -154,38 +152,68 @@ func (e *Executor) worker(ctx context.Context) {
 				continue
 			}
 			// Reconstruct trace context for the worker execution scope
-			runCtx := e.ensureTraceContext(context.Background(), run.TraceID)
+			traceCtx := e.ensureTraceContext(context.Background(), run.TraceID)
 
-			logging.Info(runCtx, fmt.Sprintf("task: %d grabbed in worker ok=%v", run.ID, ok))
-			ok2, err := e.RunSvc.TransitionToRunning(runCtx, run.ID)
+			logging.Info(traceCtx, fmt.Sprintf("task: %d grabbed in worker ok=%v", run.ID, ok))
+			ok2, err := e.RunSvc.TransitionToRunning(traceCtx, run.ID)
 			if err != nil || !ok2 {
 				if err != nil {
-					logging.Info(runCtx, fmt.Sprintf("transition to running failed for run %d: %v", run.ID, err))
+					logging.Info(traceCtx, fmt.Sprintf("transition to running failed for run %d: %v", run.ID, err))
 				}
 				continue
 			}
-			e.execute(runCtx, run)
+			e.execute(traceCtx, run)
 		}
 	}
 }
 
 func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
-	// 1. 加载任务
-	task, err := e.TaskSvc.Get(ctx, run.TaskID)
-	if err != nil {
-		log.Printf("load task %d: %v", run.TaskID, err)
-		_ = e.RunSvc.MarkFailed(ctx, run.ID, "load task failed")
+	// 2. 准备 per-run 上下文 & 资源清理逻辑
+	runCtx, cleanup := e.startRunContext(ctx, run)
+	defer cleanup()
+
+	// 2.5 获取客户端并解析完整 URL
+	targetService := run.TargetService
+	if targetService == "" {
+		errMsg := "target_service is empty"
+		logging.Error(ctx, fmt.Sprintf("run %d failed: %s", run.ID, errMsg))
+		_ = e.RunSvc.MarkFailed(ctx, run.ID, errMsg)
 		return
 	}
 
-	// 2. 准备 per-run 上下文 & 资源清理逻辑
-	runCtx, cleanup, timeoutSec := e.startRunContext(ctx, task, run)
-	defer cleanup()
+	var client *http_client.InstrumentedClient
+	var errCli error
+	if e.HTTPCli != nil {
+		client, errCli = e.HTTPCli.Client(targetService)
+	} else {
+		// Fallback (mostly for tests or incomplete initialization)
+		client = &http_client.InstrumentedClient{Client: &http.Client{Timeout: 15 * time.Second}}
+	}
+
+	if errCli != nil {
+		logging.Error(ctx, fmt.Sprintf("http client for service %s not found: %v", targetService, errCli))
+		_ = e.RunSvc.MarkFailed(ctx, run.ID, fmt.Sprintf("client_config_error: %v", errCli))
+		return
+	}
+
+	// Resolve full URL
+	fullURL := run.TargetPath
+	if !strings.HasPrefix(fullURL, "http://") && !strings.HasPrefix(fullURL, "https://") {
+		baseURL := client.BaseURL
+		// simple joining, assuming valid segments. Ideally use url.JoinPath but we do string concat for now
+		if !strings.HasSuffix(baseURL, "/") && !strings.HasPrefix(fullURL, "/") {
+			fullURL = baseURL + "/" + fullURL
+		} else if strings.HasSuffix(baseURL, "/") && strings.HasPrefix(fullURL, "/") {
+			fullURL = baseURL + strings.TrimPrefix(fullURL, "/")
+		} else {
+			fullURL = baseURL + fullURL
+		}
+	}
 
 	// 3. 构建 HTTP 请求
-	req, err := e.buildRequest(runCtx, task, run)
+	req, err := e.buildRequest(runCtx, run, fullURL)
 	if err != nil {
-		logging.Error(ctx, fmt.Sprintf("create request for task failed %d: %v", task.ID, err))
+		logging.Error(ctx, fmt.Sprintf("create request for task failed %d (run %d): %v", run.TaskID, run.ID, err))
 		_ = e.RunSvc.MarkFailed(ctx, run.ID, "build request failed")
 		return
 	}
@@ -194,7 +222,7 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	e.persistOutboundSnapshot(ctx, run.ID, req)
 
 	// 4. 执行 HTTP 调用 (含分类错误)
-	resp, body, classify, err := e.doHTTP(runCtx, task, run, timeoutSec, req)
+	resp, body, classify, err := e.doHTTP(runCtx, client.Client, req)
 	if err != nil { // 传输层或上下文异常
 		// 没有 HTTP 响应，按分类更新状态
 		switch classify {
@@ -213,11 +241,13 @@ func (e *Executor) execute(ctx context.Context, run *model.TaskRun) {
 	e.persistInboundSnapshot(ctx, run.ID, resp.StatusCode, string(body), "")
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		if task.ExecType == bizConsts.ExecTypeAsync { // 异步第一阶段成功
-			deadline := time.Now().Add(time.Duration(task.CallbackTimeoutSec) * time.Second)
-			if task.CallbackTimeoutSec <= 0 {
-				deadline = time.Now().Add(5 * time.Minute)
+		if run.ExecType == bizConsts.ExecTypeAsync { // 异步第一阶段成功
+			// Calculate deadline from current time (when downstream accepted the task)
+			timeoutSec := run.CallbackTimeoutSec
+			if timeoutSec <= 0 {
+				timeoutSec = 300 // Default 5 minutes if not configured
 			}
+			deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 			logging.Info(ctx, fmt.Sprintf("run %d async phase1 succeeded; transitioning to CALLBACK_PENDING until deadline %s", run.ID, deadline.Format(time.RFC3339)))
 			_ = e.RunSvc.MarkCallbackPendingWithDeadline(ctx, run.ID, deadline)
 			return
@@ -298,36 +328,31 @@ func (e *Executor) persistInboundSnapshot(ctx context.Context, runID int64, code
 	_ = e.RunSvc.UpdateResponseSnapshot(ctx, runID, &c, body, errMsg)
 }
 
-// startRunContext 计算任务超时时间，创建带超时的上下文，并登记取消函数 + 运行中计数。
-// 返回：子上下文、清理函数（负责取消与计数回收）、timeout(秒)
-func (e *Executor) startRunContext(parent context.Context, task *model.Task, run *model.TaskRun) (context.Context, func(), int) {
+// startRunContext 创建带超时的上下文（默认1小时兜底），并登记取消函数 + 运行中计数。
+func (e *Executor) startRunContext(parent context.Context, run *model.TaskRun) (context.Context, func()) {
 	// The parent context passed here (from worker) should already have trace info via ensureTraceContext.
-	// We can add another span layer specifically for the execution phase if desired, or just use parent.
-	// For simplicity and to ensure trace existence even if called from elsewhere:
 	baseCtx := e.ensureTraceContext(parent, run.TraceID)
 
-	to := task.TimeoutSeconds
-	if to <= 0 {
-		to = 10
-	}
+	// Hard limit of 1 hour to prevent stuck goroutines if HTTP client timeout fails
+	to := 3600
 	runCtx, cancel := context.WithTimeout(baseCtx, time.Duration(to)*time.Second)
 
 	e.mu.Lock()
 	e.cancelMap[run.ID] = cancel
-	e.activePerTask[task.ID]++
+	e.activePerTask[run.TaskID]++
 	e.mu.Unlock()
 
 	cleanup := func() {
 		cancel()
 		e.mu.Lock()
 		delete(e.cancelMap, run.ID)
-		e.activePerTask[task.ID]--
-		if e.activePerTask[task.ID] <= 0 {
-			delete(e.activePerTask, task.ID)
+		e.activePerTask[run.TaskID]--
+		if e.activePerTask[run.TaskID] <= 0 {
+			delete(e.activePerTask, run.TaskID)
 		}
 		e.mu.Unlock()
 	}
-	return runCtx, cleanup, to
+	return runCtx, cleanup
 }
 
 // ensureTraceContext creates a new context with a span context derived from the traceID string.
@@ -357,9 +382,9 @@ func (e *Executor) ensureTraceContext(parent context.Context, traceID string) co
 	return trace.ContextWithSpanContext(parent, sc)
 }
 
-// buildRequest 根据任务配置构建 HTTP 请求。调整：不再在 URL 上附带 run_id 参数；使用 JSON 包含 meta(A) 与 body(B)。
-func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *model.TaskRun) (*http.Request, error) {
-	// A: meta 信息 (run 相关)
+// buildRequest 根据 TaskRun 快照构建 HTTP 请求
+func (e *Executor) buildRequest(ctx context.Context, run *model.TaskRun, fullURL string) (*http.Request, error) {
+	// A: meta 信息 (run 相关) - 依然构造，保持 contract 兼容
 	ce := config.GetBizConfig().CallbackEndpoints
 	progressPath := ce.ProgressPath
 	callbackPath := ce.CallbackPath
@@ -373,23 +398,21 @@ func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *mode
 	callbackPath = strings.ReplaceAll(callbackPath, "{run_id}", fmt.Sprintf("%d", run.ID))
 	meta := map[string]any{
 		"run_id":    run.ID,
-		"task_id":   task.ID,
-		"exec_type": task.ExecType,
+		"task_id":   run.TaskID,
+		"exec_type": run.ExecType,
 		"callback_endpoints": map[string]any{
 			"progress": progressPath,
 			"callback": callbackPath,
-			//"callback_ip":   bizConsts.LocalIP,
-			//"callback_port": application.GetApp().GetConfig().HTTPServer.Address,
 		},
 	}
-	// B: 业务 body, 来自 task.BodyTemplate (保留原始字符串或 JSON)
+	// B: 业务 body, 来自 run.RequestBody (snapshot)
 	var bodyVal any = nil
-	if task.BodyTemplate != "" {
+	if run.RequestBody != "" {
 		var js any
-		if err := json.Unmarshal([]byte(task.BodyTemplate), &js); err == nil { // 有效 JSON
+		if err := json.Unmarshal([]byte(run.RequestBody), &js); err == nil { // 有效 JSON
 			bodyVal = js
 		} else {
-			bodyVal = task.BodyTemplate
+			bodyVal = run.RequestBody
 		}
 	}
 	payload := map[string]any{"meta": meta, "body": bodyVal}
@@ -397,9 +420,9 @@ func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *mode
 	if err != nil {
 		return nil, fmt.Errorf("marshal outbound payload failed: %w", err)
 	}
-	// URL 不再附带 run_id
-	urlFinal := task.TargetURL
-	req, err := http.NewRequestWithContext(ctx, task.HTTPMethod, urlFinal, bytes.NewReader(buf))
+
+	// URL 使用 fullURL
+	req, err := http.NewRequestWithContext(ctx, run.Method, fullURL, bytes.NewReader(buf))
 	if err != nil {
 		return nil, err
 	}
@@ -408,37 +431,44 @@ func (e *Executor) buildRequest(ctx context.Context, task *model.Task, run *mode
 		return io.NopCloser(bytes.NewReader(buf)), nil
 	}
 
-	// Headers: caller identity
+	// Headers: 基础 Content-Type, 后续可从 run.RequestHeaders 叠加
 	req.Header.Set("Content-Type", "application/json")
-	//req.Header.Set("X-Caller-IP", bizConsts.LocalIP)
-	//req.Header.Set("X-Caller-Port", application.GetApp().GetConfig().HTTPServer.Address)
+	if run.RequestHeaders != "" {
+		// Try parsing as simple map first
+		var simpleHeaders map[string]string
+		if err := json.Unmarshal([]byte(run.RequestHeaders), &simpleHeaders); err == nil {
+			for k, v := range simpleHeaders {
+				req.Header.Set(k, v)
+			}
+		} else {
+			// Try multi-value map
+			var multiHeaders map[string][]string
+			if err := json.Unmarshal([]byte(run.RequestHeaders), &multiHeaders); err == nil {
+				for k, vv := range multiHeaders {
+					for _, v := range vv {
+						req.Header.Add(k, v)
+					}
+				}
+			}
+		}
+	}
 	return req, nil
 }
 
 // doHTTP 执行 HTTP 请求并读取响应 Body。
-// 返回：resp(成功时)/nil, body(成功时), 分类字符串(错误时), error
-func (e *Executor) doHTTP(ctx context.Context, task *model.Task, run *model.TaskRun, timeoutSec int, req *http.Request) (*http.Response, []byte, string, error) {
+// 仅依赖 client 和 req
+func (e *Executor) doHTTP(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, []byte, string, error) {
 	var resp *http.Response
 	var err error
 
-	if e.HTTPCli != nil {
-		cli, _ := e.HTTPCli.Client("artemis")
-		resp, err = cli.Client.Do(req)
-	} else {
-		// Fallback if component not injected
-		client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
-		resp, err = client.Do(req)
-	}
+	resp, err = client.Do(req)
 
 	if err != nil { // 需要分类
 		classify := e.classifyNetError(ctx, err)
-		logging.Error(ctx, fmt.Sprintf("task %d request failed %d classified=%s raw=%v", task.ID, run.ID, classify, err))
 		return nil, nil, classify, err
 	}
 	b, _ := io.ReadAll(resp.Body)
 	// 注意：调用者仍负责 resp.Body 的关闭，本处只是预读。
-	// 将 body 放入日志 (调试级别)
-	logging.Debug(ctx, fmt.Sprintf("task: %d resp.StatusCode :%d, response body: %s", task.ID, resp.StatusCode, b))
 	return resp, b, "", nil
 }
 
