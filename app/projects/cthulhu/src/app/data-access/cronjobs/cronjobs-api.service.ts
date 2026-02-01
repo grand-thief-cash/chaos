@@ -110,4 +110,10 @@ export class CronjobsApiService {
       map(resp => resp?.items || [])
     );
   }
+  // 新增接口：获取可用 target_service 列表
+  listClients(): Observable<string[]> {
+    return this._http.get<{ clients: string[] }>(`${this.API_BASE}/meta/clients`).pipe(
+      map(resp => Array.isArray(resp.clients) ? resp.clients : ['artemis'])
+    );
+  }
 }

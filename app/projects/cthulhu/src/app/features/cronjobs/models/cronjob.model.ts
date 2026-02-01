@@ -22,14 +22,14 @@ export interface Task {
   cron_expr: string;
   timezone: string;
   exec_type: 'SYNC' | 'ASYNC';
-  http_method: string;
-  target_url: string;
+  method: string; // 新增，替代 http_method
+  target_service: string; // 新增，服务标识
+  target_path: string; // 新增，请求路径
   headers_json: string;
   body_template: string;
-  timeout_seconds: number;
   retry_policy_json: string;
   max_concurrency: number;
-  concurrency_policy: 'SKIP' | 'PARALLEL' | string; // server may extend
+  concurrency_policy: 'SKIP' | 'PARALLEL' | string;
   callback_method: string;
   callback_timeout_sec: number;
   overlap_action: string;

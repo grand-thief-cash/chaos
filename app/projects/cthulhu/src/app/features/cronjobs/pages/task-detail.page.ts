@@ -24,7 +24,7 @@ import {CronjobsStore} from '../state/cronjobs.store';
       <div><strong>执行类型:</strong> {{task()?.exec_type}}</div>
       <div><strong>重叠策略:</strong> {{task()?.overlap_action}}</div>
       <div><strong>失败策略:</strong> {{task()?.failure_action}}</div>
-      <div><strong>目标:</strong> {{task()?.http_method}} {{task()?.target_url}}</div>
+      <div><strong>目标:</strong> {{task()?.method}} {{task()?.target_service}} {{task()?.target_path}}</div>
       <div><strong>描述:</strong> {{task()?.description}}</div>
     </div>
     <div class="actions">
