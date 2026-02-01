@@ -11,13 +11,14 @@ import {Task} from '../models/cronjob.model';
   imports: [CommonModule, CronjobTaskFormComponent],
   template: `<h2>编辑任务</h2>
   <div *ngIf="task; else loadingTpl">
-    <cronjob-task-form [value]="task" (save)="update($event)" (cancel)="back()"></cronjob-task-form>
+    <cronjob-task-form [value]="task" (save)="update($event)" (cancel)="back()" [api]="api"></cronjob-task-form>
   </div>
   <ng-template #loadingTpl>加载任务中...</ng-template>`
 })
 export class TaskEditPageComponent implements OnInit {
   task: Task | null = null;
-  constructor(private api: CronjobsApiService, private route: ActivatedRoute, private router: Router) {}
+  api: CronjobsApiService;
+  constructor(api: CronjobsApiService, private route: ActivatedRoute, private router: Router) { this.api = api; }
   ngOnInit(){
     const id = Number(this.route.snapshot.paramMap.get('id'));
     this.api.getTask(id).subscribe({ next: t => this.task = t, error: err => console.error('load task error', err) });
@@ -31,4 +32,4 @@ export class TaskEditPageComponent implements OnInit {
   }
   back(){ this.router.navigate(['/cronjobs/task', this.task?.id]); }
 }
-
+// 传递 api 给表单组件以便其拉取 target_service 列表
