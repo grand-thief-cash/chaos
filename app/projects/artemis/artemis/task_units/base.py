@@ -63,6 +63,41 @@ class BaseTaskUnit:
             ctx.logger.info({'event': 'phase', 'phase': name, 'action': 'ok', 'duration_ms': duration_ms, 'run_id': ctx.run_id})
         return result, duration_ms
 
+    def _pre_run(self, ctx: TaskContext, phase_durations: Dict[str, int]) -> None:
+        """Standard preparation phases: checks, loading params, setup."""
+        # parameter_check
+        _, d = self._run_phase(ctx, 'parameter_check', self.parameter_check, ctx)
+        phase_durations['parameter_check'] = d
+        # load_dynamic_parameters
+        dyn, d = self._run_phase(ctx, 'load_dynamic_parameters', self.load_dynamic_parameters, ctx)
+        phase_durations['load_dynamic_parameters'] = d
+        # load_task_config (merge)
+        _, d = self._run_phase(ctx, 'load_task_config', self.merge_parameters, ctx, dyn)
+        phase_durations['load_task_config'] = d
+        # before_execute
+        _, d = self._run_phase(ctx, 'before_execute', self.before_execute, ctx)
+        phase_durations['before_execute'] = d
+
+    def _execute_strategy(self, ctx: TaskContext, phase_durations: Dict[str, int]) -> None:
+        """Strategy hook. Default behavior is execution worker (execute->process->sink).
+        Override this in OrchestratorTaskUnit to do plan->loop.
+        """
+        # execute
+        res, d = self._run_phase(ctx, 'execute', self.execute, ctx)
+        phase_durations['execute'] = d
+        # post_process
+        processed, d = self._run_phase(ctx, 'post_process', self.post_process, ctx, res)
+        phase_durations['post_process'] = d
+        # sink
+        _, d = self._run_phase(ctx, 'sink', self.sink, ctx, processed)
+        phase_durations['sink'] = d
+
+    def _post_run(self, ctx: TaskContext, phase_durations: Dict[str, int]) -> None:
+        """Finalization phases."""
+        # finalize (no result expected)
+        _, d = self._run_phase(ctx, 'finalize', self.finalize, ctx)
+        phase_durations['finalize'] = d
+
     def run(self, ctx: TaskContext):
         ctx.set_status(TaskStatus.RUNNING.value)
         if ctx.logger:
@@ -70,30 +105,9 @@ class BaseTaskUnit:
         phase_durations = {}
         failed_phase = None
         try:
-            # parameter_check
-            _, d = self._run_phase(ctx, 'parameter_check', self.parameter_check, ctx)
-            phase_durations['parameter_check'] = d
-            # load_dynamic_parameters
-            dyn, d = self._run_phase(ctx, 'load_dynamic_parameters', self.load_dynamic_parameters, ctx)
-            phase_durations['load_dynamic_parameters'] = d
-            # load_task_config (merge)
-            _, d = self._run_phase(ctx, 'load_task_config', self.merge_parameters, ctx, dyn)
-            phase_durations['load_task_config'] = d
-            # before_execute
-            _, d = self._run_phase(ctx, 'before_execute', self.before_execute, ctx)
-            phase_durations['before_execute'] = d
-            # execute
-            res, d = self._run_phase(ctx, 'execute', self.execute, ctx)
-            phase_durations['execute'] = d
-            # post_process
-            processed, d = self._run_phase(ctx, 'post_process', self.post_process, ctx, res)
-            phase_durations['post_process'] = d
-            # sink
-            _, d = self._run_phase(ctx, 'sink', self.sink, ctx, processed)
-            phase_durations['sink'] = d
-            # finalize (no result expected)
-            _, d = self._run_phase(ctx, 'finalize', self.finalize, ctx)
-            phase_durations['finalize'] = d
+            self._pre_run(ctx, phase_durations)
+            self._execute_strategy(ctx, phase_durations)
+            self._post_run(ctx, phase_durations)
 
             ctx.set_status(TaskStatus.SUCCESS.value)
             # persist durations into stats for external API consumers

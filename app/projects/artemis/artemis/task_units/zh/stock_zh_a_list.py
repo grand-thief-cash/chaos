@@ -3,10 +3,10 @@ from typing import Any, Dict
 import pandas as pd
 
 from artemis.consts import DeptServices
-from artemis.task_units.base import BaseTaskUnit
+from artemis.task_units.child import ChildTaskUnit
 
 
-class StockZHAListDailyTask(BaseTaskUnit):
+class StockZHAListDailyTask(ChildTaskUnit):
     """单任务：每日刷新 A 股列表（上交所/深交所）。
 
     参数约定（ctx.params 最终形态）：
