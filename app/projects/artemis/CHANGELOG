@@ -1,7 +1,9 @@
 # VERSION
-v0.6.0
+v0.6.1
 
 # Changelog
+- v0.6.1
+    - Added missing requirements in requirements.txt
 - v0.6.0
     - Refactored task unit design.
 - v0.5.1
