@@ -46,6 +46,8 @@ class TaskContext:
                 self.logger.warning({'event': 'dept_http_client_init_failed', 'error': str(e), 'task_code': self.task_code, 'run_id': self.run_id})
 
         self.exec_cls = registry.get_task(self.task_code)
+        if not self.exec_cls:
+            raise ValueError(f"task '{self.task_code}' not registered")
 
 
     def set_logger(self, logger):

@@ -18,7 +18,7 @@ class TaskMeta(BaseModel):
     run_id: int | str = Field(..., description="Run identifier")
     task_id: int | str = Field(..., description="Task identifier")
     exec_type: str = Field(..., description="SYNC|ASYNC")
-    task_code: TaskCode | None = Field(None, description="Task code")
+    task_code: TaskCode | str | None = Field(None, description="Task code")
     callback_endpoints: CallbackEndpoints | None = None
     @field_validator("exec_type")
     @classmethod

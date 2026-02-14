@@ -1,6 +1,7 @@
 from typing import Any, Dict
 
 import pandas as pd
+from akshare import stock_bj_a_spot_em, stock_sz_a_spot_em, stock_sh_a_spot_em
 
 from artemis.consts import DeptServices
 from artemis.task_units.child import ChildTaskUnit
@@ -18,7 +19,7 @@ class StockZHAListDailyTask(ChildTaskUnit):
       - 不做真实下游写入，sink 中打印/打日志记录数量与示例
     """
 
-    VALID_EXCHANGES = {"SH", "SZ", "BJ"}
+    VALID_EXCHANGES = {"SH", "SZ", "BJ","ALL"}
 
     # ------- 参数检查 -------
 
@@ -43,18 +44,23 @@ class StockZHAListDailyTask(ChildTaskUnit):
         exchange = params.get("exchange")
 
         try:
-            # if exchange == "SH":
-            #     df = stock_sh_a_spot_em()
-            # elif exchange == "SZ":
-            #     df = stock_sz_a_spot_em()
-            # elif exchange == "BJ":
-            #     df = stock_bj_a_spot_em()
             if exchange == "SH":
-                df = pd.DataFrame([{"代码": "600000", "名称": "浦发银行"}])
+                df = stock_sh_a_spot_em()
             elif exchange == "SZ":
-                df = pd.DataFrame([{"代码": "000001", "名称": "平安银行"}])
+                df = stock_sz_a_spot_em()
             elif exchange == "BJ":
-                df = pd.DataFrame([{"代码": "430047", "名称": "创新层"}])
+                df = stock_bj_a_spot_em()
+            elif exchange == "ALL":
+                df_sh = stock_sh_a_spot_em()
+                df_sz = stock_sz_a_spot_em()
+                df_bj = stock_bj_a_spot_em()
+                df = pd.concat([df_sh, df_sz, df_bj], ignore_index=True)
+            # if exchange == "SH":
+            #     df = pd.DataFrame([{"代码": "600000", "名称": "浦发银行"}])
+            # elif exchange == "SZ":
+            #     df = pd.DataFrame([{"代码": "000001", "名称": "平安银行"}])
+            # elif exchange == "BJ":
+            #     df = pd.DataFrame([{"代码": "430047", "名称": "创新层"}])
             else:
                 df = pd.DataFrame()
         except Exception as e:

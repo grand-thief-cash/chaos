@@ -7,4 +7,8 @@ from artemis.task_units.zh import StockZHAListDailyTask
 
 __all__ = ['BaseTaskUnit', 'OrchestratorTaskUnit', 'ChildTaskUnit']
 
-registry.register(TaskCode.STOCK_ZH_A_LIST, StockZHAListDailyTask)
+registry.register(
+    TaskCode.STOCK_ZH_A_LIST,
+    module=StockZHAListDailyTask.__module__,
+    class_name=StockZHAListDailyTask.__name__,
+)

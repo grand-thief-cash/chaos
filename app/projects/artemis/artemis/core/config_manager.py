@@ -180,5 +180,40 @@ class ConfigManager:
         else:
             raise ValueError(f"Multiple variants matched for task '{task_code}'")
 
+    def read_task_yaml_content(self) -> Dict[str, Any]:
+        for p in self._task_yaml_paths:
+            try:
+                if p.exists():
+                    return {
+                        'path': str(p),
+                        'content': p.read_text(encoding='utf-8'),
+                    }
+            except Exception:
+                continue
+        # fallback to primary path
+        return {
+            'path': str(self._task_yaml_paths[0]),
+            'content': '',
+        }
+
+    def write_task_yaml_content(self, content: str) -> Dict[str, Any]:
+        # validate yaml first
+        yaml.safe_load(content)
+        target = None
+        for p in self._task_yaml_paths:
+            if p.exists():
+                target = p
+                break
+        if not target:
+            target = self._task_yaml_paths[0]
+            target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding='utf-8')
+        # clear cached variants so next access reloads
+        self._task_variants_cache = {}
+        return {
+            'path': str(target),
+            'content': content,
+        }
+
 
 cfg_mgr = ConfigManager()
