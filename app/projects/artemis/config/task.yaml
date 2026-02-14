@@ -13,4 +13,7 @@ tasks:
       - match: { exchange: "BJ" }
         config:
           exchange: "BJ"
+      - match: { exchange: "ALL"}
+        config:
+          exchange: "ALL"
 
