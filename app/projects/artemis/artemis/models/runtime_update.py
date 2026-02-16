@@ -16,6 +16,7 @@ class TaskYamlPutReq(BaseModel):
 
 class TaskUnitTreeNode(BaseModel):
     name: str
+    path: str
     type: Literal["dir", "file"]
     children: Optional[List["TaskUnitTreeNode"]] = None
 
