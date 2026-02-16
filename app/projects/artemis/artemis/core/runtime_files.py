@@ -50,23 +50,37 @@ class RuntimeFileService:
         if not root.exists():
             return []
 
-        def build_node(path: Path) -> TaskUnitTreeNode | None:
-            if path.is_dir():
+        def _build_tree(path: Path) -> TaskUnitTreeNode | None:
+            if path.name.startswith("__") or path.name.startswith("."):
+                return None
+            if path.name in ["base.py", "consts.py", "parent.py", "child.py"]:  # Filter out base files
+                return None
+
+            if path.is_file():
+                return TaskUnitTreeNode(
+                    name=path.name,
+                    path=str(path.relative_to(root)),
+                    type="file",
+                )
+            else:
                 children = []
-                for child in sorted(path.iterdir(), key=lambda p: p.name.lower()):
-                    if child.name.startswith("__pycache__"):
-                        continue
-                    node = build_node(child)
+                for child in path.iterdir():
+                    node = _build_tree(child)
                     if node:
                         children.append(node)
-                return TaskUnitTreeNode(name=path.name, type="dir", children=children)
-            if path.suffix != ".py":
-                return None
-            return TaskUnitTreeNode(name=path.name, type="file")
 
-        items: List[TaskUnitTreeNode] = []
-        for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
-            node = build_node(child)
+                # specific filtering: if dir only contains init, maybe skip?
+                # for now just return dir if it has valid children or is a valid dir
+                return TaskUnitTreeNode(
+                    name=path.name,
+                    path=str(path.relative_to(root)),
+                    type="dir",
+                    children=children,
+                )
+
+        items = []
+        for child in root.iterdir():
+            node = _build_tree(child)
             if node:
                 items.append(node)
         return items
@@ -101,3 +115,29 @@ class RuntimeFileService:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return path
+
+    def rename_task_unit(self, old_rel_path: str, new_rel_path: str) -> Path:
+        old_path = self._resolve_task_unit_path(old_rel_path)
+        new_path = self._resolve_task_unit_path(new_rel_path)
+
+        if not old_path.exists():
+            raise FileNotFoundError(f"{old_rel_path} not found")
+        if new_path.exists():
+            raise FileExistsError(f"{new_rel_path} already exists")
+
+        old_path.rename(new_path)
+        return new_path
+
+    def delete_task_unit(self, rel_path: str):
+        path = self._resolve_task_unit_path(rel_path)
+        if not path.exists():
+            raise FileNotFoundError(f"{rel_path} not found")
+        if path.is_dir():
+            # Option 1: Prevent dir deletion for now
+            # raise ValueError("delete directory is not supported")
+            # Option 2: recursively delete
+            import shutil
+
+            shutil.rmtree(path)
+        else:
+            path.unlink()

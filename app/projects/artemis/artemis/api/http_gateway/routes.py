@@ -1,3 +1,4 @@
+import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import ValidationError
 
@@ -35,6 +36,7 @@ async def tasks():
             'task_code': code_val,
             'impl': getattr(spec, 'class_name', ''),
             'module': getattr(spec, 'module', ''),
+            'is_dynamic': getattr(spec, 'is_dynamic', False),
         })
     return {'tasks': tasks}
 
@@ -98,8 +100,11 @@ async def get_task_yaml():
 @router.put('/runtime/task-yaml', response_model=TaskYamlGetResp)
 async def update_task_yaml(req: TaskYamlPutReq):
     try:
+        yaml.safe_load(req.content)  # validate
         info = cfg_mgr.write_task_yaml_content(req.content)
         return TaskYamlGetResp(**info)
+    except yaml.YAMLError as ye:
+        raise HTTPException(status_code=422, detail=f"Invalid YAML format: {str(ye)}")
     except Exception as e:
         logger.error({'event': 'task_yaml_write_failed', 'error': str(e)})
         raise HTTPException(status_code=400, detail=str(e))
@@ -150,10 +155,108 @@ async def create_task_units_file(req: TaskUnitFileCreateReq):
 @router.post('/runtime/task-units/register', response_model=TaskUnitRegisterResp)
 async def register_task_unit(req: TaskUnitRegisterReq):
     try:
-        registry.register(req.task_code, module=req.module, class_name=req.class_name)
+        registry.register(
+            req.task_code,
+            module=req.module,
+            class_name=req.class_name,
+            is_dynamic=True  # Mark as dynamic
+        )
         return TaskUnitRegisterResp(task_code=req.task_code, module=req.module, class_name=req.class_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error({'event': 'task_unit_register_failed', 'task_code': req.task_code, 'error': str(e)})
         raise HTTPException(status_code=500, detail='failed to register task')
+
+@router.get('/tasks/unregistered')
+async def list_unregistered_tasks():
+    try:
+        tasks = registry.scan_unregistered()
+        return {'tasks': tasks}
+    except Exception as e:
+        logger.error({'event': 'scan_unregistered_failed', 'error': str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post('/tasks/unregister/{task_code}')
+async def unregister_task(task_code: str):
+    try:
+        registry.unregister(task_code)
+        logger.info({'event': 'task_unregistered', 'task_code': task_code})
+        return {'status': 'ok'}
+    except ValueError as e:
+         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error({'event': 'task_unregister_failed', 'task_code': task_code, 'error': str(e)})
+        raise HTTPException(status_code=500, detail='internal error')
+
+@router.post('/runtime/task-units/rename')
+async def rename_task_unit_file(req: dict):
+    old_path = req.get('old_path')
+    new_path = req.get('new_path')
+    if not old_path or not new_path:
+        raise HTTPException(status_code=400, detail="old_path and new_path are required")
+    try:
+        file_service.rename_task_unit(old_path, new_path)
+        return {'status': 'ok'}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except FileExistsError:
+        raise HTTPException(status_code=409, detail="Destination file already exists")
+    except Exception as e:
+        logger.error({'event': 'task_unit_rename_failed', 'error': str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete('/runtime/task-units/file')
+async def delete_task_unit_file(path: str):
+    try:
+        # 1. Identify tasks in this file
+        # We can reuse similar logic to scan_unregistered but targeted
+        import importlib
+        import inspect
+        from artemis.task_units.base import BaseTaskUnit
+
+        # Calculate module name from path
+        # Assuming path is relative to task_units e.g. zh/stock.py
+        rel_path = path.replace('\\', '/').split('.')[0].replace('/', '.')
+        # But we need full module path: artemis.task_units.zh.stock
+        module_name = f"artemis.task_units.{rel_path}"
+
+        # 2. Check for registered tasks
+        tasks_to_unregister = []
+        try:
+            module = importlib.import_module(module_name)
+            # Find all task classes defined in this module
+            for name, obj in inspect.getmembers(module):
+                if (inspect.isclass(obj) and
+                    issubclass(obj, BaseTaskUnit) and
+                    obj is not BaseTaskUnit and
+                    obj.__module__ == module.__name__
+                ):
+                    # Check if registered
+                    for task_code, spec in registry.list_tasks().items():
+                        if spec.module == module_name and spec.class_name == name:
+                            if not spec.is_dynamic:
+                                raise ValueError(f"Cannot delete file containing static task: {task_code}")
+                            tasks_to_unregister.append(task_code)
+
+        except ImportError:
+            # If module cannot be imported, maybe it's broken or just a file
+            pass
+        except ValueError as ve:
+             raise HTTPException(status_code=400, detail=str(ve))
+
+        # 3. Unregister dynamic tasks
+        for code in tasks_to_unregister:
+            registry.unregister(code)
+            logger.info(f"Auto-unregistered task {code} prior to deletion")
+
+        # 4. Delete file
+        file_service.delete_task_unit(path)
+        return {'status': 'ok'}
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except Exception as e:
+        logger.error({'event': 'task_unit_delete_failed', 'error': str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
