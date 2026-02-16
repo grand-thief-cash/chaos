@@ -12,6 +12,10 @@ export const routes: Routes = [
         path: 'cronjobs',
         loadChildren: () => import('../features/cronjobs/cronjobs.routes').then(m => m.CRONJOBS_ROUTES)
       },
+      {
+        path: 'artemis',
+        loadChildren: () => import('../features/artemis/artemis.routes').then(m => m.ARTEMIS_ROUTES)
+      },
       { path: '**', redirectTo: 'cronjobs' }
     ]
   }
