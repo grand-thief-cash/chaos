@@ -1,8 +1,8 @@
 import yaml
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
-# 确保task注册代码执行
 import artemis.task_units  # noqa: F401 registers tasks
 from artemis.core import registry, cfg_mgr
 from artemis.core.runtime_files import RuntimeFileService
@@ -19,8 +19,27 @@ from artemis.models import (
     TaskUnitRegisterReq,
     TaskUnitRegisterResp,
 )
+from artemis.telemetry.middleware import add_trace_id_middleware
+from artemis.telemetry.otel import instrument_fastapi_app, init_otel
 
+app = FastAPI(title='Artemis Gateway')
 router = APIRouter()
+
+# 初始化 OTEL（如果配置启用），并对 FastAPI App 做自动 instrumentation
+init_otel()
+instrument_fastapi_app(app)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 挂载 X-Trace-Id middleware，确保所有请求都带有可追踪的 trace_id
+add_trace_id_middleware(app)
+
 engine = TaskEngine()
 logger = get_logger('http.routes')
 file_service = RuntimeFileService()
@@ -215,22 +234,22 @@ async def delete_task_unit_file(path: str):
         import importlib
         import inspect
         from artemis.task_units.base import BaseTaskUnit
-
+        
         # Calculate module name from path
         # Assuming path is relative to task_units e.g. zh/stock.py
         rel_path = path.replace('\\', '/').split('.')[0].replace('/', '.')
         # But we need full module path: artemis.task_units.zh.stock
         module_name = f"artemis.task_units.{rel_path}"
-
+        
         # 2. Check for registered tasks
         tasks_to_unregister = []
         try:
             module = importlib.import_module(module_name)
             # Find all task classes defined in this module
             for name, obj in inspect.getmembers(module):
-                if (inspect.isclass(obj) and
-                    issubclass(obj, BaseTaskUnit) and
-                    obj is not BaseTaskUnit and
+                if (inspect.isclass(obj) and 
+                    issubclass(obj, BaseTaskUnit) and 
+                    obj is not BaseTaskUnit and 
                     obj.__module__ == module.__name__
                 ):
                     # Check if registered
@@ -239,7 +258,7 @@ async def delete_task_unit_file(path: str):
                             if not spec.is_dynamic:
                                 raise ValueError(f"Cannot delete file containing static task: {task_code}")
                             tasks_to_unregister.append(task_code)
-
+                            
         except ImportError:
             # If module cannot be imported, maybe it's broken or just a file
             pass
@@ -254,9 +273,11 @@ async def delete_task_unit_file(path: str):
         # 4. Delete file
         file_service.delete_task_unit(path)
         return {'status': 'ok'}
-
+        
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as e:
         logger.error({'event': 'task_unit_delete_failed', 'error': str(e)})
         raise HTTPException(status_code=500, detail=str(e))
+
+app.include_router(router)

@@ -1,7 +1,9 @@
 # VERSION
-v0.8.0
+v0.9.0
 
 # Changelog
+- v0.9.0
+    - Added sdk manager to manage multiple sdks, baostock sdk & amazingData is supported.
 - v0.8.0
     - Added task dynamic control of task creation, registry, update and deletion.
 - v0.7.0

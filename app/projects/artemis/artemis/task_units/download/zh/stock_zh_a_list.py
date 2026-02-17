@@ -55,12 +55,6 @@ class StockZHAListDailyTask(ChildTaskUnit):
                 df_sz = stock_sz_a_spot_em()
                 df_bj = stock_bj_a_spot_em()
                 df = pd.concat([df_sh, df_sz, df_bj], ignore_index=True)
-            # if exchange == "SH":
-            #     df = pd.DataFrame([{"代码": "600000", "名称": "浦发银行"}])
-            # elif exchange == "SZ":
-            #     df = pd.DataFrame([{"代码": "000001", "名称": "平安银行"}])
-            # elif exchange == "BJ":
-            #     df = pd.DataFrame([{"代码": "430047", "名称": "创新层"}])
             else:
                 df = pd.DataFrame()
         except Exception as e:

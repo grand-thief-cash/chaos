@@ -93,6 +93,9 @@ class Config(BaseModel):
     telemetry: TelemetryCfg = Field(default_factory=TelemetryCfg)
     http_client: HttpClientCfg = Field(default_factory=HttpClientCfg)
 
+    # SDK configurations
+    sdk: Dict[str, Any] = Field(default_factory=dict)
+
     # new preferred config
     dept_services: DeptServicesCfg = Field(default_factory=DeptServicesCfg)
 

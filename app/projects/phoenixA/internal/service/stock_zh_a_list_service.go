@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/dao"
@@ -28,6 +30,7 @@ func (s *StockZhAListService) Create(ctx context.Context, stock *model.StockZhAL
 }
 
 func (s *StockZhAListService) BatchUpsert(ctx context.Context, list []*model.StockZhAList, chunkSize int) (int64, error) {
+	logging.Info(ctx, fmt.Sprintf("StockZhAListService Batch upsert %d records with chunk size %d", len(list), chunkSize))
 	return s.Dao.BatchUpsert(ctx, list, chunkSize)
 }
 
