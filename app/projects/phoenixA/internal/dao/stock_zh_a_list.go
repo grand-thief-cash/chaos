@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -114,6 +115,7 @@ func (d *stockZhAListDaoImpl) BatchUpsert(ctx context.Context, list []*model.Sto
 			}).
 			Create(&batch)
 		if res.Error != nil {
+			logging.Error(ctx, fmt.Sprintf("StockZhAListDaoImpl BatchUpsert: %v", res.Error))
 			return affected, res.Error
 		}
 		affected += res.RowsAffected
