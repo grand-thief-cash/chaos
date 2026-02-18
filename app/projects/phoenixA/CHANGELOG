@@ -1,7 +1,9 @@
 # VERSION
-- v0.1.2
+v0.1.3
 
 # Changelog
+- v0.1.3
+    - Refactored artemis task.yaml page.
 - v0.1.2
     - Cleaned go mod tidy script.
     - Compressed router_all & openapi routes.
