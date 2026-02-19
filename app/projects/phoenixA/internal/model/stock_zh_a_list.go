@@ -21,5 +21,6 @@ func (StockZhAList) TableName() string { return "stock_zh_a_list" }
 type StockZhAListFilters struct {
 	Exchange string
 	Code     string
+	Codes    []string
 	Company  string
 }

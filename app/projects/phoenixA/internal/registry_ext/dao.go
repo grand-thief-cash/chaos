@@ -12,4 +12,8 @@ func init() {
 		// datasource name comes from phoenixA/config/config.yaml -> mysql_gorm.data_sources
 		return true, dao.NewStockZhAListDao("security"), nil
 	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, dao.NewStockZhAHistDao("security"), nil
+	})
 }
