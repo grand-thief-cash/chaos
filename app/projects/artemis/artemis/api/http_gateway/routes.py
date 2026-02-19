@@ -70,8 +70,7 @@ async def run_task(task_code: str, request: Request):
         task_run_req = TaskRunReq.model_validate(payload)
     except ValidationError as e:
         logger.warning({'event': 'invalid_task_req','errors': e.errors(),'input': payload})
-        raise HTTPException(status_code=422, detail="Request validation failed")
-
+        raise HTTPException(status_code=422, detail=f"Request validation failed: {e.errors()}")
     # 先检查任务是否存在
     if not registry.has_task(task_code):
         logger.warning({'event': 'task_not_found', 'task_code': task_code})

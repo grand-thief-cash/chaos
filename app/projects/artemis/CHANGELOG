@@ -1,7 +1,12 @@
 # VERSION
-v0.9.0
+v0.9.1
 
 # Changelog
+- v0.9.1
+    - Added stock_zh_a_hist task unit to fetch historical data of stock zh A.
+    - Fixed using wrong task code issue in parent task.
+    - Added utils to safe convert data type.
+    - Added logs.
 - v0.9.0
     - Added sdk manager to manage multiple sdks, baostock sdk & amazingData is supported.
 - v0.8.0

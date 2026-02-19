@@ -1,6 +1,6 @@
 tasks:
       # 其他 period/adjust 组合可按需扩展
-  stock_a_list_daily:
+  STOCK_ZH_A_LIST:
     variants:
       - match: { exchange: "SH" }
         config:
@@ -17,3 +17,14 @@ tasks:
         config:
           exchange: "ALL"
 
+  # History Data
+  STOCK_ZH_A_HIST_PARENT:
+#    adjustflag：复权类型，默认不复权：3；1：后复权；2：前复权
+#    frequency：数据类型，默认为d，日k线；d=日k线、w=周、m=月、5=5分钟、15=15分钟、30=30分钟、60=60分钟k线数据，不区分大小写
+    variants:
+      - match: { frequency: "d", adjustflag: "3" }
+        config:
+           frequency: "d"
+           adjustflag: "3" # nf
+           start_date: "2010-01-01"
+           fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"

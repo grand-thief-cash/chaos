@@ -109,7 +109,7 @@ class OrchestratorTaskUnit(BaseTaskUnit):
         loop_start = time.time()
 
         for idx, spec in enumerate(validated_specs):
-            child_key = spec['key']
+            task_code = spec['key']
             child_params = dict(spec.get('params') or {})
 
             # Metadata propagation
@@ -121,12 +121,13 @@ class OrchestratorTaskUnit(BaseTaskUnit):
                 ctx.logger.info({
                     'event': 'child_start',
                     'child_index': idx,
-                    'child_key': child_key,
+                    'task_code': task_code,
                     'run_id': ctx.run_id,
                 })
 
+            child_ctx = None
             try:
-                child_ctx = self._build_child_ctx(ctx, child_key, child_params)
+                child_ctx = self._build_child_ctx(ctx, task_code, child_params)
                 child = child_ctx.exec_cls()
 
                 # Run the child
@@ -140,7 +141,7 @@ class OrchestratorTaskUnit(BaseTaskUnit):
                     ctx.logger.info({
                         'event': 'child_success',
                         'child_index': idx,
-                        'child_key': child_key,
+                        'task_code': task_code,
                         'run_id': ctx.run_id,
                     })
             except Exception as ce:
@@ -148,18 +149,23 @@ class OrchestratorTaskUnit(BaseTaskUnit):
                 # Current design: fail parent if any child raises unhandled exception.
                 # But BaseTaskUnit.run catches exceptions, so child.run() shouldn't raise unless severe error.
                 # However, if child.run() swallows error, we check status.
-                if child_ctx.status != "SUCCESS":
+
+                # FIX: check if child_ctx was initialized, otherwise ce happened before it
+                status = child_ctx.status if child_ctx else "FAILED"
+                error_msg = child_ctx.error if child_ctx else str(ce)
+
+                if status != "SUCCESS":
                      if ctx.logger:
                         ctx.logger.error({
                             'event': 'child_failure',
                             'child_index': idx,
-                            'child_key': child_key,
-                            'error': child_ctx.error,
+                            'task_code': task_code,
+                            'error': error_msg,
                             'run_id': ctx.run_id,
                         })
                      # Policy: Fail parent if child failed? Or partial success?
                      # Let's re-raise to fail parent for now to correspond to legacy behavior (conceptually)
-                     raise RuntimeError(f"Child task {child_key} failed: {child_ctx.error}")
+                     raise RuntimeError(f"Child task {task_code} failed at index {idx}: {error_msg}")
 
         phase_durations['execution_loop'] = int((time.time() - loop_start) * 1000)
 

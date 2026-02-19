@@ -95,9 +95,14 @@ class HTTPDeptServiceClient(BaseDeptServiceClient, OTELHTTPClientMixin):
             return '/'
         return path if path.startswith('/') else '/' + path
 
-    def get(self, path: str, headers: Optional[Dict[str, str]] = None) -> httpx.Response:
+    def get(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> httpx.Response:
         p = self._build_path(path)
-        return self._client.get(p, headers=self._headers(headers))
+        return self._client.get(p, params=params, headers=self._headers(headers))
 
     def post(self, path: str, payload: Any, headers: Optional[Dict[str, str]] = None) -> httpx.Response:
         p = self._build_path(path)
