@@ -17,6 +17,7 @@ class BaostockSDK(StatefulSDK):
             msg = f"login failed: {lg.error_msg}"
             logger.error(msg)
             raise RuntimeError(msg)
+        logger.info("baostock login successful")
 
     def _logout(self):
         bs.logout()

@@ -7,7 +7,7 @@ from artemis.consts import DeptServices
 from artemis.task_units.child import ChildTaskUnit
 
 
-class StockZHAListDailyTask(ChildTaskUnit):
+class StockZHAList(ChildTaskUnit):
     """单任务：每日刷新 A 股列表（上交所/深交所）。
 
     参数约定（ctx.params 最终形态）：
