@@ -11,4 +11,8 @@ func init() {
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, service.NewStockZhAListService(), nil
 	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, service.NewStockZhAHistService(), nil
+	})
 }

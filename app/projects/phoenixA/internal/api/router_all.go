@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,17 +15,13 @@ import (
 // Unified route registration for phoenixA.
 func init() {
 	http_server.RegisterRoutes(func(r chi.Router, c *core.Container) error {
-		comp, err := c.Resolve(bizConsts.COMP_CTRL_STOCK_ZH_A_LIST)
+		stockZhAListComp, err := c.Resolve(bizConsts.COMP_CTRL_STOCK_ZH_A_LIST)
 		if err != nil {
 			return err
 		}
-		stockZhAListCtrl, ok := comp.(*controller.StockZhAListController)
-		if !ok {
-			return fmt.Errorf("stock_zh_a_list_ctrl type assertion failed")
-		}
+		stockZhAListCtrl := stockZhAListComp.(*controller.StockZhAListController)
 
-		// Data-platform style base URI: /api/v1/{market}/{resource}
-		r.Route("/api/v1/zh/stock_list", func(r chi.Router) {
+		r.Route("/api/v1/stock/list", func(r chi.Router) {
 			r.Get("/", stockZhAListCtrl.List)
 			r.Post("/", stockZhAListCtrl.Create)
 			r.Get("/count", stockZhAListCtrl.Count)
@@ -42,6 +37,22 @@ func init() {
 			r.Patch("/{code}", func(w http.ResponseWriter, req *http.Request) {
 				stockZhAListCtrl.Update(w, req, chi.URLParam(req, "code"))
 			})
+
+			r.Get("/listFiltered", stockZhAListCtrl.List)
+			r.Get("/countFiltered", stockZhAListCtrl.Count)
+		})
+
+		// History Data Routes
+		stockZHAHistCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_STOCK_ZH_A_HIST)
+		if err != nil {
+			return err
+		}
+		stockZHAHistCtrl := stockZHAHistCtrlComp.(*controller.StockZhAHistController)
+
+		r.Route("/api/v1/stock/hist", func(r chi.Router) {
+			r.Post("/data", stockZHAHistCtrl.BatchSaveStockData)
+			r.Get("/last_update", stockZHAHistCtrl.GetStockLastUpdate)
+			r.Get("/range", stockZHAHistCtrl.GetDailyByCodeDateRange)
 		})
 
 		r.Get("/openapi.yaml", func(w http.ResponseWriter, req *http.Request) {

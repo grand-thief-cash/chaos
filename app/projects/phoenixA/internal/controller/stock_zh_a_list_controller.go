@@ -2,10 +2,9 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -27,47 +26,34 @@ func NewStockZhAListController() *StockZhAListController {
 func (c *StockZhAListController) Start(ctx context.Context) error { return c.BaseComponent.Start(ctx) }
 func (c *StockZhAListController) Stop(ctx context.Context) error  { return c.BaseComponent.Stop(ctx) }
 
-// ---- helpers ----
-
-type apiError struct {
-	Error string `json:"error"`
-}
-
-type apiResponse[T any] struct {
-	Data T `json:"data"`
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func parseLimitOffset(r *http.Request) (limit, offset int) {
-	q := r.URL.Query()
-	if s := q.Get("limit"); s != "" {
-		if v, err := strconv.Atoi(s); err == nil {
-			limit = v
-		}
-	}
-	if s := q.Get("offset"); s != "" {
-		if v, err := strconv.Atoi(s); err == nil {
-			offset = v
-		}
-	}
-	return
-}
-
 // ---- handlers ----
 
 // GET /api/v1/stocks
 func (c *StockZhAListController) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	limit, offset := parseLimitOffset(r)
+
+	q := r.URL.Query()
+	codes := q["code"]
+
+	codeListStr := q.Get("code_list")
+	if codeListStr != "" {
+		if codes == nil {
+			codes = []string{}
+		}
+		codes = append(codes, strings.Split(codeListStr, ",")...)
+	}
+
+	singleCode := ""
+	if len(codes) == 1 {
+		singleCode = codes[0]
+	}
+
 	f := &model.StockZhAListFilters{
-		Exchange: r.URL.Query().Get("exchange"),
-		Code:     r.URL.Query().Get("code"),
-		Company:  r.URL.Query().Get("company"),
+		Exchange: q.Get("exchange"),
+		Code:     singleCode,
+		Codes:    codes,
+		Company:  q.Get("company"),
 	}
 	list, err := c.Svc.ListFiltered(ctx, f, limit, offset)
 	if err != nil {
@@ -158,10 +144,26 @@ func (c *StockZhAListController) DeleteAll(w http.ResponseWriter, r *http.Reques
 // GET /api/v1/stocks/Count
 func (c *StockZhAListController) Count(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	q := r.URL.Query()
+	codes := q["code"]
+
+	codeListStr := q.Get("code_list")
+	if codeListStr != "" {
+		if codes == nil {
+			codes = []string{}
+		}
+		codes = append(codes, strings.Split(codeListStr, ",")...)
+	}
+
+	singleCode := ""
+	if len(codes) == 1 {
+		singleCode = codes[0]
+	}
 	f := &model.StockZhAListFilters{
-		Exchange: r.URL.Query().Get("exchange"),
-		Code:     r.URL.Query().Get("code"),
-		Company:  r.URL.Query().Get("company"),
+		Exchange: q.Get("exchange"),
+		Code:     singleCode,
+		Codes:    codes,
+		Company:  q.Get("company"),
 	}
 	cnt, err := c.Svc.CountFiltered(ctx, f)
 	if err != nil {
