@@ -1,7 +1,9 @@
 # VERSION
-v0.4.0
+v0.4.1
 
 # Changelog
+- v0.4.1
+    - Fixed cronjob "Create based on exists".
 - v0.4.0
     - Added a new service in cthulhu project for managing artemis tasks.
       - Tasks register/unregister for dynamic tasks.
