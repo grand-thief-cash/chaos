@@ -166,12 +166,22 @@ export class TaskListPageComponent implements OnInit {
     this.store.resetFilters();
   }
   clone(t: any){
-    // 过滤掉不应复制的字段
+    // 过滤掉不应复制的字段（保持与当前 Task model / API 字段一致）
     const allowedKeys = [
-      'name','description','cron_expr','timezone','exec_type','http_method','target_url','headers_json','body_template','timeout_seconds','retry_policy_json','max_concurrency','concurrency_policy','callback_method','callback_timeout_sec','overlap_action','failure_action','status'
+      'name','description','cron_expr','timezone','exec_type',
+      // target 相关（新字段）
+      'method','target_service','target_path',
+      // 请求体/策略
+      'headers_json','body_template','timeout_seconds','retry_policy_json',
+      'max_concurrency','concurrency_policy',
+      // callback / 行为
+      'callback_method','callback_timeout_sec','overlap_action','failure_action',
+      'status'
     ];
     const template: any = {};
-    for(const k of allowedKeys){ template[k] = t[k]; }
+    for(const k of allowedKeys){
+      if (t[k] !== undefined) template[k] = t[k];
+    }
     // 名称附加后缀避免重复
     if(template.name) template.name = template.name + ' copy';
     // 状态统一初始为 ENABLED
