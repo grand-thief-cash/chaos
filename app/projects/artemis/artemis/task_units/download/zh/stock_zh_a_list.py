@@ -93,10 +93,10 @@ class StockZHAList(ChildTaskUnit):
         })
 
         client = ctx.dept_http.get(DeptServices.PHOENIXA)
-        if client and hasattr(client, 'batch_upsert'):
+        if client and hasattr(client, 'stock_zh_a_list_batch_upsert'):
              # batch_upsert requires list of dict. `rows` is already list of dict.
             try:
-                client.batch_upsert(rows, ctx.run_id)
+                client.stock_zh_a_list_batch_upsert(rows, ctx.run_id)
             except Exception as e:
                 ctx.logger.error({
                     "event": "stock_a_list_daily_sink_error",
