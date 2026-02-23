@@ -1,7 +1,10 @@
 # VERSION
-v0.9.1
+v0.9.2
 
 # Changelog
+- v0.9.2
+    - Added mapping from stock to market category
+    - Refactored stoch_zh_a_hist task unit to support phoenixA change.
 - v0.9.1
     - Added stock_zh_a_hist task unit to fetch historical data of stock zh A.
     - Fixed using wrong task code issue in parent task.

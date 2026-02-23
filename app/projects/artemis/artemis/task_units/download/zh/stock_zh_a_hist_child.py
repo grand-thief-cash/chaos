@@ -5,6 +5,7 @@ from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.task_units.child import ChildTaskUnit
+from artemis.task_units.download.zh.stock_zh_a_hist_parent import convert_baostock_to_phoenix_schema
 
 
 class StockZhAHistChild(ChildTaskUnit):
@@ -143,10 +144,22 @@ class StockZhAHistChild(ChildTaskUnit):
         frequency = params.get("frequency")
         adjustflag = params.get("adjustflag")
 
+        # Convert baostock fields to match PhoenixA expected schema if needed (e.g., rename, reformat)
+        frequency = convert_baostock_to_phoenix_schema("frequency", frequency)
+        adjustflag = convert_baostock_to_phoenix_schema("adjustflag", adjustflag)
+
         # Convert back to list of dicts for the client method
         data_list = df.to_dict('records')
+        meta = {
+            "frequency": frequency,
+            "adjustflag": adjustflag,
+        }
+        params = {
+            "meta": meta,
+            "data": data_list
+        }
 
-        success = phoenix_client.save_stock_hist_data(data_list, frequency, adjustflag, run_id=ctx.run_id)
+        success = phoenix_client.upsert_stock_zh_a_hist(params, run_id=ctx.run_id)
         if success:
             ctx.logger.info({
                 "event": "stock_zh_a_hist_child_success",
@@ -160,3 +173,4 @@ class StockZhAHistChild(ChildTaskUnit):
                 "run_id": ctx.run_id,
                 "code": code
             })
+

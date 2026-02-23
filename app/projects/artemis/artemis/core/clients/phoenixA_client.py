@@ -1,5 +1,7 @@
 from typing import Dict, Any, List, Optional
 
+import requests
+
 from artemis.core.clients.dept_clients import HTTPDeptServiceClient
 
 
@@ -8,8 +10,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
     Client for interacting with PhoenixA service.
     Inherits HTTPDeptServiceClient for OTEL traceparent injection + connection pooling.
     """
-
-    def batch_upsert(self, payload: List[Dict[str, Any]], run_id: Optional[int] = None) -> bool:
+    # Update stock codes of Zh A market
+    def stock_zh_a_list_batch_upsert(self, payload: List[Dict[str, Any]], run_id: Optional[int] = None) -> bool:
         """
         Call POST /api/v1/stock/list/batch_upsert
         """
@@ -37,71 +39,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     'error': str(e)
                 })
             raise e
-
-    def get_stock_last_updates(self, frequency: str, adjust: str, codes: Optional[List[str]] = None) -> Dict[str, str]:
-        """
-        Call GET /api/v1/stock/hist/last_update
-        Returns a map of code -> last_update_date (YYYY-MM-DD or empty)
-
-        Optional:
-            codes: list of raw_code (6-digit) to filter.
-        """
-        path = "/api/v1/stock/hist/last_update"
-        params: Dict[str, Any] = {"frequency": frequency, "adjust": adjust}
-        if codes:
-            # Change: send comma separated string for code_list
-            params["code_list"] = ",".join([str(c) for c in codes if str(c).strip()])
-
-        try:
-            resp = self.get(path, params)
-            if 200 <= resp.status_code < 300:
-                # Expecting Dict[str, str] from Go Controller
-                data = resp.json()
-                if isinstance(data, dict):
-                    return data
-            return {}
-        except Exception as e:
-            if self.logger:
-                self.logger.error({
-                    'event': 'phoenixA_get_last_updates_failed',
-                    'frequency': frequency,
-                    'adjust': adjust,
-                    'code_list_size': len(codes) if codes else 0,
-                    'error': str(e)
-                })
-            return {}
-
-    def save_stock_hist_data(self, data: List[Dict[str, Any]], frequency: str, adjust: str, run_id: Optional[int] = None) -> bool:
-        """
-        Call POST /api/v1/stock/hist/data
-        """
-        path = "/api/v1/stock/hist/data"
-        payload = {"frequency": frequency, "adjust": adjust, "data": data}
-        try:
-            resp = self.post(path, payload)
-            ok = 200 <= resp.status_code < 300
-            if not ok and self.logger:
-                 self.logger.error({
-                    'event': 'phoenixA_save_hist_data_failed',
-                    'run_id': run_id,
-                    'frequency': frequency,
-                    'adjust': adjust,
-                    'status': resp.status_code,
-                    'body_snippet': resp.text[:120]
-                })
-            return ok
-        except Exception as e:
-            if self.logger:
-                self.logger.error({
-                    'event': 'phoenixA_save_hist_data_exception',
-                    'run_id': run_id,
-                    'frequency': frequency,
-                    'adjust': adjust,
-                    'error': str(e)
-                })
-            raise e
-
-    def get_all_stock_codes(self, codes: Optional[List[str]] = None) -> List[Dict[str, str]]:
+    def get_stock_zh_a_codes(self, codes: Optional[List[str]] = None) -> List[Dict[str, str]]:
         path = "/api/v1/stock/list/listFiltered"
         params: Dict[str, Any] = {"limit": "20000"}
         if codes:
@@ -130,3 +68,96 @@ class PhoenixAClient(HTTPDeptServiceClient):
             if self.logger:
                 self.logger.error({'event': 'phoenixA_get_all_codes_failed', 'error': str(e)})
             return []
+
+
+    def get_stock_zh_a_last_updates(self, frequency: str, adjust: str, codes: Optional[List[str]] = None) -> Dict[str, str]:
+        """
+        Call GET /api/v1/stock/hist/last_update
+        Returns a map of code -> last_update_date (YYYY-MM-DD or empty)
+
+        Optional:
+            codes: list of raw_code (6-digit) to filter.
+        """
+        path = "/api/v1/stock/hist/last_update"
+        params: Dict[str, Any] = {"frequency": frequency, "adjust": adjust}
+        if codes:
+            # Change: send comma separated string for code_list
+            params["codes"] = ",".join([str(c) for c in codes if str(c).strip()])
+
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                # Expecting Dict[str, str] from Go Controller
+                data = resp.json()
+                if isinstance(data, dict):
+                    return data
+            return {}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_last_updates_failed',
+                    'frequency': frequency,
+                    'adjust': adjust,
+                    'code_list_size': len(codes) if codes else 0,
+                    'error': str(e)
+                })
+            return {}
+
+    def upsert_stock_zh_a_hist(self, data: Dict[str, Any], run_id: Optional[int] = None) -> bool:
+        """
+        Call POST /api/v1/stock/hist/data
+        """
+        path = "/api/v1/stock/hist/data"
+        try:
+            resp = self.post(path, data)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                 self.logger.error({
+                    'event': 'phoenixA_save_hist_data_failed',
+                    'run_id': run_id,
+                    'status': resp.status_code,
+                    'data_meta': data.get("meta", {}),
+                    'data_size': len(data.get("data", [])),
+                    'body_snippet': resp.text[:120]
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_save_hist_data_exception',
+                    'run_id': run_id,
+                    'data_meta': data.get("meta", {}),
+                    'data_size': len(data.get("data", [])),
+                    'error': str(e)
+                })
+            raise e
+
+    # Store market category
+    def upsert_market_categories(self, categories: List[Dict[str, Any]], data_source: str, run_id: Optional[int] = None) -> bool:
+        """
+        Call POST /api/v1/market_category/upsert
+        payload: list of MarketCategory dicts
+        """
+        path = f"/api/v1/market_category/upsert/{data_source}"
+        try:
+            resp = requests.post(self.base_url+path, json=categories)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_market_category_failure',
+                    'run_id': run_id,
+                    'path': path,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'list_size': len(categories) if categories is not None else 0
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_market_category_exception',
+                    'run_id': run_id,
+                    'path': path,
+                    'error': str(e),
+                    'list_size': len(categories) if categories is not None else 0
+                })

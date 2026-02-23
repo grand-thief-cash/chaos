@@ -4,6 +4,7 @@ from typing import List, Dict, Any, cast
 from artemis.consts import DeptServices, TaskCode, SDK_NAME
 from artemis.core import TaskContext, sdk_mgr
 from artemis.core.clients.phoenixA_client import PhoenixAClient
+from artemis.task_units.download.zh.utils import convert_baostock_to_phoenix_schema
 from artemis.task_units.parent import OrchestratorTaskUnit
 from artemis.utils import parse_list_param
 
@@ -50,16 +51,8 @@ class StockZhAHistParent(OrchestratorTaskUnit):
         phoenix_client = ctx.dept_http[DeptServices.PHOENIXA]
         client = cast(PhoenixAClient, phoenix_client)
 
-        # 1. Get stock codes from PhoenixA (full or filtered)
-        if not hasattr(client, 'get_all_stock_codes'):
-            ctx.logger.error({
-                "event": "stock_zh_a_hist_parent_client_type_mismatch",
-                "run_id": ctx.run_id,
-                "client_type": str(type(client))
-            })
-            return []
-
-        stock_infos = client.get_all_stock_codes(codes=target_codes or None)
+        # Get stock codes and exchanges from PhoenixA, optionally filtered by target_codes
+        stock_infos = client.get_stock_zh_a_codes(codes=target_codes or None)
         if not stock_infos:
             ctx.logger.warning({
                 "event": "stock_zh_a_hist_parent_no_codes",
@@ -69,7 +62,9 @@ class StockZhAHistParent(OrchestratorTaskUnit):
             return []
 
         # 2. Get last update dates for stocks (prefer filtered)
-        last_updates_map = client.get_stock_last_updates(frequency, adjust, codes=target_codes or None)
+        frequency = convert_baostock_to_phoenix_schema("frequency", frequency)
+        adjust = convert_baostock_to_phoenix_schema("adjustflag", adjust)
+        last_updates_map = client.get_stock_zh_a_last_updates(frequency, adjust, codes=target_codes or None)
 
         child_specs = []
         today_str = datetime.now().strftime("%Y-%m-%d")
