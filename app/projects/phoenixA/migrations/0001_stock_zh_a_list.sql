@@ -1,4 +1,4 @@
--- 0001_init.sql
+-- 0001_stock_zh_a_list.sql
 -- phoenixA initial schema
 -- Stock list table
 -- Requirements:

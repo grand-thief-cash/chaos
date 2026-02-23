@@ -1,7 +1,12 @@
 # VERSION
-v0.1.4
+v0.2.0
 
 # Changelog
+- v0.2.0
+    - Added market_category implementation
+        - Supported SWHY & Mairui data
+    - Added stock -> market category mapping.
+    - Refactored stock_zh_a_hist using generic implementation.
 - v0.1.4
     - Added stock_zh_a_hist to store historical data of stock zh A.
     - Fixed telemetry config issue
