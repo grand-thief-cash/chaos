@@ -1,5 +1,7 @@
 package model
 
+import "encoding/json"
+
 // StockZhAHistDaily represents daily stock history (Day).
 // Table nomenclature: stock_zh_a_hist_daily_{adjust}
 type StockZhAHistDaily struct {
@@ -48,4 +50,22 @@ type StockZhAHistMin struct {
 	Close  float64 `gorm:"type:decimal(20,2)" json:"close"`
 	Volume int64   `json:"volume"`
 	Amount int64   `gorm:"type:bigint" json:"amount"`
+}
+
+type HistDataRequestMeta struct {
+	Frequency *string  `json:"frequency"`
+	Adjust    *string  `json:"adjust"`
+	Code      *string  `json:"code"`
+	StartDate *string  `json:"start_date"`
+	EndDate   *string  `json:"end_date"`
+	Codes     []string `json:"codes"`
+	Limit     *int     `json:"limit"`
+	Offset    *int     `json:"offset"`
+	Fields    []string `json:"fields"`
+}
+
+// BatchSaveRequest used json.RawMessage to defer unmarshalling
+type BatchSaveRequest struct {
+	Meta *HistDataRequestMeta `json:"meta"`
+	Data json.RawMessage      `json:"data"`
 }

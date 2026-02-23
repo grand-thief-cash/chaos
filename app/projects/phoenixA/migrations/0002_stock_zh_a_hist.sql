@@ -1,4 +1,4 @@
--- 0002_stock_hist.sql
+-- 0002_stock_zh_a_hist.sql
 -- Stock History Tables
 -- Design Principles:
 -- 1. Separated by Frequency and Adjustment to avoid redundant columns.

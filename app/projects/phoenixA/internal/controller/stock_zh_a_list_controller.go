@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -16,7 +17,7 @@ import (
 
 type StockZhAListController struct {
 	*core.BaseComponent
-	Svc *service.StockZhAListService `infra:"dep:stock_zh_a_list_service"`
+	Svc *service.StockZhAListService `infra:"dep:svc_stock_zh_a_list"`
 }
 
 func NewStockZhAListController() *StockZhAListController {
