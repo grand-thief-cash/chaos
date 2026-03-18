@@ -45,7 +45,7 @@ http_clients:
   clients:
     artemis:
       base_url: "http://127.0.0.1:18000"
-      timeout: 30s
+      timeout: 300s
       max_idle_conns: 50
       max_idle_conns_per_host: 10
       idle_conn_timeout: 60s
@@ -58,7 +58,7 @@ http_clients:
 
 telemetry:
   enabled: true
-  service_name: demo-service
+  service_name: cronjob
   exporter: stdout         # stdout|otlp
   sample_ratio: 0        # 0~1; adjust for sampling
   stdout_pretty: false     # false keeps exporter output compact
@@ -74,7 +74,7 @@ biz_config:
     interval: 30s
     batch_limit: 500
     sync_run_stuck_timeout_seconds: 900          # 超过此执行秒数仍 RUNNING (同步) 视为卡死; 0 关闭
-    progress_cleanup_grace_seconds: 60           # 终止状态后延迟清理进度; 0 立即
+    progress_cleanup_grace_seconds: 600           # 终止状态后延迟清理进度; 0 立即
   cleanup:
     enabled: false
     interval: 1h
