@@ -39,9 +39,10 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     'error': str(e)
                 })
             raise e
-    def get_stock_zh_a_codes(self, codes: Optional[List[str]] = None) -> List[Dict[str, str]]:
+    def get_stock_zh_a_codes(self, codes: Optional[List[str]] = None) -> Dict[str, Dict[str, any]]:
         path = "/api/v1/stock/list/listFiltered"
         params: Dict[str, Any] = {"limit": "20000"}
+        result: Dict[str, Dict[str, any]]= {}
         if codes:
             # Change: send comma separated string for code_list
             params["code_list"] = ",".join([str(c) for c in codes if str(c).strip()])
@@ -49,28 +50,24 @@ class PhoenixAClient(HTTPDeptServiceClient):
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
                 data = resp.json()
-                rows = []
-                if isinstance(data, list):
-                    rows = data
-                elif isinstance(data, dict):
-                    rows = data.get("data") or data.get("list") or []
+                rows = data.get("data") or data.get("list") or []
 
-                result = []
                 for item in rows:
                     if isinstance(item, dict) and "code" in item:
-                        result.append({
-                            "code": str(item["code"]),
+                        code = str(item["code"])
+                        result[code] = {
+                            "code": code,
                             "exchange": str(item.get("exchange", "")).upper()
-                        })
+                        }
                 return result
-            return []
+            return result
         except Exception as e:
             if self.logger:
                 self.logger.error({'event': 'phoenixA_get_all_codes_failed', 'error': str(e)})
-            return []
+            return {}
 
 
-    def get_stock_zh_a_last_updates(self, frequency: str, adjust: str, codes: Optional[List[str]] = None) -> Dict[str, str]:
+    def get_stock_zh_a_last_updates(self, period: str, adjust: str, codes: Optional[List[str]] = None) -> Dict[str, str]:
         """
         Call GET /api/v1/stock/hist/last_update
         Returns a map of code -> last_update_date (YYYY-MM-DD or empty)
@@ -79,7 +76,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
             codes: list of raw_code (6-digit) to filter.
         """
         path = "/api/v1/stock/hist/last_update"
-        params: Dict[str, Any] = {"frequency": frequency, "adjust": adjust}
+        params: Dict[str, Any] = {"period": period, "adjust": adjust}
         if codes:
             # Change: send comma separated string for code_list
             params["codes"] = ",".join([str(c) for c in codes if str(c).strip()])
@@ -96,7 +93,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
             if self.logger:
                 self.logger.error({
                     'event': 'phoenixA_get_last_updates_failed',
-                    'frequency': frequency,
+                    'frequency': period,
                     'adjust': adjust,
                     'code_list_size': len(codes) if codes else 0,
                     'error': str(e)
@@ -107,7 +104,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         """
         Call POST /api/v1/stock/hist/data
         """
-        path = "/api/v1/stock/hist/data"
+        path = "/api/v1/stock/hist/upsert"
         try:
             resp = self.post(path, data)
             ok = 200 <= resp.status_code < 300

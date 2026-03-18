@@ -22,9 +22,9 @@ tasks:
 #    adjustflag：复权类型，默认不复权：3；1：后复权；2：前复权
 #    frequency：数据类型，默认为d，日k线；d=日k线、w=周、m=月、5=5分钟、15=15分钟、30=30分钟、60=60分钟k线数据，不区分大小写
     variants:
-      - match: { frequency: "d", adjustflag: "3" }
+      - match: { period: "daily", adjust: "nf" }
         config:
-           frequency: "d"
-           adjustflag: "3" # nf
-           start_date: "2010-01-01"
+           period: "daily"
+           adjust: "nf"
+           start_date: "2016-01-01"
            fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
