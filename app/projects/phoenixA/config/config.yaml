@@ -34,8 +34,8 @@ mysql_gorm:
 http_server:
   enabled: true
   address: ":18085"
-  read_timeout: 10s
-  write_timeout: 10s
+  read_timeout: 100s
+  write_timeout: 100s
   idle_timeout: 60s
   graceful_timeout: 10s
   enable_health: true

@@ -44,13 +44,13 @@ func (d *StockZhAHistDaily) Stop(ctx context.Context) error {
 
 func (d *StockZhAHistDaily) BatchUpsert(ctx context.Context, upsertMeta *model.HistDataRequestMeta, data []*model.StockZhAHistDaily) error {
 
-	tableName := getHistDataTableName(*upsertMeta.Frequency, *upsertMeta.Adjust)
+	tableName := getHistDataTableName(*upsertMeta.Period, *upsertMeta.Adjust)
 	return d.db.Table(tableName).WithContext(ctx).CreateInBatches(data, 1000).Error
 }
 
 func (d *StockZhAHistDaily) GetLatestUpdateByCodes(ctx context.Context, req *model.HistDataRequestMeta) (map[string]string, error) {
 
-	tableName := getHistDataTableName(*req.Frequency, *req.Adjust)
+	tableName := getHistDataTableName(*req.Period, *req.Adjust)
 
 	rows, err := d.db.Table(tableName).WithContext(ctx).
 		Select("code, max(date) as last_date").
@@ -75,7 +75,7 @@ func (d *StockZhAHistDaily) GetLatestUpdateByCodes(ctx context.Context, req *mod
 }
 
 func (d *StockZhAHistDaily) GetStockHist(ctx context.Context, req *model.HistDataRequestMeta) ([]*model.StockZhAHistDaily, error) {
-	tableName := getHistDataTableName(*req.Frequency, *req.Adjust)
+	tableName := getHistDataTableName(*req.Period, *req.Adjust)
 
 	q := d.db.Table(tableName).WithContext(ctx).
 		Where("code = ? AND date >= ? AND date <= ?", req.Code, req.StartDate, req.EndDate).

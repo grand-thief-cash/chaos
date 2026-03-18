@@ -23,8 +23,8 @@ type StockZhAHistDaily struct {
 }
 
 // StockZhAHistWeeklyMonthly represents weekly and monthly stock history.
-// Table nomenclature: stock_zh_a_hist_{frequency}_{adjust}
-// Frequency: weekly, monthly
+// Table nomenclature: stock_zh_a_hist_{period}_{adjust}
+// Period: weekly, monthly
 type StockZhAHistWeeklyMonthly struct {
 	Date   string  `gorm:"primaryKey;type:date" json:"date"`
 	Code   string  `gorm:"primaryKey;column:code;type:char(6)" json:"code"`
@@ -39,7 +39,7 @@ type StockZhAHistWeeklyMonthly struct {
 }
 
 // StockZhAHistMin represents minute-level stock history (5, 15, 30, 60).
-// Table nomenclature: stock_zh_a_hist_min{frequency}_{adjust}
+// Table nomenclature: stock_zh_a_hist_min{period}_{adjust}
 type StockZhAHistMin struct {
 	Date   string  `gorm:"primaryKey;type:date" json:"date"`
 	Time   string  `gorm:"primaryKey;column:time;type:varchar(20)" json:"time"` // YYYYMMDDHHMMSSsss
@@ -53,7 +53,7 @@ type StockZhAHistMin struct {
 }
 
 type HistDataRequestMeta struct {
-	Frequency *string  `json:"frequency"`
+	Period    *string  `json:"period"`
 	Adjust    *string  `json:"adjust"`
 	Code      *string  `json:"code"`
 	StartDate *string  `json:"start_date"`

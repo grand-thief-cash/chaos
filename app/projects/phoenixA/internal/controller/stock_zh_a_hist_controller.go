@@ -50,9 +50,9 @@ func (c *StockZhAHistController) BatchUpsert(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, apiError{Error: errMsg})
 		return
 	}
-	if req.Meta.Frequency == nil || req.Meta.Adjust == nil ||
-		*req.Meta.Frequency == "" || *req.Meta.Adjust == "" {
-		errMsg = "Req meta missing frequency & adjust"
+	if req.Meta.Period == nil || req.Meta.Adjust == nil ||
+		*req.Meta.Period == "" || *req.Meta.Adjust == "" {
+		errMsg = "Req meta missing period & adjust"
 		logging.Error(ctx, errMsg)
 		writeJSON(w, http.StatusBadRequest, apiError{Error: errMsg})
 	}
@@ -61,16 +61,16 @@ func (c *StockZhAHistController) BatchUpsert(w http.ResponseWriter, r *http.Requ
 		logging.Error(ctx, errMsg)
 		writeJSON(w, http.StatusBadRequest, apiError{Error: errMsg})
 	}
-	frequency := *req.Meta.Frequency
+	period := *req.Meta.Period
 
-	if frequency == bizConsts.PERIOD_DAILY {
+	if period == bizConsts.PERIOD_DAILY {
 		err = c.StockZhAHistDailySvc.BatchUpsert(ctx, req.Meta, req.Data)
-	} else if frequency == bizConsts.PERIOD_MONTHLY ||
-		frequency == bizConsts.PERIOD_WEEKLY {
-	} else if frequency == bizConsts.PERIOD_MIN5 ||
-		frequency == bizConsts.PERIOD_MIN15 ||
-		frequency == bizConsts.PERIOD_MIN30 ||
-		frequency == bizConsts.PERIOD_MIN60 {
+	} else if period == bizConsts.PERIOD_MONTHLY ||
+		period == bizConsts.PERIOD_WEEKLY {
+	} else if period == bizConsts.PERIOD_MIN5 ||
+		period == bizConsts.PERIOD_MIN15 ||
+		period == bizConsts.PERIOD_MIN30 ||
+		period == bizConsts.PERIOD_MIN60 {
 	}
 	if err != nil {
 		errMsg = fmt.Sprintf("Stock data upsert err: %s", err.Error())
@@ -85,12 +85,12 @@ func (c *StockZhAHistController) GetStockLastUpdate(w http.ResponseWriter, r *ht
 	ctx := r.Context()
 	var err error
 	var dates map[string]string
-	frequency := r.URL.Query().Get("frequency")
+	period := r.URL.Query().Get("period")
 	adjust := r.URL.Query().Get("adjust")
 	codesStr := r.URL.Query().Get("codes")
 
-	if frequency == "" || adjust == "" || codesStr == "" {
-		writeJSON(w, http.StatusBadRequest, apiError{Error: "Missing frequency or adjust or codes"})
+	if period == "" || adjust == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "Missing period or adjust or codes"})
 		return
 	}
 
@@ -101,19 +101,19 @@ func (c *StockZhAHistController) GetStockLastUpdate(w http.ResponseWriter, r *ht
 		return
 	}
 	reqMeta := model.HistDataRequestMeta{
-		Frequency: &frequency,
-		Adjust:    &adjust,
-		Codes:     codes,
+		Period: &period,
+		Adjust: &adjust,
+		Codes:  codes,
 	}
 
-	if frequency == bizConsts.PERIOD_DAILY {
+	if period == bizConsts.PERIOD_DAILY {
 		dates, err = c.StockZhAHistDailySvc.GetLatestUpdateByCodes(ctx, &reqMeta)
-	} else if frequency == bizConsts.PERIOD_MONTHLY ||
-		frequency == bizConsts.PERIOD_WEEKLY {
-	} else if frequency == bizConsts.PERIOD_MIN5 ||
-		frequency == bizConsts.PERIOD_MIN15 ||
-		frequency == bizConsts.PERIOD_MIN30 ||
-		frequency == bizConsts.PERIOD_MIN60 {
+	} else if period == bizConsts.PERIOD_MONTHLY ||
+		period == bizConsts.PERIOD_WEEKLY {
+	} else if period == bizConsts.PERIOD_MIN5 ||
+		period == bizConsts.PERIOD_MIN15 ||
+		period == bizConsts.PERIOD_MIN30 ||
+		period == bizConsts.PERIOD_MIN60 {
 	}
 	if err != nil {
 		errMsg := fmt.Sprintf("Get stock last update err: %s", err.Error())
@@ -123,7 +123,7 @@ func (c *StockZhAHistController) GetStockLastUpdate(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, dates)
 }
 
-// GET /api/v1/stock/hist/range?code=000001&start_date=2024-01-01&end_date=2024-01-31&frequency=daily&adjust=nf&limit=1000&offset=0&fields=open,close
+// GET /api/v1/stock/hist/range?code=000001&start_date=2024-01-01&end_date=2024-01-31&period=daily&adjust=nf&limit=1000&offset=0&fields=open,close
 func (c *StockZhAHistController) GetDailyByCodeDateRange(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
@@ -131,12 +131,12 @@ func (c *StockZhAHistController) GetDailyByCodeDateRange(w http.ResponseWriter, 
 	code := strings.TrimSpace(q.Get("code"))
 	startDate := strings.TrimSpace(q.Get("start_date"))
 	endDate := strings.TrimSpace(q.Get("end_date"))
-	frequency := strings.TrimSpace(q.Get("frequency"))
+	period := strings.TrimSpace(q.Get("period"))
 	adjust := strings.TrimSpace(q.Get("adjust"))
 	limit, offset := parseLimitOffset(r)
 	fields := parseFieldsParam(q.Get("fields"))
 
-	if code == "" || startDate == "" || endDate == "" || frequency == "" || adjust == "" {
+	if code == "" || startDate == "" || endDate == "" || period == "" || adjust == "" {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "missing code or start_date or end_date"})
 		return
 	}
@@ -161,7 +161,7 @@ func (c *StockZhAHistController) GetDailyByCodeDateRange(w http.ResponseWriter, 
 		Code:      &code,
 		StartDate: &startDate,
 		EndDate:   &endDate,
-		Frequency: &frequency,
+		Period:    &period,
 		Adjust:    &adjust,
 		Limit:     &limit,
 		Offset:    &offset,
