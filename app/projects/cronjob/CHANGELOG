@@ -1,7 +1,9 @@
 # VERSION
-v0.13.0
+v0.13.1
 
 # Changelog
+- v0.13.1
+    - Added config doc for cronjob.
 - v0.13.0
     - Involve HTTP client component from infra framework to support http request in cronjob executor.
     - Upgraded infra framework version to v0.16.2
