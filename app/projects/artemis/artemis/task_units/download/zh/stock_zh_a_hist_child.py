@@ -5,7 +5,6 @@ from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.task_units.child import ChildTaskUnit
-from artemis.task_units.download.zh.stock_zh_a_hist_parent import convert_baostock_to_phoenix_schema
 
 
 class StockZhAHistChild(ChildTaskUnit):
@@ -17,7 +16,7 @@ class StockZhAHistChild(ChildTaskUnit):
         params = ctx.params  # Use merged params
 
         code = params.get("code")
-        row_code = params.get("row_code")
+        raw_code = params.get("raw_code")
         start_date = params.get("start_date")
         end_date = params.get("end_date")
         frequency = params.get("frequency")
@@ -56,9 +55,9 @@ class StockZhAHistChild(ChildTaskUnit):
             return pd.DataFrame()
 
         df = pd.DataFrame(data_list, columns=fields_str.split(','))
-        # Pass row_code along with dataframe using a tuple or adding column here?
+        # Pass raw_code along with dataframe using a tuple or adding column here?
         # Adding here is simpler for post_process
-        df['code'] = row_code
+        df['code'] = raw_code
         return df
 
     def post_process(self, ctx: TaskContext, df: pd.DataFrame) -> pd.DataFrame:
@@ -140,19 +139,20 @@ class StockZhAHistChild(ChildTaskUnit):
         phoenix_client: PhoenixAClient = ctx.dept_http[DeptServices.PHOENIXA]
 
         params = ctx.params
-        code = params.get("code")
-        frequency = params.get("frequency")
-        adjustflag = params.get("adjustflag")
+        code = params.get("raw_code")
+        period = params.get("period")
+        adjust = params.get("adjust")
 
         # Convert baostock fields to match PhoenixA expected schema if needed (e.g., rename, reformat)
-        frequency = convert_baostock_to_phoenix_schema("frequency", frequency)
-        adjustflag = convert_baostock_to_phoenix_schema("adjustflag", adjustflag)
+        # frequency = convert_baostock_to_phoenix_schema("frequency", frequency)
+        # adjustflag = convert_baostock_to_phoenix_schema("adjustflag", adjustflag)
 
         # Convert back to list of dicts for the client method
         data_list = df.to_dict('records')
         meta = {
-            "frequency": frequency,
-            "adjustflag": adjustflag,
+            "period": period,
+            "adjust": adjust,
+            "code": code
         }
         params = {
             "meta": meta,

@@ -15,12 +15,34 @@ class BaseTaskUnit:
         # fetch dynamic params from sources; override
         return {}
 
-    def merge_parameters(self, ctx: TaskContext, dynamic_params: Dict[str, Any]):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def merge_parameters(self, ctx: TaskContext):
         # merge defaults + variant + incoming + dynamic
-        defaults = cfg_mgr.task_default(ctx.task_code)
+        default_cfg = cfg_mgr.task_default(ctx.task_code)
         # strict policy: task_variant may raise; let it bubble to fail the phase
         variant_cfg = cfg_mgr.task_variant(ctx.task_code, ctx.incoming_params)
-        ctx.params = {**defaults, **variant_cfg, **dynamic_params, **ctx.incoming_params}
+        ctx.params = {**default_cfg, **variant_cfg, **ctx.incoming_params, **ctx.params}
         if ctx.logger:
             ctx.logger.info({'event': 'merge_parameters', 'params_keys': list(ctx.params.keys()), 'run_id': ctx.run_id})
 
@@ -68,12 +90,12 @@ class BaseTaskUnit:
         # parameter_check
         _, d = self._run_phase(ctx, 'parameter_check', self.parameter_check, ctx)
         phase_durations['parameter_check'] = d
-        # load_dynamic_parameters
-        dyn, d = self._run_phase(ctx, 'load_dynamic_parameters', self.load_dynamic_parameters, ctx)
-        phase_durations['load_dynamic_parameters'] = d
         # load_task_config (merge)
-        _, d = self._run_phase(ctx, 'load_task_config', self.merge_parameters, ctx, dyn)
+        _, d = self._run_phase(ctx, 'load_task_config', self.merge_parameters, ctx)
         phase_durations['load_task_config'] = d
+        # load_dynamic_parameters
+        _, d = self._run_phase(ctx, 'load_dynamic_parameters', self.load_dynamic_parameters, ctx)
+        phase_durations['load_dynamic_parameters'] = d
         # before_execute
         _, d = self._run_phase(ctx, 'before_execute', self.before_execute, ctx)
         phase_durations['before_execute'] = d
