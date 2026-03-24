@@ -1,7 +1,9 @@
 # VERSION
-v0.13.1
+v0.13.2
 
 # Changelog
+- v0.13.2
+    - Updated deployment scripts to support auto proxy.
 - v0.13.1
     - Added config doc for cronjob.
 - v0.13.0

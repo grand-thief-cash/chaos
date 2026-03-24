@@ -28,12 +28,42 @@ FORCE_DOCKER_BUILD = True
 SERVICE_NAME = "cronjob"
 
 VPN = "192.168.31.169:7890"
+PRIMARY_PROXY = "http://192.168.31.170:7890"
+BACKUP_PROXY  = "http://192.168.31.169:7890"
+
 
 
 #########################################
 # 工具方法
 #########################################
+#########################################
+# 工具方法
+#########################################
+def auto_proxy_env():
+    def proxy_ok(proxy):
+        try:
+            subprocess.check_call(
+                ["curl", "--connect-timeout", "3", "--silent", "--proxy", proxy, "https://www.google.com"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
+    if proxy_ok(PRIMARY_PROXY):
+        proxy = PRIMARY_PROXY
+        print(f"✅ Python: 使用主代理 {proxy}")
+    elif proxy_ok(BACKUP_PROXY):
+        proxy = BACKUP_PROXY
+        print(f"🔄 Python: 使用备用代理 {proxy}")
+    else:
+        print("❌ Python: 无可用代理")
+        return
+
+    os.environ["http_proxy"]  = proxy
+    os.environ["https_proxy"] = proxy
+    os.environ["GOPROXY"]     = "direct"
 def read_version():
     changelog = Path(GO_PROJECT_PATH) / "CHANGELOG"
     version = None
@@ -343,4 +373,5 @@ def main():
 
 
 if __name__ == "__main__":
+    auto_proxy_env()
     main()
