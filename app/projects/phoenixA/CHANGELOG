@@ -1,7 +1,9 @@
 # VERSION
-v0.3.0
+v0.3.1
 
 # Changelog
+- v0.3.1
+    - Moved location of deployment scripts to deployment folder.
 - v0.3.0
     - Added deployment files for PhoenixA project.
 - v0.2.1
