@@ -151,23 +151,51 @@ def get_remote_version(ssh):
 def build_remote_image(ssh, version):
     print("🔨 开始远程 docker build...")
 
-    cmd = (
-        f"cd {REMOTE_DEPLOY_PATH} && "
-        # f"export HTTP_PROXY=http://{VPN} HTTPS_PROXY=http://{VPN} && "
-        f"docker build --network=host --progress=plain "
-        f"--build-arg HTTP_PROXY=http://{VPN} "
-        f"--build-arg HTTPS_PROXY=http://{VPN} "
-        f"-t {SERVICE_NAME}:{version} ."
-    )
+    # 首先检查代理是否可用
+    check_cmd = f"curl -s --connect-timeout 5 http://{VPN}"
+    out = remote_exec(ssh, check_cmd)
+    if "Connection refused" in out or "timeout" in out:
+        print(f"⚠️ 代理 {VPN} 可能不可用，尝试不使用代理")
+        # 不使用代理构建
+        cmd = (
+            f"cd {REMOTE_DEPLOY_PATH} && "
+            f"docker build --network=host --progress=plain "
+            f"-t {SERVICE_NAME}:{version} ."
+        )
+    else:
+        print(f"✓ 代理 {VPN} 可用")
+        # 使用代理构建
+        cmd = (
+            f"cd {REMOTE_DEPLOY_PATH} && "
+            f"export HTTP_PROXY=http://{VPN} HTTPS_PROXY=http://{VPN} && "
+            f"docker build --network=host --progress=plain "
+            f"--build-arg HTTP_PROXY=http://{VPN} "
+            f"--build-arg HTTPS_PROXY=http://{VPN} "
+            f"-t {SERVICE_NAME}:{version} ."
+        )
+
     print(cmd)
-
     print("=== Docker Build ===")
-    stdin, stdout, stderr = ssh.exec_command(cmd, get_pty=True)
 
-    for line in iter(stdout.readline, ""):
-        print("BUILD:", line, end="")
+    # 使用更稳定的执行方式
+    channel = ssh.get_transport().open_session()
+    channel.exec_command(cmd)
 
+    while True:
+        if channel.recv_ready():
+            data = channel.recv(1024).decode()
+            print("BUILD:", data, end="")
+        elif channel.recv_stderr_ready():
+            data = channel.recv_stderr(1024).decode()
+            print("BUILD ERR:", data, end="")
+        elif channel.exit_status_ready():
+            break
+        time.sleep(0.1)
 
+    exit_code = channel.recv_exit_status()
+    if exit_code != 0:
+        print(f"❌ Docker build 失败，退出码: {exit_code}")
+        sys.exit(1)
 def docker_compose_up(ssh):
     cmd = f"cd {REMOTE_DEPLOY_PATH} && docker compose -f docker-compose.yaml up -d"
     remote_exec(ssh, cmd)
