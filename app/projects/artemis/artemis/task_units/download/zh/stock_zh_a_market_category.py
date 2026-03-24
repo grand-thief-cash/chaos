@@ -1,14 +1,14 @@
 from typing import Any, Dict, List
 
 import requests
+from artemis.task_units.child import WorkerUnit
 
 from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
-from artemis.task_units.child import ChildTaskUnit
 
 
-class StockZHAMarketCategory(ChildTaskUnit):
+class StockZHAMarketCategory(WorkerUnit):
 
     def execute(self, ctx):
         url = "https://api.mairuiapi.com/hszg/list/LICENCE-66D8-9F96-0C7F0FBCD073"

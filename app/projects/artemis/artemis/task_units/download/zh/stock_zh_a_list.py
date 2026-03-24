@@ -2,12 +2,12 @@ from typing import Any, Dict
 
 import pandas as pd
 from akshare import stock_bj_a_spot_em, stock_sz_a_spot_em, stock_sh_a_spot_em
+from artemis.task_units.child import WorkerUnit
 
 from artemis.consts import DeptServices
-from artemis.task_units.child import ChildTaskUnit
 
 
-class StockZHAList(ChildTaskUnit):
+class StockZHAList(WorkerUnit):
     """单任务：每日刷新 A 股列表（上交所/深交所）。
 
     参数约定（ctx.params 最终形态）：

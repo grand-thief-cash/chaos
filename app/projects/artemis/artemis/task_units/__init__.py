@@ -1,12 +1,13 @@
+from artemis.task_units.child import WorkerUnit
+from artemis.task_units.parent import OrchestratorUnit
+
 from artemis.consts import TaskCode
 from artemis.core import registry
 from artemis.task_units.base import BaseTaskUnit
-from artemis.task_units.child import ChildTaskUnit
 from artemis.task_units.download.zh import StockZhAHistParent, StockZhAHistChild, StockZHAMarketCategory
 from artemis.task_units.download.zh.stock_zh_a_list import StockZHAList
-from artemis.task_units.parent import OrchestratorTaskUnit
 
-__all__ = ['BaseTaskUnit', 'OrchestratorTaskUnit', 'ChildTaskUnit']
+__all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
 
 registry.register(
     TaskCode.STOCK_ZH_A_LIST,

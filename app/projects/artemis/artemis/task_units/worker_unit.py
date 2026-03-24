@@ -1,7 +1,7 @@
 from .base import BaseTaskUnit
 
 
-class ChildTaskUnit(BaseTaskUnit):
+class WorkerUnit(BaseTaskUnit):
     """
     Standard worker task unit.
     For semantic clarity: Tasks inherited from this are leaf nodes.
