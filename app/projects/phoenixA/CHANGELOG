@@ -1,7 +1,9 @@
 # VERSION
-v0.2.1
+v0.3.0
 
 # Changelog
+- v0.3.0
+    - Added deployment files for PhoenixA project.
 - v0.2.1
     - Identified term of "Period" & "Adjust" in stock_zh_a_hist data schema.
 - v0.2.0
