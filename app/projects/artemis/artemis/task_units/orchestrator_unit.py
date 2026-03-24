@@ -6,7 +6,7 @@ from artemis.core.task_registry import registry
 from .base import BaseTaskUnit
 
 
-class OrchestratorTaskUnit(BaseTaskUnit):
+class OrchestratorUnit(BaseTaskUnit):
     def plan(self, ctx: TaskContext) -> List[Dict[str, Any]]:
         """Return a list of child specs.
         Each spec should be: {"key": <child_task_code:str>, "params": <dict|None>}

@@ -2,15 +2,15 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, cast
 
 import baostock as bs
+from artemis.task_units.parent import OrchestratorUnit
 
 from artemis.consts import DeptServices, TaskCode
 from artemis.core import TaskContext
 from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.task_units.download.zh.utils import convert_baostock_to_phoenix_schema
-from artemis.task_units.parent import OrchestratorTaskUnit
 
 
-class StockZhAHistParent(OrchestratorTaskUnit):
+class StockZhAHistParent(OrchestratorUnit):
 
     def parameter_check(self, ctx: TaskContext):
         params = ctx.incoming_params

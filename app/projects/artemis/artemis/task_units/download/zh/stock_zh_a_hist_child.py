@@ -1,13 +1,13 @@
 import baostock as bs
 import pandas as pd
+from artemis.task_units.child import WorkerUnit
 
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.core.clients.phoenixA_client import PhoenixAClient
-from artemis.task_units.child import ChildTaskUnit
 
 
-class StockZhAHistChild(ChildTaskUnit):
+class StockZhAHistChild(WorkerUnit):
 
     def execute(self, ctx: TaskContext) -> pd.DataFrame:
         """
