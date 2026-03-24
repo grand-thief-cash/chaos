@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from artemis.consts import DeptServices
+from artemis.consts import DeptServices, TaskStatus
 from artemis.core import TaskContext
 from artemis.core.task_registry import registry
 from .base import BaseTaskUnit
@@ -49,7 +49,7 @@ class OrchestratorUnit(BaseTaskUnit):
     def _build_child_ctx(self, parent_ctx: TaskContext, child_task_code: str, child_params: Dict[str, Any]) -> TaskContext:
         child_ctx: TaskContext = object.__new__(TaskContext)  # type: ignore
 
-        child_ctx.task_meta = parent_ctx.task_meta
+        child_ctx.task_meta = parent_ctx.task_meta.model_copy(update={'task_code': child_task_code})
         child_ctx.incoming_params = child_params or {}
         child_ctx.params = {}
 
@@ -62,6 +62,7 @@ class OrchestratorUnit(BaseTaskUnit):
 
         child_ctx.status = "PENDING"
         child_ctx.error = None
+        child_ctx.failed_phase = None
         child_ctx.children_total = 0
         child_ctx.children_completed = 0
         child_ctx.stats = {}
@@ -100,6 +101,8 @@ class OrchestratorUnit(BaseTaskUnit):
 
         validated_specs = [self._validate_child_spec(s) for s in specs]
         ctx.mark_child_total(len(validated_specs))
+        ctx.stats['children_total'] = ctx.children_total
+        ctx.stats['children_completed'] = ctx.children_completed
 
         # Initial progress
         self._report_progress(ctx, message=f"children 0/{ctx.children_total} start")
@@ -134,7 +137,11 @@ class OrchestratorUnit(BaseTaskUnit):
                 # Note: child.run() handles its own try/catch/stats/logging via BaseTaskUnit
                 child.run(child_ctx)
 
+                if child_ctx.status != TaskStatus.SUCCESS.value or child_ctx.error:
+                    raise RuntimeError(child_ctx.error)
+
                 ctx.inc_child_completed()
+                ctx.stats['children_completed'] = ctx.children_completed
                 self._report_progress(ctx)
 
                 if ctx.logger:
@@ -155,17 +162,11 @@ class OrchestratorUnit(BaseTaskUnit):
                 error_msg = child_ctx.error if child_ctx else str(ce)
 
                 if status != "SUCCESS":
-                     if ctx.logger:
-                        ctx.logger.error({
-                            'event': 'child_failure',
-                            'child_index': idx,
-                            'task_code': task_code,
-                            'error': error_msg,
-                            'run_id': ctx.run_id,
-                        })
-                     # Policy: Fail parent if child failed? Or partial success?
-                     # Let's re-raise to fail parent for now to correspond to legacy behavior (conceptually)
-                     raise RuntimeError(f"Child task {task_code} failed at index {idx}: {error_msg}")
+                    failure_msg = f"Child task {task_code} failed at index {idx}: {error_msg}"
+                    ctx.fail(failure_msg, phase='execution_loop')
+                    # Policy: Fail parent if child failed? Or partial success?
+                    # Let's re-raise to fail parent for now to correspond to legacy behavior (conceptually)
+                    raise RuntimeError(ctx.error)
 
         phase_durations['execution_loop'] = int((time.time() - loop_start) * 1000)
 

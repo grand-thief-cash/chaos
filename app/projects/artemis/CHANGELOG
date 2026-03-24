@@ -1,7 +1,10 @@
 # VERSION
-v0.9.4
+v0.10.0
 
 # Changelog
+- v0.10.0
+    - Eliminated RAISE abuse in concrete task units and replaced with proper exception handling and error reporting.
+    - Take off redundant try-catch structure from concreted tasks.
 - v0.9.4
     - Rename parent and child to orchestrator and worker.
 - v0.9.3

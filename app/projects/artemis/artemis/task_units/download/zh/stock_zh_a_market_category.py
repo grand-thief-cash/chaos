@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
 import requests
-from artemis.task_units.child import WorkerUnit
+from artemis.task_units.worker_unit import WorkerUnit
 
 from artemis import consts
 from artemis.consts import DeptServices
@@ -18,11 +18,7 @@ class StockZHAMarketCategory(WorkerUnit):
             data = resp.json()  # expected to be a JSON array
             return data
         except Exception as e:
-            ctx.logger.error({
-                "event": "fetch_stock_zh_a_market_category_failed",
-                "run_id": ctx.run_id,
-                "error": str(e)
-            })
+            ctx.fail(f"fetch market category failed: {e}", phase='execute')
             return []
 
     def post_process(self, ctx: TaskContext, result: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -44,4 +40,6 @@ class StockZHAMarketCategory(WorkerUnit):
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):
         phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
-        phoenixA_client.upsert_market_categories(processed, consts.DataSource.DS_MAIRUI.value, ctx.run_id)
+        ok = phoenixA_client.upsert_market_categories(processed, consts.DataSource.DS_MAIRUI.value, ctx.run_id)
+        if ok is False:
+            ctx.fail("failed to sink market categories to phoenixA", phase='sink')

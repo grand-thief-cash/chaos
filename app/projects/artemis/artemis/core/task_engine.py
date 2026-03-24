@@ -15,20 +15,11 @@ class TaskEngine:
         try:
             task = ctx.exec_cls()
             task.run(ctx)
-            return True
+            return ctx.status == TaskStatus.SUCCESS.value and not ctx.error
         except Exception as e:
-            ctx.logger.error({'event':'task_error','error':str(e),'task_code': ctx.task_code,'run_id': ctx.run_id})
-            # 确保 ctx 已经标记失败并带有错误信息
-            if ctx.status != TaskStatus.FAILED.value:
-                try:
-                    ctx.set_status(TaskStatus.FAILED.value)
-                except Exception:
-                    pass
-            if not ctx.error:
-                try:
-                    ctx.set_error(str(e))
-                except Exception:
-                    pass
+            ctx.fail(e, phase=ctx.failed_phase or 'engine')
+            if 'phase_durations_ms' not in ctx.stats:
+                ctx.emit_failure_log(ctx.stats.get('phase_durations_ms'))
             # async + 顶层任务的失败场景下，触发 finalize_failed 回调
             cronjob_cli = None
             try:
@@ -41,10 +32,10 @@ class TaskEngine:
 
                     # prefer new design: delegate to dept client
                     if cronjob_cli and hasattr(cronjob_cli, 'finalized') and not cronjob_cli.finalized(ctx):
-                        cronjob_cli.finalize_failed(ctx, str(e))
+                        cronjob_cli.finalize_failed(ctx, ctx.error)
                     # fallback legacy
                     elif getattr(ctx, 'callback', None) and not ctx.callback.finalized():
-                        ctx.callback.finalize_failed(str(e))
+                        ctx.callback.finalize_failed(ctx.error)
             except Exception as fe:
                 if ctx.logger:
                     ctx.logger.warning({'event':'callback_finalize_failed_error','error':str(fe),'task_code':ctx.task_code,'run_id': ctx.run_id})
@@ -66,7 +57,7 @@ class TaskEngine:
                     if is_success and ctx.status == TaskStatus.SUCCESS.value:
                         cronjob_cli.finalize_success(ctx, code=200, body='task completed successfully')
                     else:
-                        cronjob_cli.finalize_failed(ctx, error_message=ctx.error or 'task completed failed')
+                        cronjob_cli.finalize_failed(ctx, error_message=ctx.error)
                     if ctx.logger:
                         ctx.logger.info({'event': 'callback_finalized', 'task_code': ctx.task_code, 'run_id': ctx.run_id, 'result': is_success})
             except Exception as fe:

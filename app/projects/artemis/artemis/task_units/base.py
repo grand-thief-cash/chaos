@@ -74,11 +74,10 @@ class BaseTaskUnit:
             ctx.logger.debug({'event': 'phase', 'phase': name, 'action': 'enter', 'run_id': ctx.run_id})
         try:
             result = fn(*args, **kwargs)
+            if ctx.has_failed():
+                raise RuntimeError(ctx.error)
         except Exception as e:
-            duration_ms = int((time.time() - start) * 1000)
-            if ctx.logger:
-                # trace_id/span_id are now auto-injected by JsonFormatter
-                ctx.logger.error({'event': 'phase', 'phase': name, 'action': 'error', 'error': str(e), 'duration_ms': duration_ms, 'run_id': ctx.run_id})
+            ctx.fail(e, phase=name)
             raise
         duration_ms = int((time.time() - start) * 1000)
         if ctx.logger:
@@ -125,11 +124,13 @@ class BaseTaskUnit:
         if ctx.logger:
             ctx.logger.info({'event': 'task_start', 'task_code': ctx.task_code, 'run_id': ctx.run_id})
         phase_durations = {}
-        failed_phase = None
         try:
             self._pre_run(ctx, phase_durations)
             self._execute_strategy(ctx, phase_durations)
             self._post_run(ctx, phase_durations)
+
+            if ctx.has_failed():
+                raise RuntimeError(ctx.error)
 
             ctx.set_status(TaskStatus.SUCCESS.value)
             # persist durations into stats for external API consumers
@@ -144,20 +145,10 @@ class BaseTaskUnit:
                     'total_ms': ctx.stats['total_duration_ms']
                 })
         except Exception as e:
-            failed_phase = failed_phase or ctx.status or 'unknown'
-            ctx.set_status(TaskStatus.FAILED.value)
-            ctx.set_error(str(e))
+            ctx.fail(e, phase=ctx.failed_phase)
             # capture partial durations
             ctx.stats['phase_durations_ms'] = phase_durations
-            if ctx.logger:
-                ctx.logger.error({
-                    'event': 'task_failed',
-                    'task_code': ctx.task_code,
-                    'error': str(e),
-                    'run_id': ctx.run_id,
-                    'failed_phase': failed_phase,
-                    'durations_ms': phase_durations
-                })
+            ctx.emit_failure_log(phase_durations)
             raise
         finally:
             ctx.close()

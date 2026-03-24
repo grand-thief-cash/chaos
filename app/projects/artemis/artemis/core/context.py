@@ -26,6 +26,7 @@ class TaskContext:
         self.end_ts: Optional[float] = None
         self.status: str = TaskStatus.PENDING.value
         self.error: Optional[str] = None
+        self.failed_phase: Optional[str] = None
         self.children_total: int = 0
         self.children_completed: int = 0
         self.stats: Dict[str, Any] = {}
@@ -66,7 +67,51 @@ class TaskContext:
         self.children_completed += 1
 
     def set_error(self, err: str):
-        self.error = err
+        self.error = self._normalize_error(err)
+
+    @staticmethod
+    def _normalize_error(err: Any) -> Optional[str]:
+        if err is None:
+            return None
+        text = str(err).strip()
+        return text or None
+
+    def mark_failed_phase(self, phase: Optional[str]):
+        if not phase:
+            return
+        if not self.failed_phase:
+            self.failed_phase = phase
+        self.stats['failed_phase'] = self.failed_phase
+
+    def fail(self, err: Any, phase: Optional[str] = None):
+        if phase:
+            self.mark_failed_phase(phase)
+        self.status = TaskStatus.FAILED.value
+        normalized = self._normalize_error(err)
+        if normalized is not None:
+            self.error = normalized
+        elif not self.error:
+            self.error = 'task failed'
+        return self.error
+
+    def has_failed(self) -> bool:
+        return self.status == TaskStatus.FAILED.value
+
+    def emit_failure_log(self, phase_durations: Optional[Dict[str, int]] = None):
+        if not self.logger:
+            return
+
+        payload: Dict[str, Any] = {
+            'event': 'task_failed',
+            'task_code': self.task_code,
+            'error': self.error,
+            'run_id': self.run_id,
+            'failed_phase': self.failed_phase or 'unknown',
+        }
+        if phase_durations is not None:
+            payload['durations_ms'] = phase_durations
+
+        self.logger.error(payload)
 
     def stat(self, key: str, value: Any):
         """Record/overwrite a stat value."""

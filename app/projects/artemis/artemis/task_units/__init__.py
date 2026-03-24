@@ -1,5 +1,5 @@
-from artemis.task_units.child import WorkerUnit
-from artemis.task_units.parent import OrchestratorUnit
+from artemis.task_units.worker_unit import WorkerUnit
+from artemis.task_units.orchestrator_unit import OrchestratorUnit
 
 from artemis.consts import TaskCode
 from artemis.core import registry
