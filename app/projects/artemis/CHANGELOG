@@ -1,7 +1,9 @@
 # VERSION
-v0.10.0
+v0.10.1
 
 # Changelog
+- v0.10.1
+    - Updated deployment scripts to support auto proxy.
 - v0.10.0
     - Eliminated RAISE abuse in concrete task units and replaced with proper exception handling and error reporting.
     - Take off redundant try-catch structure from concreted tasks.
