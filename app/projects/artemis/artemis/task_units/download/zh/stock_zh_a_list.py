@@ -2,9 +2,9 @@ from typing import Any, Dict
 
 import pandas as pd
 from akshare import stock_bj_a_spot_em, stock_sz_a_spot_em, stock_sh_a_spot_em
-from artemis.task_units.child import WorkerUnit
 
 from artemis.consts import DeptServices
+from artemis.task_units.worker_unit import WorkerUnit
 
 
 class StockZHAList(WorkerUnit):
@@ -27,9 +27,11 @@ class StockZHAList(WorkerUnit):
         inc = ctx.incoming_params or {}
         exchange = inc.get("exchange")
         if not exchange:
-            raise ValueError("missing required param: exchange (SH/SZ)")
+            ctx.fail("missing required param: exchange (SH/SZ)", phase='parameter_check')
+            return
         if exchange not in self.VALID_EXCHANGES:
-            raise ValueError(f"invalid exchange: {exchange}, expected one of {sorted(self.VALID_EXCHANGES)}")
+            ctx.fail(f"invalid exchange: {exchange}, expected one of {sorted(self.VALID_EXCHANGES)}", phase='parameter_check')
+            return
 
     # ------- 动态参数 -------
 
@@ -43,28 +45,28 @@ class StockZHAList(WorkerUnit):
         params = ctx.params or {}
         exchange = params.get("exchange")
 
-        try:
-            if exchange == "SH":
-                df = stock_sh_a_spot_em()
-            elif exchange == "SZ":
-                df = stock_sz_a_spot_em()
-            elif exchange == "BJ":
-                df = stock_bj_a_spot_em()
-            elif exchange == "ALL":
-                df_sh = stock_sh_a_spot_em()
-                df_sz = stock_sz_a_spot_em()
-                df_bj = stock_bj_a_spot_em()
-                df = pd.concat([df_sh, df_sz, df_bj], ignore_index=True)
-            else:
-                df = pd.DataFrame()
-        except Exception as e:
-            ctx.logger.error({
-                "event": "stock_a_list_daily_execute_error",
+
+        if exchange == "SH":
+            df = stock_sh_a_spot_em()
+        elif exchange == "SZ":
+            df = stock_sz_a_spot_em()
+        elif exchange == "BJ":
+            df = stock_bj_a_spot_em()
+        elif exchange == "ALL":
+            df_sh = stock_sh_a_spot_em()
+            df_sz = stock_sz_a_spot_em()
+            df_bj = stock_bj_a_spot_em()
+            df = pd.concat([df_sh, df_sz, df_bj], ignore_index=True)
+        else:
+            df = pd.DataFrame()
+            ctx.fail(f"{exchange} is not supported exchange", phase='execute')
+            return {
                 "exchange": exchange,
-                "error": str(e),
-                "run_id": ctx.run_id,
-            })
-            raise RuntimeError(f"failed to fetch stock list by exchange {exchange}: {e}")
+                "rows": [],
+                "count": 0,
+            }
+
+
 
         sub_df = df[["代码", "名称"]]
         sub_df.columns = ["code", "company"]
@@ -92,27 +94,12 @@ class StockZHAList(WorkerUnit):
             "run_id": ctx.run_id,
         })
 
-        client = ctx.dept_http.get(DeptServices.PHOENIXA)
-        if client and hasattr(client, 'stock_zh_a_list_batch_upsert'):
-             # batch_upsert requires list of dict. `rows` is already list of dict.
-            try:
-                client.stock_zh_a_list_batch_upsert(rows, ctx.run_id)
-            except Exception as e:
-                ctx.logger.error({
-                    "event": "stock_a_list_daily_sink_error",
-                    "exchange": exchange,
-                    "error": str(e),
-                    "run_id": ctx.run_id,
-                })
-                # Decide if we want to fail the task if sink fails. Usually yes.
-                raise RuntimeError(f"failed to sink stock list to phoenixA: {e}")
-        elif client:
-             ctx.logger.warning({
-                "event": "stock_a_list_daily_sink_skip",
-                "reason": "client_missing_batch_upsert_method",
-                "client_type": str(type(client)),
-                "run_id": ctx.run_id
-             })
-
         ctx.stats["exchange"] = exchange
         ctx.stats["row_count"] = int(count or 0)
+
+        client = ctx.dept_http.get(DeptServices.PHOENIXA)
+        ok = client.stock_zh_a_list_batch_upsert(rows, ctx.run_id)
+        if ok is False:
+            ctx.fail(f"failed to sink stock list to phoenixA for exchange={exchange}", phase='sink')
+            return
+

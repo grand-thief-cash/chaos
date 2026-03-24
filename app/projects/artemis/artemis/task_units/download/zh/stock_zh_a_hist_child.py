@@ -1,6 +1,6 @@
 import baostock as bs
 import pandas as pd
-from artemis.task_units.child import WorkerUnit
+from artemis.task_units.worker_unit import WorkerUnit
 
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
@@ -33,13 +33,8 @@ class StockZhAHistChild(WorkerUnit):
         )
 
         if rs.error_code != '0':
-            ctx.logger.error({
-                "event": "stock_zh_a_hist_child_bs_query_error",
-                "run_id": ctx.run_id,
-                "code": code,
-                "error_code": rs.error_code,
-                "error_msg": rs.error_msg
-            })
+            err_msg = f"baostock query failed for code={code}: {rs.error_code} {rs.error_msg}"
+            ctx.fail(err_msg, phase='execute')
             return pd.DataFrame()
 
         data_list = []
@@ -168,9 +163,5 @@ class StockZhAHistChild(WorkerUnit):
                 "count": len(data_list)
             })
         else:
-             ctx.logger.error({
-                "event": "stock_zh_a_hist_child_save_failed",
-                "run_id": ctx.run_id,
-                "code": code
-            })
+            ctx.fail(f"failed to sink stock hist for code={code}", phase='sink')
 

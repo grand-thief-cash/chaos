@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, cast
 
 import baostock as bs
-from artemis.task_units.parent import OrchestratorUnit
+from artemis.task_units.orchestrator_unit import OrchestratorUnit
 
 from artemis.consts import DeptServices, TaskCode
 from artemis.core import TaskContext
@@ -17,18 +17,20 @@ class StockZhAHistParent(OrchestratorUnit):
         period = params.get("period")
         adjust = params.get("adjust")
         if not period or not adjust:
-            raise RuntimeError(f"Missing required input params: period={period}, adjust={adjust}")
+            ctx.fail(f"Missing required input params: period={period}, adjust={adjust}", phase='parameter_check')
+            return
 
 
     def load_dynamic_parameters(self, ctx: TaskContext):
         params = ctx.incoming_params
 
-        code_list_str = params.get("code_list", "")
+        code_list_str = str(params.get("code_list", "") or "").strip()
         codes = []
         if code_list_str != "":
-            codes = code_list_str.split(",")
-            if codes is None:
-                raise RuntimeError(f"Failed to parse code_list: {code_list_str}")
+            codes = [code.strip() for code in code_list_str.split(",") if code.strip()]
+            if not codes:
+                ctx.fail(f"Failed to parse code_list: {code_list_str}", phase='load_dynamic_parameters')
+                return
 
         # Get stock codes and exchanges from PhoenixA, optionally filtered by target_codes
         phoenix_client = ctx.dept_http[DeptServices.PHOENIXA]
@@ -64,9 +66,19 @@ class StockZhAHistParent(OrchestratorUnit):
 
         # params check
         if not start_date or not fields:
-            raise RuntimeError(f"Missing execution params: start_date={start_date}, fields={fields}")
+            ctx.fail(f"Missing execution params: start_date={start_date}, fields={fields}", phase='before_execute')
+            return
+
+        try:
+            datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            ctx.fail(f"Invalid start_date format: {start_date}, expected YYYY-MM-DD", phase='before_execute')
+            return
 
         lg = bs.login()
+        if getattr(lg, 'error_code', None) != '0':
+            ctx.fail(f"baostock login failed: {getattr(lg, 'error_msg', 'unknown error')}", phase='before_execute')
+            return
 
 
     def plan(self, ctx: TaskContext) -> List[Dict[str, Any]]:
@@ -90,75 +102,64 @@ class StockZhAHistParent(OrchestratorUnit):
         # 2. Get last update dates for stocks (prefer filtered)
         frequency = convert_baostock_to_phoenix_schema("frequency", period)
         adjust = convert_baostock_to_phoenix_schema("adjustflag", adjust)
+        if not frequency or not adjust:
+            ctx.fail(f"Invalid baostock schema mapping: period={period}, adjust={params.get('adjust')}", phase='plan')
+            return []
 
 
         child_specs = []
         today_str = datetime.now().strftime("%Y-%m-%d")
+        base_start_date = start_date
 
         for _, info in code_infos.items():
             code = info.get("code")
             exchange = info.get("exchange")
+            item_start_date = base_start_date
+
+            if not code or not exchange:
+                ctx.fail(f"Missing stock code info from PhoenixA: code={code}, exchange={exchange}", phase='plan')
+                return []
 
             if exchange in ["SH", "SZ","BJ"]:
                 bs_code = f"{exchange.lower()}.{code}"
             else:
-                ctx.logger.error({
-                    "event": "stock_zh_a_hist_parent_invalid_code",
-                    "run_id": ctx.run_id,
-                    "code": code,
-                    "exchange": exchange,
-                    "msg": "Cannot determine bs_code for stock"
-                })
+                ctx.fail(f"Cannot determine bs_code for stock code={code}, exchange={exchange}", phase='plan')
                 return []
 
-            try:
-                # last_updates_map key is likely the raw code (6 digits)
-                last_update = last_updates_map.get(code)
+            # last_updates_map key is likely the raw code (6 digits)
+            last_update = last_updates_map.get(code)
 
-                if last_update:
-                    try:
-                        # Assuming last_update is YYYY-MM-DD
-                        last_date_obj = datetime.strptime(last_update, "%Y-%m-%d")
-                        start_date_obj = last_date_obj + timedelta(days=1)
-                        if start_date_obj > datetime.now():
-                            continue # Already up to date
-                        start_date = start_date_obj.strftime("%Y-%m-%d")
-                    except ValueError:
-                        ctx.logger.warning({
-                            "event": "stock_zh_a_hist_parent_date_parse_error",
-                            "run_id": ctx.run_id,
-                            "code": code,
-                            "last_update": last_update,
-                            "msg": "Invalid date format from PhoenixA"
-                        })
-                        pass
+            if last_update:
+                try:
+                    # Assuming last_update is YYYY-MM-DD
+                    last_date_obj = datetime.strptime(last_update, "%Y-%m-%d")
+                except ValueError:
+                    ctx.fail(f"Invalid last_update format from PhoenixA for code={code}: {last_update}", phase='plan')
+                    return []
 
-                if start_date > today_str:
-                    continue
+                start_date_obj = last_date_obj + timedelta(days=1)
+                if start_date_obj > datetime.now():
+                    continue  # Already up to date
+                item_start_date = start_date_obj.strftime("%Y-%m-%d")
 
-                child_params = {
-                    "code": bs_code,
-                    "raw_code": code,
-                    "start_date": start_date,
-                    "end_date": today_str,
-                    "frequency": frequency,
-                    "adjustflag": adjust,
-                    "fields": fields
-                }
-
-                child_specs.append({
-                    "key": TaskCode.STOCK_ZH_A_HIST_CHILD, # FIX: Use actual registered task code
-                    "params": child_params
-                })
-
-            except Exception as e:
-                ctx.logger.error({
-                    "event": "stock_zh_a_hist_parent_item_error",
-                    "run_id": ctx.run_id,
-                    "code": code,
-                    "error": str(e)
-                })
+            if item_start_date > today_str:
                 continue
+
+            child_params = {
+                "code": bs_code,
+                "raw_code": code,
+                "start_date": item_start_date,
+                "end_date": today_str,
+                "frequency": frequency,
+                "adjustflag": adjust,
+                "fields": fields
+            }
+
+            child_specs.append({
+                "key": TaskCode.STOCK_ZH_A_HIST_CHILD, # FIX: Use actual registered task code
+                "params": child_params
+            })
+
 
         ctx.logger.info({
             "event": "stock_zh_a_hist_parent_plan_complete",
