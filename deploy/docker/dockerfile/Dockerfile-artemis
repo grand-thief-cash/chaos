@@ -13,6 +13,11 @@ WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
 
+# If the build context contains a `minius` directory with wheel files, copy and install them.
+# This allows offline/local wheel installation during docker build.
+COPY minius /minius
+RUN sh -c 'if [ -d /minius ] && ls /minius/*.whl 1> /dev/null 2>&1; then pip install --no-cache-dir /minius/*.whl; fi'
+
 COPY artemis /app
 
 EXPOSE 8084
