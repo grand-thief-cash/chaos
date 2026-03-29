@@ -1,7 +1,10 @@
 # VERSION
-v0.10.1
+v0.10.2
 
 # Changelog
+- v0.10.2
+    - Use AmazingData to download stock_zh_a_list.
+    - Updated deployment process.
 - v0.10.1
     - Updated deployment scripts to support auto proxy.
 - v0.10.0

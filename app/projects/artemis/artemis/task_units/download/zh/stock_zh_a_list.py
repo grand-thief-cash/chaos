@@ -4,8 +4,17 @@ import pandas as pd
 from akshare import stock_bj_a_spot_em, stock_sz_a_spot_em, stock_sh_a_spot_em
 
 from artemis.consts import DeptServices
+from artemis.core import TaskContext
 from artemis.task_units.worker_unit import WorkerUnit
 
+
+# 根据 exchange 选择对应的 security_type
+security_type_map = {
+    "SH": "SH_A",
+    "SZ": "SZ_A",
+    "BJ": "BJ_A",
+    "ALL": "EXTRA_STOCK_A"
+}
 
 class StockZHAList(WorkerUnit):
     """单任务：每日刷新 A 股列表（上交所/深交所）。
@@ -24,10 +33,10 @@ class StockZHAList(WorkerUnit):
     # ------- 参数检查 -------
 
     def parameter_check(self, ctx):
-        inc = ctx.incoming_params or {}
-        exchange = inc.get("exchange")
+        params = ctx.incoming_params or {}
+        exchange = params.get("exchange")
         if not exchange:
-            ctx.fail("missing required param: exchange (SH/SZ)", phase='parameter_check')
+            ctx.fail("missing required param: exchange (SH/SZ/BJ/ALL)", phase='parameter_check')
             return
         if exchange not in self.VALID_EXCHANGES:
             ctx.fail(f"invalid exchange: {exchange}, expected one of {sorted(self.VALID_EXCHANGES)}", phase='parameter_check')
@@ -39,39 +48,38 @@ class StockZHAList(WorkerUnit):
         # 本任务目前无外部动态依赖，返回空 dict 即可
         return {}
 
+    def before_execute(self, ctx: TaskContext) -> None:
+        from artemis.core.sdk.manager import sdk_mgr
+        from artemis.consts import SDK_NAME
+
+        try:
+            am_object = sdk_mgr.get_sdk(SDK_NAME.AMAZING_DATA)
+        except Exception as e:
+            # 获取 SDK 失败 — 标记任务失败或记录
+            ctx.fail(f"failed to acquire AmazingData SDK: {e}", phase='before_execute')
+            return
+        ctx.params["am_object"] = am_object
+
     # ------- 执行主逻辑 -------
 
     def execute(self, ctx):
         params = ctx.params or {}
+        am_object = params.get("am_object")
         exchange = params.get("exchange")
 
+        security_type = security_type_map.get(exchange, "EXTRA_STOCK_A")
+        code_info = am_object.get_code_info(security_type=security_type)
 
-        if exchange == "SH":
-            df = stock_sh_a_spot_em()
-        elif exchange == "SZ":
-            df = stock_sz_a_spot_em()
-        elif exchange == "BJ":
-            df = stock_bj_a_spot_em()
-        elif exchange == "ALL":
-            df_sh = stock_sh_a_spot_em()
-            df_sz = stock_sz_a_spot_em()
-            df_bj = stock_bj_a_spot_em()
-            df = pd.concat([df_sh, df_sz, df_bj], ignore_index=True)
-        else:
-            df = pd.DataFrame()
-            ctx.fail(f"{exchange} is not supported exchange", phase='execute')
-            return {
-                "exchange": exchange,
-                "rows": [],
-                "count": 0,
-            }
-
-
-
-        sub_df = df[["代码", "名称"]]
+        sub_df = code_info[["symbol"]].copy()
+        sub_df.index.name = "code"
+        sub_df = sub_df.reset_index()
         sub_df.columns = ["code", "company"]
-        # 增加交易所列，值与传入的 exchange 一致
-        sub_df["exchange"] = exchange
+        # derive exchange from the original symbol suffix (e.g. '301301.SZ' -> 'SZ')
+        sub_df["exchange"] = sub_df["code"].str.split(".").str[-1]
+        # remove suffix from code so downstream receives plain code like '301301'
+        sub_df["code"] = sub_df["code"].str.split(".").str[0]
+        if exchange != "ALL":
+            sub_df = sub_df[sub_df["exchange"] == exchange]
         rows = sub_df.to_dict(orient="records")
         return {
             "exchange": exchange,

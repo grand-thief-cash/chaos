@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 import os
 import paramiko
-import subprocess
 import sys
 from pathlib import Path
-import shutil
 import time
 
 
@@ -29,6 +27,9 @@ VPN = "192.168.31.169:7890"
 
 FORCE_DOCKER_BUILD = True
 FORCE_DOCKER_COMPOSE_BUILD = True
+
+# Path to local folder containing wheel files that should be included in build context
+MINIUS_LOCAL_PATH = "../../minius"
 
 
 #########################################
@@ -247,10 +248,36 @@ def upload_files(compose_file):
 
     sftp_upload(ssh, PY_PROJECT_PATH, f"{REMOTE_DEPLOY_PATH}/artemis")
     sftp_upload(ssh, PY_PROJECT_PATH+"/requirements.txt", f"{REMOTE_DEPLOY_PATH}/requirements.txt")
-    sftp_upload(ssh, DOCKERFILE_PATH, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
+
+    # Upload the canonical Dockerfile from the repo (we updated it to COPY minius and install wheels)
+    dockerfile_local_path = os.path.normpath(os.path.join(os.path.dirname(__file__), DOCKERFILE_PATH))
+    sftp_upload(ssh, dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
+
     sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
     sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-prod.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
     sftp_upload(ssh, PY_PROJECT_PATH+"/config/task.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
+
+    # Upload only wheel files from local minius directory. Abort if minius missing or no wheels found.
+    local_minius = os.path.normpath(os.path.join(os.path.dirname(__file__), MINIUS_LOCAL_PATH))
+    if not os.path.exists(local_minius) or not os.path.isdir(local_minius):
+        print(f"❌ 本地依赖目录不存在或不是目录: {local_minius}，部署中止。请将 minius 目录放在项目根目录下并包含 wheel 文件。")
+        ssh.close()
+        sys.exit(1)
+
+    wheel_files = [f for f in os.listdir(local_minius) if f.lower().endswith('.whl')]
+    if not wheel_files:
+        print(f"❌ 在 {local_minius} 中未找到任何 .whl 文件，部署中止。请把需要的 wheels 放入该目录。")
+        ssh.close()
+        sys.exit(1)
+
+    # ensure remote minius directory exists
+    remote_exec(ssh, f"mkdir -p {REMOTE_DEPLOY_PATH}/minius")
+
+    for wf in wheel_files:
+        local_wheel = os.path.join(local_minius, wf)
+        remote_wheel = f"{REMOTE_DEPLOY_PATH}/minius/{wf}"
+        print(f"⬆️ 上传 wheel: {local_wheel} -> {remote_wheel}")
+        sftp_upload(ssh, local_wheel, remote_wheel)
 
     ssh.close()
 
