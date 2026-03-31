@@ -125,7 +125,7 @@ func (r *runDaoImpl) MarkFailed(ctx context.Context, runID int64, errMsg string)
 }
 
 func (r *runDaoImpl) MarkCanceled(ctx context.Context, runID int64) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running}).Updates(map[string]any{"status": bizConsts.Canceled, "end_time": gorm.Expr("NOW()")}).Error
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running, bizConsts.CallbackPending}).Updates(map[string]any{"status": bizConsts.Canceled, "end_time": gorm.Expr("NOW()")}).Error
 }
 
 func (r *runDaoImpl) MarkSkipped(ctx context.Context, runID int64, skipType bizConsts.RunStatus) error {
