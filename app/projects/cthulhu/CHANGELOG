@@ -1,7 +1,9 @@
 # VERSION
-v0.4.1
+v0.4.2
 
 # Changelog
+- v0.4.2
+    - Move cronjob service from common folder to cronjob folder.
 - v0.4.1
     - Fixed cronjob "Create based on exists".
 - v0.4.0

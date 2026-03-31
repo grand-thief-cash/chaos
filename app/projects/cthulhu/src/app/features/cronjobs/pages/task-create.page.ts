@@ -1,7 +1,7 @@
 import {Component} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {Router} from '@angular/router';
-import {CronjobsApiService} from '../../../data-access/cronjobs/cronjobs-api.service';
+import {CronjobsApiService} from '../services/cronjobs-api.service';
 import {CronjobTaskFormComponent} from '../ui/cronjob-task-form.component';
 
 @Component({

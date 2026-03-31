@@ -2,7 +2,7 @@
 import {Component, computed, OnInit, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {ActivatedRoute, RouterLink} from '@angular/router';
-import {CronjobsApiService} from '../../../data-access/cronjobs/cronjobs-api.service';
+import {CronjobsApiService} from '../services/cronjobs-api.service';
 import {NzBadgeModule} from 'ng-zorro-antd/badge';
 import {NzButtonModule} from 'ng-zorro-antd/button';
 import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';

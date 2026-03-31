@@ -7,7 +7,7 @@ import {NzTableModule} from 'ng-zorro-antd/table';
 import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
 import {NzPaginationModule} from 'ng-zorro-antd/pagination';
 import {RUN_STATUS_BADGE} from '../cronjobs.constants';
-import {CronjobsApiService} from '../../../data-access/cronjobs/cronjobs-api.service';
+import {CronjobsApiService} from '../services/cronjobs-api.service';
 import {CronjobsStore} from '../state/cronjobs.store';
 
 @Component({
