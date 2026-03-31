@@ -31,6 +31,7 @@ import {CronjobsStore} from '../state/cronjobs.store';
       <button nz-button nzType="default" (click)="reloadRuns()">刷新运行记录</button>
       <button nz-button nzType="default" (click)="manualTrigger()">手动触发</button>
       <button nz-button nzType="default" (click)="goToRunProgress()">查看运行进度</button>
+      <button nz-button nzType="default" (click)="exportTask()">导出</button>
       <button nz-button nzType="default" (click)="toggleStatus()">{{task()?.status==='ENABLED'?'禁用':'启用'}}</button>
       <button nz-button nzType="primary" [routerLink]="['/cronjobs/tasks', task()?.id, 'edit']">编辑</button>
       <button nz-button nzType="link" [routerLink]="['/cronjobs/tasks']">返回列表</button>
@@ -128,6 +129,26 @@ export class TaskDetailPageComponent implements OnInit {
   }
   goToRunProgress(){
     this.router.navigate(['/cronjobs/runs/progress']);
+  }
+  exportTask(){
+    const t = this.task();
+    if(!t) return;
+    this.api.exportTasks(t.id).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `task_${t.name}_${t.id}_export.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        this.msg.success('导出成功');
+      },
+      error: (err) => {
+        this.msg.error('导出失败: ' + err.message);
+      }
+    });
   }
   toggleStatus(){ const t = this.task(); if(!t) return; const obs = t.status==='ENABLED'? this.store.disable(t.id): this.store.enable(t.id); obs.subscribe(()=> this.store.loadTasks(true)); }
   onRunPage(i: number){ if(this.taskId()) this.store.setRunPage(this.taskId()!, i); }

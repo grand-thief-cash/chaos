@@ -116,4 +116,20 @@ export class CronjobsApiService {
       map(resp => Array.isArray(resp.clients) ? resp.clients : ['artemis'])
     );
   }
+
+  // 导出任务配置
+  exportTasks(taskId?: number): Observable<Blob> {
+    let url = `${this.API_BASE}/tasks/export`;
+    if (taskId !== undefined) {
+      url += `?id=${taskId}`;
+    }
+    return this._http.get(url, { responseType: 'blob' });
+  }
+
+  // 导入任务配置
+  importTasks(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this._http.post(`${this.API_BASE}/tasks/import`, formData);
+  }
 }
