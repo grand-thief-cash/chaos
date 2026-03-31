@@ -7,7 +7,7 @@ from artemis.task_units.orchestrator_unit import OrchestratorUnit
 from artemis.consts import DeptServices, TaskCode
 from artemis.core import TaskContext
 from artemis.core.clients.phoenixA_client import PhoenixAClient
-from artemis.task_units.download.zh.utils import convert_baostock_to_phoenix_schema
+from artemis.task_units.download.zh.utils import convert_to_baostock_params
 
 
 class StockZhAHistParent(OrchestratorUnit):
@@ -100,10 +100,10 @@ class StockZhAHistParent(OrchestratorUnit):
 
 
         # 2. Get last update dates for stocks (prefer filtered)
-        frequency = convert_baostock_to_phoenix_schema("frequency", period)
-        adjust = convert_baostock_to_phoenix_schema("adjustflag", adjust)
-        if not frequency or not adjust:
-            ctx.fail(f"Invalid baostock schema mapping: period={period}, adjust={params.get('adjust')}", phase='plan')
+        bs_frequency = convert_to_baostock_params("frequency", period)
+        bs_adjust = convert_to_baostock_params("adjustflag", adjust)
+        if not bs_frequency or not bs_adjust:
+            ctx.fail(f"Invalid baostock schema mapping: period={period}, adjust={adjust}", phase='plan')
             return []
 
 
@@ -150,8 +150,10 @@ class StockZhAHistParent(OrchestratorUnit):
                 "raw_code": code,
                 "start_date": item_start_date,
                 "end_date": today_str,
-                "frequency": frequency,
-                "adjustflag": adjust,
+                "adjust": adjust,
+                "period": period,
+                "bs_adjust": bs_adjust,
+                "bs_period": bs_frequency,
                 "fields": fields
             }
 

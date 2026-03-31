@@ -1,7 +1,9 @@
 import json
 import logging
+import logging.handlers
 import os
 import sys
+from datetime import datetime
 from typing import Any, Dict
 
 from artemis.core import cfg_mgr
@@ -67,7 +69,22 @@ def _apply_config(force: bool = False):
     level = getattr(logging, cfg.level.upper(), logging.INFO)
     fmt = cfg.format
     output = cfg.output
-    if output == 'stderr':
+    if output == 'file':
+        # Ensure log directory exists
+        log_dir = cfg.file_config.dir
+        os.makedirs(log_dir, exist_ok=True)
+        # Use TimedRotatingFileHandler with date suffix: artemis.log.YYYYMMDD
+        log_file = os.path.join(log_dir, f"{cfg.file_config.filename}.log")
+        handler = logging.handlers.TimedRotatingFileHandler(
+            log_file,
+            when='midnight',
+            interval=1,
+            backupCount=7,  # keep 7 days by default
+            encoding='utf-8'
+        )
+        handler.suffix = "%Y%m%d"
+        handler.namer = lambda name: name if name.endswith('.log') else name
+    elif output == 'stderr':
         handler = logging.StreamHandler(sys.stderr)
     else:
         handler = logging.StreamHandler(sys.stdout)
