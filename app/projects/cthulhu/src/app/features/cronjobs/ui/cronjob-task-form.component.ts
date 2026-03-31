@@ -51,7 +51,9 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
       <nz-form-item>
         <nz-form-label>Method</nz-form-label>
         <nz-form-control>
-          <input nz-input formControlName="method" />
+          <nz-select formControlName="method">
+            <nz-option *ngFor="let m of httpMethods" [nzValue]="m" [nzLabel]="m"></nz-option>
+          </nz-select>
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
@@ -103,7 +105,9 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
       <nz-form-item>
         <nz-form-label>回调Method</nz-form-label>
         <nz-form-control>
-          <input nz-input formControlName="callback_method" />
+          <nz-select formControlName="callback_method">
+            <nz-option *ngFor="let m of httpMethods" [nzValue]="m" [nzLabel]="m"></nz-option>
+          </nz-select>
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
@@ -165,6 +169,7 @@ export class CronjobTaskFormComponent implements OnChanges {
   concurrencyPolicies = ['PARALLEL','SKIP'];
   overlapActions = ['ALLOW','SKIP','CANCEL_PREV','PARALLEL'];
   failureActions = ['RUN_NEW','SKIP','RETRY'];
+  httpMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
   form = this.fb.nonNullable.group({
     name: ['', [Validators.required, Validators.maxLength(128)]],
     description: [''],

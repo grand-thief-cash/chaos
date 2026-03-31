@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 import os
 import paramiko
-import subprocess
 import sys
 from pathlib import Path
-import shutil
 import time
 
 
@@ -25,10 +23,13 @@ DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
 SERVICE_NAME = "artemis"
 
-VPN = "192.168.31.169:7890"
+VPN = "192.168.31.170:7890"
 
 FORCE_DOCKER_BUILD = True
 FORCE_DOCKER_COMPOSE_BUILD = True
+
+# Path to local folder containing wheel files that should be included in build context
+MINIUS_LOCAL_PATH = "../../minius"
 
 
 #########################################
@@ -151,23 +152,58 @@ def get_remote_version(ssh):
 def build_remote_image(ssh, version):
     print("🔨 开始远程 docker build...")
 
-    cmd = (
-        f"cd {REMOTE_DEPLOY_PATH} && "
-        # f"export HTTP_PROXY=http://{VPN} HTTPS_PROXY=http://{VPN} && "
-        f"docker build --network=host --progress=plain "
-        f"--build-arg HTTP_PROXY=http://{VPN} "
-        f"--build-arg HTTPS_PROXY=http://{VPN} "
-        f"-t {SERVICE_NAME}:{version} ."
-    )
-    print(cmd)
+    # 先检查代理可用性
+    proxy_available = check_proxy_available(ssh, VPN)
 
-    print("=== Docker Build ===")
-    stdin, stdout, stderr = ssh.exec_command(cmd, get_pty=True)
+    if proxy_available:
+        cmd = (
+            f"cd {REMOTE_DEPLOY_PATH} && "
+            f"docker build --network=host --progress=plain "
+            f"--build-arg HTTP_PROXY=http://{VPN} "
+            f"--build-arg HTTPS_PROXY=http://{VPN} "
+            f"-t {SERVICE_NAME}:{version} ."
+        )
+    else:
+        print("⚠️ 使用无代理模式构建")
+        cmd = (
+            f"cd {REMOTE_DEPLOY_PATH} && "
+            f"docker build --network=host --progress=plain "
+            f"-t {SERVICE_NAME}:{version} ."
+        )
 
-    for line in iter(stdout.readline, ""):
-        print("BUILD:", line, end="")
+    print(f"执行命令: {cmd}")
 
+    # 使用 exec_command 并等待完成
+    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=600)  # 10分钟超时
 
+    # 实时打印输出
+    import select
+    import sys
+
+    while True:
+        # 检查是否有输出
+        if stdout.channel.recv_ready():
+            data = stdout.channel.recv(1024).decode()
+            sys.stdout.write(data)
+            sys.stdout.flush()
+
+        if stderr.channel.recv_stderr_ready():
+            data = stderr.channel.recv_stderr(1024).decode()
+            sys.stderr.write(data)
+            sys.stderr.flush()
+
+        # 检查命令是否完成
+        if stdout.channel.exit_status_ready() and not stdout.channel.recv_ready() and not stderr.channel.recv_stderr_ready():
+            break
+
+        time.sleep(0.1)
+
+    exit_code = stdout.channel.recv_exit_status()
+    if exit_code != 0:
+        print(f"❌ Docker build 失败，退出码: {exit_code}")
+        sys.exit(1)
+    else:
+        print("✅ Docker build 成功")
 def docker_compose_up(ssh):
     cmd = f"cd {REMOTE_DEPLOY_PATH} && docker compose -f docker-compose.yaml up -d"
     remote_exec(ssh, cmd)
@@ -219,14 +255,49 @@ def upload_files(compose_file):
 
     sftp_upload(ssh, PY_PROJECT_PATH, f"{REMOTE_DEPLOY_PATH}/artemis")
     sftp_upload(ssh, PY_PROJECT_PATH+"/requirements.txt", f"{REMOTE_DEPLOY_PATH}/requirements.txt")
-    sftp_upload(ssh, DOCKERFILE_PATH, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
+
+    # Upload the canonical Dockerfile from the repo (we updated it to COPY minius and install wheels)
+    dockerfile_local_path = os.path.normpath(os.path.join(os.path.dirname(__file__), DOCKERFILE_PATH))
+    sftp_upload(ssh, dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
+
     sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
     sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-prod.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
     sftp_upload(ssh, PY_PROJECT_PATH+"/config/task.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
 
+    # Upload only wheel files from local minius directory. Abort if minius missing or no wheels found.
+    local_minius = os.path.normpath(os.path.join(os.path.dirname(__file__), MINIUS_LOCAL_PATH))
+    if not os.path.exists(local_minius) or not os.path.isdir(local_minius):
+        print(f"❌ 本地依赖目录不存在或不是目录: {local_minius}，部署中止。请将 minius 目录放在项目根目录下并包含 wheel 文件。")
+        ssh.close()
+        sys.exit(1)
+
+    wheel_files = [f for f in os.listdir(local_minius) if f.lower().endswith('.whl')]
+    if not wheel_files:
+        print(f"❌ 在 {local_minius} 中未找到任何 .whl 文件，部署中止。请把需要的 wheels 放入该目录。")
+        ssh.close()
+        sys.exit(1)
+
+    # ensure remote minius directory exists
+    remote_exec(ssh, f"mkdir -p {REMOTE_DEPLOY_PATH}/minius")
+
+    for wf in wheel_files:
+        local_wheel = os.path.join(local_minius, wf)
+        remote_wheel = f"{REMOTE_DEPLOY_PATH}/minius/{wf}"
+        print(f"⬆️ 上传 wheel: {local_wheel} -> {remote_wheel}")
+        sftp_upload(ssh, local_wheel, remote_wheel)
+
     ssh.close()
 
+def check_proxy_available(ssh, proxy):
+    check_cmd = f"timeout 5 curl -x http://{proxy} -s -o /dev/null -w '%{{http_code}}' https://www.google.com"
+    result = remote_exec(ssh, check_cmd).strip()
 
+    if result.startswith("2") or result.startswith("3"):
+        print(f"✓ 代理 {proxy} 可用")
+        return True
+    else:
+        print(f"⚠️ 代理 {proxy} 不可用 (状态码: {result})")
+        return False
 #########################################
 # --------------- 主流程 ----------------
 #########################################

@@ -107,6 +107,8 @@ func (c *RunMgmtController) getRun(w http.ResponseWriter, r *http.Request, runID
 
 func (c *RunMgmtController) cancelRun(w http.ResponseWriter, r *http.Request, runID int64) {
 	c.Exec.CancelRun(runID)
+	// Also mark as canceled in DB for tasks not actively running (e.g., CallbackPending)
+	_ = c.RunSvc.MarkCanceled(r.Context(), runID)
 	// progress cleanup deferred to scanner (removed Clear)
 	writeJSON(w, map[string]any{"canceled": true})
 }

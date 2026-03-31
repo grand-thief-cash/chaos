@@ -1,4 +1,4 @@
-import {Component, OnInit} from '@angular/core';
+import {Component, OnInit, ViewChild, ElementRef} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {CronjobsStore} from '../state/cronjobs.store';
 import {Router, RouterLink} from '@angular/router';
@@ -11,11 +11,13 @@ import {NzInputModule} from 'ng-zorro-antd/input';
 import {NzSelectModule} from 'ng-zorro-antd/select';
 import {FormsModule} from '@angular/forms';
 import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
+import {NzDropDownModule} from 'ng-zorro-antd/dropdown';
+import {CronjobsApiService} from '../services/cronjobs-api.service';
 
 @Component({
   selector: 'cron-task-list-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, NzTableModule, NzButtonModule, NzBadgeModule, NzPopconfirmModule, NzPaginationModule, NzInputModule, NzSelectModule, NzMessageModule],
+  imports: [CommonModule, FormsModule, RouterLink, NzTableModule, NzButtonModule, NzBadgeModule, NzPopconfirmModule, NzPaginationModule, NzInputModule, NzSelectModule, NzMessageModule, NzDropDownModule],
   template: `
   <div *ngIf="store.loadingTasks(); else listTpl" class="loading">加载中...</div>
   <ng-template #listTpl>
@@ -25,6 +27,14 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
         <button nz-button nzType="default" (click)="reload()">刷新</button>
         <button nz-button nzType="default" (click)="toggleFilters()">{{showFilters? '收起筛选':'展开筛选'}}</button>
         <button nz-button nzType="default" (click)="refreshCache()">刷新缓存</button>
+        <button nz-dropdown [nzDropdownMenu]="exportMenu" nz-icon nzType="export">导出</button>
+        <nz-dropdown-menu #exportMenu="nzDropdownMenu">
+          <ul nz-menu nzSelectable>
+            <li nz-menu-item (click)="exportAll()">导出全部任务</li>
+          </ul>
+        </nz-dropdown-menu>
+        <button nz-button nzType="default" (click)="triggerFileInput()">导入</button>
+        <input #fileInput type="file" (change)="onFileSelect($event)" style="display: none" accept=".json">
         <button nz-button nzType="primary" [routerLink]="['/cronjobs/tasks','new']">新建任务</button>
       </div>
     </div>
@@ -136,7 +146,8 @@ export class TaskListPageComponent implements OnInit {
   updatedFrom = '';
   updatedTo = '';
   showFilters = true;
-  constructor(public store: CronjobsStore, private msg: NzMessageService, private router: Router) {}
+  @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
+  constructor(public store: CronjobsStore, private msg: NzMessageService, private router: Router, private api: CronjobsApiService) {}
   ngOnInit(){ this.store.loadTasks(); }
   toggleFilters(){ this.showFilters = !this.showFilters; }
   reload(){ this.store.loadTasks(true); }
@@ -166,18 +177,85 @@ export class TaskListPageComponent implements OnInit {
     this.store.resetFilters();
   }
   clone(t: any){
-    // 过滤掉不应复制的字段
+    // 过滤掉不应复制的字段（保持与当前 Task model / API 字段一致）
     const allowedKeys = [
-      'name','description','cron_expr','timezone','exec_type','http_method','target_url','headers_json','body_template','timeout_seconds','retry_policy_json','max_concurrency','concurrency_policy','callback_method','callback_timeout_sec','overlap_action','failure_action','status'
+      'name','description','cron_expr','timezone','exec_type',
+      // target 相关（新字段）
+      'method','target_service','target_path',
+      // 请求体/策略
+      'headers_json','body_template','timeout_seconds','retry_policy_json',
+      'max_concurrency','concurrency_policy',
+      // callback / 行为
+      'callback_method','callback_timeout_sec','overlap_action','failure_action',
+      'status'
     ];
     const template: any = {};
-    for(const k of allowedKeys){ template[k] = t[k]; }
+    for(const k of allowedKeys){
+      if (t[k] !== undefined) template[k] = t[k];
+    }
     // 名称附加后缀避免重复
     if(template.name) template.name = template.name + ' copy';
     // 状态统一初始为 ENABLED
     template.status = 'ENABLED';
     // 导航状态传递模板
     this.router.navigate(['/cronjobs/tasks','new'], { state: { template } });
+  }
+  triggerFileInput() {
+    this.fileInput.nativeElement.click();
+  }
+  onFileSelect(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    // 读取文件内容
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const data = JSON.parse(content);
+
+        // 调用后端 API 导入
+        this.api.importTasks(file).subscribe({
+          next: (res) => {
+            if (res.failed_count === 0) {
+              this.msg.success(`成功导入 ${res.success_count} 个任务`);
+            } else {
+              this.msg.warning(`成功导入 ${res.success_count} 个任务，失败 ${res.failed_count} 个`);
+              console.error('Import failed tasks:', res.failed_tasks);
+            }
+            this.store.loadTasks(true);
+          },
+          error: (err) => {
+            this.msg.error('导入失败: ' + err.message);
+            console.error('Import error:', err);
+          }
+        });
+      } catch (err) {
+        this.msg.error('文件格式错误，请上传有效的 JSON 文件');
+      }
+    };
+    reader.readAsText(file);
+    // 重置 input 以便再次选择同一文件
+    input.value = '';
+  }
+  exportAll() {
+    this.api.exportTasks().subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `tasks_export_${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        this.msg.success('导出成功');
+      },
+      error: (err) => {
+        this.msg.error('导出失败: ' + err.message);
+      }
+    });
   }
   private toRFC3339(local: string): string | undefined {
     if(!local) return undefined;

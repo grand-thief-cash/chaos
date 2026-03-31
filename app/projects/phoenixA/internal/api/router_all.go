@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,17 +15,13 @@ import (
 // Unified route registration for phoenixA.
 func init() {
 	http_server.RegisterRoutes(func(r chi.Router, c *core.Container) error {
-		comp, err := c.Resolve(bizConsts.COMP_CTRL_STOCK_ZH_A_LIST)
+		stockZhAListComp, err := c.Resolve(bizConsts.COMP_CTRL_STOCK_ZH_A_LIST)
 		if err != nil {
 			return err
 		}
-		stockZhAListCtrl, ok := comp.(*controller.StockZhAListController)
-		if !ok {
-			return fmt.Errorf("stock_zh_a_list_ctrl type assertion failed")
-		}
+		stockZhAListCtrl := stockZhAListComp.(*controller.StockZhAListController)
 
-		// Data-platform style base URI: /api/v1/{market}/{resource}
-		r.Route("/api/v1/zh/stock_list", func(r chi.Router) {
+		r.Route("/api/v1/stock/list", func(r chi.Router) {
 			r.Get("/", stockZhAListCtrl.List)
 			r.Post("/", stockZhAListCtrl.Create)
 			r.Get("/count", stockZhAListCtrl.Count)
@@ -42,6 +37,59 @@ func init() {
 			r.Patch("/{code}", func(w http.ResponseWriter, req *http.Request) {
 				stockZhAListCtrl.Update(w, req, chi.URLParam(req, "code"))
 			})
+
+			r.Get("/listFiltered", stockZhAListCtrl.List)
+			r.Get("/countFiltered", stockZhAListCtrl.Count)
+		})
+
+		// History Data Routes
+		stockZHAHistCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_STOCK_ZH_A_HIST)
+		if err != nil {
+			return err
+		}
+		stockZHAHistCtrl := stockZHAHistCtrlComp.(*controller.StockZhAHistController)
+
+		r.Route("/api/v1/stock/hist", func(r chi.Router) {
+			r.Post("/upsert", stockZHAHistCtrl.BatchUpsert)
+			r.Get("/last_update", stockZHAHistCtrl.GetStockLastUpdate)
+			r.Get("/get_data", stockZHAHistCtrl.GetDailyByCodeDateRange)
+		})
+
+		// Market Category Routes
+		marketCategoryCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_MARKET_CATEGORY)
+		if err != nil {
+			return err
+		}
+		marketCategoryCtrl := marketCategoryCtrlComp.(*controller.MarketCategoryController)
+
+		r.Route("/api/v1/market_category", func(r chi.Router) {
+			r.Post("/{source}", marketCategoryCtrl.Create)
+			r.Post("/upsert/{source}", marketCategoryCtrl.BatchUpsert)
+			r.Get("/{source}", marketCategoryCtrl.List)
+			r.Route("/{source}/{code}", func(r chi.Router) {
+				r.Get("/{source}", marketCategoryCtrl.Get)
+				r.Put("/{source}", marketCategoryCtrl.Update)
+				r.Delete("/{source}", marketCategoryCtrl.Delete)
+			})
+		})
+
+		// Category Stock Map Routes
+		categoryStockMapCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_CATEGORY_STOCK_MAP)
+		if err != nil {
+			return err
+		}
+		categoryStockMapCtrl := categoryStockMapCtrlComp.(*controller.CategoryStockMapController)
+
+		r.Route("/api/v1/category_stock_map", func(r chi.Router) {
+			r.Post("/", categoryStockMapCtrl.Create)
+			r.Post("/upsert", categoryStockMapCtrl.BatchUpsert)
+			// Replaces all categories for the given stocks (map[stock_code] -> []category_codes)
+			r.Post("/replace/by_stock", categoryStockMapCtrl.ReplaceCategoriesForStocks)
+			// Replaces all stocks for the given categories (map[category_code] -> []stock_codes)
+			r.Post("/replace/by_category", categoryStockMapCtrl.ReplaceStocksForCategories)
+			r.Delete("/{categoryCode}/{stockCode}", categoryStockMapCtrl.Delete)
+			r.Get("/by_category/{categoryCode}", categoryStockMapCtrl.ListByCategory)
+			r.Get("/by_stock/{stockCode}", categoryStockMapCtrl.ListByStock)
 		})
 
 		r.Get("/openapi.yaml", func(w http.ResponseWriter, req *http.Request) {

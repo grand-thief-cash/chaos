@@ -90,6 +90,9 @@ func init() {
 
 		// management/cache ops
 		r.Post("/api/v1/tasks/cache/refresh", func(w http.ResponseWriter, req *http.Request) { taskCtrl.refreshCache(w, req) })
+		// export/import ops
+		r.Get("/api/v1/tasks/export", taskCtrl.ExportTasks)
+		r.Post("/api/v1/tasks/import", taskCtrl.ImportTasks)
 		return nil
 	})
 }

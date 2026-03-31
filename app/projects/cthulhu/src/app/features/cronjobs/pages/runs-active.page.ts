@@ -1,6 +1,6 @@
 import {Component, computed, OnInit, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
-import {CronjobsApiService} from '../../../data-access/cronjobs/cronjobs-api.service';
+import {CronjobsApiService} from '../services/cronjobs-api.service';
 import {NzTableModule} from 'ng-zorro-antd/table';
 import {NzBadgeModule} from 'ng-zorro-antd/badge';
 import {NzPaginationModule} from 'ng-zorro-antd/pagination';

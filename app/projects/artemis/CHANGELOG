@@ -1,7 +1,44 @@
 # VERSION
-v0.6.1
+v0.10.4
 
 # Changelog
+- v0.10.4
+    - Commented SDKs auto disconnection.
+    - Fixed wrong callback parameters to cronjob.
+    - Updated deployment script and docker files.
+    - Fixed wrong parameters in StockZhAHistChild.
+- v0.10.3
+    - Cronjob added dropbox to input HTTP Method.
+    - Added new development env.
+- v0.10.2
+    - Use AmazingData to download stock_zh_a_list.
+    - Updated deployment process.
+- v0.10.1
+    - Updated deployment scripts to support auto proxy.
+- v0.10.0
+    - Eliminated RAISE abuse in concrete task units and replaced with proper exception handling and error reporting.
+    - Take off redundant try-catch structure from concreted tasks.
+- v0.9.4
+    - Rename parent and child to orchestrator and worker.
+- v0.9.3
+    - Semanticized parameters of stock_zh_a_hist.
+    - Given new order of base task unit.
+- v0.9.2
+    - Added mapping from stock to market category
+    - Refactored stoch_zh_a_hist task unit to support phoenixA change.
+- v0.9.1
+    - Added stock_zh_a_hist task unit to fetch historical data of stock zh A.
+    - Fixed using wrong task code issue in parent task.
+    - Added utils to safe convert data type.
+    - Added logs.
+- v0.9.0
+    - Added sdk manager to manage multiple sdks, baostock sdk & amazingData is supported.
+- v0.8.0
+    - Added task dynamic control of task creation, registry, update and deletion.
+- v0.7.0
+    - Added runtime update of task units.
+    - Added runtime update of task parameters.
+    - Added runtime registry of task units.
 - v0.6.1
     - Added missing requirements in requirements.txt
 - v0.6.0

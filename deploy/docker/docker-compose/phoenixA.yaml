@@ -1,0 +1,17 @@
+services:
+  cronjob:
+    image: phoenixa:v0.12.6
+    container_name: phoenixa
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    volumes:
+      - /home/machine/data_volume/phoenixA/logs:/app/logs
+      - /home/machine/data_volume/phoenixA/config:/app/config
+    environment:
+      - ENV=product
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

@@ -54,6 +54,14 @@
                 { "replace": "src/environments/environment.ts", "with": "src/environments/environment.prod.ts" }
               ]
             },
+            "dev-home": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true,
+              "fileReplacements": [
+                { "replace": "src/environments/environment.ts", "with": "src/environments/environment.dev-home.ts" }
+              ]
+            },
             "development": {
               "optimization": false,
               "extractLicenses": false,
@@ -67,6 +75,9 @@
           "configurations": {
             "production": {
               "buildTarget": "cthulhu:build:production"
+            },
+            "dev-home": {
+              "buildTarget": "cthulhu:build:dev-home"
             },
             "development": {
               "buildTarget": "cthulhu:build:development"

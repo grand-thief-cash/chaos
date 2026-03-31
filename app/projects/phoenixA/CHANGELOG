@@ -1,7 +1,26 @@
 # VERSION
-- v0.1.2
+v0.3.2
 
 # Changelog
+- v0.3.2
+    - Added task import and export.
+    - Added dev-home env.
+- v0.3.1
+    - Moved location of deployment scripts to deployment folder.
+- v0.3.0
+    - Added deployment files for PhoenixA project.
+- v0.2.1
+    - Identified term of "Period" & "Adjust" in stock_zh_a_hist data schema.
+- v0.2.0
+    - Added market_category implementation
+        - Supported SWHY & Mairui data
+    - Added stock -> market category mapping.
+    - Refactored stock_zh_a_hist using generic implementation.
+- v0.1.4
+    - Added stock_zh_a_hist to store historical data of stock zh A.
+    - Fixed telemetry config issue
+- v0.1.3
+    - Refactored artemis task.yaml page.
 - v0.1.2
     - Cleaned go mod tidy script.
     - Compressed router_all & openapi routes.
