@@ -22,6 +22,7 @@ type TaskDao interface {
 	UpdateCronAndMeta(ctx context.Context, t *model.Task) error
 	UpdateStatus(ctx context.Context, id int64, status bizConsts.TaskStatus) error
 	SoftDelete(ctx context.Context, id int64) error
+	ExistsByName(ctx context.Context, name string) bool
 	// ListFiltered allows querying tasks by multiple optional filters.
 	ListFiltered(ctx context.Context, f *model.TaskListFilters, limit, offset int) ([]*model.Task, error)
 	CountFiltered(ctx context.Context, f *model.TaskListFilters) (int64, error)
@@ -220,4 +221,10 @@ func (d *TaskDaoImpl) CountFiltered(ctx context.Context, f *model.TaskListFilter
 		return 0, err
 	}
 	return cnt, nil
+}
+
+func (d *TaskDaoImpl) ExistsByName(ctx context.Context, name string) bool {
+	var count int64
+	d.db.WithContext(ctx).Model(&model.Task{}).Where("name=? AND deleted=0", name).Count(&count)
+	return count > 0
 }

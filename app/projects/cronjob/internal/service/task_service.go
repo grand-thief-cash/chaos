@@ -24,6 +24,11 @@ type TaskService struct {
 	enabled map[int64]*model.Task // 缓存所有 ENABLED && 未删除 的任务
 }
 
+// TaskDaoImpl 提供对底层 DAO 的访问，用于控制器直接调用
+func (s *TaskService) TaskDaoImpl() dao.TaskDao {
+	return s.TaskDao
+}
+
 func NewTaskService() *TaskService {
 	return &TaskService{BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_TASK)}
 }
