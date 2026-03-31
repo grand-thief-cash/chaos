@@ -1,5 +1,5 @@
 import {computed, Injectable, signal} from '@angular/core';
-import {CronjobsApiService, TaskListQuery, TaskListResponse} from '../../../data-access/cronjobs/cronjobs-api.service';
+import {CronjobsApiService, TaskListQuery, TaskListResponse} from '../services/cronjobs-api.service';
 import {Task, TaskRun} from '../models/cronjob.model';
 
 @Injectable({ providedIn: 'root' })

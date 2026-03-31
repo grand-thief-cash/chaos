@@ -1,8 +1,8 @@
 import {Injectable} from '@angular/core';
 import {HttpClient, HttpParams} from '@angular/common/http';
 import {map, Observable} from 'rxjs';
-import {Task, TaskRun} from '../../features/cronjobs/models/cronjob.model';
-import {environment} from '../../../environments/environment';
+import {Task, TaskRun} from '../models/cronjob.model';
+import {environment} from '../../../../environments/environment';
 
 export interface TaskListResponse { items: Task[]; total: number; limit: number; offset: number; }
 export interface TaskListQuery {
