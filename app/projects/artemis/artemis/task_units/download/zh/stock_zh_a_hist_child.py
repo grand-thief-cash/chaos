@@ -19,8 +19,8 @@ class StockZhAHistChild(WorkerUnit):
         raw_code = params.get("raw_code")
         start_date = params.get("start_date")
         end_date = params.get("end_date")
-        frequency = params.get("frequency")
-        adjustflag = params.get("adjustflag")
+        bs_period = params.get("bs_period")
+        bs_adjust = params.get("bs_adjust")
         fields_str = params.get("fields")
 
         rs = bs.query_history_k_data_plus(
@@ -28,8 +28,8 @@ class StockZhAHistChild(WorkerUnit):
             fields_str,
             start_date=start_date,
             end_date=end_date,
-            frequency=frequency,
-            adjustflag=adjustflag
+            frequency=bs_period,
+            adjustflag=bs_adjust
         )
 
         if rs.error_code != '0':

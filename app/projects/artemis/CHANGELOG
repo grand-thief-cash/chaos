@@ -1,7 +1,12 @@
 # VERSION
-v0.10.3
+v0.10.4
 
 # Changelog
+- v0.10.4
+    - Commented SDKs auto disconnection.
+    - Fixed wrong callback parameters to cronjob.
+    - Updated deployment script and docker files.
+    - Fixed wrong parameters in StockZhAHistChild.
 - v0.10.3
     - Cronjob added dropbox to input HTTP Method.
     - Added new development env.

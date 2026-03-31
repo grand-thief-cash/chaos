@@ -64,12 +64,12 @@ class CronjobClient(HTTPDeptServiceClient):
 
     def finalize_success(self, ctx: Any, code: int = 200, body: Optional[str] = None) -> bool:
         run_id = self._get_run_id(ctx)
-        payload = {'success': True, 'code': code, 'message': body or 'success'}
+        payload = {'result': 'success', 'code': code, 'body': body or 'success'}
         return self._finalize_with_retry(run_id, payload)
 
     def finalize_failed(self, ctx: Any, error_message: str) -> bool:
         run_id = self._get_run_id(ctx)
-        payload = {'success': False, 'message': error_message or 'failed'}
+        payload = {'result': 'failed', 'error_message': error_message or 'failed'}
         return self._finalize_with_retry(run_id, payload)
 
     def _finalize_with_retry(self, run_id: int, payload: Dict[str, Any]) -> bool:

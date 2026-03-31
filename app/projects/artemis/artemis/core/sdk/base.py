@@ -100,13 +100,14 @@ class StatefulSDK(BaseSDK):
     def _monitor_loop(self):
         """Background loop to check for idle timeout."""
         while not self._stop_event.is_set():
-            time.sleep(10) # Check every 10 seconds
+            time.sleep(600) # Check every 10 seconds
             with self._lock:
                 if self._is_connected:
                     idle_duration = (datetime.now() - self._last_used_at).total_seconds()
                     if idle_duration > self._idle_timeout_seconds:
-                        logger.info(f"{self.__class__.__name__} idle for {idle_duration}s. Auto disconnecting.")
-                        self.disconnect()
+                        # logger.info(f"{self.__class__.__name__} idle for {idle_duration}s. Auto disconnecting (DISABLED).")
+                        # self.disconnect()  # DISABLED: Testing if this causes program exit
+                        pass
 
     def health_check(self) -> bool:
         with self._lock:

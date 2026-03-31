@@ -23,7 +23,7 @@ DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
 SERVICE_NAME = "artemis"
 
-VPN = "192.168.31.169:7890"
+VPN = "192.168.31.170:7890"
 
 FORCE_DOCKER_BUILD = True
 FORCE_DOCKER_COMPOSE_BUILD = True
@@ -152,51 +152,58 @@ def get_remote_version(ssh):
 def build_remote_image(ssh, version):
     print("🔨 开始远程 docker build...")
 
-    # 首先检查代理是否可用
-    check_cmd = f"curl -s --connect-timeout 5 http://{VPN}"
-    out = remote_exec(ssh, check_cmd)
-    if "Connection refused" in out or "timeout" in out:
-        print(f"⚠️ 代理 {VPN} 可能不可用，尝试不使用代理")
-        # 不使用代理构建
+    # 先检查代理可用性
+    proxy_available = check_proxy_available(ssh, VPN)
+
+    if proxy_available:
         cmd = (
             f"cd {REMOTE_DEPLOY_PATH} && "
-            f"docker build --network=host --progress=plain "
-            f"-t {SERVICE_NAME}:{version} ."
-        )
-    else:
-        print(f"✓ 代理 {VPN} 可用")
-        # 使用代理构建
-        cmd = (
-            f"cd {REMOTE_DEPLOY_PATH} && "
-            f"export HTTP_PROXY=http://{VPN} HTTPS_PROXY=http://{VPN} && "
             f"docker build --network=host --progress=plain "
             f"--build-arg HTTP_PROXY=http://{VPN} "
             f"--build-arg HTTPS_PROXY=http://{VPN} "
             f"-t {SERVICE_NAME}:{version} ."
         )
+    else:
+        print("⚠️ 使用无代理模式构建")
+        cmd = (
+            f"cd {REMOTE_DEPLOY_PATH} && "
+            f"docker build --network=host --progress=plain "
+            f"-t {SERVICE_NAME}:{version} ."
+        )
 
-    print(cmd)
-    print("=== Docker Build ===")
+    print(f"执行命令: {cmd}")
 
-    # 使用更稳定的执行方式
-    channel = ssh.get_transport().open_session()
-    channel.exec_command(cmd)
+    # 使用 exec_command 并等待完成
+    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=600)  # 10分钟超时
+
+    # 实时打印输出
+    import select
+    import sys
 
     while True:
-        if channel.recv_ready():
-            data = channel.recv(1024).decode()
-            print("BUILD:", data, end="")
-        elif channel.recv_stderr_ready():
-            data = channel.recv_stderr(1024).decode()
-            print("BUILD ERR:", data, end="")
-        elif channel.exit_status_ready():
+        # 检查是否有输出
+        if stdout.channel.recv_ready():
+            data = stdout.channel.recv(1024).decode()
+            sys.stdout.write(data)
+            sys.stdout.flush()
+
+        if stderr.channel.recv_stderr_ready():
+            data = stderr.channel.recv_stderr(1024).decode()
+            sys.stderr.write(data)
+            sys.stderr.flush()
+
+        # 检查命令是否完成
+        if stdout.channel.exit_status_ready() and not stdout.channel.recv_ready() and not stderr.channel.recv_stderr_ready():
             break
+
         time.sleep(0.1)
 
-    exit_code = channel.recv_exit_status()
+    exit_code = stdout.channel.recv_exit_status()
     if exit_code != 0:
         print(f"❌ Docker build 失败，退出码: {exit_code}")
         sys.exit(1)
+    else:
+        print("✅ Docker build 成功")
 def docker_compose_up(ssh):
     cmd = f"cd {REMOTE_DEPLOY_PATH} && docker compose -f docker-compose.yaml up -d"
     remote_exec(ssh, cmd)
@@ -281,7 +288,16 @@ def upload_files(compose_file):
 
     ssh.close()
 
+def check_proxy_available(ssh, proxy):
+    check_cmd = f"timeout 5 curl -x http://{proxy} -s -o /dev/null -w '%{{http_code}}' https://www.google.com"
+    result = remote_exec(ssh, check_cmd).strip()
 
+    if result.startswith("2") or result.startswith("3"):
+        print(f"✓ 代理 {proxy} 可用")
+        return True
+    else:
+        print(f"⚠️ 代理 {proxy} 不可用 (状态码: {result})")
+        return False
 #########################################
 # --------------- 主流程 ----------------
 #########################################

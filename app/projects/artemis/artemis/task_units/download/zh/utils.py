@@ -1,6 +1,6 @@
 
 
-def convert_baostock_to_phoenix_schema(param_name, param_val):
+def convert_to_baostock_params(param_name, param_val):
     if param_name == "frequency":
         mapping = {
             "daily": "d",
