@@ -34,8 +34,8 @@ mysql_gorm:
 http_server:
   enabled: true
   address: ":18085"
-  read_timeout: 10s
-  write_timeout: 10s
+  read_timeout: 100s
+  write_timeout: 100s
   idle_timeout: 60s
   graceful_timeout: 10s
   enable_health: true
@@ -43,8 +43,9 @@ http_server:
 telemetry:
   enabled: true
   service_name: demo-service
-  exporter: none           # none|stdout|otlp
-  sample_ratio: 0          # 0~1; adjust for sampling
+  exporter: stdout         # stdout|otlp
+  sample_ratio: 0        # 0~1; adjust for sampling
   stdout_pretty: false     # false keeps exporter output compact
+  stdout_file: ./logs/telemetry.log
 
 biz_config:

@@ -15,12 +15,34 @@ class BaseTaskUnit:
         # fetch dynamic params from sources; override
         return {}
 
-    def merge_parameters(self, ctx: TaskContext, dynamic_params: Dict[str, Any]):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def merge_parameters(self, ctx: TaskContext):
         # merge defaults + variant + incoming + dynamic
-        defaults = cfg_mgr.task_default(ctx.task_code)
+        default_cfg = cfg_mgr.task_default(ctx.task_code)
         # strict policy: task_variant may raise; let it bubble to fail the phase
         variant_cfg = cfg_mgr.task_variant(ctx.task_code, ctx.incoming_params)
-        ctx.params = {**defaults, **variant_cfg, **dynamic_params, **ctx.incoming_params}
+        ctx.params = {**default_cfg, **variant_cfg, **ctx.incoming_params, **ctx.params}
         if ctx.logger:
             ctx.logger.info({'event': 'merge_parameters', 'params_keys': list(ctx.params.keys()), 'run_id': ctx.run_id})
 
@@ -52,11 +74,10 @@ class BaseTaskUnit:
             ctx.logger.debug({'event': 'phase', 'phase': name, 'action': 'enter', 'run_id': ctx.run_id})
         try:
             result = fn(*args, **kwargs)
+            if ctx.has_failed():
+                raise RuntimeError(ctx.error)
         except Exception as e:
-            duration_ms = int((time.time() - start) * 1000)
-            if ctx.logger:
-                # trace_id/span_id are now auto-injected by JsonFormatter
-                ctx.logger.error({'event': 'phase', 'phase': name, 'action': 'error', 'error': str(e), 'duration_ms': duration_ms, 'run_id': ctx.run_id})
+            ctx.fail(e, phase=name)
             raise
         duration_ms = int((time.time() - start) * 1000)
         if ctx.logger:
@@ -68,12 +89,12 @@ class BaseTaskUnit:
         # parameter_check
         _, d = self._run_phase(ctx, 'parameter_check', self.parameter_check, ctx)
         phase_durations['parameter_check'] = d
-        # load_dynamic_parameters
-        dyn, d = self._run_phase(ctx, 'load_dynamic_parameters', self.load_dynamic_parameters, ctx)
-        phase_durations['load_dynamic_parameters'] = d
         # load_task_config (merge)
-        _, d = self._run_phase(ctx, 'load_task_config', self.merge_parameters, ctx, dyn)
+        _, d = self._run_phase(ctx, 'load_task_config', self.merge_parameters, ctx)
         phase_durations['load_task_config'] = d
+        # load_dynamic_parameters
+        _, d = self._run_phase(ctx, 'load_dynamic_parameters', self.load_dynamic_parameters, ctx)
+        phase_durations['load_dynamic_parameters'] = d
         # before_execute
         _, d = self._run_phase(ctx, 'before_execute', self.before_execute, ctx)
         phase_durations['before_execute'] = d
@@ -103,11 +124,13 @@ class BaseTaskUnit:
         if ctx.logger:
             ctx.logger.info({'event': 'task_start', 'task_code': ctx.task_code, 'run_id': ctx.run_id})
         phase_durations = {}
-        failed_phase = None
         try:
             self._pre_run(ctx, phase_durations)
             self._execute_strategy(ctx, phase_durations)
             self._post_run(ctx, phase_durations)
+
+            if ctx.has_failed():
+                raise RuntimeError(ctx.error)
 
             ctx.set_status(TaskStatus.SUCCESS.value)
             # persist durations into stats for external API consumers
@@ -122,20 +145,10 @@ class BaseTaskUnit:
                     'total_ms': ctx.stats['total_duration_ms']
                 })
         except Exception as e:
-            failed_phase = failed_phase or ctx.status or 'unknown'
-            ctx.set_status(TaskStatus.FAILED.value)
-            ctx.set_error(str(e))
+            ctx.fail(e, phase=ctx.failed_phase)
             # capture partial durations
             ctx.stats['phase_durations_ms'] = phase_durations
-            if ctx.logger:
-                ctx.logger.error({
-                    'event': 'task_failed',
-                    'task_code': ctx.task_code,
-                    'error': str(e),
-                    'run_id': ctx.run_id,
-                    'failed_phase': failed_phase,
-                    'durations_ms': phase_durations
-                })
+            ctx.emit_failure_log(phase_durations)
             raise
         finally:
             ctx.close()

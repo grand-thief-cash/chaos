@@ -38,3 +38,13 @@ dept_services:
   phoenixA:
     host: "127.0.0.1"          # 依赖的 phoenixA 服务地址（按需配置）
     port: 18085
+
+sdk:
+  baostock:
+    idle_timeout: 300
+  amazing_data:
+    idle_timeout: 300
+    username: "user"
+    password: "password"
+    host: "127.0.0.1"
+    port: 9000

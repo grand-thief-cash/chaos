@@ -315,6 +315,177 @@ func (tmc *TaskMgmtController) refreshCache(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, map[string]any{"refreshed": true})
 }
 
+// ExportTasks 导出任务配置，支持导出单个或所有任务
+func (tmc *TaskMgmtController) ExportTasks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	taskID := strings.TrimSpace(r.URL.Query().Get("id"))
+	var tasks []*model.Task
+	var err error
+
+	if taskID != "" {
+		id, _ := strconv.ParseInt(taskID, 10, 64)
+		t, err := tmc.TaskSvc.Get(ctx, id)
+		if err != nil {
+			logging.Error(ctx, fmt.Sprintf("Export task failed: %v", err))
+			writeErr(w, 404, err.Error())
+			return
+		}
+		tasks = []*model.Task{t}
+	} else {
+		tasks, err = tmc.TaskSvc.ListFiltered(ctx, &model.TaskListFilters{}, 10000, 0)
+		if err != nil {
+			logging.Error(ctx, fmt.Sprintf("Export tasks failed: %v", err))
+			writeErr(w, 500, err.Error())
+			return
+		}
+	}
+
+	// 过滤掉不需要导出的字段
+	exportData := make([]map[string]any, 0, len(tasks))
+	for _, t := range tasks {
+		item := map[string]any{
+			"name":                 t.Name,
+			"description":          t.Description,
+			"cron_expr":            t.CronExpr,
+			"timezone":             t.Timezone,
+			"exec_type":            t.ExecType,
+			"method":               t.HTTPMethod,
+			"target_service":       t.TargetService,
+			"target_path":          t.TargetPath,
+			"headers_json":         t.HeadersJSON,
+			"body_template":        t.BodyTemplate,
+			"retry_policy_json":    t.RetryPolicyJSON,
+			"max_concurrency":      t.MaxConcurrency,
+			"concurrency_policy":   t.ConcurrencyPolicy,
+			"callback_method":      t.CallbackMethod,
+			"callback_timeout_sec": t.CallbackTimeoutSec,
+			"overlap_action":       t.OverlapAction,
+			"failure_action":       t.FailureAction,
+			"status":               t.Status,
+		}
+		exportData = append(exportData, item)
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=tasks_export.json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"version":     "1.0",
+		"exported_at": time.Now().UTC().Format(time.RFC3339),
+		"tasks":       exportData,
+	})
+}
+
+// ImportTasks 导入任务配置
+func (tmc *TaskMgmtController) ImportTasks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse multipart form (max 10MB)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		logging.Error(ctx, fmt.Sprintf("Import tasks parse multipart form failed: %v", err))
+		writeErr(w, 400, err.Error())
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		logging.Error(ctx, fmt.Sprintf("Import tasks get file failed: %v", err))
+		writeErr(w, 400, "Missing file upload")
+		return
+	}
+	defer file.Close()
+
+	var payload struct {
+		Version string `json:"version"`
+		Tasks   []struct {
+			Name               string `json:"name"`
+			Description        string `json:"description"`
+			CronExpr           string `json:"cron_expr"`
+			Timezone           string `json:"timezone"`
+			ExecType           string `json:"exec_type"`
+			Method             string `json:"method"`
+			TargetService      string `json:"target_service"`
+			TargetPath         string `json:"target_path"`
+			HeadersJSON        string `json:"headers_json"`
+			BodyTemplate       string `json:"body_template"`
+			RetryPolicyJSON    string `json:"retry_policy_json"`
+			MaxConcurrency     int    `json:"max_concurrency"`
+			ConcurrencyPolicy  string `json:"concurrency_policy"`
+			CallbackMethod     string `json:"callback_method"`
+			CallbackTimeoutSec int    `json:"callback_timeout_sec"`
+			OverlapAction      string `json:"overlap_action"`
+			FailureAction      string `json:"failure_action"`
+			Status             string `json:"status"`
+		} `json:"tasks"`
+	}
+
+	if err := json.NewDecoder(file).Decode(&payload); err != nil {
+		logging.Error(ctx, fmt.Sprintf("Import tasks json decode failed: %v", err))
+		writeErr(w, 400, err.Error())
+		return
+	}
+
+	successCount := 0
+	failedTasks := make([]map[string]any, 0)
+
+	for _, taskData := range payload.Tasks {
+		t := &model.Task{
+			Name:               strings.TrimSpace(taskData.Name),
+			Description:        taskData.Description,
+			CronExpr:           model.NormalizeCron(taskData.CronExpr),
+			Timezone:           defaultOr(taskData.Timezone, "UTC"),
+			ExecType:           bizConsts.ExecType(taskData.ExecType),
+			HTTPMethod:         strings.ToUpper(taskData.Method),
+			TargetService:      defaultOr(taskData.TargetService, "artemis"),
+			TargetPath:         taskData.TargetPath,
+			HeadersJSON:        defaultOr(taskData.HeadersJSON, bizConsts.DEFAULT_JSON_STR),
+			BodyTemplate:       taskData.BodyTemplate,
+			RetryPolicyJSON:    defaultOr(taskData.RetryPolicyJSON, bizConsts.DEFAULT_JSON_STR),
+			MaxConcurrency:     defaultInt(taskData.MaxConcurrency, 1),
+			ConcurrencyPolicy:  bizConsts.ConcurrencyPolicy(taskData.ConcurrencyPolicy),
+			CallbackMethod:     defaultOr(taskData.CallbackMethod, "POST"),
+			CallbackTimeoutSec: defaultInt(taskData.CallbackTimeoutSec, 300),
+			OverlapAction:      bizConsts.OverlapAction(taskData.OverlapAction),
+			FailureAction:      bizConsts.FailureAction(taskData.FailureAction),
+			Status:             bizConsts.DISABLED, // 导入默认禁用
+			Version:            1,
+		}
+
+		if t.CronExpr == "" || t.Name == "" || t.TargetService == "" || t.TargetPath == "" {
+			failedTasks = append(failedTasks, map[string]any{
+				"name":  taskData.Name,
+				"error": "CronExpr/Name/TargetService/TargetPath cannot be empty",
+			})
+			continue
+		}
+
+		// 检查是否已存在同名任务
+		if tmc.TaskSvc.TaskDaoImpl().ExistsByName(ctx, t.Name) {
+			failedTasks = append(failedTasks, map[string]any{
+				"name":  taskData.Name,
+				"error": "Task name already exists",
+			})
+			continue
+		}
+
+		if err := tmc.TaskSvc.Create(ctx, t); err != nil {
+			logging.Error(ctx, fmt.Sprintf("Import task %s failed: %v", t.Name, err))
+			failedTasks = append(failedTasks, map[string]any{
+				"name":  taskData.Name,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		successCount++
+	}
+
+	writeJSON(w, map[string]any{
+		"success_count": successCount,
+		"failed_count":  len(failedTasks),
+		"failed_tasks":  failedTasks,
+	})
+}
+
 // defaultOr returns s if not empty, otherwise def
 func defaultOr(s, def string) string {
 	if strings.TrimSpace(s) != "" {
