@@ -1,7 +1,10 @@
 # VERSION
-v0.3.2
+v0.3.3
 
 # Changelog
+- v0.3.3
+    - Added strategy_run_summary.
+    - Added strategy_run_artifact.
 - v0.3.2
     - Added task import and export.
     - Added dev-home env.
