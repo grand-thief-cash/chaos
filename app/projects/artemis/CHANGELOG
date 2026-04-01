@@ -1,7 +1,12 @@
 # VERSION
-v0.10.4
+v0.10.5
 
 # Changelog
+- v0.10.5
+    - Added BACKTRADER_CAMPAIGN and BACKTRADER_RUN.
+    - Added strategies engine to work with task framework.
+    - Added strategies API in phoenixA_client.py
+    - Changed docs of artemis.
 - v0.10.4
     - Commented SDKs auto disconnection.
     - Fixed wrong callback parameters to cronjob.
