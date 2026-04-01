@@ -46,10 +46,11 @@ class OrchestratorUnit(BaseTaskUnit):
                     'run_id': ctx.run_id,
                 })
 
-    def _build_child_ctx(self, parent_ctx: TaskContext, child_task_code: str, child_params: Dict[str, Any]) -> TaskContext:
+    def _build_child_ctx(self, parent_ctx: TaskContext, child_task_code: str, child_params: Dict[str, Any], child_index: int) -> TaskContext:
         child_ctx: TaskContext = object.__new__(TaskContext)  # type: ignore
 
-        child_ctx.task_meta = parent_ctx.task_meta.model_copy(update={'task_code': child_task_code})
+        child_run_id = f"{parent_ctx.run_id}:{child_index + 1}"
+        child_ctx.task_meta = parent_ctx.task_meta.model_copy(update={'task_code': child_task_code, 'run_id': child_run_id})
         child_ctx.incoming_params = child_params or {}
         child_ctx.params = {}
 
@@ -130,7 +131,7 @@ class OrchestratorUnit(BaseTaskUnit):
 
             child_ctx = None
             try:
-                child_ctx = self._build_child_ctx(ctx, task_code, child_params)
+                child_ctx = self._build_child_ctx(ctx, task_code, child_params, idx)
                 child = child_ctx.exec_cls()
 
                 # Run the child

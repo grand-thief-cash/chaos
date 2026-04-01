@@ -28,3 +28,32 @@ tasks:
            adjust: "nf"
            start_date: "2016-01-01"
            fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
+
+  BACKTRADER_CAMPAIGN:
+    variants:
+      - match: { mode: "historical" }
+        config:
+          mode: "historical"
+          market: "CN_A"
+          timeframe: "daily"
+          adjust: "nf"
+          cash: 100000.0
+          commission: 0.001
+          data_provider_code: "phoenixa_hist_daily"
+          analyzer_profile: "default_hist_v1"
+          persist_artifacts: ["analyzers", "trades", "equity_curve", "plot_manifest", "plot_series"]
+
+  BACKTRADER_RUN:
+    variants:
+      - match: { mode: "historical" }
+        config:
+          mode: "historical"
+          market: "CN_A"
+          timeframe: "daily"
+          adjust: "nf"
+          cash: 100000.0
+          commission: 0.001
+          data_provider_code: "phoenixa_hist_daily"
+          analyzer_profile: "default_hist_v1"
+          persist_artifacts: ["analyzers", "trades", "equity_curve", "plot_manifest", "plot_series"]
+
