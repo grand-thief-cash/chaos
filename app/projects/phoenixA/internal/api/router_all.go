@@ -55,6 +55,24 @@ func init() {
 			r.Get("/get_data", stockZHAHistCtrl.GetDailyByCodeDateRange)
 		})
 
+		strategyRunCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_STRATEGY_RUN)
+		if err != nil {
+			return err
+		}
+		strategyRunCtrl := strategyRunCtrlComp.(*controller.StrategyRunController)
+
+		r.Route("/api/v1/strategy/run", func(r chi.Router) {
+			r.Get("/list", strategyRunCtrl.ListSummaries)
+			r.Post("/summary/upsert", strategyRunCtrl.UpsertSummary)
+			r.Post("/artifact/upsert", strategyRunCtrl.UpsertArtifacts)
+			r.Get("/{run_id}", func(w http.ResponseWriter, req *http.Request) {
+				strategyRunCtrl.GetSummary(w, req, chi.URLParam(req, "run_id"))
+			})
+			r.Get("/{run_id}/artifacts", func(w http.ResponseWriter, req *http.Request) {
+				strategyRunCtrl.ListArtifacts(w, req, chi.URLParam(req, "run_id"))
+			})
+		})
+
 		// Market Category Routes
 		marketCategoryCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_MARKET_CATEGORY)
 		if err != nil {
