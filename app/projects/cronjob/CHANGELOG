@@ -1,7 +1,10 @@
 # VERSION
-v0.13.3
+v0.13.4
 
 # Changelog
+- v0.13.4
+    - Renamed documents of cronjob.
+    - Added documents of 2026-04-01 FEATURE_EXTEND_RUNNING_STRATEGY.
 - v0.13.3
     - Added export and import for tasks.
     - Fixed cancel for callback tasks.
