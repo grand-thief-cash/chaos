@@ -1,7 +1,9 @@
 # VERSION
-v0.13.4
+v0.13.5
 
 # Changelog
+- v0.13.5
+    - Added config in config doc
 - v0.13.4
     - Renamed documents of cronjob.
     - Added documents of 2026-04-01 FEATURE_EXTEND_RUNNING_STRATEGY.
