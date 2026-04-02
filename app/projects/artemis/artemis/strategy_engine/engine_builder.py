@@ -5,20 +5,23 @@ from typing import Any, Dict, cast
 import backtrader as bt
 import pandas as pd
 
-from artemis.backtrader.analyzer_profile_registry import AnalyzerProfileSpec
-from artemis.backtrader.strategy_registry import StrategySpec
+from artemis.strategy_engine.analyzer_profile_registry import AnalyzerProfileSpec
+from artemis.strategy_engine.strategy_registry import StrategySpec
 
 
 class BacktraderEngineBuilder:
+    """Backtrader 引擎构建器，负责将 DataFrame 转换为数据源并装配 Cerebro 引擎。"""
+
     @staticmethod
     def dataframe_to_feed(df: pd.DataFrame) -> bt.feeds.PandasData:
+        """将 DataFrame 转换为 Backtrader 可用的 PandasData 数据源。"""
         feed_df = cast(pd.DataFrame, cast(object, df.copy(deep=True)))
         if "date" not in feed_df.columns:
             raise ValueError("bars dataframe missing 'date' column")
         feed_df["date"] = pd.to_datetime(cast(Any, feed_df["date"]), errors="coerce")
         feed_df = cast(pd.DataFrame, feed_df.dropna(subset=["date"]).sort_values("date").set_index("date"))
 
-        for col in ["open", "high", "low", "close", "volume"]:
+        for col in ["open", "high", "low", "close", "volume", "amount"]:
             if col in feed_df.columns:
                 feed_df[col] = pd.to_numeric(feed_df[col], errors="coerce")
 
@@ -36,6 +39,7 @@ class BacktraderEngineBuilder:
         cash: float,
         commission: float,
     ) -> bt.Cerebro:
+        """构建 Backtrader Cerebro 引擎实例，组装数据源、策略、分析器和观察器。"""
         cerebro = bt.Cerebro(stdstats=False)  # type: ignore[call-arg]
         cerebro.broker.setcash(float(cash))
         cerebro.broker.setcommission(commission=float(commission))

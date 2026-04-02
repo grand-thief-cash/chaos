@@ -8,6 +8,7 @@ import backtrader as bt
 
 @dataclass(frozen=True)
 class AnalyzerProfileSpec:
+    """分析器配置规格，定义回测中使用的分析器和观察器组合。"""
     code: str
     supported_modes: tuple[str, ...] = ("historical",)
     supported_timeframes: tuple[str, ...] = ("daily",)
@@ -23,6 +24,8 @@ class AnalyzerProfileSpec:
 
 
 class AnalyzerProfileRegistry:
+    """分析器配置注册表，管理所有可用的分析器配置规格。"""
+
     def __init__(self) -> None:
         self._registry: Dict[str, AnalyzerProfileSpec] = {}
 

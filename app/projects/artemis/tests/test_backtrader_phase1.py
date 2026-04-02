@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import artemis.task_units  # noqa: F401 registers tasks
-from artemis.backtrader.strategy_registry import strategy_registry
+from artemis.strategy_engine.strategy_registry import strategy_registry
 from artemis.consts import DeptServices, TaskStatus, TaskCode
 from artemis.core.clients import NoopDeptServiceClient
 from artemis.core.context import TaskContext
@@ -19,6 +19,10 @@ class FakePhoenixABacktestClient(NoopDeptServiceClient):
     def get_stock_zh_a_codes(self, codes=None):
         requested = codes or ["600000", "000001"]
         return {code: {"code": code, "exchange": "SH"} for code in requested}
+
+    def get_stock_zh_a_last_updates(self, period="daily", adjust="nf", codes=None):
+        requested = codes or ["600000", "000001"]
+        return {code: "2024-12-31" for code in requested}
 
     def get_strategy_market_bars(self, *, symbol, start_date, end_date, timeframe="daily", adjust="nf", fields=None):
         start = datetime.strptime(start_date, "%Y-%m-%d")

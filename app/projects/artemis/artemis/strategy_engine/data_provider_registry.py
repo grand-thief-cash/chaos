@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 @dataclass(frozen=True)
 class DataProviderSpec:
+    """数据源规格，定义回测数据提供者的配置和字段要求。"""
     code: str
     supported_modes: tuple[str, ...] = ("historical",)
     supported_timeframes: tuple[str, ...] = ("daily",)
@@ -24,6 +25,8 @@ class DataProviderSpec:
 
 
 class DataProviderRegistry:
+    """数据源注册表，管理所有可用的数据提供者规格。"""
+
     def __init__(self) -> None:
         self._registry: Dict[str, DataProviderSpec] = {}
 

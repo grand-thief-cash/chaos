@@ -4,7 +4,7 @@ from artemis.task_units.orchestrator_unit import OrchestratorUnit
 from artemis.consts import TaskCode
 from artemis.core import registry
 from artemis.task_units.base import BaseTaskUnit
-from artemis.task_units.backtrader import BacktraderCampaignTask, BacktraderRunTask
+from artemis.task_units.bt_engine import BacktraderCampaignTask, BacktraderRunTask
 from artemis.task_units.download.zh import StockZhAHistParent, StockZhAHistChild, StockZHAMarketCategory
 from artemis.task_units.download.zh.stock_zh_a_list import StockZHAList
 

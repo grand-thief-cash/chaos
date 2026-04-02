@@ -1,8 +1,12 @@
 # VERSION
-v0.10.5
+v0.11.1
 
 # Changelog
-- v0.10.5
+- v0.11.1
+    - Fixed design flaws of strategy engine.
+    - Rename backtrade units to bt_engine.
+    - Added comments to core logic.
+- v0.11.0
     - Added BACKTRADER_CAMPAIGN and BACKTRADER_RUN.
     - Added strategies engine to work with task framework.
     - Added strategies API in phoenixA_client.py

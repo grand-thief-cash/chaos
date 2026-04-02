@@ -4,14 +4,18 @@ from typing import Any, Dict
 
 
 class BacktestResultNormalizer:
+    """回测结果标准化器，将 Backtrader 原始输出转换为统一的 summary + artifacts 格式。"""
+
     @staticmethod
     def _safe_dict(value: Any) -> Dict[str, Any]:
+        """安全地将值转换为字典，非字典类型返回空字典。"""
         if isinstance(value, dict):
             return value
         return {}
 
     @staticmethod
     def _normalize_trade_analyzer(trade_analyzer: Dict[str, Any]) -> Dict[str, Any]:
+        """从 Backtrader TradeAnalyzer 结果中提取交易统计（次数、胜率）。"""
         total = int(((trade_analyzer.get("total") or {}).get("closed") or 0))
         won = int((((trade_analyzer.get("won") or {}).get("total")) or 0))
         lost = int((((trade_analyzer.get("lost") or {}).get("total")) or 0))
@@ -41,6 +45,7 @@ class BacktestResultNormalizer:
         analyzer_results: Dict[str, Any],
         bars_processed: int,
     ) -> Dict[str, Any]:
+        """标准化回测结果，返回包含 run_meta、summary 和 artifacts 的字典。"""
         returns = BacktestResultNormalizer._safe_dict(analyzer_results.get("returns"))
         drawdown = BacktestResultNormalizer._safe_dict(analyzer_results.get("drawdown"))
         trade_analyzer = BacktestResultNormalizer._safe_dict(analyzer_results.get("trade_analyzer"))

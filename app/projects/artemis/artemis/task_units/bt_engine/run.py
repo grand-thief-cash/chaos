@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict, List
 
 import pandas as pd
 
-from artemis.backtrader import analyzer_profile_registry, data_provider_registry, strategy_registry
-from artemis.backtrader.engine_builder import BacktraderEngineBuilder
-from artemis.backtrader.result_normalizer import BacktestResultNormalizer
+from artemis.strategy_engine import analyzer_profile_registry, data_provider_registry, strategy_registry
+from artemis.strategy_engine.engine_builder import BacktraderEngineBuilder
+from artemis.strategy_engine.result_normalizer import BacktestResultNormalizer
 from artemis.consts import DeptServices, TaskStatus
 from artemis.core import TaskContext
 from artemis.core.clients.phoenixA_client import PhoenixAClient
@@ -15,18 +16,26 @@ from artemis.task_units.worker_unit import WorkerUnit
 
 
 class BacktraderRunTask(WorkerUnit):
+    """单次回测执行任务，负责数据拉取、引擎构建、回测执行和结果持久化的完整流程。
+
+    生命周期：parameter_check → before_execute -> execute -> post_process -> sink -> finalize。
+    """
+
     @staticmethod
     def _extract_analyzer_results(strategy_instance: Any) -> Dict[str, Any]:
+        """从策略实例中提取分析器结果，返回 {name: analysis} 字典。"""
         analyzers = getattr(strategy_instance, "analyzers", None)
         if analyzers is None:
             return {}
         try:
             items = analyzers.getitems()
         except Exception:
+            logging.getLogger(__name__).warning("failed to extract analyzer results", exc_info=True)
             return {}
         return {name: analyzer.get_analysis() for name, analyzer in items}
 
     def parameter_check(self, ctx: TaskContext):
+        """校验必填参数（策略、数据源、分析器、股票代码、日期、策略参数等)。"""
         params = ctx.incoming_params
         required = [
             "mode",
@@ -61,14 +70,20 @@ class BacktraderRunTask(WorkerUnit):
         if not isinstance(strategy_params, dict):
             ctx.fail("strategy_params must be dict", phase="parameter_check")
             return
-        fast = strategy_params.get("fast")
-        slow = strategy_params.get("slow")
-        if fast is not None and int(fast) <= 0:
-            ctx.fail("strategy_params.fast must be > 0", phase="parameter_check")
+
+        start_date = str(params.get("start_date") or "").strip()
+        end_date = str(params.get("end_date") or "").strip()
+        if start_date > end_date:
+            ctx.fail("start_date must be <= end_date", phase="parameter_check")
             return
-        if slow is not None and int(slow) <= 0:
-            ctx.fail("strategy_params.slow must be > 0", phase="parameter_check")
-            return
+
+        # Delegate strategy-specific param validation to registry
+        strategy_spec = strategy_registry.get(strategy_code)
+        if strategy_spec:
+            errors = strategy_spec.validate_params(strategy_params)
+            if errors:
+                ctx.fail("; ".join(errors), phase="parameter_check")
+                return
 
     def before_execute(self, ctx: TaskContext):
         params = ctx.params
@@ -80,6 +95,7 @@ class BacktraderRunTask(WorkerUnit):
         }
 
     def execute(self, ctx: TaskContext) -> Dict[str, Any]:
+        """执行回测：拉取 K 线数据 → 构建 Cerebro → 运行回测 → 返回原始结果。"""
         params = ctx.params
         phoenix_client: PhoenixAClient = ctx.dept_http[DeptServices.PHOENIXA]
         provider_spec = data_provider_registry.require(str(params.get("data_provider_code")))
@@ -126,6 +142,7 @@ class BacktraderRunTask(WorkerUnit):
         }
 
     def post_process(self, ctx: TaskContext, result: Dict[str, Any]) -> Dict[str, Any]:
+        """将回测原始结果标准化为 summary + artifacts 格式。"""
         if ctx.has_failed() or not result:
             return result
         params = ctx.params
@@ -158,6 +175,7 @@ class BacktraderRunTask(WorkerUnit):
         return normalized
 
     def sink(self, ctx: TaskContext, processed: Dict[str, Any]):
+        """将标准化后的回测结果持久化到 PhoenixA（summary + artifacts)。"""
         if ctx.has_failed() or not processed:
             return
         phoenix_client: PhoenixAClient = ctx.dept_http[DeptServices.PHOENIXA]
@@ -190,6 +208,7 @@ class BacktraderRunTask(WorkerUnit):
             ctx.fail(f"failed to save strategy run artifacts for run_id={ctx.run_id}", phase="sink")
 
     def finalize(self, ctx: TaskContext):
+        """汇总最终统计信息（交易数、订单数等)。"""
         summary = ((ctx.stats.get("result_summary") or {}) if isinstance(ctx.stats.get("result_summary"), dict) else {})
         ctx.stats["trade_count"] = summary.get("trade_count", ctx.stats.get("trade_count", 0))
         ctx.stats["orders_count"] = ctx.stats.get("orders_count", 0)
