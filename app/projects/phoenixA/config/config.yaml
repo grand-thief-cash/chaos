@@ -42,7 +42,7 @@ http_server:
 
 telemetry:
   enabled: true
-  service_name: demo-service
+  service_name: phoenixA
   exporter: stdout         # stdout|otlp
   sample_ratio: 0        # 0~1; adjust for sampling
   stdout_pretty: false     # false keeps exporter output compact

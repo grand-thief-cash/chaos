@@ -67,4 +67,4 @@ require (
 	gorm.io/driver/postgres v1.6.0 // indirect
 )
 
-//require github.com/grand-thief-cash/chaos/app/infra/go/application v0.16.2
+require github.com/grand-thief-cash/chaos/app/infra/go/application v0.16.2
