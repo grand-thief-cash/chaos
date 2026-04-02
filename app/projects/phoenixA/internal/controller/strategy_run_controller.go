@@ -15,11 +15,13 @@ import (
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/service"
 )
 
+// StrategyRunController 策略回测结果 HTTP 接口，提供回测摘要和制品的写入与查询 API。
 type StrategyRunController struct {
 	*core.BaseComponent
 	Svc *service.StrategyRunService `infra:"dep:svc_strategy_run"`
 }
 
+// NewStrategyRunController 创建策略回测控制器实例。
 func NewStrategyRunController() *StrategyRunController {
 	return &StrategyRunController{BaseComponent: core.NewBaseComponent(bizConsts.COMP_CTRL_STRATEGY_RUN)}
 }
@@ -27,6 +29,7 @@ func NewStrategyRunController() *StrategyRunController {
 func (c *StrategyRunController) Start(ctx context.Context) error { return c.BaseComponent.Start(ctx) }
 func (c *StrategyRunController) Stop(ctx context.Context) error  { return c.BaseComponent.Stop(ctx) }
 
+// UpsertSummary 新增或更新回测汇总记录。
 func (c *StrategyRunController) UpsertSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req model.StrategyRunSummary
@@ -41,6 +44,7 @@ func (c *StrategyRunController) UpsertSummary(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"run_id": req.RunID, "status": "ok"}})
 }
 
+// UpsertArtifacts 批量新增或更新回测制品。
 func (c *StrategyRunController) UpsertArtifacts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req []*model.StrategyRunArtifact
@@ -55,6 +59,7 @@ func (c *StrategyRunController) UpsertArtifacts(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"count": len(req), "status": "ok"}})
 }
 
+// GetSummary 根据 runID 查询回测汇总记录。
 func (c *StrategyRunController) GetSummary(w http.ResponseWriter, r *http.Request, runID string) {
 	ctx := r.Context()
 	item, err := c.Svc.GetSummary(ctx, runID)
@@ -69,6 +74,7 @@ func (c *StrategyRunController) GetSummary(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: item})
 }
 
+// ListSummaries 根据查询参数分页查询回测汇总列表。
 func (c *StrategyRunController) ListSummaries(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
@@ -91,6 +97,7 @@ func (c *StrategyRunController) ListSummaries(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: list})
 }
 
+// ListArtifacts 根据 runID 查询该次回测的所有制品。
 func (c *StrategyRunController) ListArtifacts(w http.ResponseWriter, r *http.Request, runID string) {
 	ctx := r.Context()
 	list, err := c.Svc.ListArtifactsByRunID(ctx, runID)
