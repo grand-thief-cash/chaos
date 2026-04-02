@@ -1625,12 +1625,12 @@ Cronjob / API
 ##### E. Artemis 内部 backtrader 模块
 
 - [ ] 增加最小目录：
-  - `artemis/backtrader/strategy_registry.py`
-  - `artemis/backtrader/data_provider_registry.py`
-  - `artemis/backtrader/analyzer_profile_registry.py`
-  - `artemis/backtrader/engine_builder.py`
-  - `artemis/backtrader/result_normalizer.py`
-  - `artemis/backtrader/recorders/`
+  - `artemis/strategy_engine/strategy_registry.py`
+  - `artemis/strategy_engine/data_provider_registry.py`
+  - `artemis/strategy_engine/analyzer_profile_registry.py`
+  - `artemis/strategy_engine/engine_builder.py`
+  - `artemis/strategy_engine/result_normalizer.py`
+  - `artemis/strategy_engine/recorders/`
 - [ ] `strategy_registry` Phase 1 只注册一小批可控策略，不做任意 class path 动态加载
 - [ ] `data_provider_registry` Phase 1 只提供 `phoenixa_hist_daily`
 - [ ] `analyzer_profile_registry` Phase 1 只提供 `default_hist_v1`
