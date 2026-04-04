@@ -1,7 +1,12 @@
 # VERSION
-v0.4.2
+v0.5.0
 
 # Changelog
+- v0.5.0
+    - Added candlestick chart as common component.
+    - Added Workbench to research strategy.
+    - Added toggle to control Y-axis.
+    - Added flexible indicators on candlestick.
 - v0.4.2
     - Move cronjob service from common folder to cronjob folder.
 - v0.4.1

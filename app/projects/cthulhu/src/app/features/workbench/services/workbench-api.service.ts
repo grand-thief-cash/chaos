@@ -1,0 +1,52 @@
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import {
+  WorkbenchStrategiesResponse,
+  WorkbenchRunRequest,
+  BacktestResult,
+  MarketDataResponse,
+  IndicatorsListResponse,
+  IndicatorsCalcRequest,
+  IndicatorsCalcResponse,
+} from '../models/workbench.model';
+import { environment } from '../../../../environments/environment';
+
+@Injectable({ providedIn: 'root' })
+export class WorkbenchApiService {
+  private API_BASE = environment.artemisApiBase;
+
+  constructor(private http: HttpClient) {}
+
+  getStrategies(): Observable<WorkbenchStrategiesResponse> {
+    return this.http.get<WorkbenchStrategiesResponse>(`${this.API_BASE}/workbench/strategies`);
+  }
+
+  runBacktest(req: WorkbenchRunRequest): Observable<BacktestResult> {
+    return this.http.post<BacktestResult>(`${this.API_BASE}/workbench/run`, req);
+  }
+
+  getMarketData(
+    symbol: string,
+    startDate: string,
+    endDate: string,
+    timeframe = 'daily',
+    adjust = 'nf',
+  ): Observable<MarketDataResponse> {
+    const params = new HttpParams()
+      .set('symbol', symbol)
+      .set('start_date', startDate)
+      .set('end_date', endDate)
+      .set('timeframe', timeframe)
+      .set('adjust', adjust);
+    return this.http.get<MarketDataResponse>(`${this.API_BASE}/workbench/market-data`, { params });
+  }
+
+  getAvailableIndicators(): Observable<IndicatorsListResponse> {
+    return this.http.get<IndicatorsListResponse>(`${this.API_BASE}/workbench/indicators`);
+  }
+
+  calculateIndicators(req: IndicatorsCalcRequest): Observable<IndicatorsCalcResponse> {
+    return this.http.post<IndicatorsCalcResponse>(`${this.API_BASE}/workbench/indicators`, req);
+  }
+}
