@@ -5,7 +5,7 @@ from akshare import stock_bj_a_spot_em, stock_sz_a_spot_em, stock_sh_a_spot_em
 
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
-from artemis.task_units.worker_unit import WorkerUnit
+from artemis.engines.task_engine.worker_unit import WorkerUnit
 
 
 # 根据 exchange 选择对应的 security_type

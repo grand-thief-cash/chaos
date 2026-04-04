@@ -5,8 +5,8 @@ from typing import Any, Dict, cast
 import backtrader as bt
 import pandas as pd
 
-from artemis.strategy_engine.analyzer_profile_registry import AnalyzerProfileSpec
-from artemis.strategy_engine.strategy_registry import StrategySpec
+from artemis.engines.strategy_engine.analyzers.registry_map import AnalyzerProfileSpec
+from artemis.engines.strategy_engine.strategy_registry import StrategySpec
 
 
 class BacktraderEngineBuilder:

@@ -5,7 +5,7 @@ from typing import Any
 
 import backtrader as bt
 
-from artemis.strategy_engine.strategies.sma_cross import SmaCrossStrategy
+from artemis.engines.strategy_engine.strategies.sma_cross import SmaCrossStrategy
 
 
 @dataclass(frozen=True)

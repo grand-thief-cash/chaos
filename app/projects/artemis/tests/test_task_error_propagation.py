@@ -9,9 +9,9 @@ from artemis.core.context import TaskContext
 from artemis.core.task_engine import TaskEngine
 from artemis.core.task_registry import registry
 from artemis.models.task_req import TaskRunReq
-from artemis.task_units.base import BaseTaskUnit
-from artemis.task_units.download.zh.stock_zh_a_hist_parent import StockZhAHistParent
-from artemis.task_units.orchestrator_unit import OrchestratorUnit
+from artemis.engines.task_engine.base import BaseTaskUnit
+from artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent import StockZhAHistParent
+from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 
 
 class SoftFailWorker(BaseTaskUnit):
@@ -115,8 +115,8 @@ class TaskErrorPropagationTests(unittest.TestCase):
             return NoopDeptServiceClient()
 
         with patch.object(TaskContext, "build_dept_http_client", build_client), \
-             patch("artemis.task_units.download.zh.stock_zh_a_hist_parent.bs.login", return_value=type("LoginResult", (), {"error_code": "0"})()), \
-             patch("artemis.task_units.download.zh.stock_zh_a_hist_parent.bs.logout", return_value=None):
+             patch("artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent.bs.login", return_value=type("LoginResult", (), {"error_code": "0"})()), \
+             patch("artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent.bs.logout", return_value=None):
             result = TaskEngine().run(
                 TaskRunReq.model_validate(
                     {

@@ -19,7 +19,7 @@ class BacktestResultNormalizer:
         total = int(((trade_analyzer.get("total") or {}).get("closed") or 0))
         won = int((((trade_analyzer.get("won") or {}).get("total")) or 0))
         lost = int((((trade_analyzer.get("lost") or {}).get("total")) or 0))
-        win_rate = float(won / total) if total > 0 else 0.0
+        win_rate = round(float(won / total), 4) if total > 0 else 0.0
         return {
             "trade_count": total,
             "win_count": won,
@@ -53,8 +53,8 @@ class BacktestResultNormalizer:
 
         trade_stats = BacktestResultNormalizer._normalize_trade_analyzer(trade_analyzer)
         max_dd = float(((drawdown.get("max") or {}).get("drawdown") or 0.0))
-        pnl = float(end_value - start_cash)
-        pnl_pct = float((pnl / start_cash) if start_cash else 0.0)
+        pnl = round(float(end_value - start_cash), 2)
+        pnl_pct = round(float((pnl / start_cash) if start_cash else 0.0), 6)
 
         summary = {
             "run_id": str(run_id),
@@ -66,12 +66,12 @@ class BacktestResultNormalizer:
             "timeframe": timeframe,
             "start_date": start_date,
             "end_date": end_date,
-            "start_cash": float(start_cash),
-            "end_value": float(end_value),
+            "start_cash": round(float(start_cash), 2),
+            "end_value": round(float(end_value), 2),
             "pnl": pnl,
             "pnl_pct": pnl_pct,
-            "max_drawdown": max_dd,
-            "sharpe": float(sharpe.get("sharperatio") or 0.0) if isinstance(sharpe, dict) else 0.0,
+            "max_drawdown": round(max_dd, 4),
+            "sharpe": round(float(sharpe.get("sharperatio") or 0.0), 4) if isinstance(sharpe, dict) else 0.0,
             "bars_processed": int(bars_processed),
             **trade_stats,
         }

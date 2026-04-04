@@ -9,6 +9,7 @@ import backtrader as bt
 @dataclass(frozen=True)
 class AnalyzerProfileSpec:
     """分析器配置规格，定义回测中使用的分析器和观察器组合。"""
+
     code: str
     supported_modes: tuple[str, ...] = ("historical",)
     supported_timeframes: tuple[str, ...] = ("daily",)
@@ -57,4 +58,3 @@ default_hist_profile = AnalyzerProfileSpec(
 
 analyzer_profile_registry = AnalyzerProfileRegistry()
 analyzer_profile_registry.register(default_hist_profile)
-

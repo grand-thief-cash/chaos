@@ -2,8 +2,8 @@ import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-import artemis.task_units  # noqa: F401 registers tasks
-from artemis.strategy_engine.strategy_registry import strategy_registry
+import artemis.engines.task_engine  # noqa: F401 registers tasks
+from artemis.engines.strategy_engine.strategy_registry import strategy_registry
 from artemis.consts import DeptServices, TaskStatus, TaskCode
 from artemis.core.clients import NoopDeptServiceClient
 from artemis.core.context import TaskContext
