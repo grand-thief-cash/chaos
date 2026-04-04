@@ -6,13 +6,13 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from artemis.strategy_engine import analyzer_profile_registry, data_provider_registry, strategy_registry
-from artemis.strategy_engine.engine_builder import BacktraderEngineBuilder
-from artemis.strategy_engine.result_normalizer import BacktestResultNormalizer
+from artemis.engines.strategy_engine import analyzer_profile_registry, data_provider_registry, strategy_registry
+from artemis.engines.strategy_engine.engine_builder import BacktraderEngineBuilder
+from artemis.engines.strategy_engine.result_normalizer import BacktestResultNormalizer
 from artemis.consts import DeptServices, TaskStatus
 from artemis.core import TaskContext
 from artemis.core.clients.phoenixA_client import PhoenixAClient
-from artemis.task_units.worker_unit import WorkerUnit
+from artemis.engines.task_engine.worker_unit import WorkerUnit
 
 
 class BacktraderRunTask(WorkerUnit):

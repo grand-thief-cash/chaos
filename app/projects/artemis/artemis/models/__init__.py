@@ -20,6 +20,7 @@ from artemis.models.runtime_update import (
     TaskUnitRegisterResp,
 )
 from artemis.models.task_req import TaskRunReq, CallbackEndpoints
+from artemis.models.workbench import WorkbenchRunReq
 
 __all__ = [
     "TaskRunReq",
@@ -41,4 +42,5 @@ __all__ = [
     "TaskUnitFileCreateReq",
     "TaskUnitRegisterReq",
     "TaskUnitRegisterResp",
+    "WorkbenchRunReq",
 ]

@@ -1,12 +1,12 @@
-from artemis.task_units.worker_unit import WorkerUnit
-from artemis.task_units.orchestrator_unit import OrchestratorUnit
+from artemis.engines.task_engine.worker_unit import WorkerUnit
+from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 
 from artemis.consts import TaskCode
 from artemis.core import registry
-from artemis.task_units.base import BaseTaskUnit
-from artemis.task_units.bt_engine import BacktraderCampaignTask, BacktraderRunTask
-from artemis.task_units.download.zh import StockZhAHistParent, StockZhAHistChild, StockZHAMarketCategory
-from artemis.task_units.download.zh.stock_zh_a_list import StockZHAList
+from artemis.engines.task_engine.base import BaseTaskUnit
+from artemis.engines.task_engine.backtest import BacktraderCampaignTask, BacktraderRunTask
+from artemis.engines.task_engine.download.zh import StockZhAHistParent, StockZhAHistChild, StockZHAMarketCategory
+from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 
 __all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
 

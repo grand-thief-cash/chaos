@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
 import requests
-from artemis.task_units.worker_unit import WorkerUnit
+from artemis.engines.task_engine.worker_unit import WorkerUnit
 
 from artemis import consts
 from artemis.consts import DeptServices

@@ -7,6 +7,7 @@ from typing import Any, Dict
 @dataclass(frozen=True)
 class DataProviderSpec:
     """数据源规格，定义回测数据提供者的配置和字段要求。"""
+
     code: str
     supported_modes: tuple[str, ...] = ("historical",)
     supported_timeframes: tuple[str, ...] = ("daily",)
@@ -46,4 +47,3 @@ class DataProviderRegistry:
 _data_provider_spec = DataProviderSpec(code="phoenixa_hist_daily")
 data_provider_registry = DataProviderRegistry()
 data_provider_registry.register(_data_provider_spec)
-

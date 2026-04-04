@@ -3,11 +3,11 @@ from __future__ import annotations
 from itertools import product
 from typing import Any, Dict, List
 
-from artemis.strategy_engine import analyzer_profile_registry, data_provider_registry, strategy_registry
+from artemis.engines.strategy_engine import analyzer_profile_registry, data_provider_registry, strategy_registry
 from artemis.consts import DeptServices, TaskCode
 from artemis.core import TaskContext
 from artemis.core.clients.phoenixA_client import PhoenixAClient
-from artemis.task_units.orchestrator_unit import OrchestratorUnit
+from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 
 MAX_SYMBOLS = 50
 MAX_CHILDREN = 200

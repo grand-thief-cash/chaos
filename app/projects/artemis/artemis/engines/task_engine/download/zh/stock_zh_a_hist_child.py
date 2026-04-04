@@ -1,6 +1,6 @@
 import baostock as bs
 import pandas as pd
-from artemis.task_units.worker_unit import WorkerUnit
+from artemis.engines.task_engine.worker_unit import WorkerUnit
 
 from artemis.consts import DeptServices
 from artemis.core import TaskContext

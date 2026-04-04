@@ -1,7 +1,10 @@
 # VERSION
-v0.11.1
+v0.12.0
 
 # Changelog
+- v0.12.0
+    - Extracted `analyzers/` and `data_providers/` into independent module folders under `strategy_engine`, aligning with the existing `strategies/` structure.
+    - Added Strategy Research Workbench.
 - v0.11.1
     - Fixed design flaws of strategy engine.
     - Rename backtrade units to bt_engine.

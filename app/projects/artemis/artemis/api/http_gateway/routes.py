@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Request, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
-import artemis.task_units  # noqa: F401 registers tasks
+import artemis.engines.task_engine  # noqa: F401 registers tasks
 from artemis.core import registry, cfg_mgr
 from artemis.core.runtime_files import RuntimeFileService
 from artemis.core.task_engine import TaskEngine
@@ -232,13 +232,13 @@ async def delete_task_unit_file(path: str):
         # We can reuse similar logic to scan_unregistered but targeted
         import importlib
         import inspect
-        from artemis.task_units.base import BaseTaskUnit
+        from artemis.engines.task_engine.base import BaseTaskUnit
         
         # Calculate module name from path
         # Assuming path is relative to task_units e.g. zh/stock.py
         rel_path = path.replace('\\', '/').split('.')[0].replace('/', '.')
-        # But we need full module path: artemis.task_units.zh.stock
-        module_name = f"artemis.task_units.{rel_path}"
+        # But we need full module path: artemis.engines.task_engine.zh.stock
+        module_name = f"artemis.engines.task_engine.{rel_path}"
         
         # 2. Check for registered tasks
         tasks_to_unregister = []
@@ -280,3 +280,6 @@ async def delete_task_unit_file(path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 app.include_router(router)
+
+from artemis.api.http_gateway.workbench_routes import router as workbench_router  # noqa: E402
+app.include_router(workbench_router)

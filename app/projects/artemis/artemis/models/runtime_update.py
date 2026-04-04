@@ -46,7 +46,7 @@ class TaskUnitFileCreateReq(BaseModel):
 
 class TaskUnitRegisterReq(BaseModel):
     task_code: str = Field(..., description="Task code to register")
-    module: str = Field(..., description="Python module path, e.g. artemis.task_units.zh.stock_zh_a_list")
+    module: str = Field(..., description="Python module path, e.g. artemis.engines.task_engine.zh.stock_zh_a_list")
     class_name: str = Field(..., description="Task class name")
 
 

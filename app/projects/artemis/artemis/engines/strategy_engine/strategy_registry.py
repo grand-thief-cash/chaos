@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Type
 
 import backtrader as bt
 
-from artemis.strategy_engine.strategies.registry_map import STRATEGY_REGISTRY_MAP
+from artemis.engines.strategy_engine.strategies.registry_map import STRATEGY_REGISTRY_MAP
 
 
 @dataclass(frozen=True)
