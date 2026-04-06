@@ -10,9 +10,10 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzCollapseModule } from 'ng-zorro-antd/collapse';
 import { NzSwitchModule } from 'ng-zorro-antd/switch';
+import { NzDividerModule } from 'ng-zorro-antd/divider';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
-import { CandlestickChartComponent } from '../../../shared/ui/candlestick-chart';
+import { ChartPanelComponent } from '../../../shared/ui/chart-panel';
 import { WorkbenchApiService } from '../services/workbench-api.service';
 import {
   Bar,
@@ -30,6 +31,8 @@ interface IndicatorInstance {
 const COLOR_PALETTE = [
   '#1890ff', '#fa8c16', '#52c41a', '#eb2f96',
   '#722ed1', '#13c2c2', '#f5222d', '#faad14',
+  '#2f54eb', '#fa541c', '#73d13d', '#f759ab',
+  '#9254de', '#36cfc9', '#ff4d4f', '#ffd666',
 ];
 
 @Component({
@@ -47,11 +50,12 @@ const COLOR_PALETTE = [
     NzTagModule,
     NzCollapseModule,
     NzSwitchModule,
+    NzDividerModule,
     NzIconModule,
-    CandlestickChartComponent,
+    ChartPanelComponent,
   ],
   template: `
-    <div style="display: flex; flex-direction: column; height: calc(100vh - 64px); overflow: hidden;">
+    <div style="display: flex; flex-direction: column;">
       <!-- 搜索栏：可折叠 -->
       <nz-collapse style="flex-shrink: 0; border-bottom: 1px solid #f0f0f0; background: #fff;">
         <nz-collapse-panel
@@ -127,14 +131,17 @@ const COLOR_PALETTE = [
 
       <!-- 图表区：填满剩余空间 -->
       @if (bars.length > 0) {
-        <div style="flex: 1; min-height: 0; position: relative;">
-          <app-candlestick-chart
+        <div style="position: relative;">
+          <app-chart-panel
             [bars]="bars"
             [indicators]="indicatorSeries"
             [indicatorMeta]="indicatorMeta"
             [lockYAxis]="lockYAxis"
             [showVolume]="showVolume"
-          ></app-candlestick-chart>
+            [mainHeight]="mainHeight"
+            [volumeHeight]="volumeHeight"
+            [subChartHeight]="subChartHeight"
+          ></app-chart-panel>
 
           <!-- 浮动配置按钮 -->
           <div
@@ -152,16 +159,42 @@ const COLOR_PALETTE = [
                 position: absolute; top: 40px; right: 0;
                 background: #fff; border-radius: 6px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                padding: 12px 16px; width: 220px;
+                padding: 12px 16px; width: 260px;
               ">
                 <div style="font-weight: 500; margin-bottom: 10px; font-size: 13px;">Chart Settings</div>
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                   <span style="font-size: 13px;">Lock Y-Axis</span>
                   <nz-switch [(ngModel)]="lockYAxis" nzSize="small"></nz-switch>
                 </div>
-                <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                   <span style="font-size: 13px;">Show Volume</span>
                   <nz-switch [(ngModel)]="showVolume" nzSize="small"></nz-switch>
+                </div>
+                <nz-divider style="margin: 8px 0;"></nz-divider>
+                <div style="font-weight: 500; margin-bottom: 8px; font-size: 12px; color: #666;">Height</div>
+                <div style="margin-bottom: 8px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="font-size: 12px;">Main</span>
+                    <span style="font-size: 11px; color: #999;">{{mainHeight}}px</span>
+                  </div>
+                  <input type="range" [(ngModel)]="mainHeight" min="200" max="800" step="10"
+                    style="width: 100%; accent-color: #1890ff;" />
+                </div>
+                <div style="margin-bottom: 8px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="font-size: 12px;">Volume</span>
+                    <span style="font-size: 11px; color: #999;">{{volumeHeight}}px</span>
+                  </div>
+                  <input type="range" [(ngModel)]="volumeHeight" min="40" max="300" step="10"
+                    style="width: 100%; accent-color: #1890ff;" />
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="font-size: 12px;">Sub-chart</span>
+                    <span style="font-size: 11px; color: #999;">{{subChartHeight}}px</span>
+                  </div>
+                  <input type="range" [(ngModel)]="subChartHeight" min="60" max="400" step="10"
+                    style="width: 100%; accent-color: #1890ff;" />
                 </div>
               </div>
             }
@@ -183,6 +216,9 @@ export class MarketDataPageComponent implements OnInit {
   configPanelOpen = false;
   lockYAxis = false;
   showVolume = true;
+  mainHeight = 450;
+  volumeHeight = 120;
+  subChartHeight = 150;
 
   bars: Bar[] = [];
   availableIndicators: IndicatorInfo[] = [];
