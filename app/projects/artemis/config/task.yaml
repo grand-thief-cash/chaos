@@ -29,6 +29,13 @@ tasks:
            start_date: "2016-01-01"
            fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
 
+      - match: { period: "daily", adjust: "hfq" }
+        config:
+           period: "daily"
+           adjust: "hfq"
+           start_date: "2016-01-01"
+           fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
+
   BACKTRADER_CAMPAIGN:
     variants:
       - match: { mode: "historical" }

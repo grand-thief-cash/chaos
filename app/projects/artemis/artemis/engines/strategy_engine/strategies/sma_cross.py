@@ -95,7 +95,6 @@ class SmaCrossStrategy(bt.Strategy):
     def notify_trade(self, trade: bt.Trade):
         """交易关闭回调，记录已平仓交易的盈亏、持仓时长等信息。"""
         """已平仓交易回调，记录交易统计（盈亏、手续费、持仓周期）。"""
-        """已平仓交易回调，记录交易盈亏详情。"""
         """交易平仓回调，记录已平仓交易的盈亏明细。"""
         if not trade.isclosed:
             return

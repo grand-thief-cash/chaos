@@ -108,6 +108,36 @@ def _kdj_calculate(df, *, k_period=14, k_smooth=3, d_smooth=3, **_kwargs):
     }
 
 
+def _skewness_calculate(df, *, period=20, **_kwargs):
+    """Skewness 偏度 — 滚动窗口收益率的偏度。"""
+    returns = df["close"].pct_change()
+    values = returns.rolling(window=period).skew()
+    key = f"skewness_{period}"
+    return {key: _safe_to_list(values.round(4))}
+
+
+def _kurtosis_calculate(df, *, period=20, **_kwargs):
+    """Kurtosis 峰度 — 滚动窗口收益率的超额峰度。"""
+    returns = df["close"].pct_change()
+    values = returns.rolling(window=period).kurt()
+    key = f"kurtosis_{period}"
+    return {key: _safe_to_list(values.round(4))}
+
+
+def _support_calculate(df, *, period=20, **_kwargs):
+    """滚动支撑位 — 前 N 根 K 线（不含当前 bar）的最低价。"""
+    values = df["low"].shift(1).rolling(window=period).min()
+    key = f"support_{period}"
+    return {key: _safe_to_list(values.round(4))}
+
+
+def _breakout_calculate(df, *, period=20, **_kwargs):
+    """滚动突破位 — 前 N 根 K 线（不含当前 bar）的最高价。"""
+    values = df["high"].shift(1).rolling(window=period).max()
+    key = f"breakout_{period}"
+    return {key: _safe_to_list(values.round(4))}
+
+
 # ---------------------------------------------------------------------------
 # 注册表
 # ---------------------------------------------------------------------------
@@ -183,6 +213,50 @@ INDICATOR_REGISTRY: Dict[str, IndicatorSpec] = {
             "kdj_k_{k_period}_{k_smooth}_{d_smooth}": {"type": "line", "color": "#1890ff"},
             "kdj_d_{k_period}_{k_smooth}_{d_smooth}": {"type": "line", "color": "#faad14"},
             "kdj_j_{k_period}_{k_smooth}_{d_smooth}": {"type": "line", "color": "#52c41a"},
+        },
+    ),
+    "skewness": IndicatorSpec(
+        name="skewness",
+        display_name="Skewness",
+        default_params={"period": 20},
+        overlay=False,
+        y_axis="skewness",
+        calculate=_skewness_calculate,
+        series_meta={
+            "skewness_{period}": {"type": "line", "color": "#13c2c2"},
+        },
+    ),
+    "kurtosis": IndicatorSpec(
+        name="kurtosis",
+        display_name="Kurtosis",
+        default_params={"period": 20},
+        overlay=False,
+        y_axis="kurtosis",
+        calculate=_kurtosis_calculate,
+        series_meta={
+            "kurtosis_{period}": {"type": "line", "color": "#722ed1"},
+        },
+    ),
+    "support": IndicatorSpec(
+        name="support",
+        display_name="Support",
+        default_params={"period": 20},
+        overlay=True,
+        y_axis=None,
+        calculate=_support_calculate,
+        series_meta={
+            "support_{period}": {"type": "line", "color": "#52c41a"},
+        },
+    ),
+    "breakout": IndicatorSpec(
+        name="breakout",
+        display_name="Breakout",
+        default_params={"period": 20},
+        overlay=True,
+        y_axis=None,
+        calculate=_breakout_calculate,
+        series_meta={
+            "breakout_{period}": {"type": "line", "color": "#f5222d"},
         },
     ),
 }

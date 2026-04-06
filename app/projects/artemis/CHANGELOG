@@ -1,7 +1,9 @@
 # VERSION
-v0.12.0
+v0.12.1
 
 # Changelog
+- v0.12.1
+    - Added skewness, kurtosis, support and breakout indicators.
 - v0.12.0
     - Extracted `analyzers/` and `data_providers/` into independent module folders under `strategy_engine`, aligning with the existing `strategies/` structure.
     - Added Strategy Research Workbench.
