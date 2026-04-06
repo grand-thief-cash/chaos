@@ -2,34 +2,36 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NgxEchartsModule } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
-import { Bar, IndicatorSeriesMeta } from './candlestick-chart.models';
+import { Bar, IndicatorSeriesMeta } from './chart-panel.models';
 
 @Component({
-  selector: 'app-candlestick-chart',
+  selector: 'app-chart-panel',
   standalone: true,
   imports: [CommonModule, NgxEchartsModule],
   template: `
     @if (options) {
-      <div echarts [options]="options" class="chart-container"></div>
+      <div echarts [options]="options" [style.height.px]="containerHeight" style="width: 100%;"></div>
     }
   `,
-  styles: [`
-    .chart-container { height: calc(100vh - 90px); width: 100%; }
-  `],
 })
-export class CandlestickChartComponent implements OnChanges {
+export class ChartPanelComponent implements OnChanges {
   @Input() bars: Bar[] = [];
   @Input() indicators: Record<string, (number | null)[]> = {};
   @Input() indicatorMeta: Record<string, IndicatorSeriesMeta> = {};
   @Input() lockYAxis = false;
   @Input() showVolume = true;
+  @Input() mainHeight = 450;
+  @Input() volumeHeight = 120;
+  @Input() subChartHeight = 150;
 
   options: EChartsOption | null = null;
+  containerHeight = 0;
 
   ngOnChanges(changes: SimpleChanges): void {
     if (
       changes['bars'] || changes['indicators'] || changes['indicatorMeta']
       || changes['lockYAxis'] || changes['showVolume']
+      || changes['mainHeight'] || changes['volumeHeight'] || changes['subChartHeight']
     ) {
       this.buildChart();
     }
@@ -98,20 +100,18 @@ export class CandlestickChartComponent implements OnChanges {
       }
     }
 
-    const subGroupCount = Object.keys(subChartGroups).length;
-    const mainH = this.showVolume ? 50 : 65;
-    const volH = 10;
-    const subH = 12;
-    const gap = 2;
+    // ---- 像素级网格布局，彻底避免百分比溢出 ----
+    const gap = 18; // 充足间距避免轴标签溢出重叠
+    const legendH = 30;
 
-    let curTop = 3;
+    let curTop = legendH;
     const grids: any[] = [];
     const xAxes: any[] = [];
     const yAxes: any[] = [];
     const xAxisIndices: number[] = [];
 
-    // 主图 grid
-    grids.push({ left: '8%', right: '3%', top: `${curTop}%`, height: `${mainH}%` });
+    // 主图 grid（containLabel 将轴标签约束在 grid 内，防止溢出到相邻图表）
+    grids.push({ left: '8%', right: '3%', top: curTop, height: this.mainHeight, containLabel: true });
     xAxes.push({ type: 'category', data: dates, gridIndex: 0, show: false });
     const mainYAxis: any = { type: 'value', gridIndex: 0, scale: true };
     if (this.lockYAxis) {
@@ -120,27 +120,30 @@ export class CandlestickChartComponent implements OnChanges {
     }
     yAxes.push(mainYAxis);
     xAxisIndices.push(0);
-    curTop += mainH + gap;
+    curTop += this.mainHeight + gap;
 
     // Volume grid（可选）
     if (this.showVolume) {
-      grids.push({ left: '8%', right: '3%', top: `${curTop}%`, height: `${volH}%` });
+      grids.push({ left: '8%', right: '3%', top: curTop, height: this.volumeHeight, containLabel: true });
       xAxes.push({ type: 'category', data: dates, gridIndex: grids.length - 1, show: false });
       yAxes.push({ type: 'value', gridIndex: grids.length - 1, scale: true });
       xAxisIndices.push(grids.length - 1);
-      curTop += volH + gap;
+      curTop += this.volumeHeight + gap;
     }
 
     // 子图 grids
     const subGroupNames = Object.keys(subChartGroups);
     subGroupNames.forEach((groupName, idx) => {
       const gi = grids.length;
-      grids.push({ left: '8%', right: '3%', top: `${curTop}%`, height: `${subH}%` });
-      xAxes.push({ type: 'category', data: dates, gridIndex: gi, show: idx === subGroupCount - 1 });
+      grids.push({ left: '8%', right: '3%', top: curTop, height: this.subChartHeight, containLabel: true });
+      xAxes.push({ type: 'category', data: dates, gridIndex: gi, show: idx === subGroupNames.length - 1 });
       yAxes.push({ type: 'value', gridIndex: gi, scale: true, name: groupName });
       xAxisIndices.push(gi);
-      curTop += subH + gap;
+      curTop += this.subChartHeight + gap;
     });
+
+    // 容器高度 = 所有图表 + dataZoom 滑块 + 底部边距
+    this.containerHeight = curTop + 40;
 
     // Series
     const allSeries: any[] = [

@@ -1,7 +1,14 @@
 # VERSION
-v0.5.0
+v0.5.1
 
 # Changelog
+- v0.5.1
+    - Rename candlestick chart to chart panel.
+    - Added break-support line.
+    - Added skewness & kurtosis indicators.
+    - Fixed overlap charts.
+    - Added height control of subcharts.
+    - Fixed coexisted scroll bars of charts.
 - v0.5.0
     - Added candlestick chart as common component.
     - Added Workbench to research strategy.
