@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 
-from artemis.engines.workbench import list_strategies, run_backtest
+from artemis.services.workbench import list_strategies, run_backtest
 from artemis.log.logger import get_logger
 from artemis.models.workbench import WorkbenchRunReq, IndicatorsRequest
 
@@ -26,7 +26,7 @@ async def get_market_data(
     adjust: str = "nf",
 ):
     """获取 K 线 OHLCV 数据。"""
-    from artemis.engines.market_data_service import get_market_bars
+    from artemis.services.workbench import get_market_bars
 
     try:
         return get_market_bars(
@@ -58,7 +58,7 @@ async def compute_indicators(req: IndicatorsRequest):
     import pandas as pd
 
     from artemis.engines.indicator_engine import compute_indicators as do_compute
-    from artemis.engines.market_data_service import get_market_bars
+    from artemis.services.workbench import get_market_bars
 
     try:
         # 1. 获取 K 线数据
