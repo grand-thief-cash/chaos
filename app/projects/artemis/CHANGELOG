@@ -1,7 +1,10 @@
 # VERSION
-v0.12.1
+v0.12.2
 
 # Changelog
+- v0.12.2
+    - Added design documents and proposals.
+    - Refactor to extract services.
 - v0.12.1
     - Added skewness, kurtosis, support and breakout indicators.
 - v0.12.0

@@ -226,6 +226,7 @@ INDICATOR_REGISTRY: Dict[str, IndicatorSpec] = {
             "skewness_{period}": {"type": "line", "color": "#13c2c2"},
         },
     ),
+
     "kurtosis": IndicatorSpec(
         name="kurtosis",
         display_name="Kurtosis",
