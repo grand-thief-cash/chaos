@@ -14,6 +14,7 @@ class WorkbenchRunReq(BaseModel):
     cash: float = 100000.0
     commission: float = 0.0
     strategy_params: Dict[str, Any] = {}
+    source: Optional[str] = None
 
 
 class IndicatorReq(BaseModel):
@@ -30,3 +31,4 @@ class IndicatorsRequest(BaseModel):
     timeframe: str = "daily"
     adjust: str = "nf"
     indicators: List[IndicatorReq]
+    source: Optional[str] = None

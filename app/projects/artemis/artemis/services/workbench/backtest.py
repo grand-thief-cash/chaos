@@ -18,9 +18,9 @@ from artemis.models.workbench import WorkbenchRunReq
 logger = get_logger("workbench")
 
 
-def _build_phoenix_client() -> PhoenixAClient:
-    """从配置构建 PhoenixAClient，不依赖 TaskContext。"""
-    dept = cfg_mgr.dept_services_config()
+def _build_phoenix_client(source: str | None = None) -> PhoenixAClient:
+    """从配置构建 PhoenixAClient，不依赖 TaskContext。source 指定数据源名称。"""
+    dept = cfg_mgr.get_dept_services_for_source(source)
     if not dept or not dept.phoenixA:
         raise ValueError("phoenixA service not configured")
     cfg = dept.phoenixA
@@ -82,7 +82,7 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
     provider_spec = data_provider_registry.require("phoenixa_hist_daily")
 
     # 6. 构建 PhoenixA client 并拉取数据
-    phoenix_client = _build_phoenix_client()
+    phoenix_client = _build_phoenix_client(source=req.source)
     bars = phoenix_client.get_strategy_market_bars(
         symbol=req.symbol,
         start_date=req.start_date,
