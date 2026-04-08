@@ -12,9 +12,9 @@ from artemis.log.logger import get_logger
 logger = get_logger("market_data_service")
 
 
-def _build_phoenix_client() -> PhoenixAClient:
-    """从配置构建 PhoenixAClient。"""
-    dept = cfg_mgr.dept_services_config()
+def _build_phoenix_client(source: str | None = None) -> PhoenixAClient:
+    """从配置构建 PhoenixAClient。source 指定数据源名称。"""
+    dept = cfg_mgr.get_dept_services_for_source(source)
     if not dept or not dept.phoenixA:
         raise ValueError("phoenixA service not configured")
     cfg = dept.phoenixA
@@ -45,13 +45,14 @@ def get_market_bars(
     end_date: str,
     timeframe: str = "daily",
     adjust: str = "nf",
+    source: str | None = None,
 ) -> Dict[str, Any]:
     """获取 K 线 OHLCV 数据。
 
     Returns:
         {"symbol", "timeframe", "start_date", "end_date", "bars": [...]}
     """
-    client = _build_phoenix_client()
+    client = _build_phoenix_client(source=source)
     bars = client.get_strategy_market_bars(
         symbol=symbol,
         start_date=start_date,

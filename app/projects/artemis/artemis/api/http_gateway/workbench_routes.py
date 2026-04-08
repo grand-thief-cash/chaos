@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 
+from artemis.core import cfg_mgr
 from artemis.services.workbench import list_strategies, run_backtest
 from artemis.log.logger import get_logger
 from artemis.models.workbench import WorkbenchRunReq, IndicatorsRequest
@@ -9,6 +10,12 @@ from artemis.models.workbench import WorkbenchRunReq, IndicatorsRequest
 logger = get_logger("workbench.routes")
 
 router = APIRouter(prefix="/workbench", tags=["workbench"])
+
+
+@router.get("/sources")
+async def get_sources():
+    """返回可用数据源列表。"""
+    return cfg_mgr.available_sources()
 
 
 @router.get("/strategies")
@@ -24,6 +31,7 @@ async def get_market_data(
     end_date: str,
     timeframe: str = "daily",
     adjust: str = "nf",
+    source: str | None = None,
 ):
     """获取 K 线 OHLCV 数据。"""
     from artemis.services.workbench import get_market_bars
@@ -35,6 +43,7 @@ async def get_market_data(
             end_date=end_date,
             timeframe=timeframe,
             adjust=adjust,
+            source=source,
         )
     except ValueError as e:
         logger.warning({"event": "market_data_validation_error", "error": str(e)})
@@ -68,6 +77,7 @@ async def compute_indicators(req: IndicatorsRequest):
             end_date=req.end_date,
             timeframe=req.timeframe,
             adjust=req.adjust,
+            source=req.source,
         )
         df = pd.DataFrame(market_data["bars"])
 

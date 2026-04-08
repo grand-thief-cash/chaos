@@ -1,7 +1,9 @@
 # VERSION
-v0.12.2
+v0.13.0
 
 # Changelog
+- v0.13.0
+    - Added multi-datasource in Workbench and related data provider interfaces.
 - v0.12.2
     - Added design documents and proposals.
     - Refactor to extract services.

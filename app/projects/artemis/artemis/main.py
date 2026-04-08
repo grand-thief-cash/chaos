@@ -12,7 +12,7 @@ def build_arg_parser():
         description='Start Artemis data pulling HTTP gateway.'
     )
     parser.add_argument('-c', '--config', dest='config', help='Path to config.yaml', default=None)
-    parser.add_argument('-e', '--env', dest='env', help='Environment name (development|staging|production)', default=None)
+    parser.add_argument('-e', '--env', dest='env', help='Environment name (development|production)', default=None)
     return parser
 
 if __name__ == '__main__':
