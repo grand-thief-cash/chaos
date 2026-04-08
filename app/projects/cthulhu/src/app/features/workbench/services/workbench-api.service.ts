@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  SourcesResponse,
   WorkbenchStrategiesResponse,
   WorkbenchRunRequest,
   BacktestResult,
@@ -18,6 +19,10 @@ export class WorkbenchApiService {
 
   constructor(private http: HttpClient) {}
 
+  getSources(): Observable<SourcesResponse> {
+    return this.http.get<SourcesResponse>(`${this.API_BASE}/workbench/sources`);
+  }
+
   getStrategies(): Observable<WorkbenchStrategiesResponse> {
     return this.http.get<WorkbenchStrategiesResponse>(`${this.API_BASE}/workbench/strategies`);
   }
@@ -32,13 +37,17 @@ export class WorkbenchApiService {
     endDate: string,
     timeframe = 'daily',
     adjust = 'nf',
+    source?: string,
   ): Observable<MarketDataResponse> {
-    const params = new HttpParams()
+    let params = new HttpParams()
       .set('symbol', symbol)
       .set('start_date', startDate)
       .set('end_date', endDate)
       .set('timeframe', timeframe)
       .set('adjust', adjust);
+    if (source) {
+      params = params.set('source', source);
+    }
     return this.http.get<MarketDataResponse>(`${this.API_BASE}/workbench/market-data`, { params });
   }
 

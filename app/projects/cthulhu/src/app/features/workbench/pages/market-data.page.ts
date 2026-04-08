@@ -15,6 +15,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { ChartPanelComponent } from '../../../shared/ui/chart-panel';
 import { WorkbenchApiService } from '../services/workbench-api.service';
+import { WorkbenchStore } from '../state/workbench.store';
 import {
   Bar,
   IndicatorInfo,
@@ -64,6 +65,21 @@ const COLOR_PALETTE = [
           (nzActiveChange)="searchExpanded = $event"
         >
           <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            @if (store.sourceSelectorVisible()) {
+              <div>
+                <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Source</label>
+                <nz-select
+                  [(ngModel)]="selectedSource"
+                  (ngModelChange)="onSourceChange($event)"
+                  nzSize="small"
+                  style="width: 130px;"
+                >
+                  @for (s of store.sources(); track s) {
+                    <nz-option [nzLabel]="sourceLabel(s)" [nzValue]="s"></nz-option>
+                  }
+                </nz-select>
+              </div>
+            }
             <div>
               <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Symbol</label>
               <input nz-input [(ngModel)]="symbol" placeholder="e.g. 000001" style="width: 140px;" />
@@ -122,6 +138,11 @@ const COLOR_PALETTE = [
       </nz-collapse>
       <ng-template #collapseHeader>
         <span style="font-weight: 500;">Search</span>
+        @if (selectedSource !== 'default') {
+          <span style="margin-left: 8px; color: #f5222d; font-size: 12px; font-weight: normal;">
+            &bull; {{ sourceLabel(selectedSource) }}
+          </span>
+        }
         @if (bars.length > 0) {
           <span style="margin-left: 12px; font-size: 12px; color: #999; font-weight: normal;">
             {{ bars.length }} bars · {{ symbol }}
@@ -207,6 +228,7 @@ const COLOR_PALETTE = [
 export class MarketDataPageComponent implements OnInit {
   private api = inject(WorkbenchApiService);
   private msg = inject(NzMessageService);
+  store = inject(WorkbenchStore);
 
   symbol = '000001';
   startDate = '2024-01-01';
@@ -219,6 +241,8 @@ export class MarketDataPageComponent implements OnInit {
   mainHeight = 450;
   volumeHeight = 120;
   subChartHeight = 150;
+
+  selectedSource = 'default';
 
   bars: Bar[] = [];
   availableIndicators: IndicatorInfo[] = [];
@@ -233,10 +257,27 @@ export class MarketDataPageComponent implements OnInit {
   indicatorMeta: Record<string, IndicatorSeriesMeta> = {};
 
   ngOnInit(): void {
+    this.store.loadSources();
+    this.selectedSource = this.store.selectedSource();
+
     this.api.getAvailableIndicators().subscribe({
       next: (resp) => (this.availableIndicators = resp.indicators),
       error: () => this.msg.error('Failed to load indicators'),
     });
+  }
+
+  sourceLabel(name: string): string {
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
+  onSourceChange(source: string): void {
+    this.store.selectSource(source);
+    if (this.bars.length > 0) {
+      this.bars = [];
+      this.indicatorSeries = {};
+      this.indicatorMeta = {};
+      this.msg.info('Data cleared — click Load to fetch from new source');
+    }
   }
 
   onIndicatorTypeSelected(): void {
@@ -290,8 +331,9 @@ export class MarketDataPageComponent implements OnInit {
       return;
     }
 
+    const source = this.store.sourceSelectorVisible() ? this.selectedSource : undefined;
     this.loading = true;
-    this.api.getMarketData(this.symbol, this.startDate, this.endDate).subscribe({
+    this.api.getMarketData(this.symbol, this.startDate, this.endDate, 'daily', 'nf', source).subscribe({
       next: (resp) => {
         this.bars = resp.bars;
         this.loading = false;
@@ -315,6 +357,8 @@ export class MarketDataPageComponent implements OnInit {
       params: inst.params,
     }));
 
+    const source = this.store.sourceSelectorVisible() ? this.selectedSource : undefined;
+
     this.api
       .calculateIndicators({
         symbol: this.symbol,
@@ -323,6 +367,7 @@ export class MarketDataPageComponent implements OnInit {
         timeframe: 'daily',
         adjust: 'nf',
         indicators,
+        source,
       })
       .subscribe({
         next: (resp) => {

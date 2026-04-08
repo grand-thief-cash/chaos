@@ -1,6 +1,6 @@
 import { Component, inject, OnInit, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormControl, FormGroup } from '@angular/forms';
+import { FormsModule, ReactiveFormsModule, FormBuilder, FormControl, FormGroup } from '@angular/forms';
 import { NzFormModule } from 'ng-zorro-antd/form';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzInputModule } from 'ng-zorro-antd/input';
@@ -10,6 +10,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzDividerModule } from 'ng-zorro-antd/divider';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
+import { NzMessageService } from 'ng-zorro-antd/message';
 import { WorkbenchStore } from '../state/workbench.store';
 import { WorkbenchRunRequest } from '../models/workbench.model';
 
@@ -18,6 +19,7 @@ import { WorkbenchRunRequest } from '../models/workbench.model';
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     ReactiveFormsModule,
     NzFormModule,
     NzSelectModule,
@@ -30,7 +32,28 @@ import { WorkbenchRunRequest } from '../models/workbench.model';
     NzAlertModule,
   ],
   template: `
-    <nz-card nzTitle="Strategy Configuration">
+    <nz-card>
+      <div card-title style="display: flex; align-items: center; justify-content: space-between;">
+        <span>Strategy Configuration</span>
+        @if (store.sourceSelectorVisible()) {
+          <div style="display: flex; align-items: center; gap: 8px;">
+            @if (selectedSource !== 'default') {
+              <span style="color: #f5222d; font-size: 12px;">&bull; {{ sourceLabel(selectedSource) }}</span>
+            }
+            <nz-select
+              [(ngModel)]="selectedSource"
+              (ngModelChange)="onSourceChange($event)"
+              nzSize="small"
+              style="width: 130px;"
+            >
+              @for (s of store.sources(); track s) {
+                <nz-option [nzLabel]="sourceLabel(s)" [nzValue]="s"></nz-option>
+              }
+            </nz-select>
+          </div>
+        }
+      </div>
+
       @if (store.error()) {
         <nz-alert nzType="error" [nzMessage]="store.error()!" nzCloseable (nzOnClose)="store.clearResult()" style="margin-bottom: 16px;"></nz-alert>
       }
@@ -110,6 +133,7 @@ import { WorkbenchRunRequest } from '../models/workbench.model';
 export class StrategyConfigComponent implements OnInit {
   store = inject(WorkbenchStore);
   private fb = inject(FormBuilder);
+  private msg = inject(NzMessageService);
 
   paramKeys = computed(() => {
     const s = this.store.selectedStrategy();
@@ -117,6 +141,7 @@ export class StrategyConfigComponent implements OnInit {
   });
 
   form!: FormGroup;
+  selectedSource = 'default';
 
   ngOnInit(): void {
     this.form = this.fb.group({
@@ -128,6 +153,17 @@ export class StrategyConfigComponent implements OnInit {
       commission: [0],
     });
     this.store.loadStrategies();
+    this.store.loadSources();
+    this.selectedSource = this.store.selectedSource();
+  }
+
+  sourceLabel(name: string): string {
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
+  onSourceChange(source: string): void {
+    this.store.selectSource(source);
+    this.msg.info('Source changed — run backtest again to use new data source');
   }
 
   onStrategyChange(code: string): void {
@@ -168,6 +204,7 @@ export class StrategyConfigComponent implements OnInit {
       cash: raw.cash,
       commission: raw.commission,
       strategy_params: strategyParams,
+      source: this.store.sourceSelectorVisible() ? this.selectedSource : undefined,
     };
     this.store.runBacktest(req);
   }
