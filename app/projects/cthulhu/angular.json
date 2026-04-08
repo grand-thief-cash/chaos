@@ -54,12 +54,12 @@
                 { "replace": "src/environments/environment.ts", "with": "src/environments/environment.prod.ts" }
               ]
             },
-            "dev-home": {
+            "development-home": {
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true,
               "fileReplacements": [
-                { "replace": "src/environments/environment.ts", "with": "src/environments/environment.dev-home.ts" }
+                { "replace": "src/environments/environment.ts", "with": "src/environments/environment.development-home.ts" }
               ]
             },
             "development": {
@@ -76,8 +76,8 @@
             "production": {
               "buildTarget": "cthulhu:build:production"
             },
-            "dev-home": {
-              "buildTarget": "cthulhu:build:dev-home"
+            "development-home": {
+              "buildTarget": "cthulhu:build:development-home"
             },
             "development": {
               "buildTarget": "cthulhu:build:development"

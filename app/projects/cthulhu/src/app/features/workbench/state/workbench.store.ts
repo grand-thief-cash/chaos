@@ -6,6 +6,8 @@ import {
   BacktestResult,
 } from '../models/workbench.model';
 
+const SOURCE_STORAGE_KEY = 'workbench-source';
+
 @Injectable({ providedIn: 'root' })
 export class WorkbenchStore {
   private readonly _strategies = signal<WorkbenchStrategy[]>([]);
@@ -15,6 +17,11 @@ export class WorkbenchStore {
   private readonly _running = signal(false);
   private readonly _error = signal<string | null>(null);
 
+  // ── Data source state ──
+  private readonly _sources = signal<string[]>([]);
+  private readonly _sourcesLoaded = signal(false);
+  private readonly _selectedSource = signal<string>('default');
+
   readonly strategies = computed(() => this._strategies());
   readonly selectedStrategy = computed(() => this._selectedStrategy());
   readonly result = computed(() => this._result());
@@ -22,7 +29,47 @@ export class WorkbenchStore {
   readonly running = computed(() => this._running());
   readonly error = computed(() => this._error());
 
-  constructor(private api: WorkbenchApiService) {}
+  readonly sources = computed(() => this._sources());
+  readonly sourcesLoaded = computed(() => this._sourcesLoaded());
+  readonly selectedSource = computed(() => this._selectedSource());
+  readonly sourceSelectorVisible = computed(() => this._sources().length > 1);
+
+  constructor(private api: WorkbenchApiService) {
+    // restore source from localStorage
+    const cached = localStorage.getItem(SOURCE_STORAGE_KEY);
+    if (cached) {
+      this._selectedSource.set(cached);
+    }
+  }
+
+  loadSources(): void {
+    if (this._sourcesLoaded()) return;
+    this.api.getSources().subscribe({
+      next: (resp) => {
+        this._sources.set(resp.sources);
+        this._sourcesLoaded.set(true);
+        // if cached source is not in the list, fall back to default
+        const current = this._selectedSource();
+        if (!resp.sources.includes(current)) {
+          this._selectedSource.set(resp.default);
+          localStorage.setItem(SOURCE_STORAGE_KEY, resp.default);
+        }
+      },
+      error: () => {
+        // fallback: only default available
+        this._sources.set(['default']);
+        this._sourcesLoaded.set(true);
+      },
+    });
+  }
+
+  selectSource(source: string): void {
+    this._selectedSource.set(source);
+    localStorage.setItem(SOURCE_STORAGE_KEY, source);
+    // clear any loaded result when source changes
+    this._result.set(null);
+    this._error.set(null);
+  }
 
   loadStrategies(): void {
     this._loading.set(true);

@@ -1,7 +1,10 @@
 # VERSION
-v0.5.1
+v0.6.0
 
 # Changelog
+- v0.6.0
+    - Added multi-datasource switch in Workbench page.
+    -
 - v0.5.1
     - Rename candlestick chart to chart panel.
     - Added break-support line.

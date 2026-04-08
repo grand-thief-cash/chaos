@@ -1,5 +1,10 @@
 // ===== 市场数据相关 =====
 
+export interface SourcesResponse {
+  sources: string[];
+  default: string;
+}
+
 export interface Bar {
   date: string;
   open: number;
@@ -42,6 +47,7 @@ export interface IndicatorsCalcRequest {
   timeframe: string;
   adjust: string;
   indicators: IndicatorRequest[];
+  source?: string;
 }
 
 export interface IndicatorsCalcResponse {
@@ -91,6 +97,7 @@ export interface WorkbenchRunRequest {
   cash: number;
   commission: number;
   strategy_params: Record<string, any>;
+  source?: string;
 }
 
 // ===== 响应 =====

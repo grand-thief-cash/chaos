@@ -4,10 +4,10 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve --configuration development --host 0.0.0.0",
-    "start:dev-home": "ng serve --configuration dev-home --host 0.0.0.0",
+    "start:dev-home": "ng serve --configuration development-home --host 0.0.0.0",
     "build": "ng build",
     "build:prod": "ng build --configuration production",
-    "build:dev-home": "ng build --configuration dev-home",
+    "build:dev-home": "ng build --configuration development-home",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
