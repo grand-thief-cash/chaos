@@ -110,6 +110,13 @@ func (c *RunMgmtController) cancelRun(w http.ResponseWriter, r *http.Request, ru
 	// Also mark as canceled in DB for tasks not actively running (e.g., CallbackPending)
 	_ = c.RunSvc.MarkCanceled(r.Context(), runID)
 	// progress cleanup deferred to scanner (removed Clear)
+
+	// Notify the target service (e.g. Artemis) so it can stop the running task.
+	// Best-effort, async — do not block the cancel response.
+	if run, err := c.RunSvc.Get(r.Context(), runID); err == nil && run.TargetService != "" {
+		go c.Exec.CancelRemote(run)
+	}
+
 	writeJSON(w, map[string]any{"canceled": true})
 }
 

@@ -1,7 +1,9 @@
 # VERSION
-v0.13.5
+v0.14.0
 
 # Changelog
+- v0.14.0
+    - Added task cancel to remote service.
 - v0.13.5
     - Added config in config doc
 - v0.13.4
