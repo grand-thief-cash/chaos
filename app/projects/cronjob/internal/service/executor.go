@@ -509,3 +509,39 @@ func (e *Executor) CancelRun(id int64) {
 		cancel()
 	}
 }
+
+// CancelRemote sends a best-effort cancel notification to the target service.
+// This runs in a goroutine; errors are logged but not propagated.
+func (e *Executor) CancelRemote(run *model.TaskRun) {
+	if e.HTTPCli == nil || run.TargetService == "" {
+		return
+	}
+	client, errCli := e.HTTPCli.Client(run.TargetService)
+	if errCli != nil {
+		return
+	}
+
+	cancelURL := strings.TrimRight(client.BaseURL, "/") + "/tasks/cancel"
+	body := map[string]any{"run_id": run.ID}
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", cancelURL, bytes.NewReader(buf))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Client.Do(req)
+	if err != nil {
+		logging.Warn(ctx, fmt.Sprintf("cancel-remote request failed for run %d: %v", run.ID, err))
+		return
+	}
+	_ = resp.Body.Close()
+	logging.Info(ctx, fmt.Sprintf("cancel-remote notified for run %d, status: %d", run.ID, resp.StatusCode))
+}
