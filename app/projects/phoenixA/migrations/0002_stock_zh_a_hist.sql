@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS stock_zh_a_hist_daily_nf (
 -- CREATE TABLE IF NOT EXISTS stock_zh_a_hist_daily_qfq LIKE stock_zh_a_hist_daily_nf;
 
 -- DAILY BACKWARD-ADJUST (HFQ)
--- CREATE TABLE IF NOT EXISTS stock_zh_a_hist_daily_hfq LIKE stock_zh_a_hist_daily_nf;
+CREATE TABLE IF NOT EXISTS stock_zh_a_hist_daily_hfq LIKE stock_zh_a_hist_daily_nf;
 
 
 -- ========================================================

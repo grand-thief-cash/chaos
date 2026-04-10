@@ -19,8 +19,8 @@ func (StockZhAList) TableName() string { return "stock_zh_a_list" }
 
 // StockZhAListFilters provides optional list query conditions.
 type StockZhAListFilters struct {
-	Exchange string
-	Code     string
-	Codes    []string
-	Company  string
+	Exchanges []string
+	Code      string
+	Codes     []string
+	Company   string
 }

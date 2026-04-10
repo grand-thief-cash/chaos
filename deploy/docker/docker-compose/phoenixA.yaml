@@ -1,7 +1,8 @@
 services:
-  cronjob:
+  phoenixa:
     image: phoenixa:v0.12.6
     container_name: phoenixa
+    pull_policy: never
     restart: unless-stopped
     ports:
       - "8085:8085"

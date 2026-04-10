@@ -1,7 +1,9 @@
 # VERSION
-v0.3.3
+v0.3.5
 
 # Changelog
+- v0.3.5
+    - Added exchange filter in STOCK_ZH_A_LIST
 - v0.3.4
     - Added comments to migrations sql.
 - v0.3.3
