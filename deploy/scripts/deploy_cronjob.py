@@ -22,7 +22,7 @@ DOCKERFILE_PATH = "../docker/dockerfile/Dockerfile-cronjob"
 DOCKER_COMPOSE_FILE = "cronjob.yaml"
 DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
-FORCE_GO_BUILD = False
+FORCE_GO_BUILD = True
 FORCE_DOCKER_COMPOSE_BUILD = True
 FORCE_DOCKER_BUILD = True
 SERVICE_NAME = "cronjob"

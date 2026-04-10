@@ -139,6 +139,12 @@ class ConfigManager:
     def dept_services_config(self) -> Optional[DeptServicesCfg]:
         return self.get_config().dept_services
 
+    def engine_config(self):
+        return self.get_config().engine
+
+    def task_engine_config(self):
+        return self.get_config().engine.task_engine
+
     # ── Data source scanning for Workbench ──────────────────────
 
     def _ensure_data_sources(self) -> None:

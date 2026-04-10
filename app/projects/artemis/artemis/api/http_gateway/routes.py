@@ -44,6 +44,20 @@ engine = TaskEngine()
 logger = get_logger('http.routes')
 file_service = RuntimeFileService()
 
+@router.post('/tasks/cancel')
+async def cancel_task(request: Request):
+    """Cancel a running task by run_id (best-effort)."""
+    payload = await request.json()
+    run_id = payload.get('run_id')
+    if run_id is None:
+        raise HTTPException(status_code=400, detail='run_id is required')
+    canceled = engine.cancel_task(run_id)
+    if canceled:
+        logger.info({'event': 'task_cancel_requested', 'run_id': run_id})
+        return {'canceled': True, 'run_id': run_id}
+    return {'canceled': False, 'run_id': run_id, 'reason': 'not_found'}
+
+
 @router.get('/tasks')
 async def tasks():
     logger.info("/task list requested")

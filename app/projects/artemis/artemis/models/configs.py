@@ -71,6 +71,16 @@ class ServiceEndpointCfg(BaseModel):
     port: Optional[int] = None
 
 
+class TaskEngineCfg(BaseModel):
+    """Task engine tunables."""
+    worker_task_timeout: int = 180
+
+
+class EngineCfg(BaseModel):
+    """Top-level engine configuration."""
+    task_engine: TaskEngineCfg = Field(default_factory=TaskEngineCfg)
+
+
 class DeptServicesCfg(BaseModel):
     """Dependent services configuration.
 
@@ -95,6 +105,9 @@ class Config(BaseModel):
 
     # SDK configurations
     sdk: Dict[str, Any] = Field(default_factory=dict)
+
+    # task engine
+    engine: EngineCfg = Field(default_factory=EngineCfg)
 
     # new preferred config
     dept_services: DeptServicesCfg = Field(default_factory=DeptServicesCfg)

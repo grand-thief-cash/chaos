@@ -1,7 +1,12 @@
 # VERSION
-v0.13.1
+v0.14.0
 
 # Changelog
+- v0.14.0
+    - Added Task Cancel API, invoked by cronjob.
+    - Added Timeout control for task engine.
+    - Added exchange support for filtering stock list.
+    - Fixed issue of using wrong parameters in STOCK_ZH_A_HIST.
 - v0.13.1
     - Added exchange filter in STOCK_ZH_A_LIST
 - v0.13.0

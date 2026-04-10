@@ -23,7 +23,10 @@ DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
 SERVICE_NAME = "artemis"
 
-VPN = "192.168.31.170:7890"
+PRIMARY_PROXY = "192.168.31.170:7890"
+BACKUP_PROXY  = "192.168.31.169:7890"
+
+BASE_IMAGE = "python:3.11-slim"
 
 FORCE_DOCKER_BUILD = True
 FORCE_DOCKER_COMPOSE_BUILD = True
@@ -149,61 +152,68 @@ def get_remote_version(ssh):
     return None
 
 
+def pull_base_image(ssh, proxy):
+    """先用代理拉取基础镜像，避免 build 时 buildkit 直连超时"""
+    print(f"📦 拉取基础镜像: {BASE_IMAGE}")
+    cmd = f"docker pull {BASE_IMAGE}"
+    if proxy:
+        cmd = f"HTTP_PROXY=http://{proxy} HTTPS_PROXY=http://{proxy} {cmd}"
+
+    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=600)
+
+    import sys as _sys
+    while True:
+        if stdout.channel.recv_ready():
+            _sys.stdout.write(stdout.channel.recv(1024).decode())
+            _sys.stdout.flush()
+        if stdout.channel.exit_status_ready() and not stdout.channel.recv_ready():
+            break
+        time.sleep(0.1)
+
+    exit_code = stdout.channel.recv_exit_status()
+    if exit_code != 0:
+        err = stderr.read().decode().strip()
+        print(f"⚠️ 拉取基础镜像失败: {err}")
+        return False
+    print(f"✔ 基础镜像拉取完成: {BASE_IMAGE}")
+    return True
+
+
 def build_remote_image(ssh, version):
     print("🔨 开始远程 docker build...")
 
-    # 先检查代理可用性
-    proxy_available = check_proxy_available(ssh, VPN)
+    proxy = detect_remote_proxy(ssh)
 
-    if proxy_available:
-        cmd = (
-            f"cd {REMOTE_DEPLOY_PATH} && "
-            f"docker build --network=host --progress=plain "
-            f"--build-arg HTTP_PROXY=http://{VPN} "
-            f"--build-arg HTTPS_PROXY=http://{VPN} "
-            f"-t {SERVICE_NAME}:{version} ."
-        )
-    else:
-        print("⚠️ 使用无代理模式构建")
-        cmd = (
-            f"cd {REMOTE_DEPLOY_PATH} && "
-            f"docker build --network=host --progress=plain "
-            f"-t {SERVICE_NAME}:{version} ."
-        )
+    # 先拉基础镜像（buildkit 拉镜像不读 --build-arg 代理）
+    pull_base_image(ssh, proxy)
+
+    cmd = f"cd {REMOTE_DEPLOY_PATH} && docker build --network=host --progress=plain"
+    if proxy:
+        cmd += f" --build-arg HTTP_PROXY=http://{proxy} --build-arg HTTPS_PROXY=http://{proxy}"
+    cmd += f" -t {SERVICE_NAME}:{version} ."
 
     print(f"执行命令: {cmd}")
+    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=600)
 
-    # 使用 exec_command 并等待完成
-    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=600)  # 10分钟超时
-
-    # 实时打印输出
-    import select
-    import sys
-
+    import sys as _sys
     while True:
-        # 检查是否有输出
         if stdout.channel.recv_ready():
             data = stdout.channel.recv(1024).decode()
-            sys.stdout.write(data)
-            sys.stdout.flush()
-
+            _sys.stdout.write(data)
+            _sys.stdout.flush()
         if stderr.channel.recv_stderr_ready():
             data = stderr.channel.recv_stderr(1024).decode()
-            sys.stderr.write(data)
-            sys.stderr.flush()
-
-        # 检查命令是否完成
+            _sys.stderr.write(data)
+            _sys.stderr.flush()
         if stdout.channel.exit_status_ready() and not stdout.channel.recv_ready() and not stderr.channel.recv_stderr_ready():
             break
-
         time.sleep(0.1)
 
     exit_code = stdout.channel.recv_exit_status()
     if exit_code != 0:
         print(f"❌ Docker build 失败，退出码: {exit_code}")
         sys.exit(1)
-    else:
-        print("✅ Docker build 成功")
+    print("✅ Docker build 成功")
 def docker_compose_up(ssh):
     cmd = f"cd {REMOTE_DEPLOY_PATH} && docker compose -f docker-compose.yaml up -d"
     remote_exec(ssh, cmd)
@@ -261,7 +271,7 @@ def upload_files(compose_file):
     sftp_upload(ssh, dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
 
     sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
-    sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-prod.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
+    sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-production.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
     sftp_upload(ssh, PY_PROJECT_PATH+"/config/task.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
 
     # Upload only wheel files from local minius directory. Abort if minius missing or no wheels found.
@@ -288,16 +298,19 @@ def upload_files(compose_file):
 
     ssh.close()
 
-def check_proxy_available(ssh, proxy):
-    check_cmd = f"timeout 5 curl -x http://{proxy} -s -o /dev/null -w '%{{http_code}}' https://www.google.com"
-    result = remote_exec(ssh, check_cmd).strip()
-
-    if result.startswith("2") or result.startswith("3"):
-        print(f"✓ 代理 {proxy} 可用")
-        return True
-    else:
-        print(f"⚠️ 代理 {proxy} 不可用 (状态码: {result})")
-        return False
+def detect_remote_proxy(ssh):
+    """从远程服务器检测可用的代理"""
+    print("🔍 检测远程服务器代理...")
+    for name, proxy_url in [("主代理", PRIMARY_PROXY), ("备用代理", BACKUP_PROXY)]:
+        cmd = f'curl --connect-timeout 3 --silent --proxy http://{proxy_url} -o /dev/null -w "%{{http_code}}" https://www.google.com 2>/dev/null'
+        stdin, stdout, stderr = ssh.exec_command(cmd)
+        code = stdout.read().decode().strip()
+        if code == "200":
+            print(f"✅ 远程{name}可用: http://{proxy_url}")
+            return proxy_url
+        print(f"   {name}不可达: http://{proxy_url}")
+    print("⚠️ 远程无可用代理")
+    return None
 #########################################
 # --------------- 主流程 ----------------
 #########################################
