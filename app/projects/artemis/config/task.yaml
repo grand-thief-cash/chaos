@@ -26,6 +26,7 @@ tasks:
         config:
            period: "daily"
            adjust: "nf"
+           exchange: "SH,SZ,BJ"
            start_date: "2016-01-01"
            fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
 
@@ -33,6 +34,7 @@ tasks:
         config:
            period: "daily"
            adjust: "hfq"
+           exchange: "SH,SZ,BJ"
            start_date: "2016-01-01"
            fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
 

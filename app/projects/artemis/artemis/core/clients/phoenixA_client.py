@@ -35,12 +35,14 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             raise
 
-    def get_stock_zh_a_codes(self, codes: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+    def get_stock_zh_a_codes(self, codes: Optional[List[str]] = None, exchanges: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         path = "/api/v1/stock/list/listFiltered"
         params: Dict[str, Any] = {"limit": "20000"}
         result: Dict[str, Dict[str, Any]] = {}
         if codes:
             params["code_list"] = ",".join([str(c) for c in codes if str(c).strip()])
+        if exchanges:
+            params["exchange"] = ",".join([str(e).strip().upper() for e in exchanges if str(e).strip()])
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:

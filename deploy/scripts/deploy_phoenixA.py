@@ -23,11 +23,10 @@ DOCKER_COMPOSE_FILE = "phoenixA.yaml"
 DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
 FORCE_GO_BUILD = False
-FORCE_DOCKER_COMPOSE_BUILD = False
+FORCE_DOCKER_COMPOSE_BUILD = True
 FORCE_DOCKER_BUILD = False
 SERVICE_NAME = "phoenixa"
 
-VPN = "192.168.31.169:7890"
 PRIMARY_PROXY = "http://192.168.31.170:7890"
 BACKUP_PROXY  = "http://192.168.31.169:7890"
 
@@ -230,10 +229,30 @@ def stop_old_container(ssh):
         print("✔ 没有旧容器")
 
 
+def detect_remote_proxy(ssh):
+    """从远程服务器检测可用的代理"""
+    print("🔍 检测远程服务器代理...")
+    for name, proxy_url in [("主代理", PRIMARY_PROXY), ("备用代理", BACKUP_PROXY)]:
+        cmd = f'curl --connect-timeout 3 --silent --proxy {proxy_url} -o /dev/null -w "%{{http_code}}" https://www.google.com 2>/dev/null'
+        stdin, stdout, stderr = ssh.exec_command(cmd)
+        code = stdout.read().decode().strip()
+        if code == "200":
+            print(f"✅ 远程{name}可用: {proxy_url}")
+            return proxy_url
+        print(f"   {name}不可达: {proxy_url}")
+    print("⚠️ 远程无可用代理，将不使用代理构建")
+    return None
+
+
 def build_remote_image(ssh, version):
     print("🔨 开始构建 docker 镜像...")
-    # 使用 plain 格式输出，显示所有细节
-    cmd = f"cd {REMOTE_DEPLOY_PATH} && docker build --network=host --progress=plain --build-arg HTTP_PROXY=http://{VPN} --build-arg HTTPS_PROXY=http://{VPN} -t {SERVICE_NAME}:{version} ."
+    # 检测远程服务器可用代理
+    proxy = detect_remote_proxy(ssh)
+
+    cmd = f"cd {REMOTE_DEPLOY_PATH} && docker build --network=host --progress=plain"
+    if proxy:
+        cmd += f" --build-arg HTTP_PROXY={proxy} --build-arg HTTPS_PROXY={proxy}"
+    cmd += f" -t {SERVICE_NAME}:{version} ."
 
     stdin, stdout, stderr = ssh.exec_command(cmd)
 
@@ -243,6 +262,15 @@ def build_remote_image(ssh, version):
         if not line:
             break
         print(f"BUILD: {line.strip()}")
+
+    exit_code = stdout.channel.recv_exit_status()
+    build_err = stderr.read().decode().strip()
+    if build_err:
+        print(f"⚠️ Build stderr: {build_err}")
+
+    if exit_code != 0:
+        print(f"❌ Docker build 失败 (exit_code={exit_code})")
+        sys.exit(1)
 
     print(f"✔ 镜像构建完成: {SERVICE_NAME}:{version}")
 

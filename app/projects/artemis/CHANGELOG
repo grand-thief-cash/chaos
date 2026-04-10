@@ -1,7 +1,9 @@
 # VERSION
-v0.13.0
+v0.13.1
 
 # Changelog
+- v0.13.1
+    - Added exchange filter in STOCK_ZH_A_LIST
 - v0.13.0
     - Added multi-datasource in Workbench and related data provider interfaces.
 - v0.12.2
