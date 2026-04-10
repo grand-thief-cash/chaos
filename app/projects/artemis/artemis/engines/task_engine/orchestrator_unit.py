@@ -1,7 +1,9 @@
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Any, Dict, List, Optional
 
 from artemis.consts import DeptServices, TaskStatus
 from artemis.core import TaskContext
+from artemis.core.config_manager import cfg_mgr
 from artemis.core.task_registry import registry
 from .base import BaseTaskUnit
 
@@ -134,9 +136,25 @@ class OrchestratorUnit(BaseTaskUnit):
                 child_ctx = self._build_child_ctx(ctx, task_code, child_params, idx)
                 child = child_ctx.exec_cls()
 
-                # Run the child
-                # Note: child.run() handles its own try/catch/stats/logging via BaseTaskUnit
-                child.run(child_ctx)
+                # Run the child with timeout
+                worker_task_timeout = cfg_mgr.task_engine_config().worker_task_timeout
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(child.run, child_ctx)
+                    try:
+                        future.result(timeout=worker_task_timeout)
+                    except FuturesTimeout:
+                        child_ctx.fail(
+                            f"child task timed out after {worker_task_timeout}s",
+                            phase='execute',
+                        )
+                        if ctx.logger:
+                            ctx.logger.warning({
+                                'event': 'child_timeout',
+                                'child_index': idx,
+                                'task_code': task_code,
+                                'timeout_s': worker_task_timeout,
+                                'run_id': ctx.run_id,
+                            })
 
                 if child_ctx.status != TaskStatus.SUCCESS.value or child_ctx.error:
                     raise RuntimeError(child_ctx.error)

@@ -79,5 +79,4 @@ scipy==1.17.0
 numba==0.63.1
 tables==3.10.2
 backtrader==1.9.78.123
-pandas-ta
-ta
+ta==0.11.0

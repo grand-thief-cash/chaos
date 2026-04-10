@@ -22,7 +22,7 @@ class StockZhAHistParent(OrchestratorUnit):
 
 
     def load_dynamic_parameters(self, ctx: TaskContext):
-        params = ctx.incoming_params
+        params = ctx.params
 
         code_list_str = str(params.get("code_list", "") or "").strip()
         codes = []
