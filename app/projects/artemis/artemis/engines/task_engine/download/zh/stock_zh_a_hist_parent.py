@@ -32,10 +32,15 @@ class StockZhAHistParent(OrchestratorUnit):
                 ctx.fail(f"Failed to parse code_list: {code_list_str}", phase='load_dynamic_parameters')
                 return
 
-        # Get stock codes and exchanges from PhoenixA, optionally filtered by target_codes
+        # Parse exchange filter from config
+        exchange_str = str(params.get("exchange", "") or "").strip()
+        exchanges = [e.strip().upper() for e in exchange_str.split(",") if e.strip()] or None
+
+        # Get stock codes from PhoenixA, filtered by exchanges
         phoenix_client = ctx.dept_http[DeptServices.PHOENIXA]
         client = cast(PhoenixAClient, phoenix_client)
-        code_infos = client.get_stock_zh_a_codes(codes=codes or None)
+        code_infos = client.get_stock_zh_a_codes(codes=codes or None, exchanges=exchanges)
+
         codes = list(code_infos.keys())
         period = params.get("period")
         adjust = params.get("adjust")
