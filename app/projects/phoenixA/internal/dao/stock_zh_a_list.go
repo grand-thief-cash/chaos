@@ -204,8 +204,16 @@ func applyStockFilters(q *gorm.DB, f *model.StockZhAListFilters) *gorm.DB {
 	} else if strings.TrimSpace(f.Code) != "" {
 		q = q.Where("code=?", normalizeCode(f.Code))
 	}
-	if strings.TrimSpace(f.Exchange) != "" {
-		q = q.Where("exchange=?", normalizeExchange(f.Exchange))
+	if len(f.Exchanges) > 0 {
+		normalized := make([]string, 0, len(f.Exchanges))
+		for _, e := range f.Exchanges {
+			if e = strings.TrimSpace(e); e != "" {
+				normalized = append(normalized, normalizeExchange(e))
+			}
+		}
+		if len(normalized) > 0 {
+			q = q.Where("exchange IN ?", normalized)
+		}
 	}
 	return q
 }

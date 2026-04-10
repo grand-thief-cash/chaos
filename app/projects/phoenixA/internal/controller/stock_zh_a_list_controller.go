@@ -50,11 +50,13 @@ func (c *StockZhAListController) List(w http.ResponseWriter, r *http.Request) {
 		singleCode = codes[0]
 	}
 
+	exchanges := parseFieldsParam(q.Get("exchange"))
+
 	f := &model.StockZhAListFilters{
-		Exchange: q.Get("exchange"),
-		Code:     singleCode,
-		Codes:    codes,
-		Company:  q.Get("company"),
+		Exchanges: exchanges,
+		Code:      singleCode,
+		Codes:     codes,
+		Company:   q.Get("company"),
 	}
 	list, err := c.Svc.ListFiltered(ctx, f, limit, offset)
 	if err != nil {
@@ -160,11 +162,13 @@ func (c *StockZhAListController) Count(w http.ResponseWriter, r *http.Request) {
 	if len(codes) == 1 {
 		singleCode = codes[0]
 	}
+	exchanges := parseFieldsParam(q.Get("exchange"))
+
 	f := &model.StockZhAListFilters{
-		Exchange: q.Get("exchange"),
-		Code:     singleCode,
-		Codes:    codes,
-		Company:  q.Get("company"),
+		Exchanges: exchanges,
+		Code:      singleCode,
+		Codes:     codes,
+		Company:   q.Get("company"),
 	}
 	cnt, err := c.Svc.CountFiltered(ctx, f)
 	if err != nil {
