@@ -45,13 +45,68 @@ def get_market_bars(
     end_date: str,
     timeframe: str = "daily",
     adjust: str = "nf",
+    asset_type: str = "stock",
+    market: str = "zh_a",
     source: str | None = None,
+    use_cache: bool = True,
 ) -> Dict[str, Any]:
-    """获取 K 线 OHLCV 数据。
+    """获取 K 线 OHLCV 数据，支持本地 Arrow 缓存。
 
     Returns:
         {"symbol", "timeframe", "start_date", "end_date", "bars": [...]}
     """
+    cache = None
+    if use_cache:
+        try:
+            from artemis.engines.cache_engine import get_cache_engine
+            cache = get_cache_engine()
+            if cache is None:
+                logger.info({"event": "cache_not_enabled", "symbol": symbol})
+        except Exception:
+            logger.warning({"event": "cache_init_failed", "symbol": symbol}, exc_info=True)
+
+    if cache:
+        logger.info({
+            "event": "cache_attempt",
+            "symbol": symbol, "period": timeframe,
+            "start": start_date, "end": end_date, "adjust": adjust,
+            "cache_dir": str(cache.storage.cache_dir),
+        })
+
+        def _fetcher(sym: str, period: str, start: str, end: str, adj: str) -> List[Dict[str, Any]]:
+            client = _build_phoenix_client(source=source)
+            return client.get_strategy_market_bars(
+                symbol=sym, start_date=start, end_date=end,
+                timeframe=period, adjust=adj,
+            )
+
+        df = cache.get(
+            symbol=symbol, period=timeframe,
+            start_date=start_date, end_date=end_date,
+            asset_type=asset_type, market=market, adjust=adjust,
+            use_cache=use_cache,
+            data_fetcher=_fetcher,
+        )
+        if df is not None and not df.empty:
+            logger.info({
+                "event": "cache_hit",
+                "symbol": symbol, "period": timeframe, "rows": len(df),
+            })
+            bars = _sanitize_bars(df.to_dict(orient="records"))
+            return {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "start_date": start_date,
+                "end_date": end_date,
+                "bars": bars,
+            }
+
+    # Fallback: 直接调 PhoenixA
+    logger.info({
+        "event": "cache_fallback",
+        "symbol": symbol, "period": timeframe,
+        "reason": "no_cache_engine" if cache is None else "cache_miss_or_disabled",
+    })
     client = _build_phoenix_client(source=source)
     bars = client.get_strategy_market_bars(
         symbol=symbol,
@@ -60,13 +115,10 @@ def get_market_bars(
         timeframe=timeframe,
         adjust=adjust,
     )
-    if not bars:
-        raise ValueError(f"no historical bars found for symbol={symbol}")
-
     return {
         "symbol": symbol,
         "timeframe": timeframe,
         "start_date": start_date,
         "end_date": end_date,
-        "bars": _sanitize_bars(bars),
+        "bars": _sanitize_bars(bars) if bars else [],
     }

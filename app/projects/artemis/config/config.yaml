@@ -48,3 +48,69 @@ sdk:
     password: "password"
     host: "127.0.0.1"
     port: 9000
+
+data_options:
+  asset_types:
+    - { value: "stock", label: "股票" }
+    - { value: "index", label: "指数" }
+  markets:
+    - { value: "zh_a", label: "A股" }
+  periods:
+    - { value: "daily", label: "日线" }
+    - { value: "weekly", label: "周线" }
+    - { value: "5min", label: "5分钟" }
+    - { value: "15min", label: "15分钟" }
+    - { value: "30min", label: "30分钟" }
+    - { value: "60min", label: "60分钟" }
+  adjust_rules:
+    - asset_type: "stock"
+      options:
+        - { value: "nf", label: "不复权" }
+        - { value: "qfq", label: "前复权" }
+        - { value: "hfq", label: "后复权" }
+    - asset_type: "index"
+      options: []
+
+engine:
+  task_engine:
+    worker_task_timeout: 180
+  cache_engine:
+    enabled: true
+    cache_dir: "./cache/artemis"
+    max_cache_size: "5GB"
+    eviction_policy: "lru"
+    eviction_check_interval: 100
+    partition_rules:
+      - match:
+          asset_type: "stock"
+          period: "daily"
+        granularity: "yearly"
+      - match:
+          asset_type: "stock"
+          period: "weekly"
+        granularity: "yearly"
+      - match:
+          asset_type: "stock"
+          period: "1min"
+        granularity: "monthly"
+      - match:
+          asset_type: "stock"
+          period: "5min"
+        granularity: "monthly"
+      - match:
+          asset_type: "stock"
+          period: "15min"
+        granularity: "monthly"
+      - match:
+          asset_type: "stock"
+          period: "30min"
+        granularity: "monthly"
+      - match:
+          asset_type: "stock"
+          period: "60min"
+        granularity: "monthly"
+      - match:
+          asset_type: "index"
+        granularity: "yearly"
+      - match: {}
+        granularity: "yearly"
