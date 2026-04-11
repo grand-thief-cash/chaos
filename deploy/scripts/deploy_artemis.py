@@ -274,6 +274,9 @@ def upload_files(compose_file):
     sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-production.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
     sftp_upload(ssh, PY_PROJECT_PATH+"/config/task.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
 
+    # 确保远程缓存目录存在
+    remote_exec(ssh, f"mkdir -p /home/machine/oss_volume/cache/artemis")
+
     # Upload only wheel files from local minius directory. Abort if minius missing or no wheels found.
     local_minius = os.path.normpath(os.path.join(os.path.dirname(__file__), MINIUS_LOCAL_PATH))
     if not os.path.exists(local_minius) or not os.path.isdir(local_minius):

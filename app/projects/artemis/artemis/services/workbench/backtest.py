@@ -7,8 +7,6 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from artemis.core import cfg_mgr
-from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.engines.strategy_engine import analyzer_profile_registry, data_provider_registry, strategy_registry
 from artemis.engines.strategy_engine.engine_builder import BacktraderEngineBuilder
 from artemis.engines.strategy_engine.result_normalizer import BacktestResultNormalizer
@@ -16,20 +14,6 @@ from artemis.log.logger import get_logger
 from artemis.models.workbench import WorkbenchRunReq
 
 logger = get_logger("workbench")
-
-
-def _build_phoenix_client(source: str | None = None) -> PhoenixAClient:
-    """从配置构建 PhoenixAClient，不依赖 TaskContext。source 指定数据源名称。"""
-    dept = cfg_mgr.get_dept_services_for_source(source)
-    if not dept or not dept.phoenixA:
-        raise ValueError("phoenixA service not configured")
-    cfg = dept.phoenixA
-    return PhoenixAClient(
-        host=cfg.host,
-        port=cfg.port,
-        logger=logger,
-        timeout_seconds=cfg.timeout_seconds if hasattr(cfg, "timeout_seconds") else 30,
-    )
 
 
 def _extract_analyzer_results(strategy_instance: Any) -> Dict[str, Any]:
@@ -81,18 +65,23 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
     # 5. 获取 data provider spec（MVP 硬编码）
     provider_spec = data_provider_registry.require("phoenixa_hist_daily")
 
-    # 6. 构建 PhoenixA client 并拉取数据
-    phoenix_client = _build_phoenix_client(source=req.source)
-    bars = phoenix_client.get_strategy_market_bars(
+    # 6. 通过 market_data 服务获取数据（支持缓存）
+    from artemis.services.workbench.market_data import get_market_bars
+
+    market_resp = get_market_bars(
         symbol=req.symbol,
         start_date=req.start_date,
         end_date=req.end_date,
         timeframe=req.timeframe,
         adjust=req.adjust,
-        fields=list(provider_spec.required_fields),
+        asset_type=req.asset_type,
+        market=req.market,
+        source=req.source,
+        use_cache=req.use_cache,
     )
+    bars = market_resp["bars"]
     if not bars:
-        raise ValueError(f"no historical bars found for symbol={req.symbol}")
+        raise ValueError(f"无法获取数据: symbol={req.symbol}, asset_type={req.asset_type}, market={req.market}, timeframe={req.timeframe}, adjust={req.adjust}。请检查数据维度组合是否有对应数据。")
 
     # 7. 构建 Cerebro 引擎
     df = pd.DataFrame(bars)

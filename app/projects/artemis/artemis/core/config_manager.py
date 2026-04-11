@@ -6,7 +6,7 @@ import yaml
 
 from artemis.consts import Env
 from artemis.consts.env import ALLOWED_ENVS, DEFAULT_ENV
-from artemis.models import CallbackCfg, Config, DeptServicesCfg, HttpClientCfg, LoggingCfg, TelemetryCfg
+from artemis.models import CallbackCfg, Config, DataOptionsCfg, DeptServicesCfg, HttpClientCfg, LoggingCfg, TelemetryCfg
 
 
 class ConfigManager:
@@ -144,6 +144,10 @@ class ConfigManager:
 
     def task_engine_config(self):
         return self.get_config().engine.task_engine
+
+    def data_options_config(self) -> DataOptionsCfg:
+        """返回 Workbench 数据维度选项配置。"""
+        return self.get_config().data_options
 
     # ── Data source scanning for Workbench ──────────────────────
 

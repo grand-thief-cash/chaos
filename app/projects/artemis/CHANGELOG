@@ -1,7 +1,14 @@
 # VERSION
-v0.14.0
+v0.15.0
 
 # Changelog
+- v0.15.0
+    - Added phase I of CacheEngine.
+        - Added Arrow + mmap
+        - Added compaction API
+        - Added Partition Resolver
+        - Added unit tests for cache engine
+        - Added multiple data dimension in workbench
 - v0.14.0
     - Added Task Cancel API, invoked by cronjob.
     - Added Timeout control for task engine.
