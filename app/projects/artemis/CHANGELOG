@@ -1,7 +1,9 @@
 # VERSION
-v0.15.0
+v0.15.1
 
 # Changelog
+- v0.15.1
+    - Added SWHY stock category
 - v0.15.0
     - Added phase I of CacheEngine.
         - Added Arrow + mmap

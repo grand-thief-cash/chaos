@@ -74,6 +74,7 @@ class ServiceEndpointCfg(BaseModel):
 class TaskEngineCfg(BaseModel):
     """Task engine tunables."""
     worker_task_timeout: int = 180
+    amazing_data_cache_dir: str = "../cache/artemis"
 
 
 class PartitionRuleCfg(BaseModel):

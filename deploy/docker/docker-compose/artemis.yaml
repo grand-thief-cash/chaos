@@ -8,6 +8,7 @@ services:
     volumes:
       - /home/machine/data_volume/artemis/config:/app/config
       - /home/machine/data_volume/artemis/logs:/app/logs
+      - /home/machine/oss_volume/cache/artemis:/app/cache
     environment:
       - ENV=production
     logging:

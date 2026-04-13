@@ -5,7 +5,7 @@ from artemis.consts import TaskCode
 from artemis.core import registry
 from artemis.engines.task_engine.base import BaseTaskUnit
 from artemis.engines.task_engine.backtest import BacktraderCampaignTask, BacktraderRunTask
-from artemis.engines.task_engine.download.zh import StockZhAHistParent, StockZhAHistChild, StockZHAMarketCategory
+from artemis.engines.task_engine.download.zh import StockZhAHistParent, StockZhAHistChild, StockZHAMarketCategory, StockZHAMarketCategorySWHY
 from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 
 __all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
@@ -32,6 +32,12 @@ registry.register(
     TaskCode.STOCK_ZH_A_MKT_CATEGORY,
     module=StockZHAMarketCategory.__module__,
     class_name=StockZHAMarketCategory.__name__
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_MKT_CATEGORY_SWHY,
+    module=StockZHAMarketCategorySWHY.__module__,
+    class_name=StockZHAMarketCategorySWHY.__name__,
 )
 
 registry.register(

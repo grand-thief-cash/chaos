@@ -74,9 +74,10 @@ data_options:
 engine:
   task_engine:
     worker_task_timeout: 180
+    amazing_data_cache_dir: "../cache/artemis/amazing_data"
   cache_engine:
     enabled: true
-    cache_dir: "./cache/artemis"
+    cache_dir: "../cache/artemis"
     max_cache_size: "5GB"
     eviction_policy: "lru"
     eviction_check_interval: 100
