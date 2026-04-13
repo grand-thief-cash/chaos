@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, computed } from '@angular/core';
+import { Component, computed, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormControl, FormGroup } from '@angular/forms';
 import { NzFormModule } from 'ng-zorro-antd/form';
@@ -85,7 +85,53 @@ import { WorkbenchRunRequest } from '../models/workbench.model';
           }
         }
 
-        <nz-divider nzText="Data &amp; Time"></nz-divider>
+        <nz-divider nzText="Data Dimensions"></nz-divider>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
+          <nz-form-item style="margin-bottom: 0; flex: 1; min-width: 140px;">
+            <nz-form-label [nzSpan]="8">Asset</nz-form-label>
+            <nz-form-control [nzSpan]="14">
+              <nz-select [(ngModel)]="selectedAssetType" (ngModelChange)="onAssetTypeChange($event)" [ngModelOptions]="{standalone: true}" nzSize="small">
+                @for (a of store.assetTypes(); track a.value) {
+                  <nz-option [nzLabel]="a.label" [nzValue]="a.value"></nz-option>
+                }
+              </nz-select>
+            </nz-form-control>
+          </nz-form-item>
+          <nz-form-item style="margin-bottom: 0; flex: 1; min-width: 140px;">
+            <nz-form-label [nzSpan]="8">Market</nz-form-label>
+            <nz-form-control [nzSpan]="14">
+              <nz-select [(ngModel)]="selectedMarket" [ngModelOptions]="{standalone: true}" nzSize="small">
+                @for (m of store.markets(); track m.value) {
+                  <nz-option [nzLabel]="m.label" [nzValue]="m.value"></nz-option>
+                }
+              </nz-select>
+            </nz-form-control>
+          </nz-form-item>
+          <nz-form-item style="margin-bottom: 0; flex: 1; min-width: 140px;">
+            <nz-form-label [nzSpan]="8">Period</nz-form-label>
+            <nz-form-control [nzSpan]="14">
+              <nz-select [(ngModel)]="selectedPeriod" [ngModelOptions]="{standalone: true}" nzSize="small">
+                @for (p of store.periods(); track p.value) {
+                  <nz-option [nzLabel]="p.label" [nzValue]="p.value"></nz-option>
+                }
+              </nz-select>
+            </nz-form-control>
+          </nz-form-item>
+          @if (currentAdjustOptions().length > 0) {
+            <nz-form-item style="margin-bottom: 0; flex: 1; min-width: 140px;">
+              <nz-form-label [nzSpan]="8">Adjust</nz-form-label>
+              <nz-form-control [nzSpan]="14">
+                <nz-select [(ngModel)]="selectedAdjust" [ngModelOptions]="{standalone: true}" nzSize="small">
+                  @for (a of currentAdjustOptions(); track a.value) {
+                    <nz-option [nzLabel]="a.label" [nzValue]="a.value"></nz-option>
+                  }
+                </nz-select>
+              </nz-form-control>
+            </nz-form-item>
+          }
+        </div>
+
+        <nz-divider nzText="Symbol &amp; Time"></nz-divider>
         <nz-form-item>
           <nz-form-label [nzSpan]="6">Symbol</nz-form-label>
           <nz-form-control [nzSpan]="14">
@@ -140,8 +186,16 @@ export class StrategyConfigComponent implements OnInit {
     return s ? Object.keys(s.param_schema) : [];
   });
 
+  currentAdjustOptions = computed(() =>
+    this.store.getAdjustOptionsForAsset(this.selectedAssetType),
+  );
+
   form!: FormGroup;
   selectedSource = 'default';
+  selectedAssetType = 'stock';
+  selectedMarket = 'zh_a';
+  selectedPeriod = 'daily';
+  selectedAdjust = 'nf';
 
   ngOnInit(): void {
     this.form = this.fb.group({
@@ -154,6 +208,7 @@ export class StrategyConfigComponent implements OnInit {
     });
     this.store.loadStrategies();
     this.store.loadSources();
+    this.store.loadDataOptions();
     this.selectedSource = this.store.selectedSource();
   }
 
@@ -164,6 +219,15 @@ export class StrategyConfigComponent implements OnInit {
   onSourceChange(source: string): void {
     this.store.selectSource(source);
     this.msg.info('Source changed — run backtest again to use new data source');
+  }
+
+  onAssetTypeChange(assetType: string): void {
+    const options = this.store.getAdjustOptionsForAsset(assetType);
+    if (options.length > 0) {
+      this.selectedAdjust = options[0].value;
+    } else {
+      this.selectedAdjust = '';
+    }
   }
 
   onStrategyChange(code: string): void {
@@ -199,8 +263,10 @@ export class StrategyConfigComponent implements OnInit {
       symbol: raw.symbol,
       start_date: this.formatDate(raw.start_date),
       end_date: this.formatDate(raw.end_date),
-      timeframe: 'daily',
-      adjust: 'nf',
+      timeframe: this.selectedPeriod,
+      adjust: this.selectedAdjust,
+      asset_type: this.selectedAssetType,
+      market: this.selectedMarket,
       cash: raw.cash,
       commission: raw.commission,
       strategy_params: strategyParams,
