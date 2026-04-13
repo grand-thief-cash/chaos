@@ -80,14 +80,18 @@ class CacheEngine:
         self._increment_access()
 
         if use_cache:
+            rule = self._resolver.resolve_rule(asset_type, market, period, adjust)
             resolved = self._resolver.resolve_range(
                 symbol=symbol, period=period,
                 start_date=start_date, end_date=end_date,
                 asset_type=asset_type, market=market, adjust=adjust,
             )
-            # 检查是否有 base 文件存在
-            has_data = any(not f.is_delta for f in resolved)
-            if has_data:
+            expected_partitions = self._resolver._enumerate_base_partitions(rule, start_date, end_date)
+            expected_base_names = {base_name for base_name, _, _ in expected_partitions}
+            resolved_base_names = {f.base_name for f in resolved if not f.is_delta}
+            has_full_partition_coverage = expected_base_names.issubset(resolved_base_names)
+
+            if has_full_partition_coverage:
                 df = self._read_resolved(resolved, start_date, end_date)
                 if df is not None and not df.empty:
                     logger.debug({
@@ -96,6 +100,14 @@ class CacheEngine:
                         "start": start_date, "end": end_date,
                     })
                     return df
+            elif resolved:
+                logger.info({
+                    "event": "cache_partial_hit",
+                    "symbol": symbol,
+                    "period": period,
+                    "expected_partitions": sorted(expected_base_names),
+                    "resolved_partitions": sorted(resolved_base_names),
+                })
 
         # Cache miss 或 use_cache=False: 回源
         if data_fetcher is None:

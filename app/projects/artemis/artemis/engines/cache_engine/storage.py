@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -204,8 +203,9 @@ class ArrowStorage:
         """原子写入：先写 .tmp 再 rename。"""
         tmp_path = path.with_suffix(".tmp.arrow")
         try:
-            with ipc.new_file(str(tmp_path), table.schema) as writer:
-                writer.write_table(table)
+            with pa.OSFile(str(tmp_path), "wb") as sink:
+                with ipc.new_file(sink, table.schema) as writer:
+                    writer.write_table(table)
             os.replace(str(tmp_path), str(path))
         except Exception:
             # 清理 tmp 文件
@@ -237,7 +237,7 @@ class ArrowStorage:
         # 只保留 schema 中定义的列
         target_cols = [f.name for f in OHLCV_SCHEMA]
         keep_cols = [c for c in target_cols if c in df.columns]
-        df = df[keep_cols]
+        df = df[keep_cols].copy()
 
         # 按目标 schema 中的类型强制转换
         schema_fields = {f.name: f.type for f in OHLCV_SCHEMA}

@@ -41,6 +41,21 @@ class ConfigManager:
             return True
         return False
 
+    def _merge_config_dicts(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        """递归合并配置字典。
+
+        - dict 与 dict: 递归合并
+        - 其他类型（list / scalar）: override 全量覆盖
+        """
+        merged: Dict[str, Any] = dict(base)
+        for key, override_value in override.items():
+            base_value = merged.get(key)
+            if isinstance(base_value, dict) and isinstance(override_value, dict):
+                merged[key] = self._merge_config_dicts(base_value, override_value)
+            else:
+                merged[key] = override_value
+        return merged
+
     def init_config(self, path: str | None = None, env: str | None = None, force: bool = False) -> Optional[Config]:
         """Initialize or reload configuration.
         Reload triggers if:
@@ -52,6 +67,9 @@ class ConfigManager:
         """
         if self._config and not force and not self._needs_reload(path, env):
             return self._config
+
+        # 配置发生变化时，清空与配置强相关的缓存。
+        self._data_sources = None
 
         cfg_path = Path(path or os.getenv(Env.CONFIG_PATH_VAR, '')).resolve() if (
                     path or os.getenv(Env.CONFIG_PATH_VAR)) else None
@@ -82,7 +100,7 @@ class ConfigManager:
         if override_file.exists():
             with open(override_file, 'r', encoding='utf-8') as f:
                 override_cfg = yaml.safe_load(f) or {}
-            merged = {**base_cfg, **override_cfg}
+            merged = self._merge_config_dicts(base_cfg, override_cfg)
         else:
             merged = base_cfg
 
@@ -157,11 +175,13 @@ class ConfigManager:
             return
         self._data_sources = {}
 
+        current_source = 'production' if self.environment() == 'production' else 'relx'
+
         # production: only expose current config, no scanning
         if self.environment() == 'production':
             dept = self.dept_services_config()
             if dept:
-                self._data_sources['default'] = dept
+                self._data_sources[current_source] = dept
             return
 
         # development: scan all config-*.yaml in config directory
@@ -171,13 +191,13 @@ class ConfigManager:
         if not config_dir or not config_dir.exists():
             dept = self.dept_services_config()
             if dept:
-                self._data_sources['default'] = dept
+                self._data_sources[current_source] = dept
             return
 
-        # current config → "default"
+        # current config → "relx"（development）/ "production"（production）
         dept = self.dept_services_config()
         if dept:
-            self._data_sources['default'] = dept
+            self._data_sources[current_source] = dept
 
         # scan config-{name}.yaml files
         _SOURCE_NAME_MAP = {
@@ -207,9 +227,10 @@ class ConfigManager:
         self._ensure_data_sources()
 
         if source_name is None:
-            dept = self._data_sources.get('default')
+            current_source = 'production' if self.environment() == 'production' else 'relx'
+            dept = self._data_sources.get(current_source)
             if dept is None:
-                raise ValueError("No default data source configured")
+                raise ValueError("No current data source configured")
             return dept
 
         if source_name not in self._data_sources:
@@ -217,15 +238,16 @@ class ConfigManager:
 
         return self._data_sources[source_name]
 
-    def available_sources(self) -> Dict[str, str]:
-        """Return available data sources and the default source name.
+    def available_sources(self) -> Dict[str, Any]:
+        """Return available data sources and the current source name.
 
-        Returns: {"sources": [...], "default": "default"}
+        Returns: {"sources": [...], "current": "relx|production"}
         """
         self._ensure_data_sources()
+        current_source = 'production' if self.environment() == 'production' else 'relx'
         return {
             "sources": list(self._data_sources.keys()),
-            "default": "default",
+            "current": current_source,
         }
 
     def _load_task_yaml(self) -> Dict[str, Any]:

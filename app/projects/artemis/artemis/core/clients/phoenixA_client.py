@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Iterator, List, Optional
 
 import requests
 
@@ -138,7 +138,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             raise
 
-    def get_strategy_market_bars(
+    def _coerce_hist_rows(self, payload: Any) -> List[Dict[str, Any]]:
+        rows = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            return []
+        return [row for row in rows if isinstance(row, dict)]
+
+    def iter_stock_zh_a_hist_bars(
         self,
         *,
         symbol: str,
@@ -147,7 +153,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
         timeframe: str = "daily",
         adjust: str = "nf",
         fields: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        limit: int = 5000,
+    ) -> Iterator[Dict[str, Any]]:
         path = "/api/v1/stock/hist/get_data"
         request_fields = fields or [
             "date",
@@ -159,43 +166,110 @@ class PhoenixAClient(HTTPDeptServiceClient):
             "volume",
             "amount",
         ]
-        params = {
-            "code": symbol,
-            "start_date": start_date,
-            "end_date": end_date,
-            "period": timeframe,
-            "adjust": adjust,
-            "fields": ",".join(request_fields),
-            "limit": 5000,
-            "offset": 0,
-        }
+        page_size = max(int(limit or 0), 1)
+        offset = 0
+
         try:
-            resp = self.get(path, params=params)
-            if not (200 <= resp.status_code < 300):
-                if self.logger:
-                    self.logger.error({
-                        'event': 'phoenixA_get_strategy_market_bars_failed',
-                        'path': path,
-                        'status': resp.status_code,
-                        'symbol': symbol,
-                        'timeframe': timeframe,
-                        'body_snippet': resp.text[:120],
-                    })
-                return []
-            payload = resp.json()
-            rows = payload.get("data") if isinstance(payload, dict) else payload
-            if not isinstance(rows, list):
-                return []
-            return [row for row in rows if isinstance(row, dict)]
+            while True:
+                params = {
+                    "code": symbol,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "period": timeframe,
+                    "adjust": adjust,
+                    "fields": ",".join(request_fields),
+                    "limit": page_size,
+                    "offset": offset,
+                }
+                resp = self.get(path, params=params)
+                if not (200 <= resp.status_code < 300):
+                    if self.logger:
+                        self.logger.error({
+                            'event': 'phoenixA_get_stock_zh_a_hist_bars_failed',
+                            'path': path,
+                            'status': resp.status_code,
+                            'symbol': symbol,
+                            'timeframe': timeframe,
+                            'offset': offset,
+                            'limit': page_size,
+                            'body_snippet': resp.text[:120],
+                        })
+                    return
+
+                batch = self._coerce_hist_rows(resp.json())
+                if not batch:
+                    return
+
+                for row in batch:
+                    yield row
+
+                if len(batch) < page_size:
+                    return
+
+                offset += len(batch)
         except Exception as e:
             if self.logger:
                 self.logger.error({
-                    'event': 'phoenixA_get_strategy_market_bars_exception',
+                    'event': 'phoenixA_get_stock_zh_a_hist_bars_exception',
                     'symbol': symbol,
                     'timeframe': timeframe,
                     'error': str(e),
                 })
             raise
+
+    def get_stock_zh_a_hist_bars(
+        self,
+        *,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        timeframe: str = "daily",
+        adjust: str = "nf",
+        fields: Optional[List[str]] = None,
+        limit: int = 5000,
+    ) -> List[Dict[str, Any]]:
+        return list(self.iter_stock_zh_a_hist_bars(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+            adjust=adjust,
+            fields=fields,
+            limit=limit,
+        ))
+
+    def get_index_zh_a_hist_bars(
+        self,
+        *,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        timeframe: str = "daily",
+        adjust: str = "nf",
+        fields: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        raise NotImplementedError(
+            "PhoenixA index history endpoint is not implemented in the current Artemis workspace"
+        )
+
+    def get_strategy_market_bars(
+        self,
+        *,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        timeframe: str = "daily",
+        adjust: str = "nf",
+        fields: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        return self.get_stock_zh_a_hist_bars(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+            adjust=adjust,
+            fields=fields,
+        )
 
     def save_strategy_run_summary(self, payload: Dict[str, Any], run_id: Optional[int | str] = None) -> bool:
         path = "/api/v1/strategy/run/summary/upsert"

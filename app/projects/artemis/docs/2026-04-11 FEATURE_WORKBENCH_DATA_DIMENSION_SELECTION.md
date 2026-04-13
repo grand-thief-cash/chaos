@@ -5,23 +5,24 @@
 
 ## 1. 背景
 
-Workbench 当前只有 **Source** 选择（default/home/production），本质是切换后端环境。数据维度 `asset_type` / `market` / `period` / `adjust` 全部硬编码（`stock` / `zh_a` / `daily` / `nf`）。
+Workbench 当前只有 **Source** 选择（`relx` / `home` / `production`），本质是切换后端环境。数据维度 `asset_type` / `market` / `period` / `adjust` 全部硬编码（`stock` / `zh_a` / `daily` / `nf`）。
 
 Cache Engine 已就绪，按 `asset_type/market/period/adjust` 四级目录组织缓存。无论有没有 cache，这些维度都是 workbench 查数据的必要参数——有 cache 走 cache，没 cache 直接从 phoenixA 获取。需要将这些维度暴露为前端可选项。
 
 ## 2. 设计原则
 
-1. **Source 保留**：数据维度依附于数据源，先选 Source 再选维度
+1. **Source 保留但与 data_options 独立**：先选 Source 再查数据，但 Source 只决定后端 PhoenixA 环境，不切换维度选项定义
 2. **data_options 独立于 cache_engine**：作为顶层配置直接挂在 `Config` 上，不归 engine 管理——它只是 workbench 服务查询参数的选项定义，有 cache 走 cache，没 cache 直接从 phoenixA 获取
 3. **无兜底逻辑**：组合是开放的，查不到数据就返回空
-4. **联动关系**：`adjust` 可选项取决于 `asset_type`（如 index 无复权）
+4. **联动关系**：`adjust` 可选项取决于 `asset_type`（如 index UI 不展示复权）
+5. **统一术语**：系统内部统一使用 `period`；`timeframe` / `frequency` 仅允许存在于外部 SDK 或外部 API 适配层
 
 ## 3. 维度联动
 
 | asset_type | adjust 可选项 |
 |------------|--------------|
 | `stock`    | `nf` / `qfq` / `hfq` |
-| `index`    | 无（不显示 adjust 选择器） |
+| `index`    | 无（不显示 adjust 选择器，后端内部归一化为 `nf`） |
 
 其余维度（market、period）无联动，自由组合。
 
@@ -114,25 +115,25 @@ data_options:
 |------|------|--------|------|
 | `asset_type` | `str` | — | 资产类型（必选） |
 | `market` | `str` | — | 市场（必选） |
-| `period` | `str` | — | 周期（必选，原 `timeframe`） |
+| `period` | `str` | — | 周期（必选，系统内部唯一标准字段） |
 | `adjust` | `str` | — | 复权方式（必选） |
 | `symbol` | `str` | — | 股票代码 |
 | `start_date` / `end_date` | `str` | — | 日期范围 |
 | `source` | `str` | `None` | 数据源环境 |
 | `use_cache` | `bool` | `True` | 是否走缓存 |
 
-> **注**：`timeframe` 参数建议统一为 `period`，与 cache_engine 保持一致。可保留 `timeframe` 作为 alias 兼容。
+> **注**：Chaos / Artemis 内部统一使用 `period`。如外部 PhoenixA 或其他 SDK 需要 `timeframe` / `frequency`，仅在调用边界做字段映射，不在系统内部混用。
 
 ### 5.3 `POST /workbench/indicators` 扩展
 
-`IndicatorsRequest` 新增字段：
+`IndicatorsRequest` 扩展后建议统一为：
 
 ```python
 class IndicatorsRequest(BaseModel):
     symbol: str
     start_date: str
     end_date: str
-    timeframe: str = "daily"
+    period: str = "daily"
     adjust: str = "nf"
     asset_type: str = "stock"    # 新增
     market: str = "zh_a"         # 新增
@@ -152,7 +153,7 @@ def get_market_bars(
     symbol: str,
     start_date: str,
     end_date: str,
-    timeframe: str = "daily",
+    period: str = "daily",
     adjust: str = "nf",
     asset_type: str = "stock",   # 新增
     market: str = "zh_a",        # 新增
@@ -162,6 +163,8 @@ def get_market_bars(
 ```
 
 当前硬编码 `asset_type="stock", market="zh_a"` → 改为接收参数透传给 cache_engine。
+
+> **补充**：当 `asset_type == "index"` 且前端不展示 adjust 选择器时，后端在进入 service/cache/provider 前统一归一化为 `adjust="nf"`。
 
 ## 7. 前端变更 (Cthulhu)
 
@@ -209,7 +212,7 @@ export interface DataOptionsResponse {
 ## 8. 数据流
 
 ```
-用户选择 Source + asset/market/period/adjust
+用户选择 Source(`relx/home/production`) + asset/market/period/adjust
         │
         ▼
 GET /workbench/market-data?source=X&asset_type=stock&market=zh_a&period=daily&adjust=nf&symbol=000001&...
@@ -231,4 +234,4 @@ get_market_bars(asset_type=stock, market=zh_a, ...)
 3. 前端 Source 选择器保留，新增四个维度下拉
 4. 选 index 时 adjust 下拉消失；选 stock 时显示 nf/qfq/hfq
 5. 不同维度组合请求数据，无数据时展示空状态
-6. 同步验证 config-home.yaml / config-production.yaml 的 data_options 配置
+6. 验证所有 source 共用同一套 `data_options`，环境差异只体现在数据覆盖范围而非维度定义

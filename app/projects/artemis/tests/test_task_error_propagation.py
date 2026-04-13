@@ -35,7 +35,7 @@ class SoftFailParent(OrchestratorUnit):
 
 
 class FakePhoenixBadLastUpdateClient(NoopDeptServiceClient):
-    def get_stock_zh_a_codes(self, codes=None):
+    def get_stock_zh_a_codes(self, codes=None, exchanges=None):
         return {"600000": {"code": "600000", "exchange": "SH"}}
 
     def get_stock_zh_a_last_updates(self, period, adjust, codes=None):
