@@ -13,6 +13,7 @@ const (
 	COMP_SVC_STOCK_ZH_A_HIST_DAILY  = "svc_stock_zh_a_hist_daily"
 	COMP_SVC_STRATEGY_RUN           = "svc_strategy_run"
 	COMP_SVC_MARKET_CATEGORY_MAIRUI = "svc_market_category_mairui"
+	COMP_SVC_MARKET_CATEGORY_SWHY   = "svc_market_category_swhy"
 	COMP_SVC_CATEGORY_STOCK_MAP     = "svc_category_stock_map"
 
 	COMP_CTRL_STOCK_ZH_A_LIST    = "ctrl_stock_zh_a_list"

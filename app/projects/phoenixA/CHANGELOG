@@ -1,7 +1,10 @@
 # VERSION
-v0.3.5
+v0.3.6
 
 # Changelog
+- v0.3.6
+    - Added SWHY stock category
+    - Fixed Stock ZH A hist upsert error.
 - v0.3.5
     - Added exchange filter in STOCK_ZH_A_LIST
 - v0.3.4
