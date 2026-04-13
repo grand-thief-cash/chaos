@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from artemis.engines.strategy_engine import analyzer_profile_registry, data_provider_registry, strategy_registry
+from artemis.engines.strategy_engine import analyzer_profile_registry, strategy_registry
 from artemis.engines.strategy_engine.engine_builder import BacktraderEngineBuilder
 from artemis.engines.strategy_engine.result_normalizer import BacktestResultNormalizer
 from artemis.log.logger import get_logger
@@ -38,7 +38,7 @@ def list_strategies() -> Dict[str, Any]:
                 "code": spec.code,
                 "default_params": dict(spec.default_params),
                 "supported_modes": list(spec.supported_modes),
-                "supported_timeframes": list(spec.supported_timeframes),
+                "supported_periods": list(spec.supported_timeframes),
                 "param_schema": dict(spec.param_schema),
             }
         )
@@ -62,17 +62,14 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
     # 4. 获取 analyzer profile（MVP 硬编码）
     analyzer_profile = analyzer_profile_registry.require("default_hist_v1")
 
-    # 5. 获取 data provider spec（MVP 硬编码）
-    provider_spec = data_provider_registry.require("phoenixa_hist_daily")
-
-    # 6. 通过 market_data 服务获取数据（支持缓存）
+    # 5. 通过 market_data 服务获取数据（支持缓存 + provider 路由）
     from artemis.services.workbench.market_data import get_market_bars
 
     market_resp = get_market_bars(
         symbol=req.symbol,
         start_date=req.start_date,
         end_date=req.end_date,
-        timeframe=req.timeframe,
+        period=req.period,
         adjust=req.adjust,
         asset_type=req.asset_type,
         market=req.market,
@@ -81,9 +78,11 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
     )
     bars = market_resp["bars"]
     if not bars:
-        raise ValueError(f"无法获取数据: symbol={req.symbol}, asset_type={req.asset_type}, market={req.market}, timeframe={req.timeframe}, adjust={req.adjust}。请检查数据维度组合是否有对应数据。")
+        raise ValueError(
+            f"无法获取数据: symbol={req.symbol}, asset_type={req.asset_type}, market={req.market}, period={req.period}, adjust={req.adjust}。请检查数据维度组合是否有对应数据。"
+        )
 
-    # 7. 构建 Cerebro 引擎
+    # 6. 构建 Cerebro 引擎
     df = pd.DataFrame(bars)
     merged_params = {**spec.default_params, **req.strategy_params}
     cerebro = BacktraderEngineBuilder.build(
@@ -95,17 +94,17 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
         commission=req.commission,
     )
 
-    # 8. 执行回测
+    # 7. 执行回测
     start_cash = float(cerebro.broker.get_cash())
     strategies = cerebro.run()
     strategy_instance = strategies[0]
     end_value = float(cerebro.broker.get_value())
     bars_processed = len(df.index)
 
-    # 9. 提取分析器结果
+    # 8. 提取分析器结果
     analyzer_results = _extract_analyzer_results(strategy_instance)
 
-    # 10. 标准化结果
+    # 9. 标准化结果
     run_id = f"wb-{int(time.time())}"
     normalized = BacktestResultNormalizer.normalize(
         run_id=run_id,
@@ -114,7 +113,7 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
         mode="historical",
         strategy_code=req.strategy_code,
         symbol=req.symbol,
-        timeframe=req.timeframe,
+        timeframe=req.period,
         start_date=req.start_date,
         end_date=req.end_date,
         start_cash=start_cash,
@@ -124,4 +123,11 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
         bars_processed=bars_processed,
     )
 
-    return normalized
+    summary = dict(normalized["summary"])
+    timeframe_value = summary.pop("timeframe", req.period)
+    summary["period"] = timeframe_value
+
+    return {
+        **normalized,
+        "summary": summary,
+    }

@@ -12,6 +12,8 @@
 
 工作台的核心定位是：一个**交互式、轻量级**的策略快速验证工具，让研发人员可以在页面上选择策略、选择数据、配置参数、运行回测、立即看到结果。
 
+> **术语更新（2026-04-13）**：Workbench / Artemis 内部统一使用 `period` 表示周期；`timeframe`、`frequency` 等命名仅允许出现在外部 SDK / 外部 API 适配边界。
+
 ---
 
 ## 1. 背景与问题
@@ -145,7 +147,7 @@ MVP 使用 `default_hist_v1`（Returns、DrawDown、TradeAnalyzer、SharpeRatio_
       "code": "sma_cross",
       "default_params": {"fast": 10, "slow": 30, "stake": 1},
       "supported_modes": ["historical"],
-      "supported_timeframes": ["daily"],
+      "supported_periods": ["daily"],
       "param_schema": {
         "fast": {"type": "int", "min": 1},
         "slow": {"type": "int", "min": 1},
@@ -170,7 +172,7 @@ MVP 使用 `default_hist_v1`（Returns、DrawDown、TradeAnalyzer、SharpeRatio_
   "symbol": "sh600519",
   "start_date": "2024-01-01",
   "end_date": "2024-12-31",
-  "timeframe": "daily",
+  "period": "daily",
   "adjust": "nf",
   "cash": 100000.0,
   "commission": 0.0,
@@ -193,7 +195,7 @@ MVP 使用 `default_hist_v1`（Returns、DrawDown、TradeAnalyzer、SharpeRatio_
   "summary": {
     "strategy_code": "sma_cross",
     "symbol": "sh600519",
-    "timeframe": "daily",
+    "period": "daily",
     "start_date": "2024-01-01",
     "end_date": "2024-12-31",
     "start_cash": 100000.0,
@@ -262,7 +264,7 @@ class WorkbenchRunReq(BaseModel):
     symbol: str
     start_date: str
     end_date: str
-    timeframe: str = "daily"
+    period: str = "daily"
     adjust: str = "nf"
     cash: float = 100000.0
     commission: float = 0.0
@@ -289,7 +291,7 @@ class WorkbenchRunReq(BaseModel):
       symbol=req.symbol,
       start_date=req.start_date,
       end_date=req.end_date,
-      timeframe=req.timeframe,
+      period=req.period,
       adjust=req.adjust
    )
    → 拉取 K 线数据
@@ -320,7 +322,7 @@ class WorkbenchRunReq(BaseModel):
 ```
 遍历 strategy_registry._registry
 对每个 StrategySpec，序列化为：
-  {code, default_params, supported_modes, supported_timeframes, param_schema}
+  {code, default_params, supported_modes, supported_periods, param_schema}
 不暴露 cls 字段
 ```
 

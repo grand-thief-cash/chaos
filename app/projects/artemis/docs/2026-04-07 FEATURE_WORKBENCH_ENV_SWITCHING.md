@@ -15,6 +15,12 @@
 - **当前切换成本**：需要重新编译前端（`ng build --configuration production`）+ 重启后端（`-e production`），中断工作流
 
 > **注意**：环境类型只有 `development` 和 `production` 两种。不同的开发机器（relx / home）通过 `--config` 参数指定不同的配置文件路径区分，而非通过不同的 env 名称。
+>
+> **术语更新（2026-04-13）**：
+> - Workbench 运行时选择项统一使用 `source`
+> - source 命名统一为 `relx` / `home` / `production`
+> - `relx` 表示当前本机 / 当前配置环境，不再使用 `default`
+> - source 只选择后端数据环境，不影响 `data_options`；所有环境共用同一套 data dimension options
 
 **目标**：在 Workbench 页面内实现 **运行时** 数据源切换，无需重新编译或重启，即可访问不同配置文件对应的 PhoenixA 数据源。
 
@@ -53,7 +59,7 @@
                                    真正的差异点
 ```
 
-前端永远只连 **本地 Artemis**。环境之间的差异仅在 **Artemis → PhoenixA** 这一层。因此 **环境切换应由 Artemis 处理**，前端只需传递一个 `env` 参数。
+前端永远只连 **本地 Artemis**。环境之间的差异仅在 **Artemis → PhoenixA** 这一层。因此 **环境切换应由 Artemis 处理**，前端只需传递一个 `source` 参数。
 
 ## 3. 方案设计
 
@@ -61,7 +67,7 @@
 
 1. **前端始终连本地 Artemis** — 无跨域、无安全问题
 2. **Artemis 启动时加载所有环境配置** — 仅 `dept_services` 段（**production 环境部署时仅保留自身配置**）
-3. **Workbench API 新增 `env` 参数** — 按需创建对应环境的 PhoenixA client
+3. **Workbench API 新增 `source` 参数** — 按需创建对应环境的 PhoenixA client
 4. **前端增加环境选择器** — 下拉框 + localStorage 持久化
 5. **production 只读保障** — 通过 production 环境获取的数据仅用于研究分析，禁止任何写操作流入 production 数据源
 6. **生产环境隔离** — 当 Artemis 以 `--env=production` 启动时，多数据源切换功能完全禁用，`/workbench/sources` 仅返回当前数据源，不可访问其他数据源
@@ -91,7 +97,7 @@
 │                      │
 │  cfg_mgr             │
 │  ├─ scanned_sources: │
-│  │  ├─ "default"     → config.yaml         → { phoenixA: 127.0.0.1:18085 }
+│  │  ├─ "relx"        → config.yaml         → { phoenixA: 127.0.0.1:18085 }
 │  │  ├─ "home"        → config-home.yaml    → { phoenixA: 192.168.31.72:8085 }
 │  │  └─ "production"  → config-production.yaml → { phoenixA: 192.168.31.142:8085 }
 │  │                    │
@@ -126,7 +132,7 @@
 │                      │
 │  cfg_mgr             │
 │  ├─ scanned_sources: │
-│  │  └─ "default"     → config.yaml → { phoenixA: 192.168.31.142:8085 }
+│  │  └─ "production"  → config.yaml → { phoenixA: 192.168.31.142:8085 }
 │  │                    │  ← 仅当前配置，不扫描其他文件
 │  └─ market_data_service.get_market_bars(source=None)
 │         │              │
@@ -148,11 +154,11 @@
 def _scan_data_sources(self) -> Dict[str, DeptServicesConfig]:
     """扫描 config 目录下所有 config-*.yaml，提取各数据源的 dept_services。
 
-    - config.yaml              → "default"（当前 --config 指向的文件）
+    - config.yaml              → "relx"（当前 --config 指向的文件）
     - config-home.yaml         → "home"
     - config-production.yaml   → "production"
 
-    如果当前 --env=production，则跳过扫描，仅保留当前配置（"default"）。
+    如果当前 --env=production，则跳过扫描，仅保留当前配置（"production"）。
     """
 
 def get_dept_services_for_source(self, source_name: str | None) -> DeptServicesConfig:
@@ -166,8 +172,8 @@ def get_dept_services_for_source(self, source_name: str | None) -> DeptServicesC
 def available_sources(self) -> list[str]:
     """返回所有可用数据源名列表。
 
-    - development 环境: ['default', 'home', 'production']
-    - production 环境: ['default']（仅当前配置）
+    - development 环境: ['relx', 'home', 'production']
+    - production 环境: ['production']（仅当前配置）
     """
 ```
 
@@ -179,7 +185,7 @@ def available_sources(self) -> list[str]:
 
 ```python
 def get_market_bars(*, symbol, start_date, end_date,
-                    timeframe="daily", adjust="nf", source=None):
+                    period="daily", adjust="nf", source=None):
     client = _build_phoenix_client(source=source)  # 传入 source
     # 注意: market_data 服务仅执行读取操作，不涉及写入
     ...
@@ -212,7 +218,7 @@ def _build_phoenix_client(source: str | None = None) -> PhoenixAClient:
 
 | 端点 | 改动 |
 |---|---|
-| `GET /workbench/sources` | **新增** — development 环境: `{ "sources": ["default","home","production"], "default": "default" }`；production 环境: `{ "sources": ["default"], "default": "default" }` |
+| `GET /workbench/sources` | **新增** — development 环境: `{ "sources": ["relx","home","production"], "current": "relx" }`；production 环境: `{ "sources": ["production"], "current": "production" }` |
 | `GET /workbench/market-data` | 增加 `source: str = None` 查询参数；source 不合法时返回 HTTP 400 |
 | `POST /workbench/indicators` | `IndicatorsRequest` body 增加 `source` 字段；source 不合法时返回 HTTP 400 |
 | `POST /workbench/run` | `WorkbenchRunReq` body 增加 `source` 字段；source 不合法时返回 HTTP 400 |
@@ -239,7 +245,7 @@ class IndicatorsRequest(BaseModel):
 
 ```typescript
 // 新增
-getSources(): Observable<{ sources: string[]; default: string }>
+getSources(): Observable<{ sources: string[]; current: string }>
 
 // 现有方法增加 source 参数
 getMarketData(symbol, start, end, source?: string)
@@ -260,17 +266,17 @@ runBacktest(req: WorkbenchRunRequest)         // req.source
 ```
 
 数据源选择器选项（由 `GET /workbench/sources` 返回）：
-- `Default` → `default`（当前 config.yaml）
+- `Relx` → `relx`（当前 config.yaml / 当前本机环境）
 - `Home` → `home`（config-home.yaml）
 - `Production` → `production`（config-production.yaml）
 
 **行为**：
 - 组件: `<nz-select>` 下拉框，选项来自 `GET /workbench/sources`
 - 持久化: `localStorage.setItem('workbench-source', sourceName)`
-- 初始化: `ngOnInit` 时从 localStorage 恢复，无值则用后端返回的 `default`
+- 初始化: `ngOnInit` 时从 localStorage 恢复，无值则用后端返回的 `current`
 - 切换数据源: 已加载数据时清除当前图表，提示用户重新 Load
 - 视觉: 选择 production 数据源时 Search 标题旁显示红色标记 `● Production`
-- **production 隔离**: 当 `/workbench/sources` 仅返回 `["default"]` 时，隐藏数据源选择器
+- **production 隔离**: 当 `/workbench/sources` 仅返回 `["production"]` 时，隐藏数据源选择器
 
 ### 5.3 受影响文件
 
@@ -299,13 +305,13 @@ runBacktest(req: WorkbenchRunRequest)         // req.source
 
 | 场景 | 处理方式 |
 |---|---|
-| 不传 `source` | 使用后端当前启动配置（默认行为） |
+| 不传 `source` | 使用后端当前启动配置（当前 source） |
 | 传入不存在的 `source` | 返回 HTTP 400 + 明确错误信息 `"Data source '{source}' is not available"`，**绝不回退** |
 | 当前 `--env=production`，传入非空 `source` | 返回 HTTP 400 + `"Data source switching is disabled in production"`，**绝不回退** |
 | 某数据源 PhoenixA 不可达 | 返回 HTTP 502 + 明确错误信息 `"Failed to connect to PhoenixA for source '{source}'"`，**绝不回退到其他数据源** |
-| 前端 localStorage 无缓存 | 使用后端返回的 `default` |
+| 前端 localStorage 无缓存 | 使用后端返回的 `current` |
 | 数据源切换时有已加载数据 | 清除图表，提示重新 Load |
-| 代码部署到 production 环境（`--env=production`） | `/workbench/sources` 仅返回 `["default"]`，前端数据源选择器自动隐藏 |
+| 代码部署到 production 环境（`--env=production`） | `/workbench/sources` 仅返回 `["production"]`，前端数据源选择器自动隐藏 |
 | 通过 production 数据源发起写操作 | Workbench 所有 API 均为只读设计（查询市场数据、计算指标、运行回测），回测结果仅在本地展示，不回写任何远程数据源 |
 
 ## 8. 验证方案
@@ -315,20 +321,20 @@ runBacktest(req: WorkbenchRunRequest)         // req.source
 ```bash
 # 1. 查看可用数据源
 curl http://localhost:18000/workbench/sources
-# 期望: {"sources": ["default", "home", "production"], "default": "default"}
+# 期望: {"sources": ["relx", "home", "production"], "current": "relx"}
 
 # 2. 使用 production 数据源获取数据
 curl "http://localhost:18000/workbench/market-data?source=production&symbol=000001&start_date=2024-01-01&end_date=2024-12-31"
 # 期望: 返回完整历史数据（只读，无写操作）
 
-# 3. 不传 source（默认数据源）
+# 3. 不传 source（使用当前 source）
 curl "http://localhost:18000/workbench/market-data?symbol=000001&start_date=2024-01-01&end_date=2024-12-31"
 # 期望: 返回当前配置文件对应的数据
 
 # 4. 传入不存在的 source（禁止回退验证）
 curl "http://localhost:18000/workbench/market-data?source=staging&symbol=000001&..."
 # 期望: HTTP 400，{"error": "Data source 'staging' is not available"}
-# 绝不能回退到默认数据源
+# 绝不能回退到其他 source
 
 # 5. 某数据源 PhoenixA 不可达（禁止回退验证）
 curl "http://localhost:18000/workbench/market-data?source=production&symbol=000001&..."
@@ -342,7 +348,7 @@ curl "http://localhost:18000/workbench/market-data?source=production&symbol=0000
 ```bash
 # 1. 查看 production 环境下的可用数据源
 curl http://localhost:18000/workbench/sources
-# 期望: {"sources": ["default"], "default": "default"}
+# 期望: {"sources": ["production"], "current": "production"}
 # 仅返回当前配置，不暴露其他数据源
 
 # 2. 尝试访问 home 数据源（隔离验证）
@@ -357,9 +363,9 @@ curl "http://localhost:18000/workbench/market-data?symbol=000001&..."
 ### 8.3 前端验证
 
 1. 打开 Workbench → Market Data，确认 Search 面板内出现数据源选择器
-2. 切换到 `production`，点击 Load，确认数据量明显大于 default
+2. 切换到 `production`，点击 Load，确认数据量明显大于 `relx`
 3. 刷新页面，确认数据源选择保持（localStorage 持久化）
-4. 切回 `default`，Load 数据，确认正常
+4. 切回 `relx`，Load 数据，确认正常
 5. Strategy Research 页面同样验证
 6. 选择 production 数据源时 Search 标题旁显示红色 `● Production` 标记
 7. **production 部署验证**: 以 `--env=production` 部署后，数据源选择器应隐藏，无其他选项

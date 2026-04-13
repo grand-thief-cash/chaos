@@ -1,7 +1,13 @@
 # VERSION
-v0.15.1
+v0.16.0
 
 # Changelog
+- v0.16.0
+    - Refactor backend query contracts in workbench.py and workbench_routes.py to standardize period, current, and source validation.
+    - Update source scanning in config_manager.py so available_sources() returns relx/home/production and current, never default.
+    - Centralize normalization in market_data.py and backtest.py via a shared normalize_dimensions() and MarketDataQuery-style flow.
+    - Update existing tests in test_config_manager.py and add route/service/frontend coverage for period, current, relx, and index -> nf behavior.
+    - Added Provider Layer。
 - v0.15.1
     - Added SWHY stock category
 - v0.15.0

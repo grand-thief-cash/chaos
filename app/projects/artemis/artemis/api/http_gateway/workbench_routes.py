@@ -35,7 +35,7 @@ async def get_market_data(
     symbol: str,
     start_date: str,
     end_date: str,
-    timeframe: str = "daily",
+    period: str = "daily",
     adjust: str = "nf",
     asset_type: str = "stock",
     market: str = "zh_a",
@@ -50,7 +50,7 @@ async def get_market_data(
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
-            timeframe=timeframe,
+            period=period,
             adjust=adjust,
             asset_type=asset_type,
             market=market,
@@ -87,7 +87,7 @@ async def compute_indicators(req: IndicatorsRequest):
             symbol=req.symbol,
             start_date=req.start_date,
             end_date=req.end_date,
-            timeframe=req.timeframe,
+            period=req.period,
             adjust=req.adjust,
             asset_type=req.asset_type,
             market=req.market,
@@ -101,7 +101,7 @@ async def compute_indicators(req: IndicatorsRequest):
 
         return {
             "symbol": req.symbol,
-            "timeframe": req.timeframe,
+            "period": req.period,
             "indicators": series,
             "indicator_meta": meta,
         }

@@ -121,6 +121,13 @@ CacheEngine.get(...)
   → 返回数据
 ```
 
+> **补充说明（2026-04-13）**：本文中的 `CacheIndex` / SQLite 索引，与后续 refactor 中提出的 `coverage-aware cache` 不是同一件事。
+>
+> - `CacheIndex` / SQLite：负责持久化缓存元数据（文件、大小、日期范围、访问记录等）
+> - `coverage-aware cache`：负责判断缓存是否完整、是否需要 backfill、如何规划缺失区间回源
+>
+> 推荐关系是：coverage-aware cache 建立在 CacheIndex 之上，但它们分属不同层次。
+
 ---
 
 ## 3. 分区规则设计 (Partition Rules)
@@ -553,7 +560,27 @@ class CacheIndex:
   - 索引有但文件不存在 → 删除索引条目
   - 文件存在但索引没有 → 从文件元数据重建索引条目
 
-### 8.4 Docker 部署 — 缓存目录挂载
+### 8.4 索引与 coverage-aware cache 的关系
+
+SQLite `CacheIndex` 适合作为 coverage metadata 的默认存储后端。后续如果引入 coverage-aware cache，建议在索引层补充如下字段：
+
+- `asset_type`
+- `market`
+- `period`
+- `adjust`
+- `symbol`
+- `base_name`
+- `min_date`
+- `max_date`
+- `complete`
+- `last_fetch_at`
+
+然后由上层：
+
+- `CoverageResolver` 负责判断 full hit / partial hit / miss
+- `BackfillPlanner` 负责规划缺失区间回源
+
+### 8.5 Docker 部署 — 缓存目录挂载
 
 CacheIndex（SQLite DB）和 Arrow 数据文件都位于 `cache_dir` 下。Docker 部署时需要将整个缓存目录挂载为 volume，确保数据持久化。
 
@@ -749,17 +776,17 @@ def get_cache_engine() -> Optional[CacheEngine]:
 **market_data.py** 改造：
 
 ```python
-def get_market_bars(*, symbol, start_date, end_date, timeframe, adjust, source, use_cache=True):
+def get_market_bars(*, symbol, start_date, end_date, period, adjust, source, use_cache=True):
     cache = get_cache_engine()
     if cache and use_cache:
         result = cache.get(
-            symbol=symbol, period=timeframe,
+            symbol=symbol, period=period,
             start_date=start_date, end_date=end_date,
             adjust=adjust,
-            data_fetcher=lambda: _fetch_from_phoenix(source, symbol, start_date, end_date, timeframe, adjust),
+            data_fetcher=lambda: _fetch_from_phoenix(source, symbol, start_date, end_date, period, adjust),
         )
         if result is not None:
-            return _df_to_response(result, symbol, timeframe, start_date, end_date)
+            return _df_to_response(result, symbol, period, start_date, end_date)
 
     # fallback: 直接调 PhoenixA（原逻辑不变）
     client = _build_phoenix_client(source=source)
