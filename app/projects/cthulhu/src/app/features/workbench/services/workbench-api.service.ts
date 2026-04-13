@@ -10,6 +10,7 @@ import {
   IndicatorsListResponse,
   IndicatorsCalcRequest,
   IndicatorsCalcResponse,
+  DataOptionsResponse,
 } from '../models/workbench.model';
 import { environment } from '../../../../environments/environment';
 
@@ -21,6 +22,10 @@ export class WorkbenchApiService {
 
   getSources(): Observable<SourcesResponse> {
     return this.http.get<SourcesResponse>(`${this.API_BASE}/workbench/sources`);
+  }
+
+  getDataOptions(): Observable<DataOptionsResponse> {
+    return this.http.get<DataOptionsResponse>(`${this.API_BASE}/workbench/data-options`);
   }
 
   getStrategies(): Observable<WorkbenchStrategiesResponse> {
@@ -37,6 +42,8 @@ export class WorkbenchApiService {
     endDate: string,
     timeframe = 'daily',
     adjust = 'nf',
+    assetType = 'stock',
+    market = 'zh_a',
     source?: string,
   ): Observable<MarketDataResponse> {
     let params = new HttpParams()
@@ -44,7 +51,9 @@ export class WorkbenchApiService {
       .set('start_date', startDate)
       .set('end_date', endDate)
       .set('timeframe', timeframe)
-      .set('adjust', adjust);
+      .set('adjust', adjust)
+      .set('asset_type', assetType)
+      .set('market', market);
     if (source) {
       params = params.set('source', source);
     }

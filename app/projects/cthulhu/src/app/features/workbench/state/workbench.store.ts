@@ -4,6 +4,8 @@ import {
   WorkbenchStrategy,
   WorkbenchRunRequest,
   BacktestResult,
+  DataOption,
+  AdjustRule,
 } from '../models/workbench.model';
 
 const SOURCE_STORAGE_KEY = 'workbench-source';
@@ -22,6 +24,13 @@ export class WorkbenchStore {
   private readonly _sourcesLoaded = signal(false);
   private readonly _selectedSource = signal<string>('default');
 
+  // ── Data dimension options ──
+  private readonly _assetTypes = signal<DataOption[]>([]);
+  private readonly _markets = signal<DataOption[]>([]);
+  private readonly _periods = signal<DataOption[]>([]);
+  private readonly _adjustRules = signal<AdjustRule[]>([]);
+  private readonly _dataOptionsLoaded = signal(false);
+
   readonly strategies = computed(() => this._strategies());
   readonly selectedStrategy = computed(() => this._selectedStrategy());
   readonly result = computed(() => this._result());
@@ -33,6 +42,12 @@ export class WorkbenchStore {
   readonly sourcesLoaded = computed(() => this._sourcesLoaded());
   readonly selectedSource = computed(() => this._selectedSource());
   readonly sourceSelectorVisible = computed(() => this._sources().length > 1);
+
+  readonly assetTypes = computed(() => this._assetTypes());
+  readonly markets = computed(() => this._markets());
+  readonly periods = computed(() => this._periods());
+  readonly adjustRules = computed(() => this._adjustRules());
+  readonly dataOptionsLoaded = computed(() => this._dataOptionsLoaded());
 
   constructor(private api: WorkbenchApiService) {
     // restore source from localStorage
@@ -69,6 +84,27 @@ export class WorkbenchStore {
     // clear any loaded result when source changes
     this._result.set(null);
     this._error.set(null);
+  }
+
+  loadDataOptions(): void {
+    if (this._dataOptionsLoaded()) return;
+    this.api.getDataOptions().subscribe({
+      next: (resp) => {
+        this._assetTypes.set(resp.asset_types);
+        this._markets.set(resp.markets);
+        this._periods.set(resp.periods);
+        this._adjustRules.set(resp.adjust_rules);
+        this._dataOptionsLoaded.set(true);
+      },
+      error: () => {
+        this._dataOptionsLoaded.set(true);
+      },
+    });
+  }
+
+  getAdjustOptionsForAsset(assetType: string): DataOption[] {
+    const rule = this._adjustRules().find(r => r.asset_type === assetType);
+    return rule?.options ?? [];
   }
 
   loadStrategies(): void {

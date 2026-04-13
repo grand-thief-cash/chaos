@@ -1,3 +1,22 @@
+// ===== 数据维度选项 =====
+
+export interface DataOption {
+  value: string;
+  label: string;
+}
+
+export interface AdjustRule {
+  asset_type: string;
+  options: DataOption[];
+}
+
+export interface DataOptionsResponse {
+  asset_types: DataOption[];
+  markets: DataOption[];
+  periods: DataOption[];
+  adjust_rules: AdjustRule[];
+}
+
 // ===== 市场数据相关 =====
 
 export interface SourcesResponse {
@@ -46,6 +65,8 @@ export interface IndicatorsCalcRequest {
   end_date: string;
   timeframe: string;
   adjust: string;
+  asset_type: string;
+  market: string;
   indicators: IndicatorRequest[];
   source?: string;
 }
@@ -94,6 +115,8 @@ export interface WorkbenchRunRequest {
   end_date: string;
   timeframe: string;
   adjust: string;
+  asset_type: string;
+  market: string;
   cash: number;
   commission: number;
   strategy_params: Record<string, any>;

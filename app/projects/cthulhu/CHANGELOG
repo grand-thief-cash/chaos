@@ -4,7 +4,8 @@ v0.6.0
 # Changelog
 - v0.6.0
     - Added multi-datasource switch in Workbench page.
-    -
+    - Fixed missing consts in cronjob callback.
+    - Added multi-dimension selection in workbench.
 - v0.5.1
     - Rename candlestick chart to chart panel.
     - Added break-support line.

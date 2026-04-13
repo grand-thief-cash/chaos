@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, computed, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -65,6 +65,7 @@ const COLOR_PALETTE = [
           (nzActiveChange)="searchExpanded = $event"
         >
           <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <!-- Source -->
             @if (store.sourceSelectorVisible()) {
               <div>
                 <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Source</label>
@@ -80,6 +81,62 @@ const COLOR_PALETTE = [
                 </nz-select>
               </div>
             }
+            <!-- Asset Type -->
+            <div>
+              <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Asset</label>
+              <nz-select
+                [(ngModel)]="selectedAssetType"
+                (ngModelChange)="onAssetTypeChange($event)"
+                nzSize="small"
+                style="width: 100px;"
+              >
+                @for (a of store.assetTypes(); track a.value) {
+                  <nz-option [nzLabel]="a.label" [nzValue]="a.value"></nz-option>
+                }
+              </nz-select>
+            </div>
+            <!-- Market -->
+            <div>
+              <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Market</label>
+              <nz-select
+                [(ngModel)]="selectedMarket"
+                nzSize="small"
+                style="width: 100px;"
+              >
+                @for (m of store.markets(); track m.value) {
+                  <nz-option [nzLabel]="m.label" [nzValue]="m.value"></nz-option>
+                }
+              </nz-select>
+            </div>
+            <!-- Period -->
+            <div>
+              <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Period</label>
+              <nz-select
+                [(ngModel)]="selectedPeriod"
+                nzSize="small"
+                style="width: 100px;"
+              >
+                @for (p of store.periods(); track p.value) {
+                  <nz-option [nzLabel]="p.label" [nzValue]="p.value"></nz-option>
+                }
+              </nz-select>
+            </div>
+            <!-- Adjust (联动) -->
+            @if (currentAdjustOptions().length > 0) {
+              <div>
+                <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Adjust</label>
+                <nz-select
+                  [(ngModel)]="selectedAdjust"
+                  nzSize="small"
+                  style="width: 100px;"
+                >
+                  @for (a of currentAdjustOptions(); track a.value) {
+                    <nz-option [nzLabel]="a.label" [nzValue]="a.value"></nz-option>
+                  }
+                </nz-select>
+              </div>
+            }
+            <!-- Symbol -->
             <div>
               <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Symbol</label>
               <input nz-input [(ngModel)]="symbol" placeholder="e.g. 000001" style="width: 140px;" />
@@ -243,6 +300,10 @@ export class MarketDataPageComponent implements OnInit {
   subChartHeight = 150;
 
   selectedSource = 'default';
+  selectedAssetType = 'stock';
+  selectedMarket = 'zh_a';
+  selectedPeriod = 'daily';
+  selectedAdjust = 'nf';
 
   bars: Bar[] = [];
   availableIndicators: IndicatorInfo[] = [];
@@ -256,8 +317,13 @@ export class MarketDataPageComponent implements OnInit {
   indicatorSeries: Record<string, (number | null)[]> = {};
   indicatorMeta: Record<string, IndicatorSeriesMeta> = {};
 
+  currentAdjustOptions = computed(() =>
+    this.store.getAdjustOptionsForAsset(this.selectedAssetType),
+  );
+
   ngOnInit(): void {
     this.store.loadSources();
+    this.store.loadDataOptions();
     this.selectedSource = this.store.selectedSource();
 
     this.api.getAvailableIndicators().subscribe({
@@ -272,11 +338,26 @@ export class MarketDataPageComponent implements OnInit {
 
   onSourceChange(source: string): void {
     this.store.selectSource(source);
+    this.clearData();
+  }
+
+  onAssetTypeChange(assetType: string): void {
+    // 切换 asset_type 时重置 adjust 到该类型的第一个选项
+    const options = this.store.getAdjustOptionsForAsset(assetType);
+    if (options.length > 0) {
+      this.selectedAdjust = options[0].value;
+    } else {
+      this.selectedAdjust = '';
+    }
+    this.clearData();
+  }
+
+  private clearData(): void {
     if (this.bars.length > 0) {
       this.bars = [];
       this.indicatorSeries = {};
       this.indicatorMeta = {};
-      this.msg.info('Data cleared — click Load to fetch from new source');
+      this.msg.info('Data cleared — click Load to fetch with new parameters');
     }
   }
 
@@ -333,10 +414,19 @@ export class MarketDataPageComponent implements OnInit {
 
     const source = this.store.sourceSelectorVisible() ? this.selectedSource : undefined;
     this.loading = true;
-    this.api.getMarketData(this.symbol, this.startDate, this.endDate, 'daily', 'nf', source).subscribe({
+    this.api.getMarketData(
+      this.symbol, this.startDate, this.endDate,
+      this.selectedPeriod, this.selectedAdjust,
+      this.selectedAssetType, this.selectedMarket,
+      source,
+    ).subscribe({
       next: (resp) => {
         this.bars = resp.bars;
         this.loading = false;
+        if (resp.bars.length === 0) {
+          this.msg.warning('No data found for the selected parameters');
+          return;
+        }
         if (this.addedIndicators.length > 0) {
           this.fetchIndicators();
         }
@@ -364,8 +454,10 @@ export class MarketDataPageComponent implements OnInit {
         symbol: this.symbol,
         start_date: this.startDate,
         end_date: this.endDate,
-        timeframe: 'daily',
-        adjust: 'nf',
+        timeframe: this.selectedPeriod,
+        adjust: this.selectedAdjust,
+        asset_type: this.selectedAssetType,
+        market: this.selectedMarket,
         indicators,
         source,
       })
