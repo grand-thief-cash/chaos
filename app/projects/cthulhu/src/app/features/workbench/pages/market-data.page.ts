@@ -195,7 +195,7 @@ const COLOR_PALETTE = [
       </nz-collapse>
       <ng-template #collapseHeader>
         <span style="font-weight: 500;">Search</span>
-        @if (selectedSource !== 'default') {
+        @if (selectedSource !== 'relx') {
           <span style="margin-left: 8px; color: #f5222d; font-size: 12px; font-weight: normal;">
             &bull; {{ sourceLabel(selectedSource) }}
           </span>
@@ -299,11 +299,11 @@ export class MarketDataPageComponent implements OnInit {
   volumeHeight = 120;
   subChartHeight = 150;
 
-  selectedSource = 'default';
-  selectedAssetType = 'stock';
-  selectedMarket = 'zh_a';
-  selectedPeriod = 'daily';
-  selectedAdjust = 'nf';
+  selectedSource = 'relx';
+  selectedAssetType = '';
+  selectedMarket = '';
+  selectedPeriod = '';
+  selectedAdjust = '';
 
   bars: Bar[] = [];
   availableIndicators: IndicatorInfo[] = [];
@@ -322,14 +322,38 @@ export class MarketDataPageComponent implements OnInit {
   );
 
   ngOnInit(): void {
-    this.store.loadSources();
-    this.store.loadDataOptions();
-    this.selectedSource = this.store.selectedSource();
+    this.store.loadSources(() => {
+      this.selectedSource = this.store.selectedSource();
+    });
+    this.store.loadDataOptions(() => {
+      this.initializeDimensionSelections();
+    });
 
     this.api.getAvailableIndicators().subscribe({
       next: (resp) => (this.availableIndicators = resp.indicators),
       error: () => this.msg.error('Failed to load indicators'),
     });
+  }
+
+  private initializeDimensionSelections(): void {
+    const assetTypes = this.store.assetTypes();
+    const markets = this.store.markets();
+    const periods = this.store.periods();
+
+    if (!assetTypes.some((item) => item.value === this.selectedAssetType)) {
+      this.selectedAssetType = assetTypes[0]?.value ?? '';
+    }
+    if (!markets.some((item) => item.value === this.selectedMarket)) {
+      this.selectedMarket = markets[0]?.value ?? '';
+    }
+    if (!periods.some((item) => item.value === this.selectedPeriod)) {
+      this.selectedPeriod = periods[0]?.value ?? '';
+    }
+
+    const adjustOptions = this.store.getAdjustOptionsForAsset(this.selectedAssetType);
+    if (!adjustOptions.some((item) => item.value === this.selectedAdjust)) {
+      this.selectedAdjust = adjustOptions[0]?.value ?? '';
+    }
   }
 
   sourceLabel(name: string): string {
@@ -411,6 +435,10 @@ export class MarketDataPageComponent implements OnInit {
       this.msg.warning('Please fill in all fields');
       return;
     }
+    if (!this.selectedAssetType || !this.selectedMarket || !this.selectedPeriod) {
+      this.msg.warning('Data options are not ready yet');
+      return;
+    }
 
     const source = this.store.sourceSelectorVisible() ? this.selectedSource : undefined;
     this.loading = true;
@@ -454,7 +482,7 @@ export class MarketDataPageComponent implements OnInit {
         symbol: this.symbol,
         start_date: this.startDate,
         end_date: this.endDate,
-        timeframe: this.selectedPeriod,
+        period: this.selectedPeriod,
         adjust: this.selectedAdjust,
         asset_type: this.selectedAssetType,
         market: this.selectedMarket,

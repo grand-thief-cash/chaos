@@ -40,7 +40,7 @@ export class WorkbenchApiService {
     symbol: string,
     startDate: string,
     endDate: string,
-    timeframe = 'daily',
+    period = 'daily',
     adjust = 'nf',
     assetType = 'stock',
     market = 'zh_a',
@@ -50,7 +50,7 @@ export class WorkbenchApiService {
       .set('symbol', symbol)
       .set('start_date', startDate)
       .set('end_date', endDate)
-      .set('timeframe', timeframe)
+      .set('period', period)
       .set('adjust', adjust)
       .set('asset_type', assetType)
       .set('market', market);

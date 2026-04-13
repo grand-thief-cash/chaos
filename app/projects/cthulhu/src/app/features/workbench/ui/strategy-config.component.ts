@@ -37,7 +37,7 @@ import { WorkbenchRunRequest } from '../models/workbench.model';
         <span>Strategy Configuration</span>
         @if (store.sourceSelectorVisible()) {
           <div style="display: flex; align-items: center; gap: 8px;">
-            @if (selectedSource !== 'default') {
+            @if (selectedSource !== 'relx') {
               <span style="color: #f5222d; font-size: 12px;">&bull; {{ sourceLabel(selectedSource) }}</span>
             }
             <nz-select
@@ -191,11 +191,11 @@ export class StrategyConfigComponent implements OnInit {
   );
 
   form!: FormGroup;
-  selectedSource = 'default';
-  selectedAssetType = 'stock';
-  selectedMarket = 'zh_a';
-  selectedPeriod = 'daily';
-  selectedAdjust = 'nf';
+  selectedSource = 'relx';
+  selectedAssetType = '';
+  selectedMarket = '';
+  selectedPeriod = '';
+  selectedAdjust = '';
 
   ngOnInit(): void {
     this.form = this.fb.group({
@@ -207,9 +207,33 @@ export class StrategyConfigComponent implements OnInit {
       commission: [0],
     });
     this.store.loadStrategies();
-    this.store.loadSources();
-    this.store.loadDataOptions();
-    this.selectedSource = this.store.selectedSource();
+    this.store.loadSources(() => {
+      this.selectedSource = this.store.selectedSource();
+    });
+    this.store.loadDataOptions(() => {
+      this.initializeDimensionSelections();
+    });
+  }
+
+  private initializeDimensionSelections(): void {
+    const assetTypes = this.store.assetTypes();
+    const markets = this.store.markets();
+    const periods = this.store.periods();
+
+    if (!assetTypes.some((item) => item.value === this.selectedAssetType)) {
+      this.selectedAssetType = assetTypes[0]?.value ?? '';
+    }
+    if (!markets.some((item) => item.value === this.selectedMarket)) {
+      this.selectedMarket = markets[0]?.value ?? '';
+    }
+    if (!periods.some((item) => item.value === this.selectedPeriod)) {
+      this.selectedPeriod = periods[0]?.value ?? '';
+    }
+
+    const adjustOptions = this.store.getAdjustOptionsForAsset(this.selectedAssetType);
+    if (!adjustOptions.some((item) => item.value === this.selectedAdjust)) {
+      this.selectedAdjust = adjustOptions[0]?.value ?? '';
+    }
   }
 
   sourceLabel(name: string): string {
@@ -248,6 +272,10 @@ export class StrategyConfigComponent implements OnInit {
 
   onSubmit(): void {
     if (this.form.invalid) return;
+    if (!this.selectedAssetType || !this.selectedMarket || !this.selectedPeriod) {
+      this.msg.warning('Data options are not ready yet');
+      return;
+    }
     const raw = this.form.value;
 
     const strategyParams: Record<string, any> = {};
@@ -263,7 +291,7 @@ export class StrategyConfigComponent implements OnInit {
       symbol: raw.symbol,
       start_date: this.formatDate(raw.start_date),
       end_date: this.formatDate(raw.end_date),
-      timeframe: this.selectedPeriod,
+      period: this.selectedPeriod,
       adjust: this.selectedAdjust,
       asset_type: this.selectedAssetType,
       market: this.selectedMarket,

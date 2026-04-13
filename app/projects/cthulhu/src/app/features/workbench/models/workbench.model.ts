@@ -21,7 +21,7 @@ export interface DataOptionsResponse {
 
 export interface SourcesResponse {
   sources: string[];
-  default: string;
+  current: string;
 }
 
 export interface Bar {
@@ -36,7 +36,7 @@ export interface Bar {
 
 export interface MarketDataResponse {
   symbol: string;
-  timeframe: string;
+  period: string;
   start_date: string;
   end_date: string;
   bars: Bar[];
@@ -63,7 +63,7 @@ export interface IndicatorsCalcRequest {
   symbol: string;
   start_date: string;
   end_date: string;
-  timeframe: string;
+  period: string;
   adjust: string;
   asset_type: string;
   market: string;
@@ -73,7 +73,7 @@ export interface IndicatorsCalcRequest {
 
 export interface IndicatorsCalcResponse {
   symbol: string;
-  timeframe: string;
+  period: string;
   indicators: Record<string, (number | null)[]>;
   indicator_meta: Record<string, IndicatorSeriesMeta>;
 }
@@ -98,7 +98,7 @@ export interface WorkbenchStrategy {
   code: string;
   default_params: Record<string, any>;
   supported_modes: string[];
-  supported_timeframes: string[];
+  supported_periods: string[];
   param_schema: Record<string, StrategyParamSchema>;
 }
 
@@ -113,7 +113,7 @@ export interface WorkbenchRunRequest {
   symbol: string;
   start_date: string;
   end_date: string;
-  timeframe: string;
+  period: string;
   adjust: string;
   asset_type: string;
   market: string;
@@ -160,7 +160,7 @@ export interface OrderEvent {
 export interface BacktestSummary {
   strategy_code: string;
   symbol: string;
-  timeframe: string;
+  period: string;
   start_date: string;
   end_date: string;
   start_cash: number;

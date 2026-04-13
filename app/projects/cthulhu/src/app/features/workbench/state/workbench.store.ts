@@ -22,7 +22,7 @@ export class WorkbenchStore {
   // ── Data source state ──
   private readonly _sources = signal<string[]>([]);
   private readonly _sourcesLoaded = signal(false);
-  private readonly _selectedSource = signal<string>('default');
+  private readonly _selectedSource = signal<string>('relx');
 
   // ── Data dimension options ──
   private readonly _assetTypes = signal<DataOption[]>([]);
@@ -57,23 +57,29 @@ export class WorkbenchStore {
     }
   }
 
-  loadSources(): void {
-    if (this._sourcesLoaded()) return;
+  loadSources(onLoaded?: () => void): void {
+    if (this._sourcesLoaded()) {
+      onLoaded?.();
+      return;
+    }
     this.api.getSources().subscribe({
       next: (resp) => {
         this._sources.set(resp.sources);
         this._sourcesLoaded.set(true);
-        // if cached source is not in the list, fall back to default
+        // if cached source is not in the list, fall back to current
         const current = this._selectedSource();
         if (!resp.sources.includes(current)) {
-          this._selectedSource.set(resp.default);
-          localStorage.setItem(SOURCE_STORAGE_KEY, resp.default);
+          this._selectedSource.set(resp.current);
+          localStorage.setItem(SOURCE_STORAGE_KEY, resp.current);
         }
+        onLoaded?.();
       },
       error: () => {
-        // fallback: only default available
-        this._sources.set(['default']);
+        // fallback: only current local source available
+        this._sources.set(['relx']);
+        this._selectedSource.set('relx');
         this._sourcesLoaded.set(true);
+        onLoaded?.();
       },
     });
   }
@@ -86,8 +92,11 @@ export class WorkbenchStore {
     this._error.set(null);
   }
 
-  loadDataOptions(): void {
-    if (this._dataOptionsLoaded()) return;
+  loadDataOptions(onLoaded?: () => void): void {
+    if (this._dataOptionsLoaded()) {
+      onLoaded?.();
+      return;
+    }
     this.api.getDataOptions().subscribe({
       next: (resp) => {
         this._assetTypes.set(resp.asset_types);
@@ -95,9 +104,11 @@ export class WorkbenchStore {
         this._periods.set(resp.periods);
         this._adjustRules.set(resp.adjust_rules);
         this._dataOptionsLoaded.set(true);
+        onLoaded?.();
       },
       error: () => {
         this._dataOptionsLoaded.set(true);
+        onLoaded?.();
       },
     });
   }
