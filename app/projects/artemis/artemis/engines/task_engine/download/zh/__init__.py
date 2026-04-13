@@ -3,9 +3,10 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent import Stock
 from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 
 
-__all__ = ['StockZHAList', 'StockZhAHistParent', 'StockZhAHistChild', "StockZHAMarketCategory"]
+__all__ = ['StockZHAList', 'StockZhAHistParent', 'StockZhAHistChild', "StockZHAMarketCategory", "StockZHAMarketCategorySWHY"]
 
 from artemis.engines.task_engine.download.zh.stock_zh_a_market_category import StockZHAMarketCategory
+from artemis.engines.task_engine.download.zh.stock_zh_a_market_category_swhy import StockZHAMarketCategorySWHY
 
 
 
