@@ -1,7 +1,9 @@
 # VERSION
-v0.14.0
+v0.14.1
 
 # Changelog
+- v0.14.1
+    - Fixed inconsistent time in task_run table.
 - v0.14.0
     - Added task cancel to remote service.
 - v0.13.5
