@@ -16,7 +16,7 @@ import (
 type MarketCategoryController struct {
 	*core.BaseComponent
 	SvcMktCategroyMairui *service.MarketCategoryMairui `infra:"dep:svc_market_category_mairui"`
-	//SvcMktCategroySWHY   *service.IMarketCategoryService[model.CategorySWHY, model.CategoryFiltersSWHY]     `infra:"dep:market_category_swhy_service"`
+	SvcMktCategroySWHY   *service.MarketCategorySWHY   `infra:"dep:svc_market_category_swhy"`
 }
 
 func NewMarketCategoryController() *MarketCategoryController {
@@ -37,6 +37,18 @@ func (c *MarketCategoryController) Create(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if err = c.SvcMktCategroyMairui.Create(ctx, &m); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(m)
+	} else if source == bizConsts.DATA_SOURCE_AMAZING_DATA {
+		var m model.CategorySWHY
+		if err = json.NewDecoder(r.Body).Decode(&m); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err = c.SvcMktCategroySWHY.Create(ctx, &m); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -67,6 +79,18 @@ func (c *MarketCategoryController) BatchUpsert(w http.ResponseWriter, r *http.Re
 			return
 		}
 		w.WriteHeader(http.StatusOK)
+	} else if source == bizConsts.DATA_SOURCE_AMAZING_DATA {
+		var list []*model.CategorySWHY
+		if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
+			logging.Errorf(ctx, "Failed to decode batch upsert request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := c.SvcMktCategroySWHY.BatchUpsert(ctx, list); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	} else {
 		http.Error(w, "source is required", http.StatusBadRequest)
 		return
@@ -92,6 +116,19 @@ func (c *MarketCategoryController) Update(w http.ResponseWriter, r *http.Request
 		}
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(m)
+	} else if source == bizConsts.DATA_SOURCE_AMAZING_DATA {
+		var m model.CategorySWHY
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		m.IndustryCode = code
+		if err := c.SvcMktCategroySWHY.Update(ctx, &m); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(m)
 	} else {
 		http.Error(w, "source is required", http.StatusBadRequest)
 		return
@@ -110,6 +147,14 @@ func (c *MarketCategoryController) Get(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		json.NewEncoder(w).Encode(m)
+	} else if source == bizConsts.DATA_SOURCE_AMAZING_DATA {
+		code := chi.URLParam(r, "code")
+		m, err := c.SvcMktCategroySWHY.Get(ctx, code)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(m)
 	} else {
 		http.Error(w, "source is required", http.StatusBadRequest)
 		return
@@ -123,6 +168,12 @@ func (c *MarketCategoryController) Delete(w http.ResponseWriter, r *http.Request
 	code := chi.URLParam(r, "code")
 	if source == bizConsts.DATA_SOURCE_MAIRUI {
 		if err := c.SvcMktCategroyMairui.Delete(ctx, code); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	} else if source == bizConsts.DATA_SOURCE_AMAZING_DATA {
+		if err := c.SvcMktCategroySWHY.Delete(ctx, code); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -165,6 +216,49 @@ func (c *MarketCategoryController) List(w http.ResponseWriter, r *http.Request) 
 		}
 
 		list, count, err := c.SvcMktCategroyMairui.List(ctx, f, page, pageSize)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp := map[string]interface{}{
+			"list":  list,
+			"total": count,
+		}
+		json.NewEncoder(w).Encode(resp)
+	} else if source == bizConsts.DATA_SOURCE_AMAZING_DATA {
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+
+		f := &model.CategoryFiltersSWHY{}
+		if v := r.URL.Query().Get("index_code"); v != "" {
+			f.IndexCode = &v
+		}
+		if v := r.URL.Query().Get("industry_code"); v != "" {
+			f.IndustryCode = &v
+		}
+		if v := r.URL.Query().Get("level_type"); v != "" {
+			if i, err := strconv.ParseUint(v, 10, 8); err == nil {
+				u8 := uint8(i)
+				f.LevelType = &u8
+			}
+		}
+		if v := r.URL.Query().Get("level1_name"); v != "" {
+			f.Level1Name = &v
+		}
+		if v := r.URL.Query().Get("level2_name"); v != "" {
+			f.Level2Name = &v
+		}
+		if v := r.URL.Query().Get("level3_name"); v != "" {
+			f.Level3Name = &v
+		}
+		if v := r.URL.Query().Get("is_pub"); v != "" {
+			if i, err := strconv.ParseUint(v, 10, 8); err == nil {
+				u8 := uint8(i)
+				f.IsPub = &u8
+			}
+		}
+
+		list, count, err := c.SvcMktCategroySWHY.List(ctx, f, page, pageSize)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

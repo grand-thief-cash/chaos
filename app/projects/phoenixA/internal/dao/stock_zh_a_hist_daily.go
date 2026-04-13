@@ -10,6 +10,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type StockZhAHistDaily struct {
@@ -45,7 +46,15 @@ func (d *StockZhAHistDaily) Stop(ctx context.Context) error {
 func (d *StockZhAHistDaily) BatchUpsert(ctx context.Context, upsertMeta *model.HistDataRequestMeta, data []*model.StockZhAHistDaily) error {
 
 	tableName := getHistDataTableName(*upsertMeta.Period, *upsertMeta.Adjust)
-	return d.db.Table(tableName).WithContext(ctx).CreateInBatches(data, 1000).Error
+	return d.db.Table(tableName).WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "date"}, {Name: "code"}},
+			DoUpdates: clause.AssignmentColumns(
+				[]string{"open", "high", "low", "close", "preclose",
+					"volume", "amount", "turn", "pct_chg",
+					"pe_ttm", "ps_ttm", "pcf_ncf_ttm", "pb_mrq"},
+			),
+		}).CreateInBatches(data, 1000).Error
 }
 
 func (d *StockZhAHistDaily) GetLatestUpdateByCodes(ctx context.Context, req *model.HistDataRequestMeta) (map[string]string, error) {

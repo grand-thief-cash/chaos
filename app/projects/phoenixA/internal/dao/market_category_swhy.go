@@ -52,7 +52,7 @@ func (d *MarketCategorySWHY) Update(ctx context.Context, m *model.CategorySWHY) 
 func (d *MarketCategorySWHY) BatchUpsert(ctx context.Context, list []*model.CategorySWHY, chunkSize int) error {
 	return d.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "industry_code"}},
-		DoUpdates: clause.AssignmentColumns([]string{"index_code", "level_code", "level1_name", "level2_name", "level3_name", "is_pub", "change_reason"}),
+		DoUpdates: clause.AssignmentColumns([]string{"index_code", "level_type", "level1_name", "level2_name", "level3_name", "is_pub", "change_reason"}),
 	}).CreateInBatches(list, chunkSize).Error
 }
 
@@ -79,8 +79,8 @@ func (d *MarketCategorySWHY) List(ctx context.Context, filters *model.CategoryFi
 		if filters.IndustryCode != nil {
 			query = query.Where("industry_code = ?", *filters.IndustryCode)
 		}
-		if filters.LevelCode != nil {
-			query = query.Where("level_code = ?", *filters.LevelCode)
+		if filters.LevelType != nil {
+			query = query.Where("level_type = ?", *filters.LevelType)
 		}
 		if filters.Level1Name != nil {
 			query = query.Where("level1_name like ?", "%"+*filters.Level1Name+"%")
@@ -109,8 +109,8 @@ func (d *MarketCategorySWHY) Count(ctx context.Context, filters *model.CategoryF
 		if filters.IndustryCode != nil {
 			query = query.Where("industry_code = ?", *filters.IndustryCode)
 		}
-		if filters.LevelCode != nil {
-			query = query.Where("level_code = ?", *filters.LevelCode)
+		if filters.LevelType != nil {
+			query = query.Where("level_type = ?", *filters.LevelType)
 		}
 		if filters.Level1Name != nil {
 			query = query.Where("level1_name like ?", "%"+*filters.Level1Name+"%")

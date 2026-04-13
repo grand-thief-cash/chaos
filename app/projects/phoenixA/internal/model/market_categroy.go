@@ -6,17 +6,17 @@ type Category struct{}
 // 申万行业 分类
 type CategorySWHY struct {
 	Category
-	IndexCode    string `gorm:"type:varchar(9);" json:"index_code"`
-	IndustryCode string `gorm:"type:varchar(6);" json:"industry_code"`
-	LevelCode    uint8  `gorm:"type:tinyint unsigned;" json:"level_code"`
-	Level1Name   string `gorm:"type:varchar(16);" json:"level1_name"`
-	Level2Name   string `gorm:"type:varchar(16);" json:"level2_name"`
-	Level3Name   string `gorm:"type:varchar(16);" json:"level3_name"`
-	IsPub        uint8  `gorm:"type:tinyint unsigned;" json:"is_pub"`
-	ChangeReason string `gorm:"type:varchar(32);" json:"change_reason"`
+	IndexCode    string `gorm:"type:varchar(9);not null" json:"index_code"`
+	IndustryCode string `gorm:"type:varchar(6);not null;unique" json:"industry_code"`
+	LevelType    uint8  `gorm:"type:tinyint unsigned;not null" json:"level_type"`
+	Level1Name   string `gorm:"type:varchar(16);not null" json:"level1_name"`
+	Level2Name   string `gorm:"type:varchar(16);not null" json:"level2_name"`
+	Level3Name   string `gorm:"type:varchar(16);not null" json:"level3_name"`
+	IsPub        uint8  `gorm:"type:tinyint unsigned;not null" json:"is_pub"`
+	ChangeReason string `gorm:"type:varchar(32);not null;default:''" json:"change_reason"`
 }
 
-func (CategorySWHY) TableName() string { return "category_swhy" }
+func (CategorySWHY) TableName() string { return "mkt_category_swhy" }
 
 type CategoryMairui struct {
 	Code       string  `gorm:"primaryKey;type:varchar(64);not null;unique" json:"code"`
@@ -43,7 +43,7 @@ type CategoryFiltersMairui struct {
 type CategoryFiltersSWHY struct {
 	IndexCode    *string
 	IndustryCode *string
-	LevelCode    *uint8
+	LevelType    *uint8
 	Level1Name   *string
 	Level2Name   *string
 	Level3Name   *string
