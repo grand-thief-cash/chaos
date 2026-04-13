@@ -1,7 +1,10 @@
 # VERSION
-v0.6.0
+v0.6.1
 
 # Changelog
+- v0.6.1
+    - Propagate response-field renames through workbench.model.ts and workbench-api.service.ts so requests/responses use period and current.
+    - Move selected source/dimension state into workbench.store.ts, then simplify market-data.page.ts and strategy-config.component.ts to consume store state without hardcoded fallbacks.
 - v0.6.0
     - Added multi-datasource switch in Workbench page.
     - Fixed missing consts in cronjob callback.
