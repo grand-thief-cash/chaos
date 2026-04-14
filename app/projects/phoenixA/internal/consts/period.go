@@ -1,5 +1,7 @@
 package consts
 
+// Unified period values used across all projects.
+// Use "period" as the canonical field name (not freq/timeframe).
 const (
 	PERIOD_MIN5    = "min5"
 	PERIOD_MIN15   = "min15"

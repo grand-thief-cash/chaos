@@ -1,0 +1,145 @@
+package controller
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"gorm.io/gorm"
+
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
+	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
+	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/service"
+)
+
+// SecurityController handles HTTP endpoints for the unified security registry.
+type SecurityController struct {
+	*core.BaseComponent
+	Svc *service.SecurityService `infra:"dep:svc_security"`
+}
+
+func NewSecurityController() *SecurityController {
+	return &SecurityController{BaseComponent: core.NewBaseComponent(bizConsts.COMP_CTRL_SECURITY)}
+}
+
+func (c *SecurityController) Start(ctx context.Context) error { return c.BaseComponent.Start(ctx) }
+func (c *SecurityController) Stop(ctx context.Context) error  { return c.BaseComponent.Stop(ctx) }
+
+// GET /api/v2/securities
+func (c *SecurityController) List(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	limit, offset := parseLimitOffset(r)
+	q := r.URL.Query()
+
+	symbols := parseFieldsParam(q.Get("symbols"))
+	if symbolList := q.Get("symbol_list"); symbolList != "" {
+		symbols = append(symbols, strings.Split(symbolList, ",")...)
+	}
+	exchanges := parseFieldsParam(q.Get("exchange"))
+
+	singleSymbol := ""
+	if len(symbols) == 1 {
+		singleSymbol = symbols[0]
+	}
+
+	f := &model.SecurityFilters{
+		Symbol:    singleSymbol,
+		Symbols:   symbols,
+		AssetType: q.Get("asset_type"),
+		Market:    q.Get("market"),
+		Exchanges: exchanges,
+		Name:      q.Get("name"),
+		Status:    q.Get("status"),
+	}
+	// Defaults
+	if f.AssetType == "" {
+		f.AssetType = bizConsts.ASSET_TYPE_STOCK
+	}
+	if f.Market == "" {
+		f.Market = bizConsts.MARKET_ZH_A
+	}
+
+	list, err := c.Svc.ListFiltered(ctx, f, limit, offset)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse[any]{Data: list})
+}
+
+// GET /api/v2/securities/{symbol}
+func (c *SecurityController) Get(w http.ResponseWriter, r *http.Request, symbol string) {
+	ctx := r.Context()
+	q := r.URL.Query()
+	assetType := q.Get("asset_type")
+	market := q.Get("market")
+
+	s, err := c.Svc.Get(ctx, symbol, assetType, market)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeJSON(w, http.StatusNotFound, apiError{Error: "not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse[any]{Data: s})
+}
+
+// POST /api/v2/securities/upsert
+func (c *SecurityController) BatchUpsert(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req []*model.SecurityRegistry
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid json"})
+		return
+	}
+	affected, err := c.Svc.BatchUpsert(ctx, req, 200)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"rows": affected}})
+}
+
+// GET /api/v2/securities/count
+func (c *SecurityController) Count(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	q := r.URL.Query()
+	f := &model.SecurityFilters{
+		AssetType: q.Get("asset_type"),
+		Market:    q.Get("market"),
+		Exchange:  q.Get("exchange"),
+		Name:      q.Get("name"),
+		Status:    q.Get("status"),
+	}
+	if f.AssetType == "" {
+		f.AssetType = bizConsts.ASSET_TYPE_STOCK
+	}
+	if f.Market == "" {
+		f.Market = bizConsts.MARKET_ZH_A
+	}
+	cnt, err := c.Svc.CountFiltered(ctx, f)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"count": cnt}})
+}
+
+// DELETE /api/v2/securities/all
+func (c *SecurityController) DeleteAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	q := r.URL.Query()
+	assetType := q.Get("asset_type")
+	market := q.Get("market")
+	affected, err := c.Svc.DeleteAll(ctx, assetType, market)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"rows": affected}})
+}

@@ -1,10 +1,13 @@
 package consts
 
+// Data source identifiers.
+// Use "source" as the canonical field name (not data_source).
 const (
-	// Data sources
-	DATA_SOURCE_TUSHARE      = "tushare"
-	DATA_SOURCE_JQDATA       = "jqdata"
-	DATA_SOURCE_AMAZING_DATA = "amazing_data"
-	DATA_SOURCE_MAIRUI       = "mairui"
-	DATA_SOURCE_AKSHARE      = "akshare"
+	SOURCE_TUSHARE      = "tushare"
+	SOURCE_JQDATA       = "jqdata"
+	SOURCE_AMAZING_DATA = "amazing_data"
+	SOURCE_MAIRUI       = "mairui"
+	SOURCE_AKSHARE      = "akshare"
+	SOURCE_BAOSTOCK     = "baostock"
+	SOURCE_CSV_IMPORT   = "csv_import"
 )

@@ -10,7 +10,7 @@ type StrategyRunSummary struct {
 	Mode          string    `gorm:"column:mode;type:varchar(32);not null" json:"mode"`                           // 回测模式，如 historical
 	StrategyCode  string    `gorm:"column:strategy_code;type:varchar(64);not null;index" json:"strategy_code"`   // 策略代码，如 sma_cross
 	Symbol        string    `gorm:"column:symbol;type:varchar(32);not null;index" json:"symbol"`                 // 股票代码，如 000001
-	Timeframe     string    `gorm:"column:timeframe;type:varchar(32);not null" json:"timeframe"`                 // K 线周期，如 daily
+	Period        string    `gorm:"column:period;type:varchar(32);not null" json:"period"`                       // K 线周期，如 daily (统一字段名，原 timeframe)
 	StartDate     string    `gorm:"column:start_date;type:date" json:"start_date,omitempty"`                     // 回测起始日期
 	EndDate       string    `gorm:"column:end_date;type:date" json:"end_date,omitempty"`                         // 回测结束日期
 	StartCash     float64   `gorm:"column:start_cash;type:decimal(20,4)" json:"start_cash"`                      // 初始资金

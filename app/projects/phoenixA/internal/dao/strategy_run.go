@@ -46,7 +46,7 @@ func (d *StrategyRunDao) Stop(ctx context.Context) error {
 func (d *StrategyRunDao) UpsertSummary(ctx context.Context, summary *model.StrategyRunSummary) error {
 	return d.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "run_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"parent_run_id", "task_code", "mode", "strategy_code", "symbol", "timeframe", "start_date", "end_date", "start_cash", "end_value", "pnl", "pnl_pct", "max_drawdown", "sharpe", "trade_count", "win_count", "loss_count", "win_rate", "bars_processed", "status", "stop_reason", "error_message", "duration_ms", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"parent_run_id", "task_code", "mode", "strategy_code", "symbol", "period", "start_date", "end_date", "start_cash", "end_value", "pnl", "pnl_pct", "max_drawdown", "sharpe", "trade_count", "win_count", "loss_count", "win_rate", "bars_processed", "status", "stop_reason", "error_message", "duration_ms", "updated_at"}),
 	}).Create(summary).Error
 }
 
