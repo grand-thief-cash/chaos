@@ -1,7 +1,22 @@
 # VERSION
-v0.16.0
+v0.17.0
 
 # Changelog
+- v0.17.0
+    - **Unified field naming & PhoenixA v2 API migration**
+    - PhoenixAClient refactored to use v2 API endpoints:
+        - `get_bars()` / `upsert_bars()` — unified bars via `/api/v2/bars/{asset_type}/{market}`
+        - `get_securities()` / `upsert_securities()` — via `/api/v2/securities`
+        - `upsert_taxonomy_categories()` — via `/api/v2/taxonomy/{source}/categories/upsert`
+        - Automatic `trade_date→date` / `symbol→code` field mapping for CacheEngine compatibility
+    - All legacy client methods preserved as backward-compatible aliases
+    - Replaced per-asset-type providers with unified `PhoenixBarsProvider`
+    - Renamed `timeframe` → `period` across all backtest code:
+        - `BacktestResultNormalizer`, `BacktraderRunTask`, `BacktraderCampaignTask`
+        - Removed `timeframe→period` remapping hack in `workbench/backtest.py`
+    - Updated `DataProviderRegistry`:
+        - New primary spec: `phoenixa_bars` (supports daily/weekly/min5/min15/min30/min60)
+        - Legacy alias `phoenixa_hist_daily` preserved for existing task configs
 - v0.16.0
     - Refactor backend query contracts in workbench.py and workbench_routes.py to standardize period, current, and source validation.
     - Update source scanning in config_manager.py so available_sources() returns relx/home/production and current, never default.

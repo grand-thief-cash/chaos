@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import Iterable, List
 
 from artemis.services.workbench.providers.base import MarketDataProvider
-from artemis.services.workbench.providers.phoenix_index_hist_provider import PhoenixIndexZhAProvider
-from artemis.services.workbench.providers.phoenix_stock_hist_provider import PhoenixStockZhAProvider
+from artemis.services.workbench.providers.phoenix_stock_hist_provider import PhoenixBarsProvider
 
 
 class ProviderRegistry:
@@ -27,7 +26,6 @@ class ProviderRegistry:
 
 provider_registry = ProviderRegistry(
     providers=[
-        PhoenixStockZhAProvider(),
-        PhoenixIndexZhAProvider(),
+        PhoenixBarsProvider(),
     ]
 )
