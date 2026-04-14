@@ -1,7 +1,30 @@
 # VERSION
-v0.3.6
+v1.0.0
 
 # Changelog
+- v1.0.0
+    - **[BREAKING] PhoenixA v2 Architecture Refactoring**
+    - Unified field naming across all projects:
+        - `code` → `symbol`, `date` → `trade_date`, `company` → `name`
+        - `timeframe` → `period` (in strategy_run_summary table & all APIs)
+        - `data_source` → `source`
+    - New unified tables:
+        - `security_registry` (replaces `stock_zh_a_list`)
+        - `bars_{asset_type}_{market}_{period}_{adjust}` (replaces `stock_zh_a_hist_*`)
+        - `bars_ext_{source}_{asset_type}_{market}_{period}` (source-specific extension columns)
+        - `taxonomy_category` (replaces `mkt_category_mairui`, `mkt_category_swhy`)
+        - `taxonomy_security_map` (replaces `category_stock_map`)
+    - New v2 API routes:
+        - `/api/v2/securities` — unified security registry CRUD
+        - `/api/v2/bars/{asset_type}/{market}` — unified bars query & upsert
+        - `/api/v2/taxonomy/{source}` — unified taxonomy categories & mappings
+    - Backward-compatible v1 routes preserved (proxied to v2 logic)
+    - Added `0005_v2_architecture.sql` — new table schema
+    - Added `0006_rename_timeframe_to_period.sql` — strategy_run_summary column rename
+    - Added `0007_data_migration_and_cleanup.sql` — data migration & old table cleanup
+    - Added `docs/UNIFIED_TERMINOLOGY.md` — cross-project field naming spec
+    - Removed all legacy v1 model/dao/service/controller files
+    - Updated `docs/2026-04-14 ARCHITECTURE_DESIGN_FOR_PHOENIXA.md`
 - v0.3.6
     - Added SWHY stock category
     - Fixed Stock ZH A hist upsert error.

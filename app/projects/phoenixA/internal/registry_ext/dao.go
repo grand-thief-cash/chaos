@@ -1,35 +1,3 @@
 package registry_ext
 
-import (
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
-	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/dao"
-)
-
-func init() {
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		// datasource name comes from phoenixA/config/config.yaml -> mysql_gorm.data_sources
-		return true, dao.NewStockZhAListDao("security"), nil
-	})
-
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, dao.NewStockZhAHistDailyDao("security"), nil
-	})
-
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, dao.NewStrategyRunDao("security"), nil
-	})
-
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, dao.NewMarketCategoryMairui("security"), nil
-	})
-
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, dao.NewMarketCategorySWHY("security"), nil
-	})
-
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, dao.NewCategoryStockMapDao("security"), nil
-	})
-}
+// Legacy v1 DAO registrations removed — all registrations now in dao_v2.go.
