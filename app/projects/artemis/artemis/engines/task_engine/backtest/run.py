@@ -43,7 +43,7 @@ class BacktraderRunTask(WorkerUnit):
             "data_provider_code",
             "analyzer_profile",
             "symbol",
-            "timeframe",
+            "period",
             "start_date",
             "end_date",
         ]
@@ -90,7 +90,7 @@ class BacktraderRunTask(WorkerUnit):
         ctx.stats["run_meta"] = {
             "strategy_code": params.get("strategy_code"),
             "symbol": params.get("symbol"),
-            "timeframe": params.get("timeframe"),
+            "period": params.get("period"),
             "mode": params.get("mode"),
         }
 
@@ -108,7 +108,7 @@ class BacktraderRunTask(WorkerUnit):
             symbol=symbol,
             start_date=str(params.get("start_date")),
             end_date=str(params.get("end_date")),
-            timeframe=str(params.get("timeframe")),
+            timeframe=str(params.get("period")),
             adjust=str(params.get("adjust") or provider_spec.default_adjust),
             fields=fields,
         )
@@ -157,7 +157,7 @@ class BacktraderRunTask(WorkerUnit):
             mode=str(params.get("mode")),
             strategy_code=str(params.get("strategy_code")),
             symbol=str(params.get("symbol")),
-            timeframe=str(params.get("timeframe")),
+            period=str(params.get("period")),
             start_date=str(params.get("start_date")),
             end_date=str(params.get("end_date")),
             start_cash=float(result.get("start_cash") or 0.0),

@@ -6,15 +6,25 @@ from typing import Any, Dict
 
 @dataclass(frozen=True)
 class DataProviderSpec:
-    """数据源规格，定义回测数据提供者的配置和字段要求。"""
+    """数据源规格，定义回测数据提供者的配置和字段要求。
+
+    Unified field naming (v2):
+      - trade_date (not date)
+      - symbol (not code)
+      - period (not timeframe/freq)
+
+    NOTE: CacheEngine internally still uses 'date' and 'code' column names.
+    The PhoenixAClient.get_bars() handles the renaming automatically when
+    normalize_for_cache=True.
+    """
 
     code: str
     supported_modes: tuple[str, ...] = ("historical",)
     supported_timeframes: tuple[str, ...] = ("daily",)
     default_adjust: str = "nf"
     required_fields: tuple[str, ...] = (
-        "date",
-        "code",
+        "date",       # CacheEngine internal name (mapped from trade_date)
+        "code",       # CacheEngine internal name (mapped from symbol)
         "open",
         "high",
         "low",
@@ -44,6 +54,17 @@ class DataProviderRegistry:
         return spec
 
 
-_data_provider_spec = DataProviderSpec(code="phoenixa_hist_daily")
+_data_provider_spec = DataProviderSpec(
+    code="phoenixa_bars",
+    supported_timeframes=("daily", "weekly", "min5", "min15", "min30", "min60"),
+)
 data_provider_registry = DataProviderRegistry()
 data_provider_registry.register(_data_provider_spec)
+
+# Legacy alias so existing task configs with "phoenixa_hist_daily" still work
+_legacy_spec = DataProviderSpec(
+    code="phoenixa_hist_daily",
+    supported_timeframes=("daily", "weekly", "min5", "min15", "min30", "min60"),
+)
+data_provider_registry.register(_legacy_spec)
+

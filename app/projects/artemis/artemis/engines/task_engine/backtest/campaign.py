@@ -27,7 +27,7 @@ class BacktraderCampaignTask(OrchestratorUnit):
             "strategy_code",
             "data_provider_code",
             "analyzer_profile",
-            "timeframe",
+            "period",
             "start_date",
             "end_date",
         ]
@@ -165,7 +165,7 @@ class BacktraderCampaignTask(OrchestratorUnit):
                     "params": {
                         "mode": ctx.params.get("mode"),
                         "market": ctx.params.get("market"),
-                        "timeframe": ctx.params.get("timeframe"),
+                        "period": ctx.params.get("period"),
                         "adjust": ctx.params.get("adjust"),
                         "strategy_code": ctx.params.get("strategy_code"),
                         "data_provider_code": ctx.params.get("data_provider_code"),

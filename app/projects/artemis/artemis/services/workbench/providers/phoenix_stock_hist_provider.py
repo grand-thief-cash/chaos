@@ -6,19 +6,27 @@ from artemis.models.workbench import MarketDataQuery
 from artemis.services.workbench.providers.base import MarketDataProvider
 
 
-class PhoenixStockZhAProvider(MarketDataProvider):
-    """PhoenixA 股票 A 股历史行情 provider。"""
+class PhoenixBarsProvider(MarketDataProvider):
+    """Unified PhoenixA bars provider for all asset types and markets.
 
-    name = "phoenix_stock_zh_a_hist"
+    Uses the v2 /api/v2/bars/{asset_type}/{market} endpoint via
+    PhoenixAClient.get_bars(). Replaces per-asset-type providers.
+    """
+
+    name = "phoenix_bars"
 
     def supports(self, *, asset_type: str, market: str) -> bool:
-        return asset_type == "stock" and market == "zh_a"
+        # Supports all asset_type/market combinations served by PhoenixA
+        return True
 
     def fetch_bars(self, *, client: Any, query: MarketDataQuery) -> List[Dict[str, Any]]:
-        return client.get_stock_zh_a_hist_bars(
+        return client.get_bars(
+            asset_type=query.asset_type,
+            market=query.market,
             symbol=query.symbol,
             start_date=query.start_date,
             end_date=query.end_date,
-            timeframe=query.period,
+            period=query.period,
             adjust=query.adjust,
+            normalize_for_cache=True,
         )

@@ -113,7 +113,7 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
         mode="historical",
         strategy_code=req.strategy_code,
         symbol=req.symbol,
-        timeframe=req.period,
+        period=req.period,
         start_date=req.start_date,
         end_date=req.end_date,
         start_cash=start_cash,
@@ -124,8 +124,6 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
     )
 
     summary = dict(normalized["summary"])
-    timeframe_value = summary.pop("timeframe", req.period)
-    summary["period"] = timeframe_value
 
     return {
         **normalized,
