@@ -85,7 +85,7 @@ class BacktraderPhase1Tests(unittest.TestCase):
                 {
                     "mode": "historical",
                     "market": "CN_A",
-                    "timeframe": "daily",
+                    "period": "daily",
                     "strategy_code": "sma_cross",
                     "data_provider_code": "phoenixa_hist_daily",
                     "analyzer_profile": "default_hist_v1",
@@ -135,7 +135,7 @@ class BacktraderPhase1Tests(unittest.TestCase):
                 {
                     "mode": "historical",
                     "market": "CN_A",
-                    "timeframe": "daily",
+                    "period": "daily",
                     "strategy_code": "sma_cross",
                     "data_provider_code": "phoenixa_hist_daily",
                     "analyzer_profile": "default_hist_v1",
@@ -171,7 +171,7 @@ class BacktraderPhase1Tests(unittest.TestCase):
         self.assertIn("missing required params", result["error"])
         self.assertIn("data_provider_code", result["error"])
         self.assertIn("analyzer_profile", result["error"])
-        self.assertIn("timeframe", result["error"])
+        self.assertIn("period", result["error"])
 
 
 if __name__ == "__main__":

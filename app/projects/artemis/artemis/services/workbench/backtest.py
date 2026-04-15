@@ -8,25 +8,12 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from artemis.engines.strategy_engine import analyzer_profile_registry, strategy_registry
-from artemis.engines.strategy_engine.engine_builder import BacktraderEngineBuilder
+from artemis.engines.strategy_engine.executor import execute_backtest
 from artemis.engines.strategy_engine.result_normalizer import BacktestResultNormalizer
 from artemis.log.logger import get_logger
 from artemis.models.workbench import WorkbenchRunReq
 
 logger = get_logger("workbench")
-
-
-def _extract_analyzer_results(strategy_instance: Any) -> Dict[str, Any]:
-    """从策略实例中提取分析器结果。"""
-    analyzers = getattr(strategy_instance, "analyzers", None)
-    if analyzers is None:
-        return {}
-    try:
-        items = analyzers.getitems()
-    except Exception:
-        logger.warning("failed to extract analyzer results", exc_info=True)
-        return {}
-    return {name: analyzer.get_analysis() for name, analyzer in items}
 
 
 def list_strategies() -> Dict[str, Any]:
@@ -82,10 +69,10 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
             f"无法获取数据: symbol={req.symbol}, asset_type={req.asset_type}, market={req.market}, period={req.period}, adjust={req.adjust}。请检查数据维度组合是否有对应数据。"
         )
 
-    # 6. 构建 Cerebro 引擎
+    # 6. 执行回测（共用核心执行函数）
     df = pd.DataFrame(bars)
     merged_params = {**spec.default_params, **req.strategy_params}
-    cerebro = BacktraderEngineBuilder.build(
+    result = execute_backtest(
         df=df,
         strategy_spec=spec,
         strategy_params=merged_params,
@@ -94,17 +81,7 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
         commission=req.commission,
     )
 
-    # 7. 执行回测
-    start_cash = float(cerebro.broker.get_cash())
-    strategies = cerebro.run()
-    strategy_instance = strategies[0]
-    end_value = float(cerebro.broker.get_value())
-    bars_processed = len(df.index)
-
-    # 8. 提取分析器结果
-    analyzer_results = _extract_analyzer_results(strategy_instance)
-
-    # 9. 标准化结果
+    # 7. 标准化结果
     run_id = f"wb-{int(time.time())}"
     normalized = BacktestResultNormalizer.normalize(
         run_id=run_id,
@@ -116,11 +93,11 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
         period=req.period,
         start_date=req.start_date,
         end_date=req.end_date,
-        start_cash=start_cash,
-        end_value=end_value,
-        strategy_instance=strategy_instance,
-        analyzer_results=analyzer_results,
-        bars_processed=bars_processed,
+        start_cash=result["start_cash"],
+        end_value=result["end_value"],
+        strategy_instance=result["strategy_instance"],
+        analyzer_results=result["analyzer_results"],
+        bars_processed=result["bars_processed"],
     )
 
     summary = dict(normalized["summary"])
