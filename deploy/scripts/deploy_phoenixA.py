@@ -187,6 +187,9 @@ def upload_files(build_file, compose_file):
     sftp_upload(ssh, build_file, f"{REMOTE_DEPLOY_PATH}/{SERVICE_NAME}")
     sftp_upload(ssh, DOCKERFILE_PATH, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
     sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
+
+    # 清理远程 migrations 目录中的旧文件，防止已删除的本地文件残留在服务器上
+    remote_exec(ssh, f"rm -rf {REMOTE_DEPLOY_PATH}/migrations")
     sftp_upload(ssh, f"{GO_PROJECT_PATH}/migrations", f"{REMOTE_DEPLOY_PATH}/migrations")
 
     ssh.close()

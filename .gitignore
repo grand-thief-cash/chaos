@@ -46,3 +46,6 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+/app/projects/phoenixA/logs/*
+/app/projects/cronjob/logs/*
+/app/projects/artemis/logs/*
