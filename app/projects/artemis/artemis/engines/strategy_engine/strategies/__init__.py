@@ -8,7 +8,8 @@
 
 from artemis.engines.strategy_engine.strategies.base import BaseRecordingStrategy, register_strategy
 from artemis.engines.strategy_engine.strategies.sma_cross import SmaCrossStrategy
+from artemis.engines.strategy_engine.strategies.grid_trading import GridTradingStrategy
 
 
-__all__ = ["BaseRecordingStrategy", "register_strategy", "SmaCrossStrategy"]
+__all__ = ["BaseRecordingStrategy", "register_strategy", "SmaCrossStrategy", "GridTradingStrategy"]
 

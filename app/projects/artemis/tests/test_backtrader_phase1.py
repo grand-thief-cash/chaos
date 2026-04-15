@@ -16,13 +16,13 @@ class FakePhoenixABacktestClient(NoopDeptServiceClient):
         self.saved_summaries = []
         self.saved_artifacts = []
 
-    def get_stock_zh_a_codes(self, codes=None):
-        requested = codes or ["600000", "000001"]
-        return {code: {"code": code, "exchange": "SH"} for code in requested}
+    def get_securities(self, *, symbols=None, asset_type="stock", market="zh_a", exchanges=None, limit=20000):
+        requested = symbols or ["600000", "000001"]
+        return {s: {"symbol": s, "exchange": "SH"} for s in requested}
 
-    def get_stock_zh_a_last_updates(self, period="daily", adjust="nf", codes=None):
-        requested = codes or ["600000", "000001"]
-        return {code: "2024-12-31" for code in requested}
+    def get_bars_last_update(self, *, asset_type="stock", market="zh_a", period="daily", adjust="nf", symbols=None):
+        requested = symbols or ["600000", "000001"]
+        return {s: "2024-12-31" for s in requested}
 
     def get_strategy_market_bars(self, *, symbol, start_date, end_date, timeframe="daily", adjust="nf", fields=None):
         start = datetime.strptime(start_date, "%Y-%m-%d")

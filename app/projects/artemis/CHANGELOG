@@ -1,7 +1,38 @@
 # VERSION
-v0.19.0
+v0.20.0
 
 # Changelog
+- v0.20.0
+    - **Bugfix: STOCK_ZH_A_HIST field name mismatch**
+        - Fixed `date→trade_date`, `code→symbol` field mapping for PhoenixA v2 API compatibility
+        - Separated standard bars and baostock ext data (`turn`, `pe_ttm`, etc.) into `bars` + `ext` payloads
+        - Renamed `pctChg→pct_chg` to match PhoenixA `StandardBar` JSON tags
+        - Fixed empty `trade_date` causing MySQL `Error 1292` on upsert
+    - **Unified `code→symbol` variable naming across codebase**
+        - `stock_zh_a_hist_child.py`: `code→bs_code`, `raw_code→symbol`; sink calls `upsert_bars()` (v2) instead of `upsert_stock_zh_a_hist()` (legacy)
+        - `stock_zh_a_hist_parent.py`: `code_list→symbol_list`, `codes→symbols`, `code_infos→symbol_infos`; calls `get_securities()` / `get_bars_last_update()` (v2)
+        - `campaign.py`: `code_infos→symbol_infos`; migrated to v2 API
+        - `phoenixA_client.py`: removed `"code"` backward-compat field from `get_securities()` return
+        - `config/task.yaml`: removed `code`, `adjustflag`, `tradestatus`, `isST` from baostock fields
+        - Updated all tests and fake clients to match v2 API signatures
+    - **Added return rate curve (收益率曲线)**
+        - `result_normalizer.py`: computes `return_curve` from `equity_curve` + `start_cash`, outputs `return_pct` per bar
+        - Added `return_curve` to `artifacts`, `plot_series`, and `plot_manifest`
+        - Frontend: new `ReturnCurveChartComponent` with ECharts percentage Y-axis
+    - **Added Grid Trading strategy (网格策略)**
+        - New `strategies/grid_trading.py`: `@register_strategy(code="grid_trading")`
+        - Params: `upper_price`, `lower_price`, `grid_lines`, `order_size`, `grid_mode` with full `param_schema`
+        - `grid_mode`: `arithmetic` (等差/固定价差) or `geometric` (等比/log 等差)
+        - Each grid line independently tracks position state (filled/empty)
+        - Auto-discovered by frontend via `GET /workbench/strategies`
+    - **Added K-Line chart with Buy/Sell markers in backtest results**
+        - Backend: includes original OHLCV bars in backtest response `artifacts.bars`
+        - Frontend: new `BacktestKLineChartComponent` — candlestick chart with green ▲"B" / red ▼"S" signal annotations
+        - Placed above equity curve chart in research page layout
+    - **Added strategy engine documentation**
+        - `docs/2026-04-15 STRATEGY_ENGINE_STRATEGIES_GUIDE.md`: comprehensive guide covering architecture, base class, registration, parameter schema, each strategy's logic/params/code, data flow, frontend integration, and how to add new strategies
+    - Added `test_stock_hist_symbol_v2.py`: 22 tests for code→symbol refactoring
+    - Updated `test_workbench_providers.py`: migrated fake clients to v2 API
 - v0.19.0
     - Use previous python env to build image when there is no dependency update.
 - v0.18.0

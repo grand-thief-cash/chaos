@@ -24,31 +24,31 @@ class StockZhAHistParent(OrchestratorUnit):
     def load_dynamic_parameters(self, ctx: TaskContext):
         params = ctx.params
 
-        code_list_str = str(params.get("code_list", "") or "").strip()
-        codes = []
-        if code_list_str != "":
-            codes = [code.strip() for code in code_list_str.split(",") if code.strip()]
-            if not codes:
-                ctx.fail(f"Failed to parse code_list: {code_list_str}", phase='load_dynamic_parameters')
+        symbol_list_str = str(params.get("symbol_list", "") or "").strip()
+        symbols = []
+        if symbol_list_str != "":
+            symbols = [s.strip() for s in symbol_list_str.split(",") if s.strip()]
+            if not symbols:
+                ctx.fail(f"Failed to parse symbol_list: {symbol_list_str}", phase='load_dynamic_parameters')
                 return
 
         # Parse exchange filter from config
         exchange_str = str(params.get("exchange", "") or "").strip()
         exchanges = [e.strip().upper() for e in exchange_str.split(",") if e.strip()] or None
 
-        # Get stock codes from PhoenixA, filtered by exchanges
+        # Get securities from PhoenixA, filtered by exchanges
         phoenix_client = ctx.dept_http[DeptServices.PHOENIXA]
         client = cast(PhoenixAClient, phoenix_client)
-        code_infos = client.get_stock_zh_a_codes(codes=codes or None, exchanges=exchanges)
+        symbol_infos = client.get_securities(symbols=symbols or None, exchanges=exchanges)
 
-        codes = list(code_infos.keys())
+        symbols = list(symbol_infos.keys())
         period = params.get("period")
         adjust = params.get("adjust")
 
-        last_updates_map = client.get_stock_zh_a_last_updates(period, adjust, codes=codes or None)
+        last_updates_map = client.get_bars_last_update(period=period, adjust=adjust, symbols=symbols or None)
 
         ctx.params["last_updates_map"] = last_updates_map
-        ctx.params["code_infos"] = code_infos
+        ctx.params["symbol_infos"] = symbol_infos
 
 
 
@@ -89,18 +89,17 @@ class StockZhAHistParent(OrchestratorUnit):
     def plan(self, ctx: TaskContext) -> List[Dict[str, Any]]:
         """
         Load parameters for child tasks.
-        Each child task needs: code, start_date, end_date (opt), frequency, adjust
+        Each child task needs: bs_code, symbol, start_date, end_date (opt), period, adjust
         """
         # ctx.params holds the merged configuration for this task execution
         params = ctx.params
-        # task_conf = params.get("config", config)
 
-        # 1. Pop-up all parameter from config
+        # 1. Extract all parameters from config
         period = params.get("period")
         adjust = params.get("adjust")
         start_date = params.get("start_date")
         fields = params.get("fields")
-        code_infos = params.get("code_infos", {})
+        symbol_infos = params.get("symbol_infos", {})
         last_updates_map = params.get("last_updates_map", {})
 
 
@@ -116,30 +115,30 @@ class StockZhAHistParent(OrchestratorUnit):
         today_str = datetime.now().strftime("%Y-%m-%d")
         base_start_date = start_date
 
-        for _, info in code_infos.items():
-            code = info.get("code")
+        for _, info in symbol_infos.items():
+            symbol = info.get("symbol")
             exchange = info.get("exchange")
             item_start_date = base_start_date
 
-            if not code or not exchange:
-                ctx.fail(f"Missing stock code info from PhoenixA: code={code}, exchange={exchange}", phase='plan')
+            if not symbol or not exchange:
+                ctx.fail(f"Missing stock info from PhoenixA: symbol={symbol}, exchange={exchange}", phase='plan')
                 return []
 
             if exchange in ["SH", "SZ","BJ"]:
-                bs_code = f"{exchange.lower()}.{code}"
+                bs_code = f"{exchange.lower()}.{symbol}"
             else:
-                ctx.fail(f"Cannot determine bs_code for stock code={code}, exchange={exchange}", phase='plan')
+                ctx.fail(f"Cannot determine bs_code for symbol={symbol}, exchange={exchange}", phase='plan')
                 return []
 
-            # last_updates_map key is likely the raw code (6 digits)
-            last_update = last_updates_map.get(code)
+            # last_updates_map key is the symbol (e.g. "600000")
+            last_update = last_updates_map.get(symbol)
 
             if last_update:
                 try:
                     # Assuming last_update is YYYY-MM-DD
                     last_date_obj = datetime.strptime(last_update, "%Y-%m-%d")
                 except ValueError:
-                    ctx.fail(f"Invalid last_update format from PhoenixA for code={code}: {last_update}", phase='plan')
+                    ctx.fail(f"Invalid last_update format from PhoenixA for symbol={symbol}: {last_update}", phase='plan')
                     return []
 
                 start_date_obj = last_date_obj + timedelta(days=1)
@@ -151,8 +150,8 @@ class StockZhAHistParent(OrchestratorUnit):
                 continue
 
             child_params = {
-                "code": bs_code,
-                "raw_code": code,
+                "bs_code": bs_code,
+                "symbol": symbol,
                 "start_date": item_start_date,
                 "end_date": today_str,
                 "adjust": adjust,
@@ -163,7 +162,7 @@ class StockZhAHistParent(OrchestratorUnit):
             }
 
             child_specs.append({
-                "key": TaskCode.STOCK_ZH_A_HIST_CHILD, # FIX: Use actual registered task code
+                "key": TaskCode.STOCK_ZH_A_HIST_CHILD,
                 "params": child_params
             })
 
@@ -171,7 +170,7 @@ class StockZhAHistParent(OrchestratorUnit):
         ctx.logger.info({
             "event": "stock_zh_a_hist_parent_plan_complete",
             "run_id": ctx.run_id,
-            "total_codes": len(code_infos),
+            "total_symbols": len(symbol_infos),
             "generated_tasks": len(child_specs),
         })
 

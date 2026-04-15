@@ -28,7 +28,7 @@ tasks:
            adjust: "nf"
            exchange: "SH,SZ,BJ"
            start_date: "2016-01-01"
-           fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
+           fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
 
       - match: { period: "daily", adjust: "hfq" }
         config:
@@ -36,7 +36,7 @@ tasks:
            adjust: "hfq"
            exchange: "SH"
            start_date: "2009-01-01"
-           fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
+           fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
 
   BACKTRADER_CAMPAIGN:
     variants:
