@@ -1,7 +1,17 @@
 # VERSION
-v0.6.1
+v0.7.0
 
 # Changelog
+- v0.7.0
+    - Added K-Line chart with Buy/Sell signal markers in backtest results (`backtest-kline-chart.component.ts`).
+        - Candlestick chart rendered from backtest OHLCV bars data.
+        - Green triangle ▲ + "B" label for buy signals, red triangle ▼ + "S" label for sell signals.
+        - Includes volume sub-chart and DataZoom.
+    - Added Return Rate Curve chart (`return-curve-chart.component.ts`).
+        - Percentage Y-axis with green/red coloring based on positive/negative returns.
+        - Zero baseline markLine.
+    - Updated `BacktestArtifacts` model: added `return_curve: ReturnPoint[]` and `bars?: Bar[]` fields.
+    - Updated Research page layout: Stats → K-Line Chart → Equity Curve → Return Curve.
 - v0.6.1
     - Propagate response-field renames through workbench.model.ts and workbench-api.service.ts so requests/responses use period and current.
     - Move selected source/dimension state into workbench.store.ts, then simplify market-data.page.ts and strategy-config.component.ts to consume store state without hardcoded fallbacks.
