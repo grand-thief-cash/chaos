@@ -1,7 +1,9 @@
 # VERSION
-v0.18.0
+v0.19.0
 
 # Changelog
+- v0.19.0
+    - Use previous python env to build image when there is no dependency update.
 - v0.18.0
     - **Strategy Engine DX Refactor — BaseRecordingStrategy + Decorator Registration + Shared Executor**
     - New `strategies/base.py`:
