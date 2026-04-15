@@ -66,5 +66,3 @@ require (
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
 )
-
-require github.com/grand-thief-cash/chaos/app/infra/go/application v0.16.2

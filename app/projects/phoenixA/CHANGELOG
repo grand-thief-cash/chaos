@@ -1,7 +1,10 @@
 # VERSION
-v1.0.0
+v1.0.1
 
 # Changelog
+- v1.0.1
+    - Fixed sql migration issue and compact to a single one.
+    - Fixed issue in phoenixA deployment: Not deleting expired migration sql files.
 - v1.0.0
     - **[BREAKING] PhoenixA v2 Architecture Refactoring**
     - Unified field naming across all projects:
