@@ -178,10 +178,17 @@ export interface BacktestSummary {
 
 export interface BacktestArtifacts {
   equity_curve: EquityPoint[];
+  return_curve: ReturnPoint[];
   signals: SignalEvent[];
   trades: TradeEvent[];
   orders: OrderEvent[];
   positions: any[];
+  bars?: Bar[];
+}
+
+export interface ReturnPoint {
+  timestamp: string;
+  return_pct: number;
 }
 
 export interface BacktestResult {
