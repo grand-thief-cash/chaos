@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any, Dict, List
 
 import pandas as pd
 
 from artemis.engines.strategy_engine import analyzer_profile_registry, data_provider_registry, strategy_registry
-from artemis.engines.strategy_engine.engine_builder import BacktraderEngineBuilder
+from artemis.engines.strategy_engine.executor import execute_backtest
 from artemis.engines.strategy_engine.result_normalizer import BacktestResultNormalizer
 from artemis.consts import DeptServices, TaskStatus
 from artemis.core import TaskContext
@@ -20,19 +19,6 @@ class BacktraderRunTask(WorkerUnit):
 
     生命周期：parameter_check → before_execute -> execute -> post_process -> sink -> finalize。
     """
-
-    @staticmethod
-    def _extract_analyzer_results(strategy_instance: Any) -> Dict[str, Any]:
-        """从策略实例中提取分析器结果，返回 {name: analysis} 字典。"""
-        analyzers = getattr(strategy_instance, "analyzers", None)
-        if analyzers is None:
-            return {}
-        try:
-            items = analyzers.getitems()
-        except Exception:
-            logging.getLogger(__name__).warning("failed to extract analyzer results", exc_info=True)
-            return {}
-        return {name: analyzer.get_analysis() for name, analyzer in items}
 
     def parameter_check(self, ctx: TaskContext):
         """校验必填参数（策略、数据源、分析器、股票代码、日期、策略参数等)。"""
@@ -95,7 +81,7 @@ class BacktraderRunTask(WorkerUnit):
         }
 
     def execute(self, ctx: TaskContext) -> Dict[str, Any]:
-        """执行回测：拉取 K 线数据 → 构建 Cerebro → 运行回测 → 返回原始结果。"""
+        """执行回测：拉取 K 线数据 → 调用共享执行函数 → 返回原始结果。"""
         params = ctx.params
         phoenix_client: PhoenixAClient = ctx.dept_http[DeptServices.PHOENIXA]
         provider_spec = data_provider_registry.require(str(params.get("data_provider_code")))
@@ -117,7 +103,7 @@ class BacktraderRunTask(WorkerUnit):
             return {}
 
         df = pd.DataFrame(bars)
-        cerebro = BacktraderEngineBuilder.build(
+        result = execute_backtest(
             df=df,
             strategy_spec=strategy_spec,
             strategy_params={**strategy_spec.default_params, **(params.get("strategy_params") or {})},
@@ -125,21 +111,9 @@ class BacktraderRunTask(WorkerUnit):
             cash=float(params.get("cash") or 100000.0),
             commission=float(params.get("commission") or 0.0),
         )
-        start_cash = float(cerebro.broker.get_cash())
-        strategies = cerebro.run()
-        strategy_instance = strategies[0]
-        analyzer_results = self._extract_analyzer_results(strategy_instance)
-        end_value = float(cerebro.broker.get_value())
-        bars_processed = len(df.index)
-        ctx.stats["bars_processed"] = bars_processed
+        ctx.stats["bars_processed"] = result["bars_processed"]
         ctx.stats["symbol"] = symbol
-        return {
-            "strategy_instance": strategy_instance,
-            "analyzer_results": analyzer_results,
-            "bars_processed": bars_processed,
-            "start_cash": start_cash,
-            "end_value": end_value,
-        }
+        return result
 
     def post_process(self, ctx: TaskContext, result: Dict[str, Any]) -> Dict[str, Any]:
         """将回测原始结果标准化为 summary + artifacts 格式。"""

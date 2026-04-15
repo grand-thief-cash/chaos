@@ -1,7 +1,30 @@
 # VERSION
-v0.17.0
+v0.18.0
 
 # Changelog
+- v0.18.0
+    - **Strategy Engine DX Refactor — BaseRecordingStrategy + Decorator Registration + Shared Executor**
+    - New `strategies/base.py`:
+        - `BaseRecordingStrategy` base class: unifies equity_curve / position_curve / signal_events / order_events / trade_events recording across all strategies; subclasses only implement `__init__()` + `on_bar()`
+        - `@register_strategy` decorator: auto-extracts `default_params` from backtrader `params` via `_getpairs()`, eliminates duplicate definition between strategy class and registry_map
+    - New `strategy_engine/executor.py`:
+        - `execute_backtest()` — shared backtest execution function used by both Workbench and TaskEngine paths
+        - `extract_analyzer_results()` — single implementation, replaces duplicates in `workbench/backtest.py` and `task_engine/backtest/run.py`
+    - Enhanced `StrategySpec.validate_params()`:
+        - Added `float` type + min/max range validation
+        - Added `str` type validation
+        - Added `enum` type + options validation
+        - Added `max` upper bound for int/float
+        - Added `default`, `description`, `display_name` metadata fields for frontend form rendering
+    - Added `version` field to `StrategySpec` (default `"v1"`)
+    - Refactored `SmaCrossStrategy`: 111 lines → 46 lines (with decorator metadata), pure strategy logic ~20 lines
+    - Refactored `services/workbench/backtest.py`: uses `execute_backtest()`, removed duplicate `_extract_analyzer_results`
+    - Refactored `task_engine/backtest/run.py`: uses `execute_backtest()`, removed duplicate `_extract_analyzer_results`
+    - `strategy_registry.py` now supports both decorator-based and legacy `registry_map.py` registration (backward compatible)
+    - Test fixes:
+        - Fixed `test_backtrader_phase1.py`: `timeframe` → `period` in test request bodies and assertions (aligned with v0.17.0 rename)
+        - Fixed `test_workbench_phase1_contract.py`: `FakePhoenixClient` updated from `get_stock_zh_a_hist_bars()` to `get_bars()` (aligned with v0.17.0 provider refactor); monkeypatch adapted for `execute_backtest` path
+    - Added architecture review doc: `docs/2026-04-15 REVIEW_STRATEGY_ENGINE_ARCHITECTURE.md`
 - v0.17.0
     - **Unified field naming & PhoenixA v2 API migration**
     - PhoenixAClient refactored to use v2 API endpoints:

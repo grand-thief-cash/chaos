@@ -13,12 +13,13 @@ class FakePhoenixClient:
     def __init__(self):
         self.calls = []
 
-    def get_stock_zh_a_hist_bars(self, **kwargs):
+    def get_bars(self, **kwargs):
+        """模拟 PhoenixAClient.get_bars() — v2 provider 接口。"""
         self.calls.append(kwargs)
         return [
             {
                 "date": "2024-01-02",
-                "code": kwargs["symbol"],
+                "code": kwargs.get("symbol", ""),
                 "open": 10.0,
                 "high": 10.5,
                 "low": 9.5,
@@ -89,7 +90,8 @@ def test_get_market_bars_uses_period_internally_and_maps_to_phoenix_timeframe(mo
 
     assert result["period"] == "weekly"
     assert "timeframe" not in result
-    assert fake_client.calls[0]["timeframe"] == "weekly"
+    # PhoenixBarsProvider.fetch_bars() 使用 v2 get_bars() 接口，传 period 而非 timeframe
+    assert fake_client.calls[0]["period"] == "weekly"
     assert fake_client.calls[0]["adjust"] == "hfq"
 
 
@@ -148,8 +150,14 @@ def test_run_backtest_uses_period_and_returns_period_summary(monkeypatch):
         raising=False,
     )
     monkeypatch.setattr(
-        "artemis.services.workbench.backtest.BacktraderEngineBuilder.build",
-        lambda **kwargs: FakeCerebro(),
+        "artemis.services.workbench.backtest.execute_backtest",
+        lambda **kwargs: {
+            "strategy_instance": SimpleNamespace(),
+            "analyzer_results": {},
+            "bars_processed": 1,
+            "start_cash": 100000.0,
+            "end_value": 105000.0,
+        },
     )
     monkeypatch.setattr(
         "artemis.services.workbench.backtest.BacktestResultNormalizer.normalize",
@@ -158,7 +166,7 @@ def test_run_backtest_uses_period_and_returns_period_summary(monkeypatch):
             "summary": {
                 "strategy_code": kwargs["strategy_code"],
                 "symbol": kwargs["symbol"],
-                "timeframe": kwargs["timeframe"],
+                "period": kwargs["period"],
                 "start_date": kwargs["start_date"],
                 "end_date": kwargs["end_date"],
             },
