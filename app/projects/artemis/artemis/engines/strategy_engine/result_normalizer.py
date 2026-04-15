@@ -82,12 +82,23 @@ class BacktestResultNormalizer:
         trades = list(getattr(strategy_instance, "trade_events", []) or [])
         positions = list(getattr(strategy_instance, "position_curve", []) or [])
 
+        # Compute return rate curve from equity curve
+        return_curve = []
+        if equity_curve and start_cash > 0:
+            for point in equity_curve:
+                return_pct = round((point["value"] - start_cash) / start_cash, 6)
+                return_curve.append({
+                    "timestamp": point["timestamp"],
+                    "return_pct": return_pct,
+                })
+
         artifacts = {
             "analyzers": analyzer_results,
             "trades": trades,
             "orders": orders,
             "signals": signals,
             "equity_curve": equity_curve,
+            "return_curve": return_curve,
             "positions": positions,
             "plot_manifest": {
                 "version": "v1",
@@ -96,11 +107,18 @@ class BacktestResultNormalizer:
                         "chart_code": "equity_overview",
                         "series": ["equity_curve", "signals"],
                         "x_axis": "timestamp",
-                    }
+                    },
+                    {
+                        "chart_code": "return_rate",
+                        "series": ["return_curve"],
+                        "x_axis": "timestamp",
+                        "y_axis": "percentage",
+                    },
                 ],
             },
             "plot_series": {
                 "equity_curve": equity_curve,
+                "return_curve": return_curve,
                 "signals": signals,
                 "positions": positions,
             },

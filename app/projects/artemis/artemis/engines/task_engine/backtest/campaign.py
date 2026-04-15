@@ -99,13 +99,13 @@ class BacktraderCampaignTask(OrchestratorUnit):
         requested_symbols = [str(s).strip() for s in (params.get("symbols") or []) if str(s).strip()]
 
         # Resolve universe_code if no explicit symbols provided
-        code_infos = None
+        symbol_infos = None
         if not requested_symbols:
             universe_code = str(params.get("universe_code") or "").strip()
             if universe_code:
                 if universe_code.upper() == "ALL":
-                    code_infos = phoenix_client.get_stock_zh_a_codes()
-                    requested_symbols = list(code_infos.keys())
+                    symbol_infos = phoenix_client.get_securities()
+                    requested_symbols = list(symbol_infos.keys())
                 else:
                     ctx.fail(f"universe_code '{universe_code}' is not supported in Phase 1", phase="load_dynamic_parameters")
                     return {}
@@ -114,18 +114,18 @@ class BacktraderCampaignTask(OrchestratorUnit):
                 return {}
 
         # Verify symbols exist in PhoenixA (skip redundant call if already fetched via universe_code=ALL)
-        if code_infos is None:
-            code_infos = phoenix_client.get_stock_zh_a_codes(codes=requested_symbols)
-        available_symbols = [code for code in requested_symbols if code in code_infos]
+        if symbol_infos is None:
+            symbol_infos = phoenix_client.get_securities(symbols=requested_symbols)
+        available_symbols = [s for s in requested_symbols if s in symbol_infos]
         if not available_symbols:
             ctx.fail("no valid symbols found in PhoenixA", phase="load_dynamic_parameters")
             return {}
 
         # Check data availability
-        last_updates = phoenix_client.get_stock_zh_a_last_updates(
+        last_updates = phoenix_client.get_bars_last_update(
             period=params.get("timeframe", "daily"),
             adjust=params.get("adjust", "nf"),
-            codes=available_symbols,
+            symbols=available_symbols,
         )
         symbols_with_data = [s for s in available_symbols if last_updates.get(s)]
         if not symbols_with_data:
@@ -133,7 +133,7 @@ class BacktraderCampaignTask(OrchestratorUnit):
             return {}
 
         ctx.params["resolved_symbols"] = symbols_with_data
-        ctx.params["code_infos"] = code_infos
+        ctx.params["symbol_infos"] = symbol_infos
         return {"resolved_symbols": symbols_with_data}
 
     def _normalize_parameter_sets(self, ctx: TaskContext) -> List[Dict[str, Any]]:

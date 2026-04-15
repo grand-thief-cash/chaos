@@ -102,6 +102,9 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
 
     summary = dict(normalized["summary"])
 
+    # Include original bars in artifacts so frontend can render K-line chart with B/S markers
+    normalized["artifacts"]["bars"] = bars
+
     return {
         **normalized,
         "summary": summary,

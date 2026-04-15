@@ -100,7 +100,6 @@ class PhoenixAClient(HTTPDeptServiceClient):
                         sym = str(item["symbol"])
                         result[sym] = {
                             "symbol": sym,
-                            "code": sym,  # backward compat
                             "name": str(item.get("name", "")),
                             "exchange": str(item.get("exchange", "")).upper(),
                             "asset_type": str(item.get("asset_type", asset_type)),
