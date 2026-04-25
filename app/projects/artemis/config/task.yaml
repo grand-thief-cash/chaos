@@ -34,7 +34,7 @@ tasks:
         config:
            period: "daily"
            adjust: "hfq"
-           exchange: "SH"
+           exchange: "SH,SZ"
            start_date: "2009-01-01"
            fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
 

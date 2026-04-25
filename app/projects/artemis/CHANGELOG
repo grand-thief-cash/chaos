@@ -1,7 +1,11 @@
 # VERSION
-v0.20.0
+v0.20.1
 
 # Changelog
+- v0.20.1
+    - Upgraded baostock to v0.9.1
+    - Added record of a grid line of an order in grid line trading.
+    - Added grid rollback in grid trading.
 - v0.20.0
     - **Bugfix: STOCK_ZH_A_HIST field name mismatch**
         - Fixed `date→trade_date`, `code→symbol` field mapping for PhoenixA v2 API compatibility

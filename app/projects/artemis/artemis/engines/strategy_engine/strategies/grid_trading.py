@@ -40,8 +40,8 @@ from artemis.engines.strategy_engine.strategies.base import BaseRecordingStrateg
             "display_name": "Order Size",
         },
         "grid_mode": {
-            "type": "str",
-            "choices": ["arithmetic", "geometric"],
+            "type": "enum",
+            "options": ["arithmetic", "geometric"],
             "default": "arithmetic",
             "description": "网格间距模式：arithmetic=等差（固定价差）；geometric=等比（固定百分比/log差值，适合波动率较大的标的）",
             "display_name": "Grid Mode",
@@ -124,8 +124,37 @@ class GridTradingStrategy(BaseRecordingStrategy):
         # Previous close for crossover detection
         self.prev_close = None
 
+        # Pending grid action: only update grid_filled AFTER order completes
+        self._pending_grid_idx: int | None = None
+        self._pending_action: str | None = None  # "buy" or "sell"
+
+    def notify_order(self, order) -> None:
+        """Override to sync grid_filled state with actual order results."""
+        # Let base class handle recording first
+        super().notify_order(order)
+
+        if order.status in [order.Completed, order.Canceled, order.Margin, order.Rejected]:
+            # Order finalized — sync grid_filled if it was our grid order
+            if self._pending_grid_idx is not None:
+                if order.status == order.Completed:
+                    # Order succeeded — grid_filled was already tentatively set,
+                    # the state is correct, nothing to do.
+                    pass
+                else:
+                    # Order failed — revert the tentative grid_filled change
+                    if self._pending_action == "buy":
+                        self.grid_filled[self._pending_grid_idx] = False
+                    elif self._pending_action == "sell":
+                        self.grid_filled[self._pending_grid_idx] = True
+
+                self._pending_grid_idx = None
+                self._pending_action = None
+
     def on_bar(self):
         if self.order:
+            # Still have a pending order — skip but DO update prev_close
+            # to avoid stale crossover detection after order completes
+            self.prev_close = self.datas[0].close[0]
             return
 
         close = self.datas[0].close[0]
@@ -142,6 +171,8 @@ class GridTradingStrategy(BaseRecordingStrategy):
                 self._record_signal("BUY")
                 self.order = self.buy(size=self.params.order_size)
                 self.grid_filled[i] = True
+                self._pending_grid_idx = i
+                self._pending_action = "buy"
                 break  # One order per bar
 
             # Price crossed above grid level → sell signal
@@ -149,6 +180,8 @@ class GridTradingStrategy(BaseRecordingStrategy):
                 self._record_signal("SELL")
                 self.order = self.sell(size=self.params.order_size)
                 self.grid_filled[i] = False
+                self._pending_grid_idx = i
+                self._pending_action = "sell"
                 break  # One order per bar
 
         self.prev_close = close
