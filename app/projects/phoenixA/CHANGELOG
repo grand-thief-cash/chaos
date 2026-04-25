@@ -1,7 +1,21 @@
 # VERSION
-v1.0.1
+v1.1.0
 
 # Changelog
+- v1.1.0
+    - Added industry constituent and weight data support:
+        - New tables: `industry_constituent`, `industry_weight`, `industry_daily`
+        - New models: `IndustryConstituent`, `IndustryWeight`, `IndustryDaily`
+        - New API endpoints:
+            - `POST /api/v2/taxonomy/{source}/industry-constituents/upsert`
+            - `GET  /api/v2/taxonomy/{source}/industry-constituents/by_index/{indexCode}`
+            - `GET  /api/v2/taxonomy/{source}/industry-constituents/by_stock/{conCode}`
+            - `POST /api/v2/taxonomy/{source}/industry-weights/upsert`
+            - `GET  /api/v2/taxonomy/{source}/industry-weights/{indexCode}?trade_date=...`
+            - `POST /api/v2/taxonomy/{source}/industry-daily/upsert`
+            - `GET  /api/v2/taxonomy/{source}/industry-daily?index_code=...&start_date=...&end_date=...`
+        - Extended TaxonomyController/Service/DAO with constituent, weight and daily operations
+        - Updated `0001_init.sql` migration with new table definitions
 - v1.0.1
     - Fixed sql migration issue and compact to a single one.
     - Fixed issue in phoenixA deployment: Not deleting expired migration sql files.

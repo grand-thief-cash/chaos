@@ -238,3 +238,107 @@ func (d *TaxonomyDao) DeleteMapping(ctx context.Context, source, categoryCode, s
 		Where("source = ? AND category_code = ? AND symbol = ?", source, categoryCode, symbol).
 		Delete(&model.TaxonomySecurityMap{}).Error
 }
+
+// ──────────── Industry Constituents ────────────
+
+// BatchUpsertConstituents upserts industry index constituents for a given source.
+func (d *TaxonomyDao) BatchUpsertConstituents(ctx context.Context, source string, list []*model.IndustryConstituent) error {
+	if len(list) == 0 {
+		return nil
+	}
+	for _, c := range list {
+		c.Source = source
+	}
+	return d.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "source"}, {Name: "index_code"}, {Name: "con_code"}},
+			DoUpdates: clause.AssignmentColumns([]string{"index_name", "in_date", "out_date", "updated_at"}),
+		}).CreateInBatches(list, 500).Error
+}
+
+// ListConstituentsByIndex returns all constituents for a given source + index_code.
+func (d *TaxonomyDao) ListConstituentsByIndex(ctx context.Context, source, indexCode string, limit, offset int) ([]*model.IndustryConstituent, error) {
+	var list []*model.IndustryConstituent
+	q := d.db.WithContext(ctx).Where("source = ? AND index_code = ?", source, indexCode).Order("con_code ASC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if offset > 0 {
+		q = q.Offset(offset)
+	}
+	err := q.Find(&list).Error
+	return list, err
+}
+
+// ListConstituentsByConCode returns all index memberships for a given constituent stock.
+func (d *TaxonomyDao) ListConstituentsByConCode(ctx context.Context, source, conCode string) ([]*model.IndustryConstituent, error) {
+	var list []*model.IndustryConstituent
+	err := d.db.WithContext(ctx).Where("source = ? AND con_code = ?", source, conCode).Find(&list).Error
+	return list, err
+}
+
+// ──────────── Industry Weights ────────────
+
+// BatchUpsertWeights upserts industry index constituent daily weights for a given source.
+func (d *TaxonomyDao) BatchUpsertWeights(ctx context.Context, source string, list []*model.IndustryWeight) error {
+	if len(list) == 0 {
+		return nil
+	}
+	for _, w := range list {
+		w.Source = source
+	}
+	return d.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "source"}, {Name: "index_code"}, {Name: "con_code"}, {Name: "trade_date"}},
+			DoUpdates: clause.AssignmentColumns([]string{"weight", "updated_at"}),
+		}).CreateInBatches(list, 500).Error
+}
+
+// ListWeightsByIndexAndDate returns weights for a given index on a given trade_date.
+func (d *TaxonomyDao) ListWeightsByIndexAndDate(ctx context.Context, source, indexCode, tradeDate string) ([]*model.IndustryWeight, error) {
+	var list []*model.IndustryWeight
+	err := d.db.WithContext(ctx).
+		Where("source = ? AND index_code = ? AND trade_date = ?", source, indexCode, tradeDate).
+		Order("con_code ASC").
+		Find(&list).Error
+	return list, err
+}
+
+// ──────────── Industry Daily ────────────
+
+// BatchUpsertIndustryDaily upserts industry index daily bars for a given source.
+func (d *TaxonomyDao) BatchUpsertIndustryDaily(ctx context.Context, source string, list []*model.IndustryDaily) error {
+	if len(list) == 0 {
+		return nil
+	}
+	for _, r := range list {
+		r.Source = source
+	}
+	return d.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "source"}, {Name: "index_code"}, {Name: "trade_date"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"open", "high", "close", "low", "pre_close",
+				"amount", "volume", "pb", "pe", "total_cap", "a_float_cap", "updated_at",
+			}),
+		}).CreateInBatches(list, 500).Error
+}
+
+// QueryIndustryDaily queries industry daily bars for a given source + index_code + date range.
+func (d *TaxonomyDao) QueryIndustryDaily(ctx context.Context, source, indexCode, startDate, endDate string, limit int) ([]*model.IndustryDaily, error) {
+	var list []*model.IndustryDaily
+	q := d.db.WithContext(ctx).
+		Where("source = ? AND index_code = ?", source, indexCode).
+		Order("trade_date ASC")
+	if startDate != "" {
+		q = q.Where("trade_date >= ?", startDate)
+	}
+	if endDate != "" {
+		q = q.Where("trade_date <= ?", endDate)
+	}
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	err := q.Find(&list).Error
+	return list, err
+}

@@ -111,3 +111,66 @@ func (s *TaxonomyService) ListMappingsBySymbol(ctx context.Context, symbol strin
 func (s *TaxonomyService) DeleteMapping(ctx context.Context, source, categoryCode, symbol string) error {
 	return s.Dao.DeleteMapping(ctx, source, categoryCode, symbol)
 }
+
+// ──────────── Industry Constituents ────────────
+
+// BatchUpsertConstituents upserts industry index constituents for a given source.
+func (s *TaxonomyService) BatchUpsertConstituents(ctx context.Context, source string, list []*model.IndustryConstituent) error {
+	if source == "" {
+		return errors.New("source is required")
+	}
+	logging.Infof(ctx, "TaxonomyService BatchUpsertConstituents source=%s count=%d", source, len(list))
+	return s.Dao.BatchUpsertConstituents(ctx, source, list)
+}
+
+// ListConstituentsByIndex returns all constituents for a given source + index_code.
+func (s *TaxonomyService) ListConstituentsByIndex(ctx context.Context, source, indexCode string, page, pageSize int) ([]*model.IndustryConstituent, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+	return s.Dao.ListConstituentsByIndex(ctx, source, indexCode, pageSize, offset)
+}
+
+// ListConstituentsByConCode returns all index memberships for a given constituent stock.
+func (s *TaxonomyService) ListConstituentsByConCode(ctx context.Context, source, conCode string) ([]*model.IndustryConstituent, error) {
+	return s.Dao.ListConstituentsByConCode(ctx, source, conCode)
+}
+
+// ──────────── Industry Weights ────────────
+
+// BatchUpsertWeights upserts industry index constituent daily weights for a given source.
+func (s *TaxonomyService) BatchUpsertWeights(ctx context.Context, source string, list []*model.IndustryWeight) error {
+	if source == "" {
+		return errors.New("source is required")
+	}
+	logging.Infof(ctx, "TaxonomyService BatchUpsertWeights source=%s count=%d", source, len(list))
+	return s.Dao.BatchUpsertWeights(ctx, source, list)
+}
+
+// ListWeightsByIndexAndDate returns weights for a given index on a given trade_date.
+func (s *TaxonomyService) ListWeightsByIndexAndDate(ctx context.Context, source, indexCode, tradeDate string) ([]*model.IndustryWeight, error) {
+	return s.Dao.ListWeightsByIndexAndDate(ctx, source, indexCode, tradeDate)
+}
+
+// ──────────── Industry Daily ────────────
+
+// BatchUpsertIndustryDaily upserts industry index daily bars for a given source.
+func (s *TaxonomyService) BatchUpsertIndustryDaily(ctx context.Context, source string, list []*model.IndustryDaily) error {
+	if source == "" {
+		return errors.New("source is required")
+	}
+	logging.Infof(ctx, "TaxonomyService BatchUpsertIndustryDaily source=%s count=%d", source, len(list))
+	return s.Dao.BatchUpsertIndustryDaily(ctx, source, list)
+}
+
+// QueryIndustryDaily queries industry daily bars for a given source + index_code + date range.
+func (s *TaxonomyService) QueryIndustryDaily(ctx context.Context, source, indexCode, startDate, endDate string, limit int) ([]*model.IndustryDaily, error) {
+	if limit < 1 {
+		limit = 5000
+	}
+	return s.Dao.QueryIndustryDaily(ctx, source, indexCode, startDate, endDate, limit)
+}

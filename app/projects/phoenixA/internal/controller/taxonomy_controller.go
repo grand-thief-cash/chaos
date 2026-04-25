@@ -178,3 +178,130 @@ func (c *TaxonomyController) DeleteMapping(w http.ResponseWriter, r *http.Reques
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ──────────── Industry Constituents ────────────
+
+// POST /api/v2/taxonomy/{source}/industry-constituents/upsert
+func (c *TaxonomyController) BatchUpsertConstituents(w http.ResponseWriter, r *http.Request) {
+	source := chi.URLParam(r, "source")
+	if source == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "source is required"})
+		return
+	}
+	var list []*model.IndustryConstituent
+	if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		return
+	}
+	if err := c.Svc.BatchUpsertConstituents(r.Context(), source, list); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
+}
+
+// GET /api/v2/taxonomy/{source}/industry-constituents/by_index/{indexCode}
+func (c *TaxonomyController) ListConstituentsByIndex(w http.ResponseWriter, r *http.Request) {
+	source := chi.URLParam(r, "source")
+	indexCode := chi.URLParam(r, "indexCode")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	list, err := c.Svc.ListConstituentsByIndex(r.Context(), source, indexCode, page, pageSize)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"list": list, "count": len(list)})
+}
+
+// GET /api/v2/taxonomy/{source}/industry-constituents/by_stock/{conCode}
+func (c *TaxonomyController) ListConstituentsByConCode(w http.ResponseWriter, r *http.Request) {
+	source := chi.URLParam(r, "source")
+	conCode := chi.URLParam(r, "conCode")
+	list, err := c.Svc.ListConstituentsByConCode(r.Context(), source, conCode)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// ──────────── Industry Weights ────────────
+
+// POST /api/v2/taxonomy/{source}/industry-weights/upsert
+func (c *TaxonomyController) BatchUpsertWeights(w http.ResponseWriter, r *http.Request) {
+	source := chi.URLParam(r, "source")
+	if source == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "source is required"})
+		return
+	}
+	var list []*model.IndustryWeight
+	if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		return
+	}
+	if err := c.Svc.BatchUpsertWeights(r.Context(), source, list); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
+}
+
+// GET /api/v2/taxonomy/{source}/industry-weights/{indexCode}
+func (c *TaxonomyController) ListWeightsByIndexAndDate(w http.ResponseWriter, r *http.Request) {
+	source := chi.URLParam(r, "source")
+	indexCode := chi.URLParam(r, "indexCode")
+	tradeDate := r.URL.Query().Get("trade_date")
+	if tradeDate == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "trade_date query param is required"})
+		return
+	}
+	list, err := c.Svc.ListWeightsByIndexAndDate(r.Context(), source, indexCode, tradeDate)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"list": list, "count": len(list)})
+}
+
+// ──────────── Industry Daily ────────────
+
+// POST /api/v2/taxonomy/{source}/industry-daily/upsert
+func (c *TaxonomyController) BatchUpsertIndustryDaily(w http.ResponseWriter, r *http.Request) {
+	source := chi.URLParam(r, "source")
+	if source == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "source is required"})
+		return
+	}
+	var list []*model.IndustryDaily
+	if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+		return
+	}
+	if err := c.Svc.BatchUpsertIndustryDaily(r.Context(), source, list); err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
+}
+
+// GET /api/v2/taxonomy/{source}/industry-daily
+func (c *TaxonomyController) QueryIndustryDaily(w http.ResponseWriter, r *http.Request) {
+	source := chi.URLParam(r, "source")
+	q := r.URL.Query()
+	indexCode := q.Get("index_code")
+	if indexCode == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "index_code query param is required"})
+		return
+	}
+	startDate := q.Get("start_date")
+	endDate := q.Get("end_date")
+	limit, _ := strconv.Atoi(q.Get("limit"))
+
+	list, err := c.Svc.QueryIndustryDaily(r.Context(), source, indexCode, startDate, endDate, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": list, "count": len(list)})
+}

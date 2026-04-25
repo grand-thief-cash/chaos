@@ -65,6 +65,19 @@ func init() {
 				r.Post("/mapping/replace/by_category", taxonomyCtrl.ReplaceStocksForCategories)
 				r.Get("/mapping/by_category/{categoryCode}", taxonomyCtrl.ListMappingsByCategory)
 				r.Delete("/mapping/{categoryCode}/{symbol}", taxonomyCtrl.DeleteMapping)
+
+				// Industry Constituents
+				r.Post("/industry-constituents/upsert", taxonomyCtrl.BatchUpsertConstituents)
+				r.Get("/industry-constituents/by_index/{indexCode}", taxonomyCtrl.ListConstituentsByIndex)
+				r.Get("/industry-constituents/by_stock/{conCode}", taxonomyCtrl.ListConstituentsByConCode)
+
+				// Industry Weights
+				r.Post("/industry-weights/upsert", taxonomyCtrl.BatchUpsertWeights)
+				r.Get("/industry-weights/{indexCode}", taxonomyCtrl.ListWeightsByIndexAndDate)
+
+				// Industry Daily
+				r.Post("/industry-daily/upsert", taxonomyCtrl.BatchUpsertIndustryDaily)
+				r.Get("/industry-daily", taxonomyCtrl.QueryIndustryDaily)
 			})
 		})
 
