@@ -83,6 +83,8 @@ class WorkbenchRunReq(BaseModel):
     strategy_params: Dict[str, Any] = Field(default_factory=dict)
     source: Optional[str] = None
     use_cache: bool = True
+    enable_bar_details: bool = False
+    bar_details_level: str = "trade"  # "trade" | "all"
 
 
 class IndicatorReq(BaseModel):

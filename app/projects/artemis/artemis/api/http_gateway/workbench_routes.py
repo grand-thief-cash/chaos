@@ -188,3 +188,98 @@ async def cache_stats():
         "total_size_bytes": total_size,
         "total_size_mb": round(total_size / (1024 * 1024), 2),
     }
+
+
+# ── Industry Explorer API ─────────────────────────────────────
+
+def _get_industry_client():
+    """Build PhoenixA client for industry endpoints."""
+    from artemis.services.workbench.market_data import _build_phoenix_client
+    return _build_phoenix_client()
+
+
+@router.get("/industry/categories")
+async def get_industry_categories(
+    source: str = "amazing_data",
+    level: int | None = None,
+    parent_code: str | None = None,
+    name: str | None = None,
+    page: int = 1,
+    page_size: int = 500,
+):
+    """查询行业分类列表。"""
+    try:
+        client = _get_industry_client()
+        return client.query_industry_categories(
+            source=source, level=level, parent_code=parent_code,
+            name=name, page=page, page_size=page_size,
+        )
+    except ValueError as e:
+        logger.warning({"event": "industry_categories_config_error", "error": str(e)})
+        return {"list": [], "total": 0}
+    except Exception as e:
+        logger.error({"event": "industry_categories_failed", "error": str(e)}, exc_info=True)
+        return {"list": [], "total": 0}
+
+
+@router.get("/industry/constituents")
+async def get_industry_constituents(
+    index_code: str,
+    source: str = "amazing_data",
+    page: int = 1,
+    page_size: int = 500,
+):
+    """查询指定行业指数的成分股列表。"""
+    try:
+        client = _get_industry_client()
+        return client.query_industry_constituents_by_index(
+            source=source, index_code=index_code, page=page, page_size=page_size,
+        )
+    except ValueError as e:
+        logger.warning({"event": "industry_constituents_config_error", "error": str(e)})
+        return {"list": [], "count": 0}
+    except Exception as e:
+        logger.error({"event": "industry_constituents_failed", "error": str(e)}, exc_info=True)
+        return {"list": [], "count": 0}
+
+
+@router.get("/industry/by-stock")
+async def get_industries_by_stock(
+    con_code: str,
+    source: str = "amazing_data",
+):
+    """查询指定股票所属的行业列表。"""
+    try:
+        client = _get_industry_client()
+        result = client.query_industry_constituents_by_stock(source=source, con_code=con_code)
+        return {"list": result, "count": len(result)}
+    except ValueError as e:
+        logger.warning({"event": "industries_by_stock_config_error", "error": str(e)})
+        return {"list": [], "count": 0}
+    except Exception as e:
+        logger.error({"event": "industries_by_stock_failed", "error": str(e)}, exc_info=True)
+        return {"list": [], "count": 0}
+
+
+@router.get("/industry/daily")
+async def get_industry_daily(
+    index_code: str,
+    start_date: str = "",
+    end_date: str = "",
+    source: str = "amazing_data",
+    limit: int = 5000,
+):
+    """查询行业指数日行情数据。"""
+    try:
+        client = _get_industry_client()
+        bars = client.query_industry_daily(
+            source=source, index_code=index_code,
+            start_date=start_date, end_date=end_date, limit=limit,
+        )
+        return {"index_code": index_code, "bars": bars, "count": len(bars)}
+    except ValueError as e:
+        logger.warning({"event": "industry_daily_config_error", "error": str(e)})
+        return {"index_code": index_code, "bars": [], "count": 0}
+    except Exception as e:
+        logger.error({"event": "industry_daily_failed", "error": str(e)}, exc_info=True)
+        return {"index_code": index_code, "bars": [], "count": 0}

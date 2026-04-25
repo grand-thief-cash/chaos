@@ -428,30 +428,193 @@ class PhoenixAClient(HTTPDeptServiceClient):
         """Legacy alias → upsert_taxonomy_categories."""
         return self.upsert_taxonomy_categories(categories, source=data_source, run_id=run_id)
 
-    def get_stock_zh_a_hist_bars(self, *, symbol: str, start_date: str, end_date: str,
-                                  timeframe: str = "daily", adjust: str = "nf",
-                                  fields: Optional[List[str]] = None, limit: int = 5000) -> List[Dict[str, Any]]:
-        """Legacy alias → get_bars."""
-        return self.get_bars(
-            symbol=symbol, start_date=start_date, end_date=end_date,
-            period=timeframe, adjust=adjust, fields=fields, limit=limit,
-        )
+    def upsert_industry_constituents(self, constituents: List[Dict[str, Any]], data_source: str, run_id: Optional[int | str] = None) -> bool:
+        """Upsert industry index constituents via v2 API."""
+        path = f"/api/v2/taxonomy/{data_source}/industry-constituents/upsert"
+        try:
+            resp = self.post(path, constituents)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_industry_constituents_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(constituents) if constituents else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_industry_constituents_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
 
-    def get_index_zh_a_hist_bars(self, *, symbol: str, start_date: str, end_date: str,
-                                  timeframe: str = "daily", adjust: str = "nf",
-                                  fields: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """Legacy alias → get_bars for index."""
-        return self.get_bars(
-            asset_type="index", symbol=symbol, start_date=start_date, end_date=end_date,
-            period=timeframe, adjust=adjust, fields=fields,
-        )
+    def upsert_industry_weights(self, weights: List[Dict[str, Any]], data_source: str, run_id: Optional[int | str] = None) -> bool:
+        """Upsert industry index constituent daily weights via v2 API."""
+        path = f"/api/v2/taxonomy/{data_source}/industry-weights/upsert"
+        try:
+            resp = self.post(path, weights)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_industry_weights_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(weights) if weights else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_industry_weights_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
 
-    def get_strategy_market_bars(self, *, symbol: str, start_date: str, end_date: str,
-                                  timeframe: str = "daily", adjust: str = "nf",
-                                  fields: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """Legacy alias → get_bars."""
-        return self.get_bars(
-            symbol=symbol, start_date=start_date, end_date=end_date,
-            period=timeframe, adjust=adjust, fields=fields,
-        )
+    def upsert_industry_daily(self, bars: List[Dict[str, Any]], data_source: str, run_id: Optional[int | str] = None) -> bool:
+        """Upsert industry index daily bars via v2 API."""
+        path = f"/api/v2/taxonomy/{data_source}/industry-daily/upsert"
+        try:
+            resp = self.post(path, bars)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_industry_daily_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(bars) if bars else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_industry_daily_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
 
+    def query_industry_daily(
+        self,
+        *,
+        source: str,
+        index_code: str,
+        start_date: str = "",
+        end_date: str = "",
+        limit: int = 5000,
+    ) -> List[Dict[str, Any]]:
+        """Query industry index daily bars via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/industry-daily"
+        params: Dict[str, Any] = {"index_code": index_code}
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if limit:
+            params["limit"] = limit
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                return data.get("data", [])
+            return []
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_industry_daily_failed',
+                    'index_code': index_code,
+                    'error': str(e),
+                })
+            return []
+
+    def query_industry_categories(
+        self,
+        *,
+        source: str,
+        level: Optional[int] = None,
+        parent_code: Optional[str] = None,
+        name: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 500,
+    ) -> Dict[str, Any]:
+        """Query industry taxonomy categories via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/categories"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if level is not None:
+            params["level"] = level
+        if parent_code is not None:
+            params["parent_code"] = parent_code
+        if name:
+            params["name"] = name
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"list": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_industry_categories_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return {"list": [], "total": 0}
+
+    def query_industry_constituents_by_index(
+        self,
+        *,
+        source: str,
+        index_code: str,
+        page: int = 1,
+        page_size: int = 500,
+    ) -> Dict[str, Any]:
+        """Query industry constituents by index code via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/industry-constituents/by_index/{index_code}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"list": [], "count": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_constituents_by_index_failed',
+                    'index_code': index_code,
+                    'error': str(e),
+                })
+            return {"list": [], "count": 0}
+
+    def query_industry_constituents_by_stock(
+        self,
+        *,
+        source: str,
+        con_code: str,
+    ) -> List[Dict[str, Any]]:
+        """Query industry memberships for a stock via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/industry-constituents/by_stock/{con_code}"
+        try:
+            resp = self.get(path, {})
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return []
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_constituents_by_stock_failed',
+                    'con_code': con_code,
+                    'error': str(e),
+                })
+            return []

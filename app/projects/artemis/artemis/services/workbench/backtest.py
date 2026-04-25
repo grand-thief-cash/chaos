@@ -79,6 +79,8 @@ def run_backtest(req: WorkbenchRunReq) -> Dict[str, Any]:
         analyzer_profile=analyzer_profile,
         cash=req.cash,
         commission=req.commission,
+        enable_bar_details=req.enable_bar_details,
+        bar_details_level=req.bar_details_level,
     )
 
     # 7. 标准化结果

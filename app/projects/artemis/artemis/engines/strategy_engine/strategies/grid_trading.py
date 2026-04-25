@@ -150,39 +150,66 @@ class GridTradingStrategy(BaseRecordingStrategy):
                 self._pending_grid_idx = None
                 self._pending_action = None
 
+    def _grid_indicators(self, close: float) -> dict:
+        """构建网格诊断指标快照。"""
+        return {
+            "close": round(close, 4),
+            "prev_close": round(self.prev_close, 4) if self.prev_close is not None else None,
+            "grid_levels": self.grid_levels,
+            "grid_filled": list(self.grid_filled),
+            "total_position": float(self.position.size),
+        }
+
     def on_bar(self):
         if self.order:
-            # Still have a pending order — skip but DO update prev_close
-            # to avoid stale crossover detection after order completes
             self.prev_close = self.datas[0].close[0]
+            self._record_diagnostic("SKIP", "有未完成挂单，等待执行", self._grid_indicators(self.prev_close))
             return
 
         close = self.datas[0].close[0]
 
-        # Skip first bar (need previous close for crossover)
         if self.prev_close is None:
             self.prev_close = close
+            self._record_diagnostic("SKIP", "首根K线，初始化前收盘价", self._grid_indicators(close))
             return
 
-        # Check each grid level for crossover
+        indicators = self._grid_indicators(close)
+        acted = False
+
         for i, level in enumerate(self.grid_levels):
-            # Price crossed below grid level → buy signal
             if self.prev_close >= level > close and not self.grid_filled[i]:
+                # 资金检查：预估买入成本，避免因 Margin 被拒
+                estimated_cost = close * self.params.order_size
+                available_cash = self.broker.get_cash()
+                if estimated_cost > available_cash:
+                    self._record_diagnostic(
+                        "SKIP",
+                        f"价格下穿网格线{i+1}（{level}）但资金不足：需要约{estimated_cost:.2f}，可用{available_cash:.2f}",
+                        indicators,
+                    )
+                    acted = True
+                    break
                 self._record_signal("BUY")
                 self.order = self.buy(size=self.params.order_size)
                 self.grid_filled[i] = True
                 self._pending_grid_idx = i
                 self._pending_action = "buy"
-                break  # One order per bar
+                self._record_diagnostic("BUY", f"价格下穿网格线{i+1}（{level}）：{self.prev_close:.4f}→{close:.4f}，买入{self.params.order_size}股", indicators)
+                acted = True
+                break
 
-            # Price crossed above grid level → sell signal
             if self.prev_close <= level < close and self.grid_filled[i]:
                 self._record_signal("SELL")
                 self.order = self.sell(size=self.params.order_size)
                 self.grid_filled[i] = False
                 self._pending_grid_idx = i
                 self._pending_action = "sell"
-                break  # One order per bar
+                self._record_diagnostic("SELL", f"价格上穿网格线{i+1}（{level}）：{self.prev_close:.4f}→{close:.4f}，卖出{self.params.order_size}股", indicators)
+                acted = True
+                break
+
+        if not acted:
+            self._record_diagnostic("HOLD", f"价格{close:.4f}未穿越任何网格线", indicators)
 
         self.prev_close = close
 
