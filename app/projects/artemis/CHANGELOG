@@ -1,7 +1,31 @@
 # VERSION
-v0.20.1
+v0.21.0
 
 # Changelog
+- v0.21.0
+    - **Renamed diagnostics → bar_details / Transaction Details**
+        - `enable_diagnostics` → `enable_bar_details`, `diagnostics_level` → `bar_details_level` across base strategy, executor, workbench model, and result normalizer
+        - `diagnostic_events` → `bar_detail_events` in strategy instance
+        - Artifacts key `diagnostics` → `bar_details`
+    - **Fixed `_getpairs()` ValueError in `@register_strategy` decorator**
+        - Changed to `_getitems()` which returns proper `(key, value)` tuples instead of bare strings
+    - **Added order result diagnostics in base strategy**
+        - `notify_order()` now records `ORDER_BUY_OK` / `ORDER_SELL_OK` / `ORDER_FAILED` events to bar_detail_events
+        - Shows execution price, size, commission for completed orders; reason and cash for failed orders
+    - **Grid trading: pre-order cash check**
+        - Before placing BUY, checks `estimated_cost > available_cash` and records SKIP with reason "资金不足" instead of letting backtrader margin-reject
+    - **FIFO order-pair trade statistics fallback**
+        - When backtrader TradeAnalyzer reports 0 trades (position never returns to 0, e.g. grid trading), uses FIFO matching of completed BUY/SELL orders to compute trade_count, win_count, loss_count, win_rate
+    - **Industry Daily data pipeline** (`get_industry_daily`)
+        - New task: `STOCK_ZH_A_INDUSTRY_DAILY_SWHY` — downloads SWHY industry index daily OHLCV + PE/PB/market cap
+        - PhoenixA client: `upsert_industry_daily()`, `query_industry_daily()`
+        - PhoenixA client: `query_industry_categories()`, `query_industry_constituents_by_index()`, `query_industry_constituents_by_stock()`
+    - **Workbench Industry Explorer API**
+        - `GET /workbench/industry/categories` — industry hierarchy query
+        - `GET /workbench/industry/constituents` — constituents by industry index
+        - `GET /workbench/industry/by-stock` — reverse lookup: stock → industries
+        - `GET /workbench/industry/daily` — industry index daily bars
+    - Added to `tasks_export_2026-04-25.json` (daily at 17:30 MON-FRI)
 - v0.20.1
     - Upgraded baostock to v0.9.1
     - Added record of a grid line of an order in grid line trading.

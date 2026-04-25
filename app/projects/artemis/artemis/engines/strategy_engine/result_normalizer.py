@@ -28,6 +28,63 @@ class BacktestResultNormalizer:
         }
 
     @staticmethod
+    def _compute_order_based_stats(orders: list) -> Dict[str, Any]:
+        """从成交订单中用 FIFO 配对法计算交易统计。
+
+        当 backtrader TradeAnalyzer 报告 0 笔交易时（例如网格策略持仓从未归零），
+        使用此方法从实际成交订单中匹配买卖对，计算有意义的统计数据。
+
+        Returns:
+            {
+                "trade_count": int,   # 完成的买卖配对数
+                "win_count": int,
+                "loss_count": int,
+                "win_rate": float,
+                "realized_pnl": float,  # 已配对部分的已实现盈亏
+            }
+        """
+        completed_buys: list = []  # FIFO queue: [(size, price), ...]
+        pair_count = 0
+        win_count = 0
+        loss_count = 0
+        realized_pnl = 0.0
+
+        for o in orders:
+            if o.get("status") != "Completed":
+                continue
+            size = abs(float(o.get("size", 0)))
+            price = float(o.get("price", 0))
+            if size <= 0 or price <= 0:
+                continue
+
+            if o.get("order_type") == "BUY":
+                completed_buys.append([size, price])
+            elif o.get("order_type") == "SELL":
+                remaining = size
+                while remaining > 0 and completed_buys:
+                    buy_size, buy_price = completed_buys[0]
+                    match_qty = min(remaining, buy_size)
+                    pnl = match_qty * (price - buy_price)
+                    realized_pnl += pnl
+                    pair_count += 1
+                    if pnl > 0:
+                        win_count += 1
+                    elif pnl < 0:
+                        loss_count += 1
+                    remaining -= match_qty
+                    completed_buys[0][0] -= match_qty
+                    if completed_buys[0][0] <= 0.0001:
+                        completed_buys.pop(0)
+
+        return {
+            "trade_count": pair_count,
+            "win_count": win_count,
+            "loss_count": loss_count,
+            "win_rate": round(float(win_count / pair_count), 4) if pair_count > 0 else 0.0,
+            "realized_pnl": round(realized_pnl, 2),
+        }
+
+    @staticmethod
     def normalize(
         *,
         run_id: int | str,
@@ -52,6 +109,19 @@ class BacktestResultNormalizer:
         sharpe = analyzer_results.get("sharpe")
 
         trade_stats = BacktestResultNormalizer._normalize_trade_analyzer(trade_analyzer)
+
+        # 如果 TradeAnalyzer 报告 0 笔交易，尝试从订单中用 FIFO 配对法计算
+        if trade_stats["trade_count"] == 0:
+            orders = list(getattr(strategy_instance, "order_events", []) or [])
+            order_stats = BacktestResultNormalizer._compute_order_based_stats(orders)
+            if order_stats["trade_count"] > 0:
+                trade_stats = {
+                    "trade_count": order_stats["trade_count"],
+                    "win_count": order_stats["win_count"],
+                    "loss_count": order_stats["loss_count"],
+                    "win_rate": order_stats["win_rate"],
+                }
+
         max_dd = float(((drawdown.get("max") or {}).get("drawdown") or 0.0))
         pnl = round(float(end_value - start_cash), 2)
         pnl_pct = round(float((pnl / start_cash) if start_cash else 0.0), 6)
@@ -81,6 +151,7 @@ class BacktestResultNormalizer:
         orders = list(getattr(strategy_instance, "order_events", []) or [])
         trades = list(getattr(strategy_instance, "trade_events", []) or [])
         positions = list(getattr(strategy_instance, "position_curve", []) or [])
+        diagnostics = list(getattr(strategy_instance, "bar_detail_events", []) or [])
 
         # Compute return rate curve from equity curve
         return_curve = []
@@ -100,6 +171,7 @@ class BacktestResultNormalizer:
             "equity_curve": equity_curve,
             "return_curve": return_curve,
             "positions": positions,
+            "bar_details": diagnostics,
             "plot_manifest": {
                 "version": "v1",
                 "charts": [

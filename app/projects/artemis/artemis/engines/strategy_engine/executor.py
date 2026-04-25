@@ -43,6 +43,8 @@ def execute_backtest(
     analyzer_profile: AnalyzerProfileSpec,
     cash: float,
     commission: float,
+    enable_bar_details: bool = False,
+    bar_details_level: str = "trade",
 ) -> Dict[str, Any]:
     """执行一次回测，返回原始结果字典。
 
@@ -66,6 +68,8 @@ def execute_backtest(
             "end_value": float,
         }
     """
+    # Inject bar details config into strategy params (declared in BaseRecordingStrategy.params)
+    strategy_params = {**strategy_params, "enable_bar_details": enable_bar_details, "bar_details_level": bar_details_level}
     cerebro = BacktraderEngineBuilder.build(
         df=df,
         strategy_spec=strategy_spec,
