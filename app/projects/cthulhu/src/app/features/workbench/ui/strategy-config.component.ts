@@ -74,12 +74,20 @@ import { WorkbenchRunRequest } from '../models/workbench.model';
           <nz-divider nzText="Strategy Parameters"></nz-divider>
           @for (key of paramKeys(); track key) {
             <nz-form-item>
-              <nz-form-label [nzSpan]="6">{{ key }}</nz-form-label>
+              <nz-form-label [nzSpan]="6">{{ paramDisplayLabel(key) }}</nz-form-label>
               <nz-form-control [nzSpan]="14">
-                <nz-input-number
-                  [formControlName]="key"
-                  style="width: 100%;"
-                ></nz-input-number>
+                @if (paramSchema(key)?.type === 'enum') {
+                  <nz-select [formControlName]="key" style="width: 100%;">
+                    @for (opt of paramSchema(key)!.options; track opt) {
+                      <nz-option [nzLabel]="opt" [nzValue]="opt"></nz-option>
+                    }
+                  </nz-select>
+                } @else {
+                  <nz-input-number
+                    [formControlName]="key"
+                    style="width: 100%;"
+                  ></nz-input-number>
+                }
               </nz-form-control>
             </nz-form-item>
           }
@@ -185,6 +193,16 @@ export class StrategyConfigComponent implements OnInit {
     const s = this.store.selectedStrategy();
     return s ? Object.keys(s.param_schema) : [];
   });
+
+  paramSchema(key: string) {
+    const s = this.store.selectedStrategy();
+    return s?.param_schema[key] ?? null;
+  }
+
+  paramDisplayLabel(key: string): string {
+    const schema = this.paramSchema(key);
+    return schema?.display_name || key;
+  }
 
   currentAdjustOptions = computed(() =>
     this.store.getAdjustOptionsForAsset(this.selectedAssetType),

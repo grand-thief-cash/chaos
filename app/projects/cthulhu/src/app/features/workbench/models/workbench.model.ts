@@ -88,9 +88,13 @@ export interface IndicatorSeriesMeta {
 // ===== 策略相关 =====
 
 export interface StrategyParamSchema {
-  type: 'int' | 'float' | 'string' | 'bool';
+  type: 'int' | 'float' | 'string' | 'bool' | 'enum';
   min?: number;
   max?: number;
+  options?: string[];
+  default?: any;
+  description?: string;
+  display_name?: string;
   required?: boolean;
 }
 
