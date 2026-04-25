@@ -114,6 +114,64 @@ CREATE TABLE IF NOT EXISTS taxonomy_security_map (
     KEY idx_category (source, category_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一分类-证券关系表';
 
+-- 1.4b Industry Constituent Table (行业指数成分股)
+CREATE TABLE IF NOT EXISTS industry_constituent (
+    id           BIGINT UNSIGNED AUTO_INCREMENT,
+    source       VARCHAR(32)   NOT NULL COMMENT '数据来源: amazing_data/tushare',
+    index_code   VARCHAR(64)   NOT NULL COMMENT '行业指数代码',
+    con_code     VARCHAR(64)   NOT NULL COMMENT '成分股代码',
+    index_name   VARCHAR(255)  NOT NULL DEFAULT '' COMMENT '行业指数名称',
+    in_date      VARCHAR(10)   NULL     COMMENT '纳入日期',
+    out_date     VARCHAR(10)   NULL     COMMENT '剔除日期',
+    created_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_src_idx_con (source, index_code, con_code),
+    KEY idx_index_code (source, index_code),
+    KEY idx_con_code (source, con_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='行业指数成分股表';
+
+-- 1.4c Industry Weight Table (行业指数成分股每日权重)
+CREATE TABLE IF NOT EXISTS industry_weight (
+    id           BIGINT UNSIGNED AUTO_INCREMENT,
+    source       VARCHAR(32)   NOT NULL COMMENT '数据来源: amazing_data/tushare',
+    index_code   VARCHAR(64)   NOT NULL COMMENT '行业指数代码',
+    con_code     VARCHAR(64)   NOT NULL COMMENT '成分股代码',
+    trade_date   VARCHAR(10)   NOT NULL COMMENT '交易日期',
+    weight       DECIMAL(10,6) NULL     COMMENT '权重(%)',
+    created_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_src_idx_con_dt (source, index_code, con_code, trade_date),
+    KEY idx_index_date (source, index_code, trade_date),
+    KEY idx_con_date (source, con_code, trade_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='行业指数成分股每日权重表';
+
+-- 1.4d Industry Daily Table (行业指数日行情)
+CREATE TABLE IF NOT EXISTS industry_daily (
+    id           BIGINT UNSIGNED AUTO_INCREMENT,
+    source       VARCHAR(32)    NOT NULL COMMENT '数据来源: amazing_data/tushare',
+    index_code   VARCHAR(64)    NOT NULL COMMENT '行业指数代码',
+    trade_date   VARCHAR(10)    NOT NULL COMMENT '交易日期',
+    open         DECIMAL(20,4)  NULL     COMMENT '开盘价',
+    high         DECIMAL(20,4)  NULL     COMMENT '最高价',
+    close        DECIMAL(20,4)  NULL     COMMENT '收盘价',
+    low          DECIMAL(20,4)  NULL     COMMENT '最低价',
+    pre_close    DECIMAL(20,4)  NULL     COMMENT '昨收盘价',
+    amount       DECIMAL(20,4)  NULL     COMMENT '成交金额(元)',
+    volume       DECIMAL(20,4)  NULL     COMMENT '成交量(股)',
+    pb           DECIMAL(20,4)  NULL     COMMENT '指数市净率',
+    pe           DECIMAL(20,4)  NULL     COMMENT '指数市盈率',
+    total_cap    DECIMAL(20,4)  NULL     COMMENT '总市值(万元)',
+    a_float_cap  DECIMAL(20,4)  NULL     COMMENT 'A股流通市值(万元)',
+    created_at   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_src_idx_dt (source, index_code, trade_date),
+    KEY idx_index_date (source, index_code, trade_date),
+    KEY idx_trade_date (source, trade_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='行业指数日行情表';
+
 -- 1.5 Strategy Run Tables (fresh install uses 'period', upgrade handled in PART 3)
 CREATE TABLE IF NOT EXISTS strategy_run_summary (
     run_id VARCHAR(128) NOT NULL COMMENT '回测运行唯一标识',

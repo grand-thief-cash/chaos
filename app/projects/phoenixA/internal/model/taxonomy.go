@@ -31,6 +31,61 @@ type TaxonomySecurityMap struct {
 
 func (TaxonomySecurityMap) TableName() string { return "taxonomy_security_map" }
 
+// IndustryConstituent represents a constituent stock of an industry index.
+// Table: industry_constituent
+type IndustryConstituent struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
+	Source    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_idx_con" json:"source"`
+	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_idx_con" json:"index_code"`
+	ConCode   string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_idx_con" json:"con_code"`
+	IndexName string    `gorm:"type:varchar(255);not null;default:''" json:"index_name"`
+	InDate    *string   `gorm:"type:varchar(10)" json:"in_date,omitempty"`
+	OutDate   *string   `gorm:"type:varchar(10)" json:"out_date,omitempty"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (IndustryConstituent) TableName() string { return "industry_constituent" }
+
+// IndustryWeight represents a daily weight of a constituent in an industry index.
+// Table: industry_weight
+type IndustryWeight struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
+	Source    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_idx_con_dt" json:"source"`
+	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_idx_con_dt" json:"index_code"`
+	ConCode   string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_idx_con_dt" json:"con_code"`
+	TradeDate string    `gorm:"type:varchar(10);not null;uniqueIndex:uk_src_idx_con_dt" json:"trade_date"`
+	Weight    float64   `gorm:"type:decimal(10,6)" json:"weight"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (IndustryWeight) TableName() string { return "industry_weight" }
+
+// IndustryDaily represents daily OHLCV + valuation data for an industry index.
+// Table: industry_daily
+type IndustryDaily struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
+	Source    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_idx_dt" json:"source"`
+	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_idx_dt" json:"index_code"`
+	TradeDate string    `gorm:"type:varchar(10);not null;uniqueIndex:uk_src_idx_dt" json:"trade_date"`
+	Open      float64   `gorm:"type:decimal(20,4)" json:"open"`
+	High      float64   `gorm:"type:decimal(20,4)" json:"high"`
+	Close     float64   `gorm:"type:decimal(20,4)" json:"close"`
+	Low       float64   `gorm:"type:decimal(20,4)" json:"low"`
+	PreClose  float64   `gorm:"type:decimal(20,4)" json:"pre_close"`
+	Amount    float64   `gorm:"type:decimal(20,4)" json:"amount"`
+	Volume    float64   `gorm:"type:decimal(20,4)" json:"volume"`
+	PB        float64   `gorm:"type:decimal(20,4)" json:"pb"`
+	PE        float64   `gorm:"type:decimal(20,4)" json:"pe"`
+	TotalCap  float64   `gorm:"type:decimal(20,4)" json:"total_cap"`
+	AFloatCap float64   `gorm:"type:decimal(20,4)" json:"a_float_cap"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (IndustryDaily) TableName() string { return "industry_daily" }
+
 // TaxonomyCategoryFilters for querying taxonomy categories.
 type TaxonomyCategoryFilters struct {
 	Source     string
