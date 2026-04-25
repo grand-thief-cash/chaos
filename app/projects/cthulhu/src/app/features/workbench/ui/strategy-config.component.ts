@@ -10,6 +10,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzDividerModule } from 'ng-zorro-antd/divider';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
+import { NzSwitchModule } from 'ng-zorro-antd/switch';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { WorkbenchStore } from '../state/workbench.store';
 import { WorkbenchRunRequest } from '../models/workbench.model';
@@ -30,6 +31,7 @@ import { WorkbenchRunRequest } from '../models/workbench.model';
     NzCardModule,
     NzDividerModule,
     NzAlertModule,
+    NzSwitchModule,
   ],
   template: `
     <nz-card>
@@ -59,130 +61,162 @@ import { WorkbenchRunRequest } from '../models/workbench.model';
       }
 
       <form nz-form [formGroup]="form" (ngSubmit)="onSubmit()">
-        <nz-form-item>
-          <nz-form-label [nzSpan]="6">Strategy</nz-form-label>
-          <nz-form-control [nzSpan]="14">
-            <nz-select formControlName="strategy_code" nzPlaceHolder="Select strategy" (ngModelChange)="onStrategyChange($event)">
-              @for (s of store.strategies(); track s.code) {
-                <nz-option [nzValue]="s.code" [nzLabel]="s.code"></nz-option>
-              }
-            </nz-select>
-          </nz-form-control>
-        </nz-form-item>
-
-        @if (store.selectedStrategy(); as strategy) {
-          <nz-divider nzText="Strategy Parameters"></nz-divider>
-          @for (key of paramKeys(); track key) {
-            <nz-form-item>
-              <nz-form-label [nzSpan]="6">{{ paramDisplayLabel(key) }}</nz-form-label>
-              <nz-form-control [nzSpan]="14">
-                @if (paramSchema(key)?.type === 'enum') {
-                  <nz-select [formControlName]="key" style="width: 100%;">
-                    @for (opt of paramSchema(key)!.options; track opt) {
-                      <nz-option [nzLabel]="opt" [nzValue]="opt"></nz-option>
-                    }
-                  </nz-select>
-                } @else {
-                  <nz-input-number
-                    [formControlName]="key"
-                    style="width: 100%;"
-                  ></nz-input-number>
-                }
-              </nz-form-control>
-            </nz-form-item>
-          }
-        }
-
-        <nz-divider nzText="Data Dimensions"></nz-divider>
-        <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
-          <nz-form-item style="margin-bottom: 0; flex: 1; min-width: 140px;">
-            <nz-form-label [nzSpan]="8">Asset</nz-form-label>
-            <nz-form-control [nzSpan]="14">
-              <nz-select [(ngModel)]="selectedAssetType" (ngModelChange)="onAssetTypeChange($event)" [ngModelOptions]="{standalone: true}" nzSize="small">
-                @for (a of store.assetTypes(); track a.value) {
-                  <nz-option [nzLabel]="a.label" [nzValue]="a.value"></nz-option>
-                }
-              </nz-select>
-            </nz-form-control>
-          </nz-form-item>
-          <nz-form-item style="margin-bottom: 0; flex: 1; min-width: 140px;">
-            <nz-form-label [nzSpan]="8">Market</nz-form-label>
-            <nz-form-control [nzSpan]="14">
-              <nz-select [(ngModel)]="selectedMarket" [ngModelOptions]="{standalone: true}" nzSize="small">
-                @for (m of store.markets(); track m.value) {
-                  <nz-option [nzLabel]="m.label" [nzValue]="m.value"></nz-option>
-                }
-              </nz-select>
-            </nz-form-control>
-          </nz-form-item>
-          <nz-form-item style="margin-bottom: 0; flex: 1; min-width: 140px;">
-            <nz-form-label [nzSpan]="8">Period</nz-form-label>
-            <nz-form-control [nzSpan]="14">
-              <nz-select [(ngModel)]="selectedPeriod" [ngModelOptions]="{standalone: true}" nzSize="small">
-                @for (p of store.periods(); track p.value) {
-                  <nz-option [nzLabel]="p.label" [nzValue]="p.value"></nz-option>
-                }
-              </nz-select>
-            </nz-form-control>
-          </nz-form-item>
-          @if (currentAdjustOptions().length > 0) {
-            <nz-form-item style="margin-bottom: 0; flex: 1; min-width: 140px;">
-              <nz-form-label [nzSpan]="8">Adjust</nz-form-label>
-              <nz-form-control [nzSpan]="14">
-                <nz-select [(ngModel)]="selectedAdjust" [ngModelOptions]="{standalone: true}" nzSize="small">
-                  @for (a of currentAdjustOptions(); track a.value) {
-                    <nz-option [nzLabel]="a.label" [nzValue]="a.value"></nz-option>
-                  }
-                </nz-select>
-              </nz-form-control>
-            </nz-form-item>
-          }
+        <!-- Strategy selector - full width -->
+        <div class="cfg-row" style="margin-bottom: 16px;">
+          <label class="cfg-label">Strategy</label>
+          <nz-select formControlName="strategy_code" nzPlaceHolder="Select strategy"
+            (ngModelChange)="onStrategyChange($event)" nzSize="small" style="width: 220px;">
+            @for (s of store.strategies(); track s.code) {
+              <nz-option [nzValue]="s.code" [nzLabel]="s.code"></nz-option>
+            }
+          </nz-select>
         </div>
 
-        <nz-divider nzText="Symbol &amp; Time"></nz-divider>
-        <nz-form-item>
-          <nz-form-label [nzSpan]="6">Symbol</nz-form-label>
-          <nz-form-control [nzSpan]="14">
-            <input nz-input formControlName="symbol" placeholder="e.g. 000001" />
-          </nz-form-control>
-        </nz-form-item>
-        <nz-form-item>
-          <nz-form-label [nzSpan]="6">Start Date</nz-form-label>
-          <nz-form-control [nzSpan]="14">
-            <input nz-input type="date" formControlName="start_date" style="width: 100%;" />
-          </nz-form-control>
-        </nz-form-item>
-        <nz-form-item>
-          <nz-form-label [nzSpan]="6">End Date</nz-form-label>
-          <nz-form-control [nzSpan]="14">
-            <input nz-input type="date" formControlName="end_date" style="width: 100%;" />
-          </nz-form-control>
-        </nz-form-item>
+        @if (store.selectedStrategy(); as strategy) {
+          <!-- Two-column grid: left = params, right = data config -->
+          <div class="cfg-grid">
+            <!-- LEFT column: Strategy Parameters -->
+            <div class="cfg-section">
+              <div class="cfg-section-title">Strategy Parameters</div>
+              <div class="cfg-fields">
+                @for (key of paramKeys(); track key) {
+                  <div class="cfg-field">
+                    <label class="cfg-label">{{ paramDisplayLabel(key) }}</label>
+                    @if (paramSchema(key)?.type === 'enum') {
+                      <nz-select [formControlName]="key" nzSize="small" style="width: 100%;">
+                        @for (opt of paramSchema(key)!.options; track opt) {
+                          <nz-option [nzLabel]="opt" [nzValue]="opt"></nz-option>
+                        }
+                      </nz-select>
+                    } @else {
+                      <nz-input-number [formControlName]="key" style="width: 100%;" nzSize="small"></nz-input-number>
+                    }
+                  </div>
+                }
+              </div>
+            </div>
 
-        <nz-divider nzText="Capital"></nz-divider>
-        <nz-form-item>
-          <nz-form-label [nzSpan]="6">Cash</nz-form-label>
-          <nz-form-control [nzSpan]="14">
-            <nz-input-number formControlName="cash" [nzMin]="0" [nzStep]="10000" style="width: 100%;"></nz-input-number>
-          </nz-form-control>
-        </nz-form-item>
-        <nz-form-item>
-          <nz-form-label [nzSpan]="6">Commission</nz-form-label>
-          <nz-form-control [nzSpan]="14">
-            <nz-input-number formControlName="commission" [nzMin]="0" [nzMax]="1" [nzStep]="0.0001" style="width: 100%;"></nz-input-number>
-          </nz-form-control>
-        </nz-form-item>
+            <!-- RIGHT column: Data & Capital -->
+            <div class="cfg-section">
+              <div class="cfg-section-title">Data & Capital</div>
+              <div class="cfg-fields">
+                <div class="cfg-field">
+                  <label class="cfg-label">Symbol</label>
+                  <input nz-input formControlName="symbol" placeholder="e.g. 000001" nzSize="small" />
+                </div>
+                <div class="cfg-field">
+                  <label class="cfg-label">Start</label>
+                  <input nz-input type="date" formControlName="start_date" nzSize="small" />
+                </div>
+                <div class="cfg-field">
+                  <label class="cfg-label">End</label>
+                  <input nz-input type="date" formControlName="end_date" nzSize="small" />
+                </div>
+                <div class="cfg-field">
+                  <label class="cfg-label">Asset</label>
+                  <nz-select [(ngModel)]="selectedAssetType" (ngModelChange)="onAssetTypeChange($event)" [ngModelOptions]="{standalone: true}" nzSize="small" style="width: 100%;">
+                    @for (a of store.assetTypes(); track a.value) {
+                      <nz-option [nzLabel]="a.label" [nzValue]="a.value"></nz-option>
+                    }
+                  </nz-select>
+                </div>
+                <div class="cfg-field">
+                  <label class="cfg-label">Market</label>
+                  <nz-select [(ngModel)]="selectedMarket" [ngModelOptions]="{standalone: true}" nzSize="small" style="width: 100%;">
+                    @for (m of store.markets(); track m.value) {
+                      <nz-option [nzLabel]="m.label" [nzValue]="m.value"></nz-option>
+                    }
+                  </nz-select>
+                </div>
+                <div class="cfg-field">
+                  <label class="cfg-label">Period</label>
+                  <nz-select [(ngModel)]="selectedPeriod" [ngModelOptions]="{standalone: true}" nzSize="small" style="width: 100%;">
+                    @for (p of store.periods(); track p.value) {
+                      <nz-option [nzLabel]="p.label" [nzValue]="p.value"></nz-option>
+                    }
+                  </nz-select>
+                </div>
+                @if (currentAdjustOptions().length > 0) {
+                  <div class="cfg-field">
+                    <label class="cfg-label">Adjust</label>
+                    <nz-select [(ngModel)]="selectedAdjust" [ngModelOptions]="{standalone: true}" nzSize="small" style="width: 100%;">
+                      @for (a of currentAdjustOptions(); track a.value) {
+                        <nz-option [nzLabel]="a.label" [nzValue]="a.value"></nz-option>
+                      }
+                    </nz-select>
+                  </div>
+                }
+                <div class="cfg-field">
+                  <label class="cfg-label">Cash</label>
+                  <nz-input-number formControlName="cash" [nzMin]="0" [nzStep]="10000" style="width: 100%;" nzSize="small"></nz-input-number>
+                </div>
+                <div class="cfg-field">
+                  <label class="cfg-label">Commission</label>
+                  <nz-input-number formControlName="commission" [nzMin]="0" [nzMax]="1" [nzStep]="0.0001" style="width: 100%;" nzSize="small"></nz-input-number>
+                </div>
+              </div>
+            </div>
+          </div>
 
-        <nz-form-item>
-          <nz-form-control [nzSpan]="14" [nzOffset]="6">
-            <button nz-button nzType="primary" [nzLoading]="store.running()" [disabled]="!form.valid || store.running()">
+          <!-- Bottom bar: Run button + Transaction Details toggle -->
+          <div style="display: flex; align-items: center; gap: 24px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0;">
+            <button nz-button nzType="primary" nzSize="default" [nzLoading]="store.running()" [disabled]="!form.valid || store.running()">
               Run Backtest
             </button>
-          </nz-form-control>
-        </nz-form-item>
+            <span style="font-size: 12px; color: #8c8c8c;">Transaction Details</span>
+            <nz-switch [(ngModel)]="enableBarDetails" [ngModelOptions]="{standalone: true}" nzSize="small"></nz-switch>
+            @if (enableBarDetails) {
+              <nz-select [(ngModel)]="barDetailsLevel" [ngModelOptions]="{standalone: true}" nzSize="small" style="width: 120px;">
+                <nz-option nzValue="trade" nzLabel="Trade Only"></nz-option>
+                <nz-option nzValue="all" nzLabel="All Bars"></nz-option>
+              </nz-select>
+            }
+          </div>
+        }
       </form>
     </nz-card>
   `,
+  styles: [`
+    .cfg-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .cfg-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .cfg-section {
+      background: #fafafa;
+      border-radius: 8px;
+      padding: 14px 16px;
+      border: 1px solid #f0f0f0;
+    }
+    .cfg-section-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #595959;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e8e8e8;
+    }
+    .cfg-fields {
+      display: grid;
+      grid-template-columns: repeat(4, 160px);
+      gap: 12px 16px;
+    }
+    .cfg-field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .cfg-label {
+      font-size: 12px;
+      color: #595959;
+      white-space: nowrap;
+    }
+  `],
 })
 export class StrategyConfigComponent implements OnInit {
   store = inject(WorkbenchStore);
@@ -214,6 +248,8 @@ export class StrategyConfigComponent implements OnInit {
   selectedMarket = '';
   selectedPeriod = '';
   selectedAdjust = '';
+  enableBarDetails = false;
+  barDetailsLevel: 'trade' | 'all' = 'trade';
 
   ngOnInit(): void {
     this.form = this.fb.group({
@@ -317,6 +353,8 @@ export class StrategyConfigComponent implements OnInit {
       commission: raw.commission,
       strategy_params: strategyParams,
       source: this.store.sourceSelectorVisible() ? this.selectedSource : undefined,
+      enable_bar_details: this.enableBarDetails,
+      bar_details_level: this.barDetailsLevel,
     };
     this.store.runBacktest(req);
   }

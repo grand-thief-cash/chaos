@@ -14,6 +14,7 @@ import { NzDividerModule } from 'ng-zorro-antd/divider';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { ChartPanelComponent } from '../../../shared/ui/chart-panel';
+import { ReturnDistributionChartComponent } from '../ui/return-distribution-chart.component';
 import { WorkbenchApiService } from '../services/workbench-api.service';
 import { WorkbenchStore } from '../state/workbench.store';
 import {
@@ -54,6 +55,7 @@ const COLOR_PALETTE = [
     NzDividerModule,
     NzIconModule,
     ChartPanelComponent,
+    ReturnDistributionChartComponent,
   ],
   template: `
     <div style="display: flex; flex-direction: column;">
@@ -279,6 +281,20 @@ const COLOR_PALETTE = [
           </div>
         </div>
       }
+
+      @if (bars.length > 0) {
+        <div style="margin-top: 12px; text-align: right; padding-right: 8px;">
+          <button nz-button nzSize="small" [nzType]="showDistribution ? 'primary' : 'default'"
+            (click)="showDistribution = !showDistribution">
+            {{ showDistribution ? 'Hide' : 'Show' }} Return Distribution
+          </button>
+        </div>
+        @if (showDistribution) {
+          <div style="margin-top: 8px;">
+            <app-return-distribution-chart [bars]="bars"></app-return-distribution-chart>
+          </div>
+        }
+      }
     </div>
   `,
 })
@@ -295,6 +311,7 @@ export class MarketDataPageComponent implements OnInit {
   configPanelOpen = false;
   lockYAxis = false;
   showVolume = true;
+  showDistribution = false;
   mainHeight = 450;
   volumeHeight = 120;
   subChartHeight = 150;

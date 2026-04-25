@@ -125,6 +125,8 @@ export interface WorkbenchRunRequest {
   commission: number;
   strategy_params: Record<string, any>;
   source?: string;
+  enable_bar_details?: boolean;
+  bar_details_level?: 'trade' | 'all';
 }
 
 // ===== 响应 =====
@@ -180,6 +182,20 @@ export interface BacktestSummary {
   win_rate: number;
 }
 
+export interface BarDetailEvent {
+  timestamp: string;
+  close: number;
+  action: string;
+  reason: string;
+  position_size: number;
+  position_price: number;
+  portfolio_value: number;
+  cash: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  indicators?: Record<string, any>;
+}
+
 export interface BacktestArtifacts {
   equity_curve: EquityPoint[];
   return_curve: ReturnPoint[];
@@ -187,6 +203,7 @@ export interface BacktestArtifacts {
   trades: TradeEvent[];
   orders: OrderEvent[];
   positions: any[];
+  bar_details?: BarDetailEvent[];
   bars?: Bar[];
 }
 
@@ -199,4 +216,57 @@ export interface BacktestResult {
   run_meta: { run_id: string; parent_run_id: string | null; task_code: string };
   summary: BacktestSummary;
   artifacts: BacktestArtifacts;
+}
+
+// ===== 行业数据相关 =====
+
+export interface IndustryCategory {
+  id: number;
+  source: string;
+  code: string;
+  name: string;
+  parent_code?: string;
+  level: number;
+  is_leaf: boolean;
+  attrs?: any;
+}
+
+export interface IndustryCategoriesResponse {
+  list: IndustryCategory[];
+  total: number;
+}
+
+export interface IndustryConstituent {
+  index_code: string;
+  con_code: string;
+  index_name: string;
+  in_date?: string;
+  out_date?: string;
+}
+
+export interface IndustryConstituentsResponse {
+  list: IndustryConstituent[];
+  count: number;
+}
+
+export interface IndustryDailyBar {
+  index_code: string;
+  trade_date: string;
+  open: number;
+  high: number;
+  close: number;
+  low: number;
+  pre_close: number;
+  amount: number;
+  volume: number;
+  pb: number;
+  pe: number;
+  total_cap: number;
+  a_float_cap: number;
+}
+
+export interface IndustryDailyResponse {
+  index_code: string;
+  bars: IndustryDailyBar[];
+  count: number;
 }
