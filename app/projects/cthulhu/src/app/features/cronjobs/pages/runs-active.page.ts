@@ -22,8 +22,8 @@ import {RUN_STATUS_BADGE} from '../cronjobs.constants';
         <thead><tr><th>ID</th><th>Task</th><th>Status</th><th>Scheduled</th><th>Start</th><th>Attempt</th></tr></thead>
         <tbody>
           <tr *ngFor="let r of paged()">
-            <td><a [routerLink]="['/cronjobs/run', r.id]">{{r.id}}</a></td>
-            <td>{{r.task_id}}</td>
+            <td><a [routerLink]="['/cronjobs/tasks', r.task_id, 'runs', r.id]">{{r.id}}</a></td>
+            <td><a [routerLink]="['/cronjobs/tasks', r.task_id]">{{r.task_id}}</a></td>
             <td><nz-badge [nzStatus]="RUN_STATUS_BADGE[r.status].status || 'default'" [nzText]="RUN_STATUS_BADGE[r.status].text || r.status"></nz-badge></td>
             <td>{{r.scheduled_time}}</td>
             <td>{{r.start_time || '-'}}</td>

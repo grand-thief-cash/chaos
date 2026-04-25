@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { WorkbenchShellComponent } from './pages/workbench-shell.component';
 import { WorkbenchResearchPageComponent } from './pages/workbench-research.page';
 import { MarketDataPageComponent } from './pages/market-data.page';
+import { IndustryExplorerPageComponent } from './pages/industry-explorer.page';
 
 export const WORKBENCH_ROUTES: Routes = [
   {
@@ -22,6 +23,11 @@ export const WORKBENCH_ROUTES: Routes = [
         path: 'market-data',
         component: MarketDataPageComponent,
         data: { breadcrumb: 'Market Data', menu: { label: 'Market Data', order: 2 } },
+      },
+      {
+        path: 'industry',
+        component: IndustryExplorerPageComponent,
+        data: { breadcrumb: 'Industry Explorer', menu: { label: 'Industry Explorer', order: 3 } },
       },
     ],
   },

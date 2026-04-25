@@ -1,7 +1,40 @@
 # VERSION
-v0.7.1
+v0.8.0
 
 # Changelog
+- v0.8.0
+    - **Renamed diagnostics → Transaction Details**
+        - Model: `DiagnosticEvent` → `BarDetailEvent`, `diagnostics` → `bar_details`
+        - Component renamed to `BacktestBarDetailsComponent` (`app-backtest-bar-details`)
+        - Config divider renamed to "Transaction Details"
+    - **Transaction Details table improvements**
+        - Resizable columns via `nz-resizable` (drag column edges to resize)
+        - Shortened action labels: `ORDER_BUY_OK` → `✓ BUY`, `ORDER_SELL_OK` → `✓ SELL`, `ORDER_FAILED` → `✗ FAIL`
+        - Added magenta color for `ORDER_FAILED` actions
+        - CSV export filename changed to `bar_details_*.csv`
+    - **Return Distribution chart** (`return-distribution-chart.component.ts`)
+        - Histogram of daily returns with normal distribution overlay
+        - Stats panel: Mean, Std Dev, Skewness, Kurtosis (excess), Median, Samples
+        - Color-coded skewness/kurtosis values (green/orange/red by severity)
+        - Interpretation text box explaining distribution characteristics
+        - Available in both Market Data page and Strategy Research page
+        - Toggle button to show/hide on demand (default hidden)
+    - **Strategy Configuration redesign**
+        - Two-section card layout: "Strategy Parameters" and "Data & Capital"
+        - Compact CSS Grid fields (4 columns × 160px, no full-width stretching)
+        - Vertical label layout (label above input) with 12px labels
+        - Bottom bar with Run Backtest button and Transaction Details toggle side by side
+    - **Cron Jobs: Fixed active runs navigation**
+        - Run ID link: `/cronjobs/run/:id` → `/cronjobs/tasks/:taskId/runs/:runId`
+        - Task ID now clickable, linking to task detail page
+    - **Industry Explorer page** (`/workbench/industry`)
+        - Two search modes: "Industry → Stocks" and "Stock → Industries"
+        - Industry hierarchy browser with breadcrumb drill-down navigation
+        - Constituent stocks table for selected industry
+        - Industry index daily bars table with PE/PB/market cap columns
+        - Red/green coloring for close vs pre_close
+    - Added Industry API methods to WorkbenchApiService
+    - Added industry data model interfaces (IndustryCategory, IndustryConstituent, IndustryDailyBar)
 - v0.7.1
     - Fixed bug of displaying mode selection in gridline strategy.
 - v0.7.0
