@@ -506,6 +506,148 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             raise
 
+    # ──────────── Financial Statements (v2) ────────────
+
+    def upsert_financial_statements(
+        self,
+        statements: List[Dict[str, Any]],
+        data_source: str,
+        statement_type: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert financial statements via v2 API."""
+        path = f"/api/v2/financial/{data_source}/{statement_type}/upsert"
+        try:
+            resp = self.post(path, statements)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_financial_statements_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'statement_type': statement_type,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(statements) if statements else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_financial_statements_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'statement_type': statement_type,
+                    'error': str(e),
+                })
+            raise
+
+    def query_financial_statements(
+        self,
+        *,
+        source: str,
+        statement_type: str,
+        symbol: str = "",
+        period_start: str = "",
+        period_end: str = "",
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query financial statements via v2 API."""
+        path = f"/api/v2/financial/{source}/{statement_type}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if symbol:
+            params["symbol"] = symbol
+        if period_start:
+            params["period_start"] = period_start
+        if period_end:
+            params["period_end"] = period_end
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_financial_statements_failed',
+                    'source': source,
+                    'statement_type': statement_type,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+
+    # ──────────── Corporate Actions (v2) ────────────
+
+    def upsert_corporate_actions(
+        self,
+        actions: List[Dict[str, Any]],
+        data_source: str,
+        action_type: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert corporate actions via v2 API."""
+        path = f"/api/v2/corporate-action/{data_source}/{action_type}/upsert"
+        try:
+            resp = self.post(path, actions)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_corporate_actions_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'action_type': action_type,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(actions) if actions else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_corporate_actions_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'action_type': action_type,
+                    'error': str(e),
+                })
+            raise
+
+    def query_corporate_actions(
+        self,
+        *,
+        source: str,
+        action_type: str,
+        symbol: str = "",
+        period_start: str = "",
+        period_end: str = "",
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query corporate actions via v2 API."""
+        path = f"/api/v2/corporate-action/{source}/{action_type}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if symbol:
+            params["symbol"] = symbol
+        if period_start:
+            params["period_start"] = period_start
+        if period_end:
+            params["period_end"] = period_end
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_corporate_actions_failed',
+                    'source': source,
+                    'action_type': action_type,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+
     def query_industry_daily(
         self,
         *,

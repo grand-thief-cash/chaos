@@ -1,7 +1,46 @@
 # VERSION
-v0.21.0
+v0.22.0
 
 # Changelog
+- v0.22.0
+    - **Balance Sheet financial data pipeline** (`get_balance_sheet`)
+        - New task: `STOCK_ZH_A_BALANCE_SHEET` — downloads A-share balance sheet data via AmazingData SDK
+        - Design: uses JSON column for 180+ financial fields (extensible to income/cashflow statements)
+        - PhoenixA client: `upsert_financial_statements()`, `query_financial_statements()`
+        - Batch sink in 500-record chunks to avoid oversized HTTP requests
+    - **Cash Flow financial data pipeline** (`get_cash_flow`)
+        - New task: `STOCK_ZH_A_CASH_FLOW` — downloads A-share cash flow statement data via AmazingData SDK
+        - Reuses unified `financial_statement` table with `statement_type='cashflow'`
+    - **Income Statement financial data pipeline** (`get_income`)
+        - New task: `STOCK_ZH_A_INCOME` — downloads A-share income statement data via AmazingData SDK
+        - Reuses unified `financial_statement` table with `statement_type='income'`
+    - **Profit Express financial data pipeline** (`get_profit_express`)
+        - New task: `STOCK_ZH_A_PROFIT_EXPRESS` — downloads A-share profit express data via AmazingData SDK
+        - Reuses unified `financial_statement` table with `statement_type='profit_express'`
+        - Handles both DataFrame and dict return types from SDK
+    - **Profit Notice financial data pipeline** (`get_profit_notice`)
+        - New task: `STOCK_ZH_A_PROFIT_NOTICE` — downloads A-share profit notice (业绩预告) data via AmazingData SDK
+        - Reuses unified `financial_statement` table with `statement_type='profit_notice'`
+        - Handles both DataFrame and dict return types from SDK
+    - **Financial reference data constants** (`artemis/consts/financial.py`)
+        - `FinancialStatementType`: balance_sheet / income / cashflow / profit_express / profit_notice
+        - `ReportType`: Q1(1) / H1(2) / Q3(3) / Annual(4)
+        - `StatementCode`: 1-10 most common codes (合并报表/母公司报表/调整/更正前 etc.)
+        - `ProfitNoticeType`: 1-11 业绩预告类型代码 (略减/略增/扭亏/预减/预增 etc.)
+    - **Corporate Action data pipeline** — new domain: `corporate_action` table
+        - New task: `STOCK_ZH_A_DIVIDEND` — downloads A-share dividend data via AmazingData SDK (`get_dividend`)
+        - New task: `STOCK_ZH_A_RIGHT_ISSUE` — downloads A-share right issue data via AmazingData SDK (`get_right_issue`)
+        - New `BaseCorporateActionTask` base class with configurable metadata fields
+        - PhoenixA client: `upsert_corporate_actions()`, `query_corporate_actions()`
+        - Reference constants: `CorporateActionType`, `DividendProgress`, `RightIssueProgress`
+    - Added to `tasks_export_2026-04-26.json`:
+        - `stock_zh_a_balance_sheet`: weekly SAT 06:00, ASYNC mode with 30min timeout
+        - `stock_zh_a_cash_flow`: weekly SAT 06:30, ASYNC mode with 30min timeout
+        - `stock_zh_a_income`: weekly SAT 07:00, ASYNC mode with 30min timeout
+        - `stock_zh_a_profit_express`: weekly SAT 07:30, ASYNC mode with 30min timeout
+        - `stock_zh_a_profit_notice`: weekly SAT 08:00, ASYNC mode with 30min timeout
+        - `stock_zh_a_dividend`: weekly SAT 08:30, ASYNC mode with 30min timeout
+        - `stock_zh_a_right_issue`: weekly SAT 09:00, ASYNC mode with 30min timeout
 - v0.21.0
     - **Renamed diagnostics → bar_details / Transaction Details**
         - `enable_diagnostics` → `enable_bar_details`, `diagnostics_level` → `bar_details_level` across base strategy, executor, workbench model, and result normalizer
