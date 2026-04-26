@@ -47,6 +47,9 @@ func (s *CorporateActionService) Query(ctx context.Context, source string, f *mo
 	if pageSize < 1 {
 		pageSize = 100
 	}
+	if pageSize > 1000 {
+		pageSize = 1000
+	}
 	offset := (page - 1) * pageSize
 	list, err := s.Dao.Query(ctx, source, f, pageSize, offset)
 	if err != nil {

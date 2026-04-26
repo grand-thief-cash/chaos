@@ -32,4 +32,8 @@ func init() {
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, controller.NewCorporateActionController(), nil
 	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, controller.NewSchemaController(), nil
+	})
 }
