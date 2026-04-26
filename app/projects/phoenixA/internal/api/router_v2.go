@@ -88,6 +88,30 @@ func init() {
 		}
 		strategyRunCtrl := strategyRunCtrlComp.(*controller.StrategyRunController)
 
+		// ====== Financial Statements ======
+		finStmtCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_FINANCIAL_STMT)
+		if err != nil {
+			return err
+		}
+		finStmtCtrl := finStmtCtrlComp.(*controller.FinancialStatementController)
+
+		r.Route("/api/v2/financial/{source}/{statement_type}", func(r chi.Router) {
+			r.Post("/upsert", finStmtCtrl.BatchUpsert)
+			r.Get("/", finStmtCtrl.Query)
+		})
+
+		// ====== Corporate Actions ======
+		corpActionCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_CORP_ACTION)
+		if err != nil {
+			return err
+		}
+		corpActionCtrl := corpActionCtrlComp.(*controller.CorporateActionController)
+
+		r.Route("/api/v2/corporate-action/{source}/{action_type}", func(r chi.Router) {
+			r.Post("/upsert", corpActionCtrl.BatchUpsert)
+			r.Get("/", corpActionCtrl.Query)
+		})
+
 		r.Route("/api/v1/strategy/run", func(r chi.Router) {
 			r.Get("/list", strategyRunCtrl.ListSummaries)
 			r.Post("/summary/upsert", strategyRunCtrl.UpsertSummary)

@@ -9,16 +9,22 @@ const (
 	COMP_DAO_TAXONOMY          = "dao_taxonomy"
 	COMP_DAO_TAXONOMY_MAP      = "dao_taxonomy_map"
 	COMP_DAO_STRATEGY_RUN      = "dao_strategy_run"
+	COMP_DAO_FINANCIAL_STMT    = "dao_financial_stmt"
+	COMP_DAO_CORP_ACTION       = "dao_corp_action"
 
 	// Service components
-	COMP_SVC_SECURITY     = "svc_security"
-	COMP_SVC_BARS         = "svc_bars"
-	COMP_SVC_TAXONOMY     = "svc_taxonomy"
-	COMP_SVC_STRATEGY_RUN = "svc_strategy_run"
+	COMP_SVC_SECURITY       = "svc_security"
+	COMP_SVC_BARS           = "svc_bars"
+	COMP_SVC_TAXONOMY       = "svc_taxonomy"
+	COMP_SVC_STRATEGY_RUN   = "svc_strategy_run"
+	COMP_SVC_FINANCIAL_STMT = "svc_financial_stmt"
+	COMP_SVC_CORP_ACTION    = "svc_corp_action"
 
 	// Controller components
-	COMP_CTRL_SECURITY     = "ctrl_security"
-	COMP_CTRL_BARS         = "ctrl_bars"
-	COMP_CTRL_TAXONOMY     = "ctrl_taxonomy"
-	COMP_CTRL_STRATEGY_RUN = "ctrl_strategy_run"
+	COMP_CTRL_SECURITY       = "ctrl_security"
+	COMP_CTRL_BARS           = "ctrl_bars"
+	COMP_CTRL_TAXONOMY       = "ctrl_taxonomy"
+	COMP_CTRL_STRATEGY_RUN   = "ctrl_strategy_run"
+	COMP_CTRL_FINANCIAL_STMT = "ctrl_financial_stmt"
+	COMP_CTRL_CORP_ACTION    = "ctrl_corp_action"
 )

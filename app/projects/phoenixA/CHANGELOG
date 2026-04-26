@@ -1,7 +1,35 @@
 # VERSION
-v1.1.0
+v1.2.0
 
 # Changelog
+- v1.2.0
+    - Added unified financial statement support (balance sheet / income / cashflow / profit_express / profit_notice):
+        - New table: `financial_statement` with JSON column for 180+ numeric fields
+        - Design rationale: JSON storage avoids 180-column wide table; single table serves all statement types for extensibility
+        - UNIQUE KEY on (source, symbol, market, statement_type, reporting_period, report_type, statement_code) ensures upsert idempotency
+        - New model: `FinancialStatement`, `FinancialStatementFilters`
+        - New DAO/Service/Controller: `FinancialStatementDao`, `FinancialStatementService`, `FinancialStatementController`
+        - New API endpoints:
+            - `POST /api/v2/financial/{source}/{statement_type}/upsert`
+            - `GET  /api/v2/financial/{source}/{statement_type}?symbol=...&period_start=...&period_end=...`
+        - Registered components: `dao_financial_stmt`, `svc_financial_stmt`, `ctrl_financial_stmt`
+        - New reference constants (`internal/consts/financial.go`):
+            - `FIN_STMT_*`: statement type identifiers
+            - `REPORT_TYPE_*`: Q1/H1/Q3/Annual (报告期名称 1-4)
+            - `STMT_CODE_*`: statement codes 1-10 (合并报表/母公司报表 variants)
+            - `PROFIT_NOTICE_*`: 业绩预告类型代码 1-11
+        - Updated `0001_init.sql` migration with new table definition
+    - Added corporate action support (dividend / right_issue):
+        - New table: `corporate_action` with JSON column for variable data fields
+        - UNIQUE KEY on (source, symbol, market, action_type, report_period, ann_date) ensures upsert idempotency
+        - New model/DAO/Service/Controller: `CorporateAction*`
+        - New API endpoints:
+            - `POST /api/v2/corporate-action/{source}/{action_type}/upsert`
+            - `GET  /api/v2/corporate-action/{source}/{action_type}?symbol=...&period_start=...&period_end=...`
+        - New reference constants (`internal/consts/corporate_action.go`):
+            - `CORP_ACTION_*`: action type identifiers
+            - `DIV_PROGRESS_*`: dividend progress codes 1-19
+            - `RI_PROGRESS_*`: right issue progress codes 1-22
 - v1.1.0
     - Added industry constituent and weight data support:
         - New tables: `industry_constituent`, `industry_weight`, `industry_daily`
