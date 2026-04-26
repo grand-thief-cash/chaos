@@ -1,7 +1,14 @@
 # VERSION
-v0.22.0
+v0.23.0
 
 # Changelog
+- v0.23.0
+    - **Field Catalog & Data Documentation**
+        - New `artemis/consts/field_catalog.py` — single source of truth for all JSON-stored data field metadata
+        - Structured as `CATALOG[domain][data_type] → List[FieldEntry]` for extensibility
+        - Covers all 7 data types: balance_sheet, income, cashflow, profit_express, profit_notice, dividend, right_issue
+        - Public API: `get_fields()`, `get_field_names()`, `get_field_map()`, `list_domains()`, `list_types()`
+        - New `docs/financial_data_fields.md` — comprehensive field reference documentation with query examples
 - v0.22.0
     - **Balance Sheet financial data pipeline** (`get_balance_sheet`)
         - New task: `STOCK_ZH_A_BALANCE_SHEET` — downloads A-share balance sheet data via AmazingData SDK
