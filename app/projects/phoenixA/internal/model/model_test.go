@@ -32,7 +32,7 @@ func TestFinancialStatementJSONTags(t *testing.T) {
 		AnnDate:         "ad",
 		ActualAnnDate:   "aad",
 		CompTypeCode:    1,
-		DataJSON:        `{"k":"v"}`,
+		DataJSON:        json.RawMessage(`{"k":"v"}`),
 	}
 
 	data, err := json.Marshal(rec)
@@ -65,7 +65,7 @@ func TestCorporateActionJSONTags(t *testing.T) {
 		ReportPeriod: "rp",
 		AnnDate:      "ad",
 		ProgressCode: "pc",
-		DataJSON:     `{"k":"v"}`,
+		DataJSON:     json.RawMessage(`{"k":"v"}`),
 	}
 
 	data, err := json.Marshal(rec)
@@ -89,7 +89,7 @@ func TestCorporateActionJSONTags(t *testing.T) {
 
 // TestCompTypeCodeIsInt verifies comp_type_code serializes as integer, not string.
 func TestCompTypeCodeIsInt(t *testing.T) {
-	rec := FinancialStatement{CompTypeCode: 2, DataJSON: "{}"}
+	rec := FinancialStatement{CompTypeCode: 2, DataJSON: json.RawMessage("{}")}
 	data, _ := json.Marshal(rec)
 
 	var m map[string]any
@@ -110,7 +110,7 @@ func TestCompTypeCodeIsInt(t *testing.T) {
 
 // TestProgressCodeIsString verifies progress_code is always a string.
 func TestProgressCodeIsString(t *testing.T) {
-	rec := CorporateAction{ProgressCode: "3", DataJSON: "{}"}
+	rec := CorporateAction{ProgressCode: "3", DataJSON: json.RawMessage("{}")}
 	data, _ := json.Marshal(rec)
 
 	var m map[string]any

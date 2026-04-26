@@ -112,6 +112,20 @@ func init() {
 			r.Get("/", corpActionCtrl.Query)
 		})
 
+		// ====== Schema Discovery ======
+		schemaCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_SCHEMA)
+		if err != nil {
+			return err
+		}
+		schemaCtrl := schemaCtrlComp.(*controller.SchemaController)
+
+		r.Route("/api/v2/schema", func(r chi.Router) {
+			r.Get("/domains", schemaCtrl.ListDomains)
+			r.Get("/types", schemaCtrl.ListTypes)
+			r.Get("/fields", schemaCtrl.DiscoverFields)
+			r.Get("/overview", schemaCtrl.Overview)
+		})
+
 		r.Route("/api/v1/strategy/run", func(r chi.Router) {
 			r.Get("/list", strategyRunCtrl.ListSummaries)
 			r.Post("/summary/upsert", strategyRunCtrl.UpsertSummary)

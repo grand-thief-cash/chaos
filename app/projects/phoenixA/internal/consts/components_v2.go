@@ -11,6 +11,7 @@ const (
 	COMP_DAO_STRATEGY_RUN      = "dao_strategy_run"
 	COMP_DAO_FINANCIAL_STMT    = "dao_financial_stmt"
 	COMP_DAO_CORP_ACTION       = "dao_corp_action"
+	COMP_DAO_SCHEMA            = "dao_schema"
 
 	// Service components
 	COMP_SVC_SECURITY       = "svc_security"
@@ -27,4 +28,5 @@ const (
 	COMP_CTRL_STRATEGY_RUN   = "ctrl_strategy_run"
 	COMP_CTRL_FINANCIAL_STMT = "ctrl_financial_stmt"
 	COMP_CTRL_CORP_ACTION    = "ctrl_corp_action"
+	COMP_CTRL_SCHEMA         = "ctrl_schema"
 )

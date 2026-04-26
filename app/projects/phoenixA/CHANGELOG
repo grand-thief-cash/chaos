@@ -1,7 +1,25 @@
 # VERSION
-v1.2.0
+v1.3.1
 
 # Changelog
+- v1.3.1
+    - **Bug Fixes**:
+        - [Critical] Fixed `data_json` double-encoding: `FinancialStatement.DataJSON` and `CorporateAction.DataJSON` changed from `string` to `json.RawMessage` — API responses now return proper nested JSON objects instead of escaped JSON strings
+        - [Medium] Fixed `SchemaDao.Overview()` missing sort — added `sort.Slice` by domain name for deterministic output
+        - [Minor] Fixed `FieldsResult.SampleCount` — now returns `min(totalCount, sampleSize)` instead of always returning totalCount
+        - [Minor] Fixed `SchemaDao.Overview()` silently swallowing errors from count queries and field discovery
+        - [Low] Added max `page_size` cap (1000) in `FinancialStatementService` and `CorporateActionService` to prevent unbounded table scans
+- v1.3.0
+    - **Schema Discovery API** — dynamic field introspection for JSON-stored data
+        - New endpoints:
+            - `GET /api/v2/schema/domains` — list all data domains
+            - `GET /api/v2/schema/types?domain=...` — list data types in a domain
+            - `GET /api/v2/schema/fields?domain=...&type=...` — discover actual fields from stored data via MySQL JSON_KEYS()
+            - `GET /api/v2/schema/overview` — summary of all domains with row counts and field counts
+        - Uses domain allow-list for safety (prevents arbitrary table access)
+        - Supports `sample_size` parameter to control query performance
+        - New DAO: `SchemaDao` with `DiscoverFields()`, `ListTypes()`, `Overview()`
+        - New Controller: `SchemaController`
 - v1.2.0
     - Added unified financial statement support (balance sheet / income / cashflow / profit_express / profit_notice):
         - New table: `financial_statement` with JSON column for 180+ numeric fields
