@@ -10,6 +10,13 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 from artemis.engines.task_engine.download.zh.stock_zh_a_industry_constituent_swhy import StockZHAIndustryConstituentSWHY
 from artemis.engines.task_engine.download.zh.stock_zh_a_industry_weight_swhy import StockZHAIndustryWeightSWHY
 from artemis.engines.task_engine.download.zh.stock_zh_a_industry_daily_swhy import StockZHAIndustryDailySWHY
+from artemis.engines.task_engine.download.zh.stock_zh_a_balance_sheet import StockZHABalanceSheet
+from artemis.engines.task_engine.download.zh.stock_zh_a_cash_flow import StockZHACashFlow
+from artemis.engines.task_engine.download.zh.stock_zh_a_income import StockZHAIncome
+from artemis.engines.task_engine.download.zh.stock_zh_a_profit_express import StockZHAProfitExpress
+from artemis.engines.task_engine.download.zh.stock_zh_a_profit_notice import StockZHAProfitNotice
+from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHADividend
+from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
 
 __all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
 
@@ -59,6 +66,48 @@ registry.register(
     TaskCode.STOCK_ZH_A_INDUSTRY_DAILY_SWHY,
     module=StockZHAIndustryDailySWHY.__module__,
     class_name=StockZHAIndustryDailySWHY.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_BALANCE_SHEET,
+    module=StockZHABalanceSheet.__module__,
+    class_name=StockZHABalanceSheet.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_CASH_FLOW,
+    module=StockZHACashFlow.__module__,
+    class_name=StockZHACashFlow.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_INCOME,
+    module=StockZHAIncome.__module__,
+    class_name=StockZHAIncome.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_PROFIT_EXPRESS,
+    module=StockZHAProfitExpress.__module__,
+    class_name=StockZHAProfitExpress.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_PROFIT_NOTICE,
+    module=StockZHAProfitNotice.__module__,
+    class_name=StockZHAProfitNotice.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_DIVIDEND,
+    module=StockZHADividend.__module__,
+    class_name=StockZHADividend.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_RIGHT_ISSUE,
+    module=StockZHARightIssue.__module__,
+    class_name=StockZHARightIssue.__name__,
 )
 
 registry.register(
