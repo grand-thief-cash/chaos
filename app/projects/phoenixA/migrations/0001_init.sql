@@ -173,6 +173,49 @@ CREATE TABLE IF NOT EXISTS industry_daily (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='行业指数日行情表';
 
 -- 1.5 Strategy Run Tables (fresh install uses 'period', upgrade handled in PART 3)
+
+-- 1.4e Financial Statement Table (资产负债表/利润表/现金流量表 - JSON存储)
+CREATE TABLE IF NOT EXISTS financial_statement (
+    id               BIGINT UNSIGNED AUTO_INCREMENT,
+    source           VARCHAR(32)   NOT NULL COMMENT '数据来源: amazing_data/tushare',
+    symbol           VARCHAR(32)   NOT NULL COMMENT '证券代码',
+    market           VARCHAR(16)   NOT NULL DEFAULT 'zh_a' COMMENT '市场: zh_a/hk/us',
+    statement_type   VARCHAR(32)   NOT NULL COMMENT '报表类型: balance_sheet/income/cashflow',
+    reporting_period VARCHAR(10)   NOT NULL COMMENT '报告期 YYYYMMDD',
+    report_type      VARCHAR(32)   NOT NULL DEFAULT '' COMMENT '报告期名称',
+    statement_code   VARCHAR(32)   NOT NULL DEFAULT '' COMMENT '报表类型代码',
+    security_name    VARCHAR(128)  NOT NULL DEFAULT '' COMMENT '证券简称',
+    ann_date         VARCHAR(10)   NOT NULL DEFAULT '' COMMENT '公告日期',
+    actual_ann_date  VARCHAR(10)   NOT NULL DEFAULT '' COMMENT '实际公告日期',
+    comp_type_code   INT           NOT NULL DEFAULT 0 COMMENT '公司类型: 1非金融 2银行 3保险 4证券',
+    data_json        JSON          NOT NULL COMMENT '财务数据JSON(所有数值字段)',
+    created_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_fin_stmt (source, symbol, market, statement_type, reporting_period, report_type, statement_code),
+    KEY idx_symbol_type (symbol, statement_type),
+    KEY idx_report_period (reporting_period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一财务报表表(JSON存储数值字段)';
+
+-- 1.4f Corporate Action Table (分红/配股等公司行为 - JSON存储)
+CREATE TABLE IF NOT EXISTS corporate_action (
+    id               BIGINT UNSIGNED AUTO_INCREMENT,
+    source           VARCHAR(32)   NOT NULL COMMENT '数据来源: amazing_data/tushare',
+    symbol           VARCHAR(32)   NOT NULL COMMENT '证券代码',
+    market           VARCHAR(16)   NOT NULL DEFAULT 'zh_a' COMMENT '市场: zh_a/hk/us',
+    action_type      VARCHAR(32)   NOT NULL COMMENT '行为类型: dividend/right_issue',
+    report_period    VARCHAR(10)   NOT NULL DEFAULT '' COMMENT '分红/配股年度',
+    ann_date         VARCHAR(10)   NOT NULL DEFAULT '' COMMENT '公告日期',
+    progress_code    VARCHAR(8)    NOT NULL DEFAULT '' COMMENT '方案进度代码',
+    data_json        JSON          NOT NULL COMMENT '行为数据JSON(所有数值字段)',
+    created_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_corp_action (source, symbol, market, action_type, report_period, ann_date),
+    KEY idx_symbol_action (symbol, action_type),
+    KEY idx_report_period (report_period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一公司行为表(JSON存储数值字段)';
+
 CREATE TABLE IF NOT EXISTS strategy_run_summary (
     run_id VARCHAR(128) NOT NULL COMMENT '回测运行唯一标识',
     parent_run_id VARCHAR(128) NULL COMMENT '父级 Campaign 运行 ID',
