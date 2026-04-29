@@ -1,7 +1,9 @@
 # VERSION
-v0.16.2
+v0.16.3
 
 # Changelog
+- v0.16.3
+    - Moved go infra docs to infra folder.
 - v0.16.2
     - Added non-export in telemetry component
 - v0.16.1
