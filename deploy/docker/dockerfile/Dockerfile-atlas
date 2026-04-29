@@ -1,0 +1,14 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY app/projects/atlas/pyproject.toml app/projects/atlas/README.md ./
+RUN pip install --no-cache-dir -e .
+
+COPY app/projects/atlas/ ./
+COPY app/tools/py/skills/ /app/skills/
+
+EXPOSE 18400
+
+CMD ["python", "-m", "atlas.main", "-c", "/app/config/atlas.yaml"]
+
