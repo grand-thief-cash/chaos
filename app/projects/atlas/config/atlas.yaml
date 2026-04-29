@@ -1,0 +1,80 @@
+server:
+  host: 0.0.0.0
+  port: 18400
+
+logging:
+  enabled: true
+  level: INFO
+  format: json
+  output: file
+  include_caller: true
+  file_config:
+    dir: ./logs
+    filename: atlas
+  rotate_config:
+    enabled: true
+    rotate_interval: 1d
+    max_age: 72h
+    cleanup_enabled: true
+
+postgres:
+  dsn: "${PG_DSN:postgresql://atlas:atlas_password@localhost:5433/atlas}"
+  pool_size: 10
+
+neo4j:
+  uri: bolt://localhost:7687
+  username: neo4j
+  password: atlas_password
+  database: neo4j
+  max_connection_pool_size: 50
+
+llm:
+  # 抽取用强模型
+  extraction_model: gpt-4o
+  # 过滤/分类用便宜模型
+  filter_model: gpt-4o-mini
+  # 综述生成用强模型
+  summary_model: gpt-4o
+  api_key: "${LLM_API_KEY}"
+  max_retries: 3
+  request_timeout: 120
+  # 批量抽取的并发数（控制速率）
+  batch_concurrency: 3
+
+document:
+  storage_dir: ./data/documents
+  # 单个 chunk 最大字符数
+  chunk_max_chars: 3000
+  # chunk 之间的重叠字符数
+  chunk_overlap_chars: 200
+
+pipeline:
+  # 新闻来源
+  news_sources:
+    - type: rss
+      name: eastmoney
+      url: ""
+    - type: rss
+      name: cls
+      url: ""
+  # 每日新闻最大获取条数
+  daily_max_news: 200
+  # 过滤后最大抽取条数
+  daily_max_extraction: 50
+
+graph:
+  # 实体融合：公司名称相似度阈值
+  company_merge_threshold: 0.85
+  # 影响分析：最大传导层数
+  impact_max_hops: 3
+  # 低 confidence 阈值（低于此值标记警告）
+  low_confidence_threshold: 0.5
+
+dept_services:
+  cronjob:
+    host: "127.0.0.1"
+    port: 19999
+  phoenixA:
+    host: "127.0.0.1"
+    port: 18085
+
