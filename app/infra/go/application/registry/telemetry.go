@@ -11,13 +11,15 @@ import (
 
 func init() {
 	Register(consts.COMPONENT_TELEMETRY, func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		if cfg.Telemetry == nil || !cfg.Telemetry.Enabled {
+		if cfg.Telemetry == nil {
 			return false, nil, nil
 		}
+		// Even if disabled, we create the component — it will start in no-op mode
+		// (safe to call tracing/metrics APIs without panics).
 		if cfg.Telemetry.ServiceName == "" && cfg.APPInfo != nil {
 			cfg.Telemetry.ServiceName = cfg.APPInfo.APPName
 		}
-		if cfg.Telemetry.ServiceName == "" {
+		if cfg.Telemetry.Enabled && cfg.Telemetry.ServiceName == "" {
 			return false, nil, fmt.Errorf("telemetry.service_name empty and app_info.app_name not provided")
 		}
 		comp := telemetry.NewTelemetryComponent(cfg.Telemetry)

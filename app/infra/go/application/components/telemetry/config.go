@@ -20,11 +20,16 @@ type OTLPConfig struct {
 type Config struct {
 	Enabled      bool         `yaml:"enabled"       json:"enabled"`
 	ServiceName  string       `yaml:"service_name"  json:"service_name"`
-	Exporter     ExporterType `yaml:"exporter"      json:"exporter"` // stdout|otlp
+	Exporter     ExporterType `yaml:"exporter"      json:"exporter"` // none|stdout|otlp
 	SampleRatio  float64      `yaml:"sample_ratio"  json:"sample_ratio"`
 	OTLP         *OTLPConfig  `yaml:"otlp"          json:"otlp"`
 	StdoutPretty bool         `yaml:"stdout_pretty" json:"stdout_pretty"` // for stdout exporter
-	StdoutFile   string       `yaml:"stdout_file"   json:"stdout_file"`   // if set, write telemetry output here
+	StdoutFile   string       `yaml:"stdout_file"   json:"stdout_file"`   // if set, write telemetry output here (with rotation)
+
+	// File rotation settings (used when stdout_file is set)
+	FileMaxSizeMB  int `yaml:"file_max_size_mb"  json:"file_max_size_mb"`  // max size per file in MB (default 100)
+	FileMaxAgeDays int `yaml:"file_max_age_days" json:"file_max_age_days"` // max days to retain old files (default 7)
+	FileMaxBackups int `yaml:"file_max_backups"  json:"file_max_backups"`  // max number of old files (default 5)
 }
 
 func (c *Config) applyDefaults() {
