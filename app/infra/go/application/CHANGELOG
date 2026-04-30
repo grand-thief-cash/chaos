@@ -1,7 +1,41 @@
 # VERSION
-v0.16.3
+v0.17.0
 
 # Changelog
+- v0.17.0
+    - PostgreSQL GORM component enhancements:
+        - Added `schema` config field: auto-sets `search_path` and creates schema if not exists (supports multi-schema like `public` + `kg`).
+        - Added `enable_pgvector` config field: auto-creates `vector` extension for PGVector support.
+        - Fixed `buildDSN`: removed dead `url.Values` code, injects `search_path` into DSN params.
+        - Fixed SQL migration parser: now handles PostgreSQL `$$` dollar-quoting blocks (e.g., functions, triggers) correctly instead of naively splitting on `;`.
+        - Added `isValidIdentifier` input validation to prevent SQL injection in schema/table names used in dynamic SQL (`EnsureHypertable`, `ensureTimescaleExtension`).
+        - Added `ensurePGVectorExtension` function.
+    - Telemetry component fixes:
+        - Disabled mode no longer returns error; creates no-op providers so tracing/metrics APIs are still safe to call.
+        - Added file log rotation via lumberjack when `stdout_file` is set (consistent with logging component).
+        - New config fields: `file_max_size_mb`, `file_max_age_days`, `file_max_backups`.
+        - Fixed `HealthCheck` to not fail when using `ExporterNone` or disabled mode.
+    - **Migration directory convention redesigned**:
+        - New hierarchical structure: `{migrate_base}/{db_type}/{datasource_name}/`
+        - Example: `./migrations/postgresql/kg/0001_init.sql`
+        - Config field renamed: `migrate_dir` → `migrate_base` (component auto-resolves full path)
+        - All datasources can share the same `migrate_base` root
+        - Added `migration.ResolveMigrateDir()` helper for path resolution
+        - Supported db_type directories: `postgresql/`, `mysql/` (extensible to `clickhouse/`, etc.)
+    - New shared migration package (`components/migration`):
+        - Version-tracked migrations via `_migrations` table (auto-created per datasource).
+        - Tracks applied migrations by filename — already-applied files are skipped.
+        - Supports both MySQL and PostgreSQL dialects.
+        - PostgreSQL `$$` dollar-quoting handled correctly.
+        - Each migration file runs inside a transaction (with fallback for non-transactional DDL).
+        - Migration files must follow naming convention: `NNNN_description.sql`.
+    - PostgreSQL GORM component updated:
+        - Uses `migrate_base` + auto-resolve instead of `migrate_dir`
+        - Removed legacy `runGormMigrations` / `splitSQLStatements`
+    - MySQL GORM component updated:
+        - Uses `migrate_base` + auto-resolve instead of `migrate_dir`
+        - Uses shared migration package (version-tracked, replaces old re-run-all approach)
+        - Removed legacy `runGormMigrations`
 - v0.16.3
     - Moved go infra docs to infra folder.
 - v0.16.2

@@ -5,9 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -18,6 +15,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/migration"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 )
@@ -100,19 +98,47 @@ func (c *PostgresGormComponent) Start(ctx context.Context) error {
 			cancel()
 		}
 
-		// Optional migrations
+		// Optional migrations (version-tracked via _migrations table)
 		if ds.MigrateEnabled {
-			if strings.TrimSpace(ds.MigrateDir) == "" {
+			if strings.TrimSpace(ds.MigrateBase) == "" {
 				_ = sqlDB.Close()
-				return fmt.Errorf("postgres_gorm datasource %s migrate_enabled=true but migrate_dir empty", name)
+				return fmt.Errorf("postgres_gorm datasource %s migrate_enabled=true but migrate_base empty", name)
 			}
+			migrateDir := migration.ResolveMigrateDir(ds.MigrateBase, migration.DialectPostgres, name)
 			migStart := time.Now()
-			logging.Infof(ctx, "[postgres_gorm] datasource %s running migrations dir=%s", name, ds.MigrateDir)
-			if err := runGormMigrations(ctx, sqlDB, ds.MigrateDir); err != nil {
+			schema := strings.TrimSpace(ds.Schema)
+			logging.Infof(ctx, "[postgres_gorm] datasource %s running migrations dir=%s schema=%s", name, migrateDir, schema)
+			result, err := migration.Run(ctx, sqlDB, migration.DialectPostgres, migrateDir, schema)
+			if err != nil {
 				_ = sqlDB.Close()
 				return fmt.Errorf("postgres_gorm datasource %s migrations failed: %w", name, err)
 			}
-			logging.Infof(ctx, "[postgres_gorm] datasource %s migrations completed dur=%s", name, time.Since(migStart))
+			if len(result.Applied) > 0 {
+				logging.Infof(ctx, "[postgres_gorm] datasource %s applied %d migrations: %v dur=%s",
+					name, len(result.Applied), result.Applied, time.Since(migStart))
+			} else {
+				logging.Infof(ctx, "[postgres_gorm] datasource %s all %d migrations already applied, nothing to do",
+					name, len(result.Skipped))
+			}
+		}
+
+		// Set search_path if schema is configured
+		if schema := strings.TrimSpace(ds.Schema); schema != "" {
+			if !isValidIdentifier(schema) {
+				_ = sqlDB.Close()
+				return fmt.Errorf("postgres_gorm datasource %s invalid schema name: %s", name, schema)
+			}
+			setPath := fmt.Sprintf("SET search_path TO %s", schema)
+			if _, err := sqlDB.ExecContext(ctx, setPath); err != nil {
+				_ = sqlDB.Close()
+				return fmt.Errorf("set search_path for %s failed: %w", name, err)
+			}
+			// Also ensure schema exists
+			createSchema := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schema)
+			if _, err := sqlDB.ExecContext(ctx, createSchema); err != nil {
+				logging.Warnf(ctx, "[postgres_gorm] create schema %s hint: %v (may require privileges)", schema, err)
+			}
+			logging.Infof(ctx, "[postgres_gorm] datasource %s search_path set to %s", name, schema)
 		}
 
 		// TimescaleDB extension handling
@@ -122,6 +148,15 @@ func (c *PostgresGormComponent) Start(ctx context.Context) error {
 				return fmt.Errorf("enable timescale for %s failed: %w", name, err)
 			}
 			logging.Infof(ctx, "[postgres_gorm] timescale extension ensured for datasource %s", name)
+		}
+
+		// PGVector extension handling
+		if ds.EnablePGVector {
+			if err := ensurePGVectorExtension(ctx, sqlDB); err != nil {
+				_ = sqlDB.Close()
+				return fmt.Errorf("enable pgvector for %s failed: %w", name, err)
+			}
+			logging.Infof(ctx, "[postgres_gorm] pgvector extension ensured for datasource %s", name)
 		}
 
 		c.mutex.Lock()
@@ -201,10 +236,15 @@ func (c *PostgresGormComponent) EnsureHypertable(ctx context.Context, dsName, ta
 	if table == "" || timeColumn == "" {
 		return fmt.Errorf("table and timeColumn required")
 	}
+	if !isValidIdentifier(table) || !isValidIdentifier(timeColumn) {
+		return fmt.Errorf("invalid table or timeColumn name")
+	}
 	var stmt string
-	if strings.TrimSpace(chunkInterval) != "" {
-		// Using INTERVAL literal.
-		stmt = fmt.Sprintf("SELECT create_hypertable('%s','%s', if_not_exists => TRUE, chunk_time_interval => INTERVAL '%s');", table, timeColumn, chunkInterval)
+	if ci := strings.TrimSpace(chunkInterval); ci != "" {
+		if !isValidIdentifier(strings.ReplaceAll(ci, " ", "")) {
+			return fmt.Errorf("invalid chunk_interval value")
+		}
+		stmt = fmt.Sprintf("SELECT create_hypertable('%s','%s', if_not_exists => TRUE, chunk_time_interval => INTERVAL '%s');", table, timeColumn, ci)
 	} else {
 		stmt = fmt.Sprintf("SELECT create_hypertable('%s','%s', if_not_exists => TRUE);", table, timeColumn)
 	}
@@ -238,68 +278,64 @@ func buildDSN(ds *DataSourceConfig) (string, error) {
 	if port == 0 {
 		port = 5432
 	}
-	params := url.Values{}
-	for k, v := range ds.Params {
-		params.Set(k, v)
-	}
 	// standard libpq style DSN for gorm: host=... user=... password=... dbname=... port=... param=...
 	base := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d", ds.Host, ds.User, ds.Password, ds.Database, port)
-	var extras []string
+
+	// Collect extra params; inject search_path if Schema is set and not already in Params
+	params := make(map[string]string)
 	for k, v := range ds.Params {
+		params[k] = v
+	}
+	if schema := strings.TrimSpace(ds.Schema); schema != "" {
+		if _, exists := params["search_path"]; !exists {
+			params["search_path"] = schema
+		}
+	}
+	var extras []string
+	for k, v := range params {
 		extras = append(extras, fmt.Sprintf("%s=%s", k, v))
 	}
+	sort.Strings(extras) // deterministic DSN for logging/debugging
 	if len(extras) > 0 {
 		base += " " + strings.Join(extras, " ")
 	}
 	return base, nil
 }
 
-// runGormMigrations same logic as mysql variant.
-func runGormMigrations(ctx context.Context, db *sql.DB, dir string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("read migrations dir: %w", err)
-	}
-	var files []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if strings.HasSuffix(strings.ToLower(name), ".sql") {
-			files = append(files, filepath.Join(dir, name))
-		}
-	}
-	sort.Strings(files)
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", f, err)
-		}
-		stmts := strings.Split(string(b), ";")
-		for _, s := range stmts {
-			if strings.TrimSpace(s) == "" {
-				continue
-			}
-			if _, err := db.ExecContext(ctx, s); err != nil {
-				return fmt.Errorf("exec %s failed: %w", f, err)
-			}
-		}
-	}
-	return nil
-}
-
 // ensureTimescaleExtension attempts to create timescaledb extension if not exists.
 func ensureTimescaleExtension(ctx context.Context, db *sql.DB, schema string) error {
 	// timescaledb usually installed in public schema; we allow optional schema override.
 	q := "CREATE EXTENSION IF NOT EXISTS timescaledb"
-	if strings.TrimSpace(schema) != "" {
-		q += " SCHEMA " + schema
+	if s := strings.TrimSpace(schema); s != "" {
+		if !isValidIdentifier(s) {
+			return fmt.Errorf("invalid schema name for timescaledb: %s", s)
+		}
+		q += " SCHEMA " + s
 	}
 	if _, err := db.ExecContext(ctx, q); err != nil {
 		return fmt.Errorf("create timescaledb extension: %w", err)
 	}
 	return nil
+}
+
+// ensurePGVectorExtension attempts to create pgvector extension if not exists.
+func ensurePGVectorExtension(ctx context.Context, db *sql.DB) error {
+	q := "CREATE EXTENSION IF NOT EXISTS vector"
+	if _, err := db.ExecContext(ctx, q); err != nil {
+		return fmt.Errorf("create pgvector extension: %w", err)
+	}
+	return nil
+}
+
+// isValidIdentifier checks that a SQL identifier contains only safe characters (letters, digits, underscores, commas, spaces).
+// Prevents SQL injection in schema/table names used in dynamic SQL.
+func isValidIdentifier(s string) bool {
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == ',' || c == ' ') {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 // Reuse gormLogger from mysql gorm component (identical behavior)
