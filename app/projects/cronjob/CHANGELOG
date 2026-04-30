@@ -1,7 +1,9 @@
 # VERSION
-v0.14.1
+v0.14.2
 
 # Changelog
+- v0.14.2
+    - Fixed task import failing on re-import after soft-delete: reactivate soft-deleted tasks by updating all fields and setting deleted=0, instead of hard-deleting (which was blocked by FK constraint from task_runs).
 - v0.14.1
     - Fixed inconsistent time in task_run table.
 - v0.14.0
