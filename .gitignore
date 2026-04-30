@@ -56,9 +56,14 @@ __pycache__/
 
 /app/projects/artemis/whl/AmazingData-1.0.28-cp311-none-any.whl
 /app/projects/artemis/whl/tgw-1.0.8.5-py3-none-any.whl
+/app/projects/artemis/cache/*
+/app/projects/artemis/dist/*
 /app/projects/phoenixA/vendor/*
-/app/projects/phoenixA/go.sum
+/app/projects/phoenixA/dist/*
+/app/projects/phoenixA/config/*
 /app/projects/cronjob/vendor/*
+/app/projects/cronjob/config/*
+/app/projects/cronjob/dist/*
 
 /app/infra/go/common/vendor/*
 /app/infra/go/application/vendor/*
@@ -66,3 +71,7 @@ __pycache__/
 /app/projects/cthulhu/.angular/*
 /app/projects/cthulhu/dist/*
 /app/projects/cthulhu/node_modules/*
+/app/projects/cthulhu/package-lock.json
+*.log
+go.sum
+*.whl

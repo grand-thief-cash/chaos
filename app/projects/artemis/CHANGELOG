@@ -1,7 +1,9 @@
 # VERSION
-v0.23.0
+v0.23.1
 
 # Changelog
+- v0.23.1
+    - Fixed bugs of downloading industry/company actions/financial stuff.
 - v0.23.0
     - **Field Catalog & Data Documentation**
         - New `artemis/consts/field_catalog.py` — single source of truth for all JSON-stored data field metadata

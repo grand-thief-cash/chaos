@@ -63,7 +63,7 @@ _BALANCE_SHEET_FIELDS: List[FieldEntry] = [
     FieldEntry("CONT_ASSETS", "合同资产", "float", "单位（元）"),
     FieldEntry("CONT_LIABILITIES", "合同负债", "float", "单位（元）"),
     FieldEntry("CURRENCY_CAP", "货币资金", "float"),
-    FieldEntry("CURRENCY_CODE", "货币代码", "float"),
+    FieldEntry("CURRENCY_CODE", "货币代码", "str"),
     FieldEntry("DEBT_INV", "债权投资(元)", "float"),
     FieldEntry("DEFERRED_INC_NONCUR_LIAB", "递延收益-非流动负债", "float"),
     FieldEntry("DEFERRED_INCOME", "递延收益", "float"),

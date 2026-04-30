@@ -13,12 +13,15 @@ class StockZHAProfitNotice(BaseFinancialStatementTask):
         return info_data.get_profit_notice(code_list, local_path=cache_dir, is_local=False)
 
     def _get_metadata_overrides(self, row):
+        def _str(val):
+            return '' if pd.isna(val) else str(val).strip()
+
         # profit_notice has REPORT_TYPE and SECURITY_NAME, but no STATEMENT_TYPE, ACTUAL_ANN_DATE, COMP_TYPE_CODE
         return {
-            'report_type': str(row.get('REPORT_TYPE', '')),
+            'report_type': _str(row.get('REPORT_TYPE')),
             'statement_code': '',
-            'security_name': str(row.get('SECURITY_NAME', '')),
-            'ann_date': str(row.get('ANN_DATE', '')),
+            'security_name': _str(row.get('SECURITY_NAME')),
+            'ann_date': _str(row.get('ANN_DATE')),
             'actual_ann_date': '',
             'comp_type_code': 0,
         }

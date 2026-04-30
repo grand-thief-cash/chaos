@@ -13,13 +13,16 @@ class StockZHAProfitExpress(BaseFinancialStatementTask):
         return info_data.get_profit_express(code_list, local_path=cache_dir, is_local=False)
 
     def _get_metadata_overrides(self, row):
+        def _str(val):
+            return '' if pd.isna(val) else str(val).strip()
+
         # profit_express lacks REPORT_TYPE, SECURITY_NAME, STATEMENT_TYPE, COMP_TYPE_CODE
         return {
             'report_type': '',
             'statement_code': '',
             'security_name': '',
-            'ann_date': str(row.get('ANN_DATE', '')),
-            'actual_ann_date': str(row.get('ACTUAL_ANN_DATE', '')),
+            'ann_date': _str(row.get('ANN_DATE')),
+            'actual_ann_date': _str(row.get('ACTUAL_ANN_DATE')),
             'comp_type_code': 0,
         }
 
