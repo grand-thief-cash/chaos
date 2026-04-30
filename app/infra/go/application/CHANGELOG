@@ -1,7 +1,46 @@
 # VERSION
-v0.17.0
+v0.17.1
 
 # Changelog
+- v0.17.1
+    - **[BUG FIX] BaseComponent data race on `active` field** (core/component.go):
+        - `active` field was read/written without synchronization (Start/Stop/IsActive/HealthCheck/SetActive).
+        - Concurrent goroutines (e.g., health checks during startup/shutdown) could trigger data races.
+        - Fix: replaced `bool` with `atomic.Bool`; protected `deps` slice with `sync.RWMutex`.
+        - `Dependencies()` now returns a copy to prevent external mutation.
+    - **[BUG FIX] grpc_client `GetGRPCClient` silent nil error** (grpc_client/utils.go):
+        - When type assertion `component.(*GRPCClientComponent)` failed, code returned `nil, err` where `err` was always `nil` (from successful `Resolve`).
+        - Callers received `(nil, nil)` — a silent failure with no error indication.
+        - Fix: return explicit `fmt.Errorf` describing the type mismatch.
+    - **[BUG FIX] http_client response body leak** (http_client/client.go):
+        - When `out != nil` and HTTP status >= 400, the response body was partially read but never closed.
+        - Fix: unified deferred body drain + close for all code paths (regardless of `out` parameter).
+    - **[BUG FIX] http_client retry body consumption** (http_client/client.go):
+        - `doWithRetry` re-used the same `*http.Request` across retry attempts, but `http.Transport` consumes and closes the body after the first attempt.
+        - Subsequent retries sent requests with empty bodies (silent data loss for POST/PUT).
+        - Fix: buffer request body upfront; reset `req.Body` + `req.GetBody` before each retry attempt.
+        - Also removed deprecated `nErr.Temporary()` check.
+    - **[BUG FIX] grpc_server zero-value config defaults** (grpc_server/component.go):
+        - `MaxRecvMsgSize=0` and `MaxSendMsgSize=0` were passed directly to gRPC, effectively rejecting ALL messages.
+        - `GracefulTimeout=0` caused `time.Until(deadline)` to be in the past, triggering immediate forced stop.
+        - Empty `Address` caused listen to fail without clear defaults.
+        - Fix: added `applyDefaults()` — Address=":50051", MaxRecvMsgSize=4MB, MaxSendMsgSize=4MB, GracefulTimeout=10s.
+    - **[BUG FIX] prometheus missing config defaults** (prometheus/prometheus_component.go):
+        - Empty `Address` and `Path` caused broken metrics endpoint.
+        - Fix: default Address=":9090", Path="/metrics".
+    - **[TEST] Added unit tests for core package** (core/*_test.go):
+        - `TestBaseComponent_ConcurrentActiveAccess`: verifies no data race on active field.
+        - `TestBaseComponent_ConcurrentDependencyAccess`: verifies thread-safe dependency operations.
+        - `TestBaseComponent_HealthCheck`: lifecycle state transitions.
+        - `TestContainer_RegisterAndResolve`: basic registration and lookup.
+        - `TestContainer_Replace`: replace semantics (inactive only).
+        - `TestContainer_SortComponentsByDependencies`: topological sort ordering.
+        - `TestContainer_CircularDependency`: cycle detection.
+        - `TestContainer_ValidateDependencies_MissingDep`: missing dependency detection.
+        - `TestContainer_ListRegistered`: returns defensive copy.
+        - `TestContainer_Config`: config set/get.
+        - `TestLifecycleManager_StartAll_FailureCleanup`: cleanup on partial start failure.
+        - `TestLifecycleManager_StopAll_Idempotent`: idempotent shutdown.
 - v0.17.0
     - PostgreSQL GORM component enhancements:
         - Added `schema` config field: auto-sets `search_path` and creates schema if not exists (supports multi-schema like `public` + `kg`).

@@ -35,6 +35,15 @@ func (c *Component) Start(ctx context.Context) error {
 	if err := c.BaseComponent.Start(ctx); err != nil {
 		return err
 	}
+
+	// Apply defaults for missing config values
+	if c.cfg.Address == "" {
+		c.cfg.Address = ":9090"
+	}
+	if c.cfg.Path == "" {
+		c.cfg.Path = "/metrics"
+	}
+
 	c.registry = prometheus.NewRegistry()
 	if c.cfg.CollectGoMetrics {
 		_ = c.registry.Register(prometheus.NewGoCollector())

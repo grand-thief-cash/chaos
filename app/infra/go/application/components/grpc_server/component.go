@@ -53,6 +53,8 @@ func (gc *GRPCServerComponent) Start(ctx context.Context) error {
 		return errors.New("grpc_server enabled flag mismatch")
 	}
 
+	gc.applyDefaults()
+
 	// Interceptor chain (order): recovery -> trace header injection -> logging
 	unaryInts := []grpc.UnaryServerInterceptor{
 		gc.recoveryInterceptor(),
@@ -181,5 +183,20 @@ func (gc *GRPCServerComponent) traceHeaderInjectorInterceptor() grpc.UnaryServer
 			}
 		}
 		return resp, err
+	}
+}
+
+func (gc *GRPCServerComponent) applyDefaults() {
+	if gc.cfg.Address == "" {
+		gc.cfg.Address = ":50051"
+	}
+	if gc.cfg.MaxRecvMsgSize <= 0 {
+		gc.cfg.MaxRecvMsgSize = 4 * 1024 * 1024 // 4 MB
+	}
+	if gc.cfg.MaxSendMsgSize <= 0 {
+		gc.cfg.MaxSendMsgSize = 4 * 1024 * 1024 // 4 MB
+	}
+	if gc.cfg.GracefulTimeout <= 0 {
+		gc.cfg.GracefulTimeout = 10 * time.Second
 	}
 }
