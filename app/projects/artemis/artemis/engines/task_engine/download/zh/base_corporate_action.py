@@ -89,27 +89,39 @@ class BaseCorporateActionTask(WorkerUnit):
 
     def post_process(self, ctx: TaskContext, result) -> List[Dict[str, Any]]:
         processed = []
+        skipped_empty_ann = 0
         frames = self._normalize_result(result)
         all_meta = self._get_all_metadata_fields()
 
         for df in frames:
             if not isinstance(df, pd.DataFrame) or df.empty:
                 continue
-            for _, row in df.iterrows():
-                symbol = str(row.get('MARKET_CODE', '')).strip()
+            for row in df.to_dict('records'):
+                symbol_val = row.get('MARKET_CODE', '')
+                if pd.isna(symbol_val):
+                    continue
+                symbol = str(symbol_val).strip()
                 if not symbol:
                     continue
 
-                ann_date = str(row.get('ANN_DATE', '')).strip()
-                report_period = str(row.get(self.REPORT_PERIOD_FIELD, '')).strip() if self.REPORT_PERIOD_FIELD else ''
-                progress_code = str(row.get(self.PROGRESS_FIELD, '')).strip() if self.PROGRESS_FIELD else ''
+                ann_date_val = row.get('ANN_DATE', '')
+                ann_date = '' if pd.isna(ann_date_val) else str(ann_date_val).strip()
+
+                report_period_val = row.get(self.REPORT_PERIOD_FIELD, '') if self.REPORT_PERIOD_FIELD else ''
+                report_period = '' if pd.isna(report_period_val) else str(report_period_val).strip()
+
+                progress_val = row.get(self.PROGRESS_FIELD, '') if self.PROGRESS_FIELD else ''
+                progress_code = '' if pd.isna(progress_val) else str(progress_val).strip()
+
+                if not ann_date:
+                    skipped_empty_ann += 1
+                    continue
 
                 # Build data_json from all non-metadata columns
                 data_fields = {}
-                for col in df.columns:
+                for col, val in row.items():
                     if col in all_meta:
                         continue
-                    val = row.get(col)
                     if pd.isna(val):
                         continue
                     if hasattr(val, 'item'):
@@ -130,8 +142,16 @@ class BaseCorporateActionTask(WorkerUnit):
         ctx.logger.info({
             'event': f'{self.ACTION_TYPE}_post_process_done',
             'total_records': len(processed),
+            'skipped_empty_ann_date': skipped_empty_ann,
             'run_id': ctx.run_id,
         })
+        if skipped_empty_ann > 0:
+            ctx.logger.warning({
+                'event': f'{self.ACTION_TYPE}_skipped_empty_ann_date',
+                'skipped_count': skipped_empty_ann,
+                'run_id': ctx.run_id,
+                'reason': 'ann_date is empty, skipping to avoid unique key collision',
+            })
         return processed
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):

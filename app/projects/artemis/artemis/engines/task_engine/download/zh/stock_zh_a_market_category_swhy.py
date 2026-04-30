@@ -40,24 +40,66 @@ class StockZHAMarketCategorySWHY(WorkerUnit):
             return {}
 
     def post_process(self, ctx: TaskContext, result: Dict[str, Any]) -> List[Dict[str, Any]]:
+        import json
+
         import pandas as pd
 
         df = pd.DataFrame(result)
         if df.empty:
             return []
 
+        # Build INDUSTRY_CODE → INDEX_CODE lookup for parent resolution
+        code_map: Dict[str, str] = {}
+        for _, row in df.iterrows():
+            ic = str(row.get("INDUSTRY_CODE", "")).strip()
+            idx = str(row.get("INDEX_CODE", "")).strip()
+            if ic and idx:
+                code_map[ic] = idx
+
         processed = []
         for _, row in df.iterrows():
-            processed.append({
-                "index_code": str(row.get("INDEX_CODE", "")),
-                "industry_code": str(row.get("INDUSTRY_CODE", "")),
-                "level_type": int(row.get("LEVEL_TYPE", 0)),
-                "level1_name": str(row.get("LEVEL1_NAME", "")),
-                "level2_name": str(row.get("LEVEL2_NAME", "")),
-                "level3_name": str(row.get("LEVEL3_NAME", "")),
-                "is_pub": int(row.get("IS_PUB", 0)),
-                "change_reason": str(row.get("CHANGE_REASON", "")),
-            })
+            index_code = str(row.get("INDEX_CODE", "")).strip()
+            industry_code = str(row.get("INDUSTRY_CODE", "")).strip()
+            level_type = int(row.get("LEVEL_TYPE", 0))
+
+            # Name based on level
+            if level_type == 1:
+                name = str(row.get("LEVEL1_NAME", ""))
+            elif level_type == 2:
+                name = str(row.get("LEVEL2_NAME", ""))
+            elif level_type == 3:
+                name = str(row.get("LEVEL3_NAME", ""))
+            else:
+                name = ""
+
+            # Parent code: derive from INDUSTRY_CODE hierarchy
+            # SWHY: level-1 = 2-char, level-2 = 4-char, level-3 = 6-char
+            parent_code = None
+            if level_type == 2 and len(industry_code) >= 4:
+                parent_code = code_map.get(industry_code[:2])
+            elif level_type == 3 and len(industry_code) >= 6:
+                parent_code = code_map.get(industry_code[:4])
+
+            # Extra attributes
+            attrs = {}
+            is_pub = row.get("IS_PUB")
+            change_reason = row.get("CHANGE_REASON")
+            if is_pub is not None and int(is_pub) != 0:
+                attrs["is_pub"] = int(is_pub)
+            if change_reason and str(change_reason).strip():
+                attrs["change_reason"] = str(change_reason)
+
+            entry = {
+                "code": index_code,
+                "name": name,
+                "parent_code": parent_code,
+                "level": level_type,
+                "is_leaf": level_type == 3,
+            }
+            if attrs:
+                entry["attrs"] = json.dumps(attrs, ensure_ascii=False)
+
+            processed.append(entry)
         return processed
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):

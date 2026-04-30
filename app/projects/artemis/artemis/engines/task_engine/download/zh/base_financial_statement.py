@@ -92,13 +92,24 @@ class BaseFinancialStatementTask(WorkerUnit):
         Returns partial dict to merge into the record.
         Default extracts all standard metadata fields.
         """
+
+        def _str(val):
+            if pd.isna(val):
+                return ''
+            return str(val).strip()
+
+        def _int(val):
+            if pd.isna(val):
+                return 0
+            return int(val)
+
         return {
-            'report_type': str(row.get('REPORT_TYPE', '')),
-            'statement_code': str(row.get('STATEMENT_TYPE', '')),
-            'security_name': str(row.get('SECURITY_NAME', '')),
-            'ann_date': str(row.get('ANN_DATE', '')),
-            'actual_ann_date': str(row.get('ACTUAL_ANN_DATE', '')),
-            'comp_type_code': int(row.get('COMP_TYPE_CODE', 0)) if not pd.isna(row.get('COMP_TYPE_CODE')) else 0,
+            'report_type': _str(row.get('REPORT_TYPE')),
+            'statement_code': _str(row.get('STATEMENT_TYPE')),
+            'security_name': _str(row.get('SECURITY_NAME')),
+            'ann_date': _str(row.get('ANN_DATE')),
+            'actual_ann_date': _str(row.get('ACTUAL_ANN_DATE')),
+            'comp_type_code': _int(row.get('COMP_TYPE_CODE')),
         }
 
     def post_process(self, ctx: TaskContext, result) -> List[Dict[str, Any]]:
@@ -108,18 +119,24 @@ class BaseFinancialStatementTask(WorkerUnit):
         for df in frames:
             if not isinstance(df, pd.DataFrame) or df.empty:
                 continue
-            for _, row in df.iterrows():
-                symbol = str(row.get('MARKET_CODE', '')).strip()
-                reporting_period = str(row.get('REPORTING_PERIOD', '')).strip()
+            for row in df.to_dict('records'):
+                symbol_val = row.get('MARKET_CODE', '')
+                if pd.isna(symbol_val):
+                    continue
+                symbol = str(symbol_val).strip()
+
+                period_val = row.get('REPORTING_PERIOD', '')
+                if pd.isna(period_val):
+                    continue
+                reporting_period = str(period_val).strip()
                 if not symbol or not reporting_period:
                     continue
 
                 # Build data_json from all non-metadata columns
                 data_fields = {}
-                for col in df.columns:
+                for col, val in row.items():
                     if col in METADATA_FIELDS:
                         continue
-                    val = row.get(col)
                     if pd.isna(val):
                         continue
                     if hasattr(val, 'item'):
