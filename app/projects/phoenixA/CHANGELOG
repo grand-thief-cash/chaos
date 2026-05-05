@@ -1,7 +1,9 @@
 # VERSION
-v1.3.1
+v1.3.2
 
 # Changelog
+- v1.3.2
+    - Adjusted folder structure of migration, postgresql migration supported.
 - v1.3.1
     - **Bug Fixes**:
         - [Critical] Fixed `data_json` double-encoding: `FinancialStatement.DataJSON` and `CorporateAction.DataJSON` changed from `string` to `json.RawMessage` — API responses now return proper nested JSON objects instead of escaped JSON strings
