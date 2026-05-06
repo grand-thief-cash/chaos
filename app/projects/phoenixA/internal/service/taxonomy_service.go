@@ -33,17 +33,17 @@ func (s *TaxonomyService) Start(ctx context.Context) error {
 
 func (s *TaxonomyService) Stop(ctx context.Context) error { return s.BaseComponent.Stop(ctx) }
 
-// BatchUpsertCategories upserts taxonomy categories for a given source.
-func (s *TaxonomyService) BatchUpsertCategories(ctx context.Context, source string, list []*model.TaxonomyCategory) error {
-	if source == "" {
-		return errors.New("source is required")
+// BatchUpsertCategories upserts taxonomy categories.
+func (s *TaxonomyService) BatchUpsertCategories(ctx context.Context, source, taxonomy, market string, list []*model.TaxonomyCategory) error {
+	if source == "" || taxonomy == "" {
+		return errors.New("source and taxonomy are required")
 	}
-	logging.Infof(ctx, "TaxonomyService BatchUpsertCategories source=%s count=%d", source, len(list))
-	return s.Dao.BatchUpsertCategories(ctx, source, list)
+	logging.Infof(ctx, "TaxonomyService BatchUpsertCategories source=%s taxonomy=%s market=%s count=%d", source, taxonomy, market, len(list))
+	return s.Dao.BatchUpsertCategories(ctx, source, taxonomy, market, list)
 }
 
-// ListCategories lists taxonomy categories for a given source.
-func (s *TaxonomyService) ListCategories(ctx context.Context, source string, f *model.TaxonomyCategoryFilters, page, pageSize int) ([]*model.TaxonomyCategory, int64, error) {
+// ListCategories lists taxonomy categories.
+func (s *TaxonomyService) ListCategories(ctx context.Context, source, taxonomy, market string, f *model.TaxonomyCategoryFilters, page, pageSize int) ([]*model.TaxonomyCategory, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -51,47 +51,47 @@ func (s *TaxonomyService) ListCategories(ctx context.Context, source string, f *
 		pageSize = 100
 	}
 	offset := (page - 1) * pageSize
-	list, err := s.Dao.ListCategories(ctx, source, f, pageSize, offset)
+	list, err := s.Dao.ListCategories(ctx, source, taxonomy, market, f, pageSize, offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	count, err := s.Dao.CountCategories(ctx, source, f)
+	count, err := s.Dao.CountCategories(ctx, source, taxonomy, market, f)
 	if err != nil {
 		return nil, 0, err
 	}
 	return list, count, nil
 }
 
-// GetCategory retrieves a single category by source + code.
-func (s *TaxonomyService) GetCategory(ctx context.Context, source, code string) (*model.TaxonomyCategory, error) {
-	return s.Dao.GetCategory(ctx, source, code)
+// GetCategory retrieves a single category.
+func (s *TaxonomyService) GetCategory(ctx context.Context, source, taxonomy, market, code string) (*model.TaxonomyCategory, error) {
+	return s.Dao.GetCategory(ctx, source, taxonomy, market, code)
 }
 
-// DeleteCategory deletes a category by source + code.
-func (s *TaxonomyService) DeleteCategory(ctx context.Context, source, code string) error {
-	return s.Dao.DeleteCategory(ctx, source, code)
+// DeleteCategory deletes a category.
+func (s *TaxonomyService) DeleteCategory(ctx context.Context, source, taxonomy, market, code string) error {
+	return s.Dao.DeleteCategory(ctx, source, taxonomy, market, code)
 }
 
 // BatchUpsertMappings upserts taxonomy-security mappings.
-func (s *TaxonomyService) BatchUpsertMappings(ctx context.Context, source string, list []*model.TaxonomySecurityMap) error {
-	if source == "" {
-		return errors.New("source is required")
+func (s *TaxonomyService) BatchUpsertMappings(ctx context.Context, source, taxonomy string, list []*model.TaxonomySecurityMap) error {
+	if source == "" || taxonomy == "" {
+		return errors.New("source and taxonomy are required")
 	}
-	return s.Dao.BatchUpsertMappings(ctx, source, list)
+	return s.Dao.BatchUpsertMappings(ctx, source, taxonomy, list)
 }
 
-// ReplaceStocksForCategories replaces all symbols for given categories under a source.
-func (s *TaxonomyService) ReplaceStocksForCategories(ctx context.Context, source string, payload map[string][]string) error {
-	return s.Dao.ReplaceStocksForCategories(ctx, source, payload)
+// ReplaceStocksForCategories replaces all symbols for given categories.
+func (s *TaxonomyService) ReplaceStocksForCategories(ctx context.Context, source, taxonomy string, payload map[string][]string) error {
+	return s.Dao.ReplaceStocksForCategories(ctx, source, taxonomy, payload)
 }
 
-// ReplaceCategoriesForSymbols replaces all categories for given symbols under a source.
-func (s *TaxonomyService) ReplaceCategoriesForSymbols(ctx context.Context, source string, payload map[string][]string) error {
-	return s.Dao.ReplaceCategoriesForSymbols(ctx, source, payload)
+// ReplaceCategoriesForSymbols replaces all categories for given symbols.
+func (s *TaxonomyService) ReplaceCategoriesForSymbols(ctx context.Context, source, taxonomy string, payload map[string][]string) error {
+	return s.Dao.ReplaceCategoriesForSymbols(ctx, source, taxonomy, payload)
 }
 
-// ListMappingsByCategory returns mappings for a source + category.
-func (s *TaxonomyService) ListMappingsByCategory(ctx context.Context, source, categoryCode string, page, pageSize int) ([]*model.TaxonomySecurityMap, error) {
+// ListMappingsByCategory returns mappings for a source + taxonomy + category.
+func (s *TaxonomyService) ListMappingsByCategory(ctx context.Context, source, taxonomy, categoryCode string, page, pageSize int) ([]*model.TaxonomySecurityMap, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -99,7 +99,7 @@ func (s *TaxonomyService) ListMappingsByCategory(ctx context.Context, source, ca
 		pageSize = 100
 	}
 	offset := (page - 1) * pageSize
-	return s.Dao.ListMappingsByCategory(ctx, source, categoryCode, pageSize, offset)
+	return s.Dao.ListMappingsByCategory(ctx, source, taxonomy, categoryCode, pageSize, offset)
 }
 
 // ListMappingsBySymbol returns all taxonomy mappings for a given symbol.
@@ -108,23 +108,23 @@ func (s *TaxonomyService) ListMappingsBySymbol(ctx context.Context, symbol strin
 }
 
 // DeleteMapping deletes a single mapping.
-func (s *TaxonomyService) DeleteMapping(ctx context.Context, source, categoryCode, symbol string) error {
-	return s.Dao.DeleteMapping(ctx, source, categoryCode, symbol)
+func (s *TaxonomyService) DeleteMapping(ctx context.Context, source, taxonomy, categoryCode, symbol string) error {
+	return s.Dao.DeleteMapping(ctx, source, taxonomy, categoryCode, symbol)
 }
 
 // ──────────── Industry Constituents ────────────
 
-// BatchUpsertConstituents upserts industry index constituents for a given source.
-func (s *TaxonomyService) BatchUpsertConstituents(ctx context.Context, source string, list []*model.IndustryConstituent) error {
-	if source == "" {
-		return errors.New("source is required")
+// BatchUpsertConstituents upserts industry index constituents.
+func (s *TaxonomyService) BatchUpsertConstituents(ctx context.Context, source, taxonomy, market string, list []*model.IndustryConstituent) error {
+	if source == "" || taxonomy == "" {
+		return errors.New("source and taxonomy are required")
 	}
-	logging.Infof(ctx, "TaxonomyService BatchUpsertConstituents source=%s count=%d", source, len(list))
-	return s.Dao.BatchUpsertConstituents(ctx, source, list)
+	logging.Infof(ctx, "TaxonomyService BatchUpsertConstituents source=%s taxonomy=%s market=%s count=%d", source, taxonomy, market, len(list))
+	return s.Dao.BatchUpsertConstituents(ctx, source, taxonomy, market, list)
 }
 
-// ListConstituentsByIndex returns all constituents for a given source + index_code.
-func (s *TaxonomyService) ListConstituentsByIndex(ctx context.Context, source, indexCode string, page, pageSize int) ([]*model.IndustryConstituent, error) {
+// ListConstituentsByIndex returns all constituents for an index.
+func (s *TaxonomyService) ListConstituentsByIndex(ctx context.Context, source, taxonomy, indexCode string, page, pageSize int) ([]*model.IndustryConstituent, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -132,45 +132,45 @@ func (s *TaxonomyService) ListConstituentsByIndex(ctx context.Context, source, i
 		pageSize = 100
 	}
 	offset := (page - 1) * pageSize
-	return s.Dao.ListConstituentsByIndex(ctx, source, indexCode, pageSize, offset)
+	return s.Dao.ListConstituentsByIndex(ctx, source, taxonomy, indexCode, pageSize, offset)
 }
 
-// ListConstituentsByConCode returns all index memberships for a given constituent stock.
-func (s *TaxonomyService) ListConstituentsByConCode(ctx context.Context, source, conCode string) ([]*model.IndustryConstituent, error) {
-	return s.Dao.ListConstituentsByConCode(ctx, source, conCode)
+// ListConstituentsBySymbol returns all index memberships for a constituent stock.
+func (s *TaxonomyService) ListConstituentsBySymbol(ctx context.Context, source, taxonomy, symbol string) ([]*model.IndustryConstituent, error) {
+	return s.Dao.ListConstituentsBySymbol(ctx, source, taxonomy, symbol)
 }
 
 // ──────────── Industry Weights ────────────
 
-// BatchUpsertWeights upserts industry index constituent daily weights for a given source.
-func (s *TaxonomyService) BatchUpsertWeights(ctx context.Context, source string, list []*model.IndustryWeight) error {
-	if source == "" {
-		return errors.New("source is required")
+// BatchUpsertWeights upserts industry index constituent daily weights.
+func (s *TaxonomyService) BatchUpsertWeights(ctx context.Context, source, taxonomy, market string, list []*model.IndustryWeight) error {
+	if source == "" || taxonomy == "" {
+		return errors.New("source and taxonomy are required")
 	}
-	logging.Infof(ctx, "TaxonomyService BatchUpsertWeights source=%s count=%d", source, len(list))
-	return s.Dao.BatchUpsertWeights(ctx, source, list)
+	logging.Infof(ctx, "TaxonomyService BatchUpsertWeights source=%s taxonomy=%s market=%s count=%d", source, taxonomy, market, len(list))
+	return s.Dao.BatchUpsertWeights(ctx, source, taxonomy, market, list)
 }
 
 // ListWeightsByIndexAndDate returns weights for a given index on a given trade_date.
-func (s *TaxonomyService) ListWeightsByIndexAndDate(ctx context.Context, source, indexCode, tradeDate string) ([]*model.IndustryWeight, error) {
-	return s.Dao.ListWeightsByIndexAndDate(ctx, source, indexCode, tradeDate)
+func (s *TaxonomyService) ListWeightsByIndexAndDate(ctx context.Context, source, taxonomy, indexCode, tradeDate string) ([]*model.IndustryWeight, error) {
+	return s.Dao.ListWeightsByIndexAndDate(ctx, source, taxonomy, indexCode, tradeDate)
 }
 
 // ──────────── Industry Daily ────────────
 
-// BatchUpsertIndustryDaily upserts industry index daily bars for a given source.
-func (s *TaxonomyService) BatchUpsertIndustryDaily(ctx context.Context, source string, list []*model.IndustryDaily) error {
-	if source == "" {
-		return errors.New("source is required")
+// BatchUpsertIndustryDaily upserts industry index daily bars.
+func (s *TaxonomyService) BatchUpsertIndustryDaily(ctx context.Context, source, taxonomy, market string, list []*model.IndustryDaily) error {
+	if source == "" || taxonomy == "" {
+		return errors.New("source and taxonomy are required")
 	}
-	logging.Infof(ctx, "TaxonomyService BatchUpsertIndustryDaily source=%s count=%d", source, len(list))
-	return s.Dao.BatchUpsertIndustryDaily(ctx, source, list)
+	logging.Infof(ctx, "TaxonomyService BatchUpsertIndustryDaily source=%s taxonomy=%s market=%s count=%d", source, taxonomy, market, len(list))
+	return s.Dao.BatchUpsertIndustryDaily(ctx, source, taxonomy, market, list)
 }
 
-// QueryIndustryDaily queries industry daily bars for a given source + index_code + date range.
-func (s *TaxonomyService) QueryIndustryDaily(ctx context.Context, source, indexCode, startDate, endDate string, limit int) ([]*model.IndustryDaily, error) {
+// QueryIndustryDaily queries industry daily bars.
+func (s *TaxonomyService) QueryIndustryDaily(ctx context.Context, source, taxonomy, indexCode, startDate, endDate string, limit int) ([]*model.IndustryDaily, error) {
 	if limit < 1 {
 		limit = 5000
 	}
-	return s.Dao.QueryIndustryDaily(ctx, source, indexCode, startDate, endDate, limit)
+	return s.Dao.QueryIndustryDaily(ctx, source, taxonomy, indexCode, startDate, endDate, limit)
 }

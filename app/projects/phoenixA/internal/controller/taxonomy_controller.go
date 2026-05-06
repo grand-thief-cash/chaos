@@ -26,11 +26,19 @@ func NewTaxonomyController() *TaxonomyController {
 func (c *TaxonomyController) Start(ctx context.Context) error { return c.BaseComponent.Start(ctx) }
 func (c *TaxonomyController) Stop(ctx context.Context) error  { return c.BaseComponent.Stop(ctx) }
 
-// POST /api/v2/taxonomy/{source}/categories/upsert
+// helper to extract source/taxonomy/market from URL
+func taxonomyParams(r *http.Request) (source, taxonomy, market string) {
+	source = chi.URLParam(r, "source")
+	taxonomy = chi.URLParam(r, "taxonomy")
+	market = chi.URLParam(r, "market")
+	return
+}
+
+// POST /api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert
 func (c *TaxonomyController) BatchUpsertCategories(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
-	if source == "" {
-		writeJSON(w, http.StatusBadRequest, apiError{Error: "source is required"})
+	source, taxonomy, market := taxonomyParams(r)
+	if source == "" || taxonomy == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "source and taxonomy are required"})
 		return
 	}
 	var list []*model.TaxonomyCategory
@@ -38,16 +46,16 @@ func (c *TaxonomyController) BatchUpsertCategories(w http.ResponseWriter, r *htt
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.BatchUpsertCategories(r.Context(), source, list); err != nil {
+	if err := c.Svc.BatchUpsertCategories(r.Context(), source, taxonomy, market, list); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
 }
 
-// GET /api/v2/taxonomy/{source}/categories
+// GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/categories
 func (c *TaxonomyController) ListCategories(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, market := taxonomyParams(r)
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
 	pageSize, _ := strconv.Atoi(q.Get("page_size"))
@@ -66,7 +74,7 @@ func (c *TaxonomyController) ListCategories(w http.ResponseWriter, r *http.Reque
 		f.Name = v
 	}
 
-	list, count, err := c.Svc.ListCategories(r.Context(), source, f, page, pageSize)
+	list, count, err := c.Svc.ListCategories(r.Context(), source, taxonomy, market, f, page, pageSize)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -74,11 +82,11 @@ func (c *TaxonomyController) ListCategories(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{"list": list, "total": count})
 }
 
-// GET /api/v2/taxonomy/{source}/categories/{code}
+// GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/{code}
 func (c *TaxonomyController) GetCategory(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, market := taxonomyParams(r)
 	code := chi.URLParam(r, "code")
-	cat, err := c.Svc.GetCategory(r.Context(), source, code)
+	cat, err := c.Svc.GetCategory(r.Context(), source, taxonomy, market, code)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, apiError{Error: err.Error()})
 		return
@@ -86,69 +94,69 @@ func (c *TaxonomyController) GetCategory(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, cat)
 }
 
-// DELETE /api/v2/taxonomy/{source}/categories/{code}
+// DELETE /api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/{code}
 func (c *TaxonomyController) DeleteCategory(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, market := taxonomyParams(r)
 	code := chi.URLParam(r, "code")
-	if err := c.Svc.DeleteCategory(r.Context(), source, code); err != nil {
+	if err := c.Svc.DeleteCategory(r.Context(), source, taxonomy, market, code); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// POST /api/v2/taxonomy/{source}/mapping/upsert
+// POST /api/v2/taxonomy/{source}/{taxonomy}/mapping/upsert
 func (c *TaxonomyController) BatchUpsertMappings(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, _ := taxonomyParams(r)
 	var list []*model.TaxonomySecurityMap
 	if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.BatchUpsertMappings(r.Context(), source, list); err != nil {
+	if err := c.Svc.BatchUpsertMappings(r.Context(), source, taxonomy, list); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-// POST /api/v2/taxonomy/{source}/mapping/replace/by_symbol
+// POST /api/v2/taxonomy/{source}/{taxonomy}/mapping/replace/by_symbol
 func (c *TaxonomyController) ReplaceCategoriesForSymbols(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, _ := taxonomyParams(r)
 	var payload map[string][]string
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.ReplaceCategoriesForSymbols(r.Context(), source, payload); err != nil {
+	if err := c.Svc.ReplaceCategoriesForSymbols(r.Context(), source, taxonomy, payload); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-// POST /api/v2/taxonomy/{source}/mapping/replace/by_category
+// POST /api/v2/taxonomy/{source}/{taxonomy}/mapping/replace/by_category
 func (c *TaxonomyController) ReplaceStocksForCategories(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, _ := taxonomyParams(r)
 	var payload map[string][]string
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.ReplaceStocksForCategories(r.Context(), source, payload); err != nil {
+	if err := c.Svc.ReplaceStocksForCategories(r.Context(), source, taxonomy, payload); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-// GET /api/v2/taxonomy/{source}/mapping/by_category/{categoryCode}
+// GET /api/v2/taxonomy/{source}/{taxonomy}/mapping/by_category/{categoryCode}
 func (c *TaxonomyController) ListMappingsByCategory(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, _ := taxonomyParams(r)
 	categoryCode := chi.URLParam(r, "categoryCode")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	list, err := c.Svc.ListMappingsByCategory(r.Context(), source, categoryCode, page, pageSize)
+	list, err := c.Svc.ListMappingsByCategory(r.Context(), source, taxonomy, categoryCode, page, pageSize)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -167,12 +175,12 @@ func (c *TaxonomyController) ListMappingsBySymbol(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, list)
 }
 
-// DELETE /api/v2/taxonomy/{source}/mapping/{categoryCode}/{symbol}
+// DELETE /api/v2/taxonomy/{source}/{taxonomy}/mapping/{categoryCode}/{symbol}
 func (c *TaxonomyController) DeleteMapping(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, _ := taxonomyParams(r)
 	categoryCode := chi.URLParam(r, "categoryCode")
 	symbol := chi.URLParam(r, "symbol")
-	if err := c.Svc.DeleteMapping(r.Context(), source, categoryCode, symbol); err != nil {
+	if err := c.Svc.DeleteMapping(r.Context(), source, taxonomy, categoryCode, symbol); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
@@ -181,11 +189,11 @@ func (c *TaxonomyController) DeleteMapping(w http.ResponseWriter, r *http.Reques
 
 // ──────────── Industry Constituents ────────────
 
-// POST /api/v2/taxonomy/{source}/industry-constituents/upsert
+// POST /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/upsert
 func (c *TaxonomyController) BatchUpsertConstituents(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
-	if source == "" {
-		writeJSON(w, http.StatusBadRequest, apiError{Error: "source is required"})
+	source, taxonomy, market := taxonomyParams(r)
+	if source == "" || taxonomy == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "source and taxonomy are required"})
 		return
 	}
 	var list []*model.IndustryConstituent
@@ -193,20 +201,20 @@ func (c *TaxonomyController) BatchUpsertConstituents(w http.ResponseWriter, r *h
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.BatchUpsertConstituents(r.Context(), source, list); err != nil {
+	if err := c.Svc.BatchUpsertConstituents(r.Context(), source, taxonomy, market, list); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
 }
 
-// GET /api/v2/taxonomy/{source}/industry-constituents/by_index/{indexCode}
+// GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{indexCode}
 func (c *TaxonomyController) ListConstituentsByIndex(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, _ := taxonomyParams(r)
 	indexCode := chi.URLParam(r, "indexCode")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	list, err := c.Svc.ListConstituentsByIndex(r.Context(), source, indexCode, page, pageSize)
+	list, err := c.Svc.ListConstituentsByIndex(r.Context(), source, taxonomy, indexCode, page, pageSize)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -214,11 +222,11 @@ func (c *TaxonomyController) ListConstituentsByIndex(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, map[string]any{"list": list, "count": len(list)})
 }
 
-// GET /api/v2/taxonomy/{source}/industry-constituents/by_stock/{conCode}
-func (c *TaxonomyController) ListConstituentsByConCode(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
-	conCode := chi.URLParam(r, "conCode")
-	list, err := c.Svc.ListConstituentsByConCode(r.Context(), source, conCode)
+// GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_stock/{symbol}
+func (c *TaxonomyController) ListConstituentsBySymbol(w http.ResponseWriter, r *http.Request) {
+	source, taxonomy, _ := taxonomyParams(r)
+	symbol := chi.URLParam(r, "symbol")
+	list, err := c.Svc.ListConstituentsBySymbol(r.Context(), source, taxonomy, symbol)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -228,11 +236,11 @@ func (c *TaxonomyController) ListConstituentsByConCode(w http.ResponseWriter, r 
 
 // ──────────── Industry Weights ────────────
 
-// POST /api/v2/taxonomy/{source}/industry-weights/upsert
+// POST /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/upsert
 func (c *TaxonomyController) BatchUpsertWeights(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
-	if source == "" {
-		writeJSON(w, http.StatusBadRequest, apiError{Error: "source is required"})
+	source, taxonomy, market := taxonomyParams(r)
+	if source == "" || taxonomy == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "source and taxonomy are required"})
 		return
 	}
 	var list []*model.IndustryWeight
@@ -240,23 +248,23 @@ func (c *TaxonomyController) BatchUpsertWeights(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.BatchUpsertWeights(r.Context(), source, list); err != nil {
+	if err := c.Svc.BatchUpsertWeights(r.Context(), source, taxonomy, market, list); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
 }
 
-// GET /api/v2/taxonomy/{source}/industry-weights/{indexCode}
+// GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{indexCode}
 func (c *TaxonomyController) ListWeightsByIndexAndDate(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, _ := taxonomyParams(r)
 	indexCode := chi.URLParam(r, "indexCode")
 	tradeDate := r.URL.Query().Get("trade_date")
 	if tradeDate == "" {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "trade_date query param is required"})
 		return
 	}
-	list, err := c.Svc.ListWeightsByIndexAndDate(r.Context(), source, indexCode, tradeDate)
+	list, err := c.Svc.ListWeightsByIndexAndDate(r.Context(), source, taxonomy, indexCode, tradeDate)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -266,11 +274,11 @@ func (c *TaxonomyController) ListWeightsByIndexAndDate(w http.ResponseWriter, r 
 
 // ──────────── Industry Daily ────────────
 
-// POST /api/v2/taxonomy/{source}/industry-daily/upsert
+// POST /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily/upsert
 func (c *TaxonomyController) BatchUpsertIndustryDaily(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
-	if source == "" {
-		writeJSON(w, http.StatusBadRequest, apiError{Error: "source is required"})
+	source, taxonomy, market := taxonomyParams(r)
+	if source == "" || taxonomy == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "source and taxonomy are required"})
 		return
 	}
 	var list []*model.IndustryDaily
@@ -278,16 +286,16 @@ func (c *TaxonomyController) BatchUpsertIndustryDaily(w http.ResponseWriter, r *
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.BatchUpsertIndustryDaily(r.Context(), source, list); err != nil {
+	if err := c.Svc.BatchUpsertIndustryDaily(r.Context(), source, taxonomy, market, list); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
 }
 
-// GET /api/v2/taxonomy/{source}/industry-daily
+// GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily
 func (c *TaxonomyController) QueryIndustryDaily(w http.ResponseWriter, r *http.Request) {
-	source := chi.URLParam(r, "source")
+	source, taxonomy, _ := taxonomyParams(r)
 	q := r.URL.Query()
 	indexCode := q.Get("index_code")
 	if indexCode == "" {
@@ -298,7 +306,7 @@ func (c *TaxonomyController) QueryIndustryDaily(w http.ResponseWriter, r *http.R
 	endDate := q.Get("end_date")
 	limit, _ := strconv.Atoi(q.Get("limit"))
 
-	list, err := c.Svc.QueryIndustryDaily(r.Context(), source, indexCode, startDate, endDate, limit)
+	list, err := c.Svc.QueryIndustryDaily(r.Context(), source, taxonomy, indexCode, startDate, endDate, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return

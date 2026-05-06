@@ -1,7 +1,16 @@
 # VERSION
-v1.3.2
+v1.4.0
 
 # Changelog
+- v1.4.0
+    - **Taxonomy V2** — multi-taxonomy, multi-market support for industry data
+        - New fields: `taxonomy` (swhy/citic/gics/concept/region/mairui) and `market` (zh_a/us/jp/hk) on all taxonomy/industry tables
+        - `taxonomy_category`: added `index_code` field (行业指数代码, separated from attrs_json)
+        - `industry_constituent` / `industry_weight`: added `symbol` field (pure code, joins security_registry); `con_code` retained as raw SDK value
+        - Route pattern changed: `/api/v2/taxonomy/{source}/{taxonomy}/{market}/...`
+        - Breaking: old `/api/v2/taxonomy/{source}/...` routes still work but taxonomy/market default to empty
+        - New migration: `0002_taxonomy_v2.sql` — DROP + recreate all taxonomy/industry tables
+        - Updated model, DAO, service, controller for taxonomy+market dimensions
 - v1.3.2
     - Adjusted folder structure of migration, postgresql migration supported.
 - v1.3.1

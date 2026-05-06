@@ -55,29 +55,34 @@ func init() {
 
 		r.Route("/api/v2/taxonomy", func(r chi.Router) {
 			r.Get("/by_security/{symbol}", taxonomyCtrl.ListMappingsBySymbol)
-			r.Route("/{source}", func(r chi.Router) {
-				r.Get("/categories", taxonomyCtrl.ListCategories)
-				r.Post("/categories/upsert", taxonomyCtrl.BatchUpsertCategories)
-				r.Get("/categories/{code}", taxonomyCtrl.GetCategory)
-				r.Delete("/categories/{code}", taxonomyCtrl.DeleteCategory)
+			r.Route("/{source}/{taxonomy}", func(r chi.Router) {
+				// Mapping endpoints (no market in path)
 				r.Post("/mapping/upsert", taxonomyCtrl.BatchUpsertMappings)
 				r.Post("/mapping/replace/by_symbol", taxonomyCtrl.ReplaceCategoriesForSymbols)
 				r.Post("/mapping/replace/by_category", taxonomyCtrl.ReplaceStocksForCategories)
 				r.Get("/mapping/by_category/{categoryCode}", taxonomyCtrl.ListMappingsByCategory)
 				r.Delete("/mapping/{categoryCode}/{symbol}", taxonomyCtrl.DeleteMapping)
 
-				// Industry Constituents
-				r.Post("/industry-constituents/upsert", taxonomyCtrl.BatchUpsertConstituents)
-				r.Get("/industry-constituents/by_index/{indexCode}", taxonomyCtrl.ListConstituentsByIndex)
-				r.Get("/industry-constituents/by_stock/{conCode}", taxonomyCtrl.ListConstituentsByConCode)
+				r.Route("/{market}", func(r chi.Router) {
+					// Categories
+					r.Get("/categories", taxonomyCtrl.ListCategories)
+					r.Post("/categories/upsert", taxonomyCtrl.BatchUpsertCategories)
+					r.Get("/categories/{code}", taxonomyCtrl.GetCategory)
+					r.Delete("/categories/{code}", taxonomyCtrl.DeleteCategory)
 
-				// Industry Weights
-				r.Post("/industry-weights/upsert", taxonomyCtrl.BatchUpsertWeights)
-				r.Get("/industry-weights/{indexCode}", taxonomyCtrl.ListWeightsByIndexAndDate)
+					// Industry Constituents
+					r.Post("/industry-constituents/upsert", taxonomyCtrl.BatchUpsertConstituents)
+					r.Get("/industry-constituents/by_index/{indexCode}", taxonomyCtrl.ListConstituentsByIndex)
+					r.Get("/industry-constituents/by_stock/{symbol}", taxonomyCtrl.ListConstituentsBySymbol)
 
-				// Industry Daily
-				r.Post("/industry-daily/upsert", taxonomyCtrl.BatchUpsertIndustryDaily)
-				r.Get("/industry-daily", taxonomyCtrl.QueryIndustryDaily)
+					// Industry Weights
+					r.Post("/industry-weights/upsert", taxonomyCtrl.BatchUpsertWeights)
+					r.Get("/industry-weights/{indexCode}", taxonomyCtrl.ListWeightsByIndexAndDate)
+
+					// Industry Daily
+					r.Post("/industry-daily/upsert", taxonomyCtrl.BatchUpsertIndustryDaily)
+					r.Get("/industry-daily", taxonomyCtrl.QueryIndustryDaily)
+				})
 			})
 		})
 
