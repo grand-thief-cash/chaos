@@ -40,6 +40,12 @@ class StockZHAMarketCategory(WorkerUnit):
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):
         phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
-        ok = phoenixA_client.upsert_market_categories(processed, consts.DataSource.DS_MAIRUI.value, ctx.run_id)
+        ok = phoenixA_client.upsert_market_categories(
+            processed,
+            consts.DataSource.DS_MAIRUI.value,
+            taxonomy=consts.Taxonomy.MAIRUI.value,
+            market="zh_a",
+            run_id=ctx.run_id,
+        )
         if ok is False:
             ctx.fail("failed to sink market categories to phoenixA", phase='sink')

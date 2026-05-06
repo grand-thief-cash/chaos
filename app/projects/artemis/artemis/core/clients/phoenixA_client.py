@@ -306,10 +306,12 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         categories: List[Dict[str, Any]],
         source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
         run_id: Optional[int | str] = None,
     ) -> bool:
         """Upsert taxonomy categories via v2 API."""
-        path = f"/api/v2/taxonomy/{source}/categories/upsert"
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert"
         try:
             resp = self.post(path, categories)
             ok = 200 <= resp.status_code < 300
@@ -424,13 +426,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
             run_id=run_id,
         )
 
-    def upsert_market_categories(self, categories: List[Dict[str, Any]], data_source: str, run_id: Optional[int | str] = None) -> bool:
+    def upsert_market_categories(self, categories: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
         """Legacy alias → upsert_taxonomy_categories."""
-        return self.upsert_taxonomy_categories(categories, source=data_source, run_id=run_id)
+        return self.upsert_taxonomy_categories(categories, source=data_source, taxonomy=taxonomy, market=market, run_id=run_id)
 
-    def upsert_industry_constituents(self, constituents: List[Dict[str, Any]], data_source: str, run_id: Optional[int | str] = None) -> bool:
+    def upsert_industry_constituents(self, constituents: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
         """Upsert industry index constituents via v2 API."""
-        path = f"/api/v2/taxonomy/{data_source}/industry-constituents/upsert"
+        path = f"/api/v2/taxonomy/{data_source}/{taxonomy}/{market}/industry-constituents/upsert"
         try:
             resp = self.post(path, constituents)
             ok = 200 <= resp.status_code < 300
@@ -454,9 +456,9 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             raise
 
-    def upsert_industry_weights(self, weights: List[Dict[str, Any]], data_source: str, run_id: Optional[int | str] = None) -> bool:
+    def upsert_industry_weights(self, weights: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
         """Upsert industry index constituent daily weights via v2 API."""
-        path = f"/api/v2/taxonomy/{data_source}/industry-weights/upsert"
+        path = f"/api/v2/taxonomy/{data_source}/{taxonomy}/{market}/industry-weights/upsert"
         try:
             resp = self.post(path, weights)
             ok = 200 <= resp.status_code < 300
@@ -480,9 +482,9 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             raise
 
-    def upsert_industry_daily(self, bars: List[Dict[str, Any]], data_source: str, run_id: Optional[int | str] = None) -> bool:
+    def upsert_industry_daily(self, bars: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
         """Upsert industry index daily bars via v2 API."""
-        path = f"/api/v2/taxonomy/{data_source}/industry-daily/upsert"
+        path = f"/api/v2/taxonomy/{data_source}/{taxonomy}/{market}/industry-daily/upsert"
         try:
             resp = self.post(path, bars)
             ok = 200 <= resp.status_code < 300
@@ -652,13 +654,15 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
         index_code: str,
         start_date: str = "",
         end_date: str = "",
         limit: int = 5000,
     ) -> List[Dict[str, Any]]:
         """Query industry index daily bars via v2 API."""
-        path = f"/api/v2/taxonomy/{source}/industry-daily"
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily"
         params: Dict[str, Any] = {"index_code": index_code}
         if start_date:
             params["start_date"] = start_date
@@ -685,6 +689,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
         level: Optional[int] = None,
         parent_code: Optional[str] = None,
         name: Optional[str] = None,
@@ -692,7 +698,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         page_size: int = 500,
     ) -> Dict[str, Any]:
         """Query industry taxonomy categories via v2 API."""
-        path = f"/api/v2/taxonomy/{source}/categories"
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
         if level is not None:
             params["level"] = level
@@ -718,12 +724,14 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
         index_code: str,
         page: int = 1,
         page_size: int = 500,
     ) -> Dict[str, Any]:
         """Query industry constituents by index code via v2 API."""
-        path = f"/api/v2/taxonomy/{source}/industry-constituents/by_index/{index_code}"
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{index_code}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
         try:
             resp = self.get(path, params)
@@ -743,10 +751,12 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
         con_code: str,
     ) -> List[Dict[str, Any]]:
         """Query industry memberships for a stock via v2 API."""
-        path = f"/api/v2/taxonomy/{source}/industry-constituents/by_stock/{con_code}"
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_stock/{con_code}"
         try:
             resp = self.get(path, {})
             if 200 <= resp.status_code < 300:

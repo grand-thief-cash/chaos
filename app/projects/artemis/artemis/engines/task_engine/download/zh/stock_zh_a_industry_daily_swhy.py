@@ -114,9 +114,15 @@ class StockZHAIndustryDailySWHY(WorkerUnit):
             ctx.logger.info({'event': 'swhy_industry_daily_sink_skip', 'reason': 'empty', 'run_id': ctx.run_id})
             return
 
+        from artemis.consts import Taxonomy
+
         phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
         ok = phoenixA_client.upsert_industry_daily(
-            processed, consts.DataSource.DS_AMAZING_DATA.value, ctx.run_id
+            processed,
+            consts.DataSource.DS_AMAZING_DATA.value,
+            taxonomy=Taxonomy.SWHY.value,
+            market="zh_a",
+            run_id=ctx.run_id,
         )
         if ok is False:
             ctx.fail("failed to sink SWHY industry daily to phoenixA", phase='sink')
