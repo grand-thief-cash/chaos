@@ -63,9 +63,13 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
             if not isinstance(df, pd.DataFrame) or df.empty:
                 continue
             for _, row in df.iterrows():
+                con_code = str(row.get("CON_CODE", "")).strip()
+                # Extract pure symbol from con_code (e.g. "603648.SH" → "603648")
+                symbol = con_code.split(".")[0] if "." in con_code else con_code
                 processed.append({
                     "index_code": str(row.get("INDEX_CODE", code)),
-                    "con_code": str(row.get("CON_CODE", "")),
+                    "con_code": con_code,
+                    "symbol": symbol,
                     "indate": str(row.get("INDATE", "")),
                     "outdate": str(row.get("OUTDATE", "")),
                     "index_name": str(row.get("INDEX_NAME", "")),
@@ -77,9 +81,15 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
             ctx.logger.info({'event': 'swhy_constituent_sink_skip', 'reason': 'empty', 'run_id': ctx.run_id})
             return
 
+        from artemis.consts import Taxonomy
+
         phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
         ok = phoenixA_client.upsert_industry_constituents(
-            processed, consts.DataSource.DS_AMAZING_DATA.value, ctx.run_id
+            processed,
+            consts.DataSource.DS_AMAZING_DATA.value,
+            taxonomy=Taxonomy.SWHY.value,
+            market="zh_a",
+            run_id=ctx.run_id,
         )
         if ok is False:
             ctx.fail("failed to sink SWHY industry constituents to phoenixA", phase='sink')

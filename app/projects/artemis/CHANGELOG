@@ -1,7 +1,16 @@
 # VERSION
-v0.23.1
+v0.24.0
 
 # Changelog
+- v0.24.0
+    - **Taxonomy V2** — unified source/taxonomy/market for industry data pipeline
+        - New `Taxonomy` enum in `consts/data_source.py` (swhy/citic/gics/concept/region/mairui)
+        - `PhoenixAClient`: all taxonomy/industry methods now accept `taxonomy` and `market` params; API paths updated to `/api/v2/taxonomy/{source}/{taxonomy}/{market}/...`
+        - `StockZHAMarketCategorySWHY`: source unified to `amazing_data`, taxonomy=`swhy`; `code` now uses `INDUSTRY_CODE` (not `INDEX_CODE`); `index_code` stored as separate field; parent_code logic fixed to use INDUSTRY_CODE hierarchy
+        - `StockZHAIndustryConstituentSWHY`: extracts pure `symbol` from `con_code` (e.g. `603648.SH` → `603648`); adds taxonomy/market to sink
+        - `StockZHAIndustryWeightSWHY`: same symbol extraction + taxonomy/market
+        - `StockZHAIndustryDailySWHY`: adds taxonomy/market to sink
+        - `StockZHAMarketCategory` (Mairui): adds taxonomy=`mairui`, market=`zh_a` to sink
 - v0.23.1
     - Fixed bugs of downloading industry/company actions/financial stuff.
 - v0.23.0
