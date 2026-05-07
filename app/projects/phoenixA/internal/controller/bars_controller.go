@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/buffer"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/service"
@@ -18,7 +19,8 @@ import (
 // BarsController handles HTTP endpoints for unified bars data.
 type BarsController struct {
 	*core.BaseComponent
-	Svc *service.BarsService `infra:"dep:svc_bars"`
+	Svc       *service.BarsService       `infra:"dep:svc_bars"`
+	BufferMgr *buffer.WriteBufferManager `infra:"dep:write_buffer_mgr"`
 }
 
 func NewBarsController() *BarsController {
@@ -54,6 +56,44 @@ func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 		Period:    req.Meta.Period,
 		Adjust:    req.Meta.Adjust,
 	}
+
+	// ── Write Buffer routing ──
+	// If buffer is enabled, parse bars to decide direct vs buffered path.
+	if c.BufferMgr != nil && c.BufferMgr.IsEnabled() {
+		var bars []*model.StandardBar
+		if err := json.Unmarshal(req.Bars, &bars); err != nil {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: fmt.Sprintf("bars parse error: %s", err.Error())})
+			return
+		}
+
+		if len(bars) >= c.BufferMgr.DirectFlushThreshold() {
+			// Large batch: direct write (existing path)
+			if err := c.Svc.Dao.BatchUpsert(ctx, q, bars); err != nil {
+				errMsg := fmt.Sprintf("bars upsert error: %s", err.Error())
+				logging.Error(ctx, errMsg)
+				writeJSON(w, http.StatusBadRequest, apiError{Error: errMsg})
+				return
+			}
+			// Write extension data directly too
+			if len(req.Ext) > 0 && req.Meta.Source != "" {
+				if err := c.Svc.BatchUpsertExt(ctx, req.Meta.Source, q, req.Ext); err != nil {
+					logging.Errorf(ctx, "bars ext upsert error: %s", err.Error())
+				}
+			}
+		} else {
+			// Small batch: submit to write buffer
+			if err := c.BufferMgr.Submit(q, bars, req.Ext, req.Meta.Source); err != nil {
+				logging.Errorf(ctx, "write buffer submit failed: %s", err.Error())
+				writeJSON(w, http.StatusServiceUnavailable, apiError{Error: "write buffer full, retry later"})
+				return
+			}
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+
+	// ── Original direct path (buffer disabled or nil) ──
 	if err := c.Svc.BatchUpsert(ctx, q, req.Bars); err != nil {
 		errMsg := fmt.Sprintf("bars upsert error: %s", err.Error())
 		logging.Error(ctx, errMsg)

@@ -21,6 +21,9 @@ const (
 	COMP_SVC_FINANCIAL_STMT = "svc_financial_stmt"
 	COMP_SVC_CORP_ACTION    = "svc_corp_action"
 
+	// Buffer components
+	COMP_WRITE_BUFFER = "write_buffer_mgr"
+
 	// Controller components
 	COMP_CTRL_SECURITY       = "ctrl_security"
 	COMP_CTRL_BARS           = "ctrl_bars"

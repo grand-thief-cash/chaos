@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/http_server"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/buffer"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/controller"
 )
@@ -204,6 +206,24 @@ func init() {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(data)
 		})
+
+		// ====== Write Buffer Stats ======
+		bufMgrComp, err := c.Resolve(bizConsts.COMP_WRITE_BUFFER)
+		if err == nil {
+			bufMgr := bufMgrComp.(*buffer.WriteBufferManager)
+			r.Get("/api/v2/buffer/stats", func(w http.ResponseWriter, req *http.Request) {
+				stats := bufMgr.Stats()
+				enabled := bufMgr.IsEnabled()
+				resp := map[string]any{
+					"enabled": enabled,
+					"buffers": stats,
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				enc := json.NewEncoder(w)
+				_ = enc.Encode(resp)
+			})
+		}
 
 		return nil
 	})
