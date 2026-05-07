@@ -1,7 +1,22 @@
 # VERSION
-v1.6.0
+v1.7.0
 
 # Changelog
+- v1.7.0
+    - **Write Buffer** — in-process batch write optimization for high-frequency small upserts
+        - New component: `WriteBufferManager` (`internal/buffer/write_buffer.go`)
+            - Per-table channel + goroutine architecture (lazy-created per buffer key)
+            - Flush triggers: batch full (2000 rows) / interval (configurable) / graceful shutdown
+            - Bars + ext data bundled in single submission, flushed atomically
+            - Non-blocking submit with 503 backpressure when channel full
+        - `BarsController.Upsert()` routing logic:
+            - `len(bars) >= direct_flush_threshold (500)` → bypass buffer, direct DB write (full-load path)
+            - `len(bars) < 500` → submit to write buffer (daily-update path)
+        - New endpoint: `GET /api/v2/buffer/stats` — per-buffer metrics (submitted/flushed/pending/flush_count)
+        - New biz_config section: `write_buffer` (enabled, max_batch_size, flush_interval, direct_flush_threshold, channel_size, shutdown_timeout)
+        - New `internal/config/config.go` — PhoenixA BizConfig + `SetBizConfig` init
+        - Unit tests: 6 test cases covering disabled/interval-flush/batch-full/channel-full/ext-bundled/multi-key
+        - Design doc: `docs/2026-05-07 DESIGN_BATCH_WRITE_BUFFER.md`
 - v1.6.0
     - **PostgreSQL Migration Phase 2** — financial_statement & corporate_action tables migrated to PostgreSQL
         - `FinancialStatementDao` and `CorporateActionDao` switched from `mysql_gorm` to `postgres_gorm`

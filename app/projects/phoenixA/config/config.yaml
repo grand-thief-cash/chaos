@@ -69,3 +69,10 @@ telemetry:
   stdout_file: ./logs/telemetry.log
 
 biz_config:
+  write_buffer:
+    enabled: true
+    max_batch_size: 2000
+    flush_interval: 60s
+    direct_flush_threshold: 500
+    channel_size: 8192
+    shutdown_timeout: 10s
