@@ -5,32 +5,14 @@ import AmazingData as ad
 import pandas as pd
 
 from artemis import consts
-from artemis.consts import DeptServices
+from artemis.consts import DeptServices, Taxonomy
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
-from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params, get_sdk_date_kwargs
+from artemis.engines.task_engine.download.zh.utils import get_sdk_date_kwargs
 
 
-class StockZHAIndustryWeightSWHY(WorkerUnit):
-    """下载申万行业指数成分股日权重数据（来源：AmazingData InfoData get_industry_weight）。
-
-    SDK参数支持（per AmazingData_development_guide.md V1.0.24）：
-      get_industry_weight(code_list, local_path, is_local, begin_date?, end_date?)
-      - code_list: 行业指数代码列表（来自 get_industry_base_info）
-      - begin_date/end_date: 交易日期（可选）
-
-    ctx.params:
-      - symbols: list[str]  — 行业指数代码列表（如 get_industry_base_info 返回的 INDEX_CODE）
-      - start_date: int/str  — 交易日期起始（映射到 SDK begin_date）
-      - end_date: int/str    — 交易日期结束（映射到 SDK end_date）
-    """
-
-    def parameter_check(self, ctx: TaskContext):
-        params = ctx.incoming_params or {}
-        symbols = params.get("symbols")
-        if symbols is not None and not isinstance(symbols, list):
-            ctx.fail(f"symbols must be a list, got {type(symbols).__name__}", phase='parameter_check')
-            return
+class StockZHAIndustryWeightSWHYChild(WorkerUnit):
+    """下载单个申万行业指数的成分股日权重数据。"""
 
     def before_execute(self, ctx: TaskContext) -> None:
         from artemis.core.sdk.manager import sdk_mgr
@@ -47,29 +29,25 @@ class StockZHAIndustryWeightSWHY(WorkerUnit):
     def execute(self, ctx):
         from artemis.core.config_manager import cfg_mgr
 
+        params = ctx.params or {}
+        index_code = params.get("index_code")
+        if not index_code:
+            ctx.fail("missing index_code", phase='execute')
+            return {}
+
         task_engine_cfg = cfg_mgr.task_engine_config()
         cache_dir = os.path.abspath(task_engine_cfg.amazing_data_cache_dir)
         os.makedirs(cache_dir, exist_ok=True)
 
-        # Resolve code_list: explicit symbols or fallback to PhoenixA
-        explicit_symbols = get_symbols_from_params(ctx)
-        if explicit_symbols is not None:
-            code_list = explicit_symbols
-        else:
-            phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
-            securities = phoenixA_client.get_securities(asset_type="stock", market="zh_a")
-            code_list = list(securities.keys())
-
-        # Convert start_date/end_date → SDK begin_date/end_date
         sdk_date_kwargs = get_sdk_date_kwargs(ctx)
 
         try:
             result = self._info_data.get_industry_weight(
-                code_list, local_path=cache_dir, is_local=False, **sdk_date_kwargs
+                [index_code], local_path=cache_dir, is_local=False, **sdk_date_kwargs
             )
             return result
         except Exception as e:
-            ctx.fail(f"fetch SWHY industry weight failed: {e}", phase='execute')
+            ctx.fail(f"fetch SWHY industry weight for {index_code} failed: {e}", phase='execute')
             return {}
 
     def post_process(self, ctx: TaskContext, result: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -91,7 +69,7 @@ class StockZHAIndustryWeightSWHY(WorkerUnit):
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):
         if not processed:
-            ctx.logger.info({'event': 'swhy_weight_sink_skip', 'reason': 'empty', 'run_id': ctx.run_id})
+            ctx.logger.info({'event': 'swhy_weight_child_sink_skip', 'reason': 'empty', 'run_id': ctx.run_id})
             return
 
         from artemis.consts import Taxonomy
@@ -106,4 +84,3 @@ class StockZHAIndustryWeightSWHY(WorkerUnit):
         )
         if ok is False:
             ctx.fail("failed to sink SWHY industry weights to phoenixA", phase='sink')
-

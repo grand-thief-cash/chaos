@@ -48,6 +48,8 @@ sdk:
     password: "password"
     host: "127.0.0.1"
     port: 9000
+  mairui:
+    license: ""
 
 data_options:
   asset_types:
