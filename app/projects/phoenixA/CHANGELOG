@@ -1,7 +1,22 @@
 # VERSION
-v1.5.0
+v1.6.0
 
 # Changelog
+- v1.6.0
+    - **PostgreSQL Migration Phase 2** — financial_statement & corporate_action tables migrated to PostgreSQL
+        - `FinancialStatementDao` and `CorporateActionDao` switched from `mysql_gorm` to `postgres_gorm`
+        - `SchemaDao` switched to `postgres_gorm`; JSON queries rewritten: `JSON_TABLE`/`JSON_KEYS` → `LATERAL jsonb_object_keys()`
+        - New PostgreSQL migration: `migrations/postgresql/security/0002_financial_data.sql`
+            - 2 tables: `financial_statement`, `corporate_action` with PG-native types
+            - JSONB GIN indexes (`jsonb_path_ops`): `idx_fs_data_gin`, `idx_ca_data_gin`
+            - Partial indexes on `ann_date` and `comp_type_code`
+        - **JSONB query capabilities**:
+            - `FinancialStatementFilters` / `CorporateActionFilters`: new `DataContains` (`@>`) and `DataHasKey` (`?`) fields
+            - Enables queries like: `WHERE data_json @> '{"TOTAL_ASSETS": 100000000}'`
+        - Model updates: `type:json` → `type:jsonb`, `int` → `smallint` for `comp_type_code`
+        - Bug fix: `_int()` in Artemis `base_financial_statement.py` — `int(float(val))` for `COMP_TYPE_CODE` type inconsistency
+        - New doc: `2026-05-07 FINANCIAL_DATA_PG_MIGRATION.md`
+        - Upgrade infra to v0.17.2 to support latest `postgres_gorm` features.
 - v1.5.0
     - **PostgreSQL Migration Phase 1** — taxonomy & industry tables migrated to PostgreSQL
         - **Only TaxonomyDao** switched from `mysql_gorm` to `postgres_gorm`

@@ -2,9 +2,10 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
@@ -15,7 +16,7 @@ import (
 // FinancialStatementDao handles persistence for financial statement data.
 type FinancialStatementDao struct {
 	*core.BaseComponent
-	GormComp *mg.GormComponent `infra:"dep:mysql_gorm"`
+	GormComp *pg.PostgresGormComponent `infra:"dep:postgres_gorm"`
 	db       *gorm.DB
 	dsName   string
 }
@@ -95,6 +96,17 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 		if f.CompTypeCode != nil {
 			q = q.Where("comp_type_code = ?", *f.CompTypeCode)
 		}
+		// PostgreSQL JSONB containment: data_json @> '{"TOTAL_ASSETS": 1000000}'
+		if len(f.DataContains) > 0 {
+			jsonBytes, err := json.Marshal(f.DataContains)
+			if err == nil {
+				q = q.Where("data_json @> ?::jsonb", string(jsonBytes))
+			}
+		}
+		// PostgreSQL JSONB key existence: data_json ? 'TOTAL_ASSETS'
+		if f.DataHasKey != "" {
+			q = q.Where("data_json ?? ?", f.DataHasKey)
+		}
 	}
 	if limit > 0 {
 		q = q.Limit(limit)
@@ -136,6 +148,15 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 		}
 		if f.CompTypeCode != nil {
 			q = q.Where("comp_type_code = ?", *f.CompTypeCode)
+		}
+		if len(f.DataContains) > 0 {
+			jsonBytes, err := json.Marshal(f.DataContains)
+			if err == nil {
+				q = q.Where("data_json @> ?::jsonb", string(jsonBytes))
+			}
+		}
+		if f.DataHasKey != "" {
+			q = q.Where("data_json ?? ?", f.DataHasKey)
 		}
 	}
 	if err := q.Count(&cnt).Error; err != nil {
