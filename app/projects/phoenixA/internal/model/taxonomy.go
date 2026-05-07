@@ -13,9 +13,9 @@ type TaxonomyCategory struct {
 	Name       string    `gorm:"type:varchar(255);not null" json:"name"`
 	ParentCode *string   `gorm:"type:varchar(64)" json:"parent_code,omitempty"`
 	IndexCode  *string   `gorm:"type:varchar(64)" json:"index_code,omitempty"`
-	Level      uint8     `gorm:"type:tinyint unsigned;not null;default:0" json:"level"`
-	IsLeaf     bool      `gorm:"type:tinyint(1);not null;default:1" json:"is_leaf"`
-	AttrsJSON  *string   `gorm:"column:attrs_json;type:json" json:"attrs,omitempty"`
+	Level      uint8     `gorm:"type:smallint;not null;default:0" json:"level"`
+	IsLeaf     bool      `gorm:"type:boolean;not null;default:true" json:"is_leaf"`
+	AttrsJSON  *string   `gorm:"column:attrs_json;type:jsonb" json:"attrs,omitempty"`
 	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
@@ -107,4 +107,10 @@ type TaxonomyCategoryFilters struct {
 	Level      *uint8
 	IsLeaf     *bool
 	Name       string // LIKE match
+
+	// ── JSONB filters (PostgreSQL-specific, leverages GIN index) ──
+	// AttrsContains: JSONB @> containment, e.g. {"is_pub": 1} matches rows where attrs_json contains that key-value.
+	AttrsContains map[string]interface{}
+	// AttrsHasKey: JSONB ? operator, e.g. "change_reason" matches rows where attrs_json has that key.
+	AttrsHasKey string
 }

@@ -1,7 +1,22 @@
 # VERSION
-v1.4.0
+v1.5.0
 
 # Changelog
+- v1.5.0
+    - **PostgreSQL Migration Phase 1** — taxonomy & industry tables migrated to PostgreSQL
+        - **Only TaxonomyDao** switched from `mysql_gorm` to `postgres_gorm`
+        - All other DAOs (security, bars, strategy_run, financial_statement, corporate_action, schema) remain on MySQL
+        - New PostgreSQL migration: `migrations/postgresql/security/0001_security_init.sql`
+            - 5 tables: taxonomy_category, taxonomy_security_map, industry_constituent, industry_weight, industry_daily
+            - PG-native types: BIGSERIAL, BOOLEAN, JSONB, TIMESTAMPTZ, NUMERIC
+        - **JSONB advantages leveraged**:
+            - `taxonomy_category.attrs_json` uses JSONB with GIN index (`idx_tc_attrs_gin`)
+            - Enables fast `@>` containment queries: e.g. `WHERE attrs_json @> '{"is_pub": 1}'`
+            - Enables `?` key-existence queries: e.g. `WHERE attrs_json ? 'change_reason'`
+            - `TaxonomyCategoryFilters` gains `AttrsContains` and `AttrsHasKey` fields
+        - `config.yaml`: added `postgres_gorm.data_sources.security` (schema: `security_dev`)
+        - `mysql_gorm` kept enabled — all non-taxonomy DAOs still read/write MySQL
+        - Taxonomy model updated: `tinyint unsigned` → `smallint`, `tinyint(1)` → `boolean`, `json` → `jsonb`
 - v1.4.0
     - **Taxonomy V2** — multi-taxonomy, multi-market support for industry data
         - New fields: `taxonomy` (swhy/citic/gics/concept/region/mairui) and `market` (zh_a/us/jp/hk) on all taxonomy/industry tables

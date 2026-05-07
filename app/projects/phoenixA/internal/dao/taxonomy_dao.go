@@ -2,10 +2,11 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
-	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
@@ -16,7 +17,7 @@ import (
 // TaxonomyDao is the unified DAO for taxonomy categories and security mappings.
 type TaxonomyDao struct {
 	*core.BaseComponent
-	GormComp *mg.GormComponent `infra:"dep:mysql_gorm"`
+	GormComp *pg.PostgresGormComponent `infra:"dep:postgres_gorm"`
 	db       *gorm.DB
 	dsName   string
 }
@@ -88,6 +89,17 @@ func (d *TaxonomyDao) ListCategories(ctx context.Context, source, taxonomy, mark
 		if f.Name != "" {
 			q = q.Where("name LIKE ?", "%"+strings.TrimSpace(f.Name)+"%")
 		}
+		// PostgreSQL JSONB containment: attrs_json @> '{"is_pub": 1}'
+		if len(f.AttrsContains) > 0 {
+			jsonBytes, err := json.Marshal(f.AttrsContains)
+			if err == nil {
+				q = q.Where("attrs_json @> ?::jsonb", string(jsonBytes))
+			}
+		}
+		// PostgreSQL JSONB key existence: attrs_json ? 'change_reason'
+		if f.AttrsHasKey != "" {
+			q = q.Where("attrs_json ?? ?", f.AttrsHasKey)
+		}
 	}
 	if limit > 0 {
 		q = q.Limit(limit)
@@ -118,6 +130,15 @@ func (d *TaxonomyDao) CountCategories(ctx context.Context, source, taxonomy, mar
 		}
 		if f.IsLeaf != nil {
 			q = q.Where("is_leaf = ?", *f.IsLeaf)
+		}
+		if len(f.AttrsContains) > 0 {
+			jsonBytes, err := json.Marshal(f.AttrsContains)
+			if err == nil {
+				q = q.Where("attrs_json @> ?::jsonb", string(jsonBytes))
+			}
+		}
+		if f.AttrsHasKey != "" {
+			q = q.Where("attrs_json ?? ?", f.AttrsHasKey)
 		}
 	}
 	if err := q.Count(&cnt).Error; err != nil {

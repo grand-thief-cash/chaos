@@ -31,6 +31,26 @@ mysql_gorm:
       migrate_enabled: true
       migrate_dir: ./migrations
 
+postgres_gorm:
+  enabled: true
+  log_level: info
+  slow_threshold: 200ms
+  data_sources:
+    security:
+      host: 127.0.0.1
+      port: 5432
+      user: chaos_app
+      password: changeme
+      database: chaos_db
+      schema: security_dev
+      max_open_conns: 10
+      max_idle_conns: 5
+      conn_max_life: 60m
+      ping_on_start: true
+      skip_default_tx: true
+      migrate_enabled: true
+      migrate_base: ./migrations
+
 http_server:
   enabled: true
   address: ":18085"
