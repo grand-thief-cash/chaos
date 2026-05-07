@@ -1,90 +1,291 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Iterator, List, Optional
 
 import requests
 
 from artemis.core.clients.dept_clients import HTTPDeptServiceClient
 
 
+# Unified field name constants (matching PhoenixA v2)
+_V2_BARS_FIELDS = [
+    "trade_date",
+    "symbol",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+]
+
+
+def _normalize_bars_v2_to_cache(bars: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Rename v2 fields to CacheEngine-compatible names: trade_date→date, symbol→code."""
+    out = []
+    for bar in bars:
+        row = dict(bar)
+        if "trade_date" in row and "date" not in row:
+            row["date"] = row.pop("trade_date")
+        if "symbol" in row and "code" not in row:
+            row["code"] = row.pop("symbol")
+        out.append(row)
+    return out
+
+
 class PhoenixAClient(HTTPDeptServiceClient):
     """
     Client for interacting with PhoenixA service.
     Inherits HTTPDeptServiceClient for OTEL traceparent injection + connection pooling.
-    """
-    # Update stock codes of Zh A market
-    def stock_zh_a_list_batch_upsert(self, payload: List[Dict[str, Any]], run_id: Optional[int] = None) -> bool:
-        """
-        Call POST /api/v1/stock/list/batch_upsert
-        """
-        path = "/api/v1/stock/list/batch_upsert"
-        # router_all.go: r.Post("/batch_upsert", stockZhAListCtrl.BatchUpsert) under /api/v1/stock/list
 
+    All methods use PhoenixA v2 API with unified field naming:
+      - symbol (not code)
+      - trade_date (not date)
+      - period (not timeframe/freq)
+    """
+
+    # ──────────── Securities (v2) ────────────
+
+    def upsert_securities(self, payload: List[Dict[str, Any]], run_id: Optional[int | str] = None) -> bool:
+        """Batch upsert securities via v2 API."""
+        path = "/api/v2/securities/upsert"
         try:
             resp = self.post(path, payload)
             ok = 200 <= resp.status_code < 300
             if not ok and self.logger:
-                 self.logger.warning({
-                    'event': 'phoenixA_batch_upsert_failure',
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_securities_failure',
                     'run_id': run_id,
                     'path': path,
                     'status': resp.status_code,
-                    'body_snippet': resp.text[:120]
+                    'body_snippet': resp.text[:120],
                 })
             return ok
         except Exception as e:
             if self.logger:
                 self.logger.error({
-                    'event': 'phoenixA_batch_upsert_exception',
+                    'event': 'phoenixA_upsert_securities_exception',
                     'run_id': run_id,
-                    'path': path,
-                    'error': str(e)
+                    'error': str(e),
                 })
-            raise e
-    def get_stock_zh_a_codes(self, codes: Optional[List[str]] = None) -> Dict[str, Dict[str, any]]:
-        path = "/api/v1/stock/list/listFiltered"
-        params: Dict[str, Any] = {"limit": "20000"}
-        result: Dict[str, Dict[str, any]]= {}
-        if codes:
-            # Change: send comma separated string for code_list
-            params["code_list"] = ",".join([str(c) for c in codes if str(c).strip()])
+            raise
+
+    def get_securities(
+        self,
+        *,
+        symbols: Optional[List[str]] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+        exchanges: Optional[List[str]] = None,
+        limit: int = 20000,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Query securities from v2 API."""
+        path = "/api/v2/securities"
+        params: Dict[str, Any] = {
+            "limit": str(limit),
+            "asset_type": asset_type,
+            "market": market,
+        }
+        if symbols:
+            params["symbol_list"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        if exchanges:
+            params["exchange"] = ",".join([str(e).strip().upper() for e in exchanges if str(e).strip()])
+
+        result: Dict[str, Dict[str, Any]] = {}
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
                 data = resp.json()
                 rows = data.get("data") or data.get("list") or []
-
                 for item in rows:
-                    if isinstance(item, dict) and "code" in item:
-                        code = str(item["code"])
-                        result[code] = {
-                            "code": code,
-                            "exchange": str(item.get("exchange", "")).upper()
+                    if isinstance(item, dict) and "symbol" in item:
+                        sym = str(item["symbol"])
+                        result[sym] = {
+                            "symbol": sym,
+                            "name": str(item.get("name", "")),
+                            "exchange": str(item.get("exchange", "")).upper(),
+                            "asset_type": str(item.get("asset_type", asset_type)),
+                            "market": str(item.get("market", market)),
                         }
-                return result
             return result
         except Exception as e:
             if self.logger:
-                self.logger.error({'event': 'phoenixA_get_all_codes_failed', 'error': str(e)})
+                self.logger.error({'event': 'phoenixA_get_securities_failed', 'error': str(e)})
             return {}
 
+    # ──────────── Bars (v2) ────────────
 
-    def get_stock_zh_a_last_updates(self, period: str, adjust: str, codes: Optional[List[str]] = None) -> Dict[str, str]:
-        """
-        Call GET /api/v1/stock/hist/last_update
-        Returns a map of code -> last_update_date (YYYY-MM-DD or empty)
+    def upsert_bars(
+        self,
+        *,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+        period: str,
+        adjust: str,
+        source: str = "",
+        bars: List[Dict[str, Any]],
+        ext: Optional[List[Dict[str, Any]]] = None,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert bars via v2 API."""
+        path = f"/api/v2/bars/{asset_type}/{market}/upsert"
+        payload = {
+            "meta": {
+                "period": period,
+                "adjust": adjust,
+                "source": source,
+            },
+            "bars": bars,
+        }
+        if ext:
+            payload["ext"] = ext
+        try:
+            resp = self.post(path, payload)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_bars_failed',
+                    'run_id': run_id,
+                    'status': resp.status_code,
+                    'asset_type': asset_type,
+                    'market': market,
+                    'bars_count': len(bars),
+                    'body_snippet': resp.text[:120],
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_bars_exception',
+                    'run_id': run_id,
+                    'error': str(e),
+                })
+            raise
 
-        Optional:
-            codes: list of raw_code (6-digit) to filter.
+    def get_bars(
+        self,
+        *,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        period: str = "daily",
+        adjust: str = "nf",
+        fields: Optional[List[str]] = None,
+        source: str | None = None,
+        limit: int = 5000,
+        normalize_for_cache: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Unified bars query via v2 API with pagination.
+
+        If normalize_for_cache=True, renames trade_date→date and symbol→code
+        for CacheEngine compatibility.
         """
-        path = "/api/v1/stock/hist/last_update"
+        return list(self.iter_bars(
+            asset_type=asset_type,
+            market=market,
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            period=period,
+            adjust=adjust,
+            fields=fields,
+            source=source,
+            limit=limit,
+            normalize_for_cache=normalize_for_cache,
+        ))
+
+    def iter_bars(
+        self,
+        *,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        period: str = "daily",
+        adjust: str = "nf",
+        fields: Optional[List[str]] = None,
+        source: str | None = None,
+        limit: int = 5000,
+        normalize_for_cache: bool = True,
+    ) -> Iterator[Dict[str, Any]]:
+        """Paginated bars iterator via v2 API."""
+        path = f"/api/v2/bars/{asset_type}/{market}"
+        request_fields = fields or _V2_BARS_FIELDS
+        page_size = max(int(limit or 0), 1)
+        offset = 0
+
+        try:
+            while True:
+                params: Dict[str, Any] = {
+                    "symbol": symbol,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "period": period,
+                    "adjust": adjust,
+                    "fields": ",".join(request_fields),
+                    "limit": page_size,
+                    "offset": offset,
+                }
+                if source:
+                    params["source"] = source
+
+                resp = self.get(path, params=params)
+                if not (200 <= resp.status_code < 300):
+                    if self.logger:
+                        self.logger.error({
+                            'event': 'phoenixA_get_bars_failed',
+                            'path': path,
+                            'status': resp.status_code,
+                            'symbol': symbol,
+                            'period': period,
+                            'offset': offset,
+                            'body_snippet': resp.text[:120],
+                        })
+                    return
+
+                batch = self._coerce_hist_rows(resp.json())
+                if not batch:
+                    return
+
+                if normalize_for_cache:
+                    batch = _normalize_bars_v2_to_cache(batch)
+
+                for row in batch:
+                    yield row
+
+                if len(batch) < page_size:
+                    return
+
+                offset += len(batch)
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_bars_exception',
+                    'symbol': symbol,
+                    'period': period,
+                    'error': str(e),
+                })
+            raise
+
+    def get_bars_last_update(
+        self,
+        *,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+        period: str,
+        adjust: str,
+        symbols: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        """Query last update dates for symbols via v2 API."""
+        path = f"/api/v2/bars/{asset_type}/{market}/last_update"
         params: Dict[str, Any] = {"period": period, "adjust": adjust}
-        if codes:
-            # Change: send comma separated string for code_list
-            params["codes"] = ",".join([str(c) for c in codes if str(c).strip()])
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
 
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
-                # Expecting Dict[str, str] from Go Controller
                 data = resp.json()
                 if isinstance(data, dict):
                     return data
@@ -92,69 +293,480 @@ class PhoenixAClient(HTTPDeptServiceClient):
         except Exception as e:
             if self.logger:
                 self.logger.error({
-                    'event': 'phoenixA_get_last_updates_failed',
-                    'frequency': period,
+                    'event': 'phoenixA_get_bars_last_update_failed',
+                    'period': period,
                     'adjust': adjust,
-                    'code_list_size': len(codes) if codes else 0,
-                    'error': str(e)
+                    'error': str(e),
                 })
             return {}
 
-    def upsert_stock_zh_a_hist(self, data: Dict[str, Any], run_id: Optional[int] = None) -> bool:
-        """
-        Call POST /api/v1/stock/hist/data
-        """
-        path = "/api/v1/stock/hist/upsert"
+    # ──────────── Taxonomy (v2) ────────────
+
+    def upsert_taxonomy_categories(
+        self,
+        categories: List[Dict[str, Any]],
+        source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert taxonomy categories via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert"
         try:
-            resp = self.post(path, data)
+            resp = self.post(path, categories)
             ok = 200 <= resp.status_code < 300
             if not ok and self.logger:
-                 self.logger.error({
-                    'event': 'phoenixA_save_hist_data_failed',
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_taxonomy_failure',
                     'run_id': run_id,
+                    'source': source,
                     'status': resp.status_code,
-                    'data_meta': data.get("meta", {}),
-                    'data_size': len(data.get("data", [])),
-                    'body_snippet': resp.text[:120]
+                    'body_snippet': resp.text[:120],
+                    'count': len(categories) if categories else 0,
                 })
             return ok
         except Exception as e:
             if self.logger:
                 self.logger.error({
-                    'event': 'phoenixA_save_hist_data_exception',
+                    'event': 'phoenixA_upsert_taxonomy_exception',
                     'run_id': run_id,
-                    'data_meta': data.get("meta", {}),
-                    'data_size': len(data.get("data", [])),
-                    'error': str(e)
+                    'source': source,
+                    'error': str(e),
                 })
-            raise e
+            raise
 
-    # Store market category
-    def upsert_market_categories(self, categories: List[Dict[str, Any]], data_source: str, run_id: Optional[int] = None) -> bool:
-        """
-        Call POST /api/v1/market_category/upsert
-        payload: list of MarketCategory dicts
-        """
-        path = f"/api/v1/market_category/upsert/{data_source}"
+    # ──────────── Strategy Run (unchanged path) ────────────
+
+    def save_strategy_run_summary(self, payload: Dict[str, Any], run_id: Optional[int | str] = None) -> bool:
+        path = "/api/v1/strategy/run/summary/upsert"
         try:
-            resp = requests.post(self.base_url+path, json=categories)
+            resp = self.post(path, payload)
             ok = 200 <= resp.status_code < 300
             if not ok and self.logger:
-                self.logger.warning({
-                    'event': 'phoenixA_upsert_market_category_failure',
+                self.logger.error({
+                    'event': 'phoenixA_save_strategy_run_summary_failed',
                     'run_id': run_id,
                     'path': path,
                     'status': resp.status_code,
                     'body_snippet': resp.text[:120],
-                    'list_size': len(categories) if categories is not None else 0
                 })
             return ok
         except Exception as e:
             if self.logger:
                 self.logger.error({
-                    'event': 'phoenixA_upsert_market_category_exception',
+                    'event': 'phoenixA_save_strategy_run_summary_exception',
                     'run_id': run_id,
-                    'path': path,
                     'error': str(e),
-                    'list_size': len(categories) if categories is not None else 0
                 })
+            raise
+
+    def save_strategy_run_artifacts(self, payload: List[Dict[str, Any]], run_id: Optional[int | str] = None) -> bool:
+        path = "/api/v1/strategy/run/artifact/upsert"
+        try:
+            resp = self.post(path, payload)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_save_strategy_run_artifacts_failed',
+                    'run_id': run_id,
+                    'artifact_count': len(payload),
+                    'body_snippet': resp.text[:120],
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_save_strategy_run_artifacts_exception',
+                    'run_id': run_id,
+                    'artifact_count': len(payload),
+                    'error': str(e),
+                })
+            raise
+
+    # ──────────── Internal helpers ────────────
+
+    def _coerce_hist_rows(self, payload: Any) -> List[Dict[str, Any]]:
+        rows = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            return []
+        return [row for row in rows if isinstance(row, dict)]
+
+    # ──────────── Backward-compatible aliases ────────────
+
+    def stock_zh_a_list_batch_upsert(self, payload: List[Dict[str, Any]], run_id: Optional[int | str] = None) -> bool:
+        """Legacy alias → upsert_securities. Converts code/company to symbol/name."""
+        converted = []
+        for item in payload:
+            converted.append({
+                "symbol": item.get("code", item.get("symbol", "")),
+                "name": item.get("company", item.get("name", "")),
+                "exchange": item.get("exchange", ""),
+                "asset_type": "stock",
+                "market": "zh_a",
+            })
+        return self.upsert_securities(converted, run_id=run_id)
+
+    def get_stock_zh_a_codes(self, codes: Optional[List[str]] = None, exchanges: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+        """Legacy alias → get_securities."""
+        return self.get_securities(symbols=codes, exchanges=exchanges)
+
+    def get_stock_zh_a_last_updates(self, period: str, adjust: str, codes: Optional[List[str]] = None) -> Dict[str, str]:
+        """Legacy alias → get_bars_last_update."""
+        return self.get_bars_last_update(period=period, adjust=adjust, symbols=codes)
+
+    def upsert_stock_zh_a_hist(self, data: Dict[str, Any], run_id: Optional[int | str] = None) -> bool:
+        """Legacy alias → upsert_bars. Converts old meta format."""
+        meta = data.get("meta", {})
+        bars_raw = data.get("data", [])
+        return self.upsert_bars(
+            period=meta.get("period", "daily"),
+            adjust=meta.get("adjust", "nf"),
+            source=meta.get("source", ""),
+            bars=bars_raw,
+            run_id=run_id,
+        )
+
+    def upsert_market_categories(self, categories: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
+        """Legacy alias → upsert_taxonomy_categories."""
+        return self.upsert_taxonomy_categories(categories, source=data_source, taxonomy=taxonomy, market=market, run_id=run_id)
+
+    def upsert_industry_constituents(self, constituents: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
+        """Upsert industry index constituents via v2 API."""
+        path = f"/api/v2/taxonomy/{data_source}/{taxonomy}/{market}/industry-constituents/upsert"
+        try:
+            resp = self.post(path, constituents)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_industry_constituents_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(constituents) if constituents else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_industry_constituents_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
+
+    def upsert_industry_weights(self, weights: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
+        """Upsert industry index constituent daily weights via v2 API."""
+        path = f"/api/v2/taxonomy/{data_source}/{taxonomy}/{market}/industry-weights/upsert"
+        try:
+            resp = self.post(path, weights)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_industry_weights_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(weights) if weights else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_industry_weights_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
+
+    def upsert_industry_daily(self, bars: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
+        """Upsert industry index daily bars via v2 API."""
+        path = f"/api/v2/taxonomy/{data_source}/{taxonomy}/{market}/industry-daily/upsert"
+        try:
+            resp = self.post(path, bars)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_industry_daily_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(bars) if bars else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_industry_daily_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
+
+    # ──────────── Financial Statements (v2) ────────────
+
+    def upsert_financial_statements(
+        self,
+        statements: List[Dict[str, Any]],
+        data_source: str,
+        statement_type: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert financial statements via v2 API."""
+        path = f"/api/v2/financial/{data_source}/{statement_type}/upsert"
+        try:
+            resp = self.post(path, statements)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_financial_statements_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'statement_type': statement_type,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(statements) if statements else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_financial_statements_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'statement_type': statement_type,
+                    'error': str(e),
+                })
+            raise
+
+    def query_financial_statements(
+        self,
+        *,
+        source: str,
+        statement_type: str,
+        symbol: str = "",
+        period_start: str = "",
+        period_end: str = "",
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query financial statements via v2 API."""
+        path = f"/api/v2/financial/{source}/{statement_type}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if symbol:
+            params["symbol"] = symbol
+        if period_start:
+            params["period_start"] = period_start
+        if period_end:
+            params["period_end"] = period_end
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_financial_statements_failed',
+                    'source': source,
+                    'statement_type': statement_type,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+
+    # ──────────── Corporate Actions (v2) ────────────
+
+    def upsert_corporate_actions(
+        self,
+        actions: List[Dict[str, Any]],
+        data_source: str,
+        action_type: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert corporate actions via v2 API."""
+        path = f"/api/v2/corporate-action/{data_source}/{action_type}/upsert"
+        try:
+            resp = self.post(path, actions)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_corporate_actions_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'action_type': action_type,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(actions) if actions else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_corporate_actions_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'action_type': action_type,
+                    'error': str(e),
+                })
+            raise
+
+    def query_corporate_actions(
+        self,
+        *,
+        source: str,
+        action_type: str,
+        symbol: str = "",
+        period_start: str = "",
+        period_end: str = "",
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query corporate actions via v2 API."""
+        path = f"/api/v2/corporate-action/{source}/{action_type}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if symbol:
+            params["symbol"] = symbol
+        if period_start:
+            params["period_start"] = period_start
+        if period_end:
+            params["period_end"] = period_end
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_corporate_actions_failed',
+                    'source': source,
+                    'action_type': action_type,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+
+    def query_industry_daily(
+        self,
+        *,
+        source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
+        index_code: str,
+        start_date: str = "",
+        end_date: str = "",
+        limit: int = 5000,
+    ) -> List[Dict[str, Any]]:
+        """Query industry index daily bars via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily"
+        params: Dict[str, Any] = {"index_code": index_code}
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if limit:
+            params["limit"] = limit
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                return data.get("data", [])
+            return []
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_industry_daily_failed',
+                    'index_code': index_code,
+                    'error': str(e),
+                })
+            return []
+
+    def query_industry_categories(
+        self,
+        *,
+        source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
+        level: Optional[int] = None,
+        parent_code: Optional[str] = None,
+        name: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 500,
+    ) -> Dict[str, Any]:
+        """Query industry taxonomy categories via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if level is not None:
+            params["level"] = level
+        if parent_code is not None:
+            params["parent_code"] = parent_code
+        if name:
+            params["name"] = name
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"list": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_industry_categories_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return {"list": [], "total": 0}
+
+    def query_industry_constituents_by_index(
+        self,
+        *,
+        source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
+        index_code: str,
+        page: int = 1,
+        page_size: int = 500,
+    ) -> Dict[str, Any]:
+        """Query industry constituents by index code via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{index_code}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"list": [], "count": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_constituents_by_index_failed',
+                    'index_code': index_code,
+                    'error': str(e),
+                })
+            return {"list": [], "count": 0}
+
+    def query_industry_constituents_by_stock(
+        self,
+        *,
+        source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
+        con_code: str,
+    ) -> List[Dict[str, Any]]:
+        """Query industry memberships for a stock via v2 API."""
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_stock/{con_code}"
+        try:
+            resp = self.get(path, {})
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return []
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_constituents_by_stock_failed',
+                    'con_code': con_code,
+                    'error': str(e),
+                })
+            return []

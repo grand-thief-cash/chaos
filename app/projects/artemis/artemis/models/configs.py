@@ -71,6 +71,34 @@ class ServiceEndpointCfg(BaseModel):
     port: Optional[int] = None
 
 
+class TaskEngineCfg(BaseModel):
+    """Task engine tunables."""
+    worker_task_timeout: int = 180
+    amazing_data_cache_dir: str = "../cache/artemis"
+
+
+class PartitionRuleCfg(BaseModel):
+    """A single partition rule: match conditions + granularity."""
+    match: Dict[str, str] = Field(default_factory=dict)
+    granularity: str = "yearly"  # "yearly" | "monthly"
+
+
+class CacheEngineCfg(BaseModel):
+    """Cache engine configuration."""
+    enabled: bool = False
+    cache_dir: str = "./cache/artemis"
+    max_cache_size: str = "5GB"
+    eviction_policy: str = "lru"
+    eviction_check_interval: int = 100
+    partition_rules: list[PartitionRuleCfg] = Field(default_factory=list)
+
+
+class EngineCfg(BaseModel):
+    """Top-level engine configuration."""
+    task_engine: TaskEngineCfg = Field(default_factory=TaskEngineCfg)
+    cache_engine: CacheEngineCfg = Field(default_factory=CacheEngineCfg)
+
+
 class DeptServicesCfg(BaseModel):
     """Dependent services configuration.
 
@@ -86,6 +114,26 @@ class DeptServicesCfg(BaseModel):
     extras: Dict[str, ServiceEndpointCfg] = Field(default_factory=dict)
 
 
+class DataOption(BaseModel):
+    """单个选项（value + 展示 label）。"""
+    value: str
+    label: str
+
+
+class AdjustRule(BaseModel):
+    """asset_type → 可用 adjust 列表。"""
+    asset_type: str
+    options: list[DataOption]
+
+
+class DataOptionsCfg(BaseModel):
+    """Workbench 数据维度选项配置，顶层独立于 engine。"""
+    asset_types: list[DataOption] = Field(default_factory=list)
+    markets: list[DataOption] = Field(default_factory=list)
+    periods: list[DataOption] = Field(default_factory=list)
+    adjust_rules: list[AdjustRule] = Field(default_factory=list)
+
+
 class Config(BaseModel):
     env: str = 'development'
     server: ServerCfg = Field(default_factory=ServerCfg)
@@ -95,6 +143,12 @@ class Config(BaseModel):
 
     # SDK configurations
     sdk: Dict[str, Any] = Field(default_factory=dict)
+
+    # task engine
+    engine: EngineCfg = Field(default_factory=EngineCfg)
+
+    # workbench data dimension options (top-level, not under engine)
+    data_options: DataOptionsCfg = Field(default_factory=DataOptionsCfg)
 
     # new preferred config
     dept_services: DeptServicesCfg = Field(default_factory=DeptServicesCfg)

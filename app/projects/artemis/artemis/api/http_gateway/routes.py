@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Request, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
-import artemis.task_units  # noqa: F401 registers tasks
+import artemis.engines.task_engine  # noqa: F401 registers tasks
 from artemis.core import registry, cfg_mgr
 from artemis.core.runtime_files import RuntimeFileService
 from artemis.core.task_engine import TaskEngine
@@ -43,6 +43,20 @@ add_trace_id_middleware(app)
 engine = TaskEngine()
 logger = get_logger('http.routes')
 file_service = RuntimeFileService()
+
+@router.post('/tasks/cancel')
+async def cancel_task(request: Request):
+    """Cancel a running task by run_id (best-effort)."""
+    payload = await request.json()
+    run_id = payload.get('run_id')
+    if run_id is None:
+        raise HTTPException(status_code=400, detail='run_id is required')
+    canceled = engine.cancel_task(run_id)
+    if canceled:
+        logger.info({'event': 'task_cancel_requested', 'run_id': run_id})
+        return {'canceled': True, 'run_id': run_id}
+    return {'canceled': False, 'run_id': run_id, 'reason': 'not_found'}
+
 
 @router.get('/tasks')
 async def tasks():
@@ -232,13 +246,13 @@ async def delete_task_unit_file(path: str):
         # We can reuse similar logic to scan_unregistered but targeted
         import importlib
         import inspect
-        from artemis.task_units.base import BaseTaskUnit
+        from artemis.engines.task_engine.base import BaseTaskUnit
         
         # Calculate module name from path
         # Assuming path is relative to task_units e.g. zh/stock.py
         rel_path = path.replace('\\', '/').split('.')[0].replace('/', '.')
-        # But we need full module path: artemis.task_units.zh.stock
-        module_name = f"artemis.task_units.{rel_path}"
+        # But we need full module path: artemis.engines.task_engine.zh.stock
+        module_name = f"artemis.engines.task_engine.{rel_path}"
         
         # 2. Check for registered tasks
         tasks_to_unregister = []
@@ -280,3 +294,6 @@ async def delete_task_unit_file(path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 app.include_router(router)
+
+from artemis.api.http_gateway.workbench_routes import router as workbench_router  # noqa: E402
+app.include_router(workbench_router)

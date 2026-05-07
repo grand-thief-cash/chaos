@@ -143,7 +143,7 @@ class TaskRegistry:
         Scans the task_units directory for classes that inherit from BaseTaskUnit
         but are not currently registered in the task registry.
         """
-        from artemis.task_units.base import BaseTaskUnit # Import locally to avoid circular dependency
+        from artemis.engines.task_engine.base import BaseTaskUnit # Import locally to avoid circular dependency
         unregistered = []
 
         # Base directory for task units
@@ -162,7 +162,7 @@ class TaskRegistry:
             try:
                 # find the index of the last 'artemis'
                 # e.g. /app/projects/artemis/artemis/task_units/zh/stock.py
-                # we want module: artemis.task_units.zh.stock
+                # we want module: artemis.engines.task_engine.zh.stock
                 # Logic: find 'artemis' followed by 'task_units'
 
                 # Simple heuristic: find right-most 'artemis' folder in path because that's the package root

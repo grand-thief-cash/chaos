@@ -1,7 +1,18 @@
 # VERSION
-v0.13.3
+v0.14.2
 
 # Changelog
+- v0.14.2
+    - Fixed task import failing on re-import after soft-delete: reactivate soft-deleted tasks by updating all fields and setting deleted=0, instead of hard-deleting (which was blocked by FK constraint from task_runs).
+- v0.14.1
+    - Fixed inconsistent time in task_run table.
+- v0.14.0
+    - Added task cancel to remote service.
+- v0.13.5
+    - Added config in config doc
+- v0.13.4
+    - Renamed documents of cronjob.
+    - Added documents of 2026-04-01 FEATURE_EXTEND_RUNNING_STRATEGY.
 - v0.13.3
     - Added export and import for tasks.
     - Fixed cancel for callback tasks.

@@ -9,9 +9,9 @@ from artemis.core.context import TaskContext
 from artemis.core.task_engine import TaskEngine
 from artemis.core.task_registry import registry
 from artemis.models.task_req import TaskRunReq
-from artemis.task_units.base import BaseTaskUnit
-from artemis.task_units.download.zh.stock_zh_a_hist_parent import StockZhAHistParent
-from artemis.task_units.orchestrator_unit import OrchestratorUnit
+from artemis.engines.task_engine.base import BaseTaskUnit
+from artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent import StockZhAHistParent
+from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 
 
 class SoftFailWorker(BaseTaskUnit):
@@ -35,10 +35,10 @@ class SoftFailParent(OrchestratorUnit):
 
 
 class FakePhoenixBadLastUpdateClient(NoopDeptServiceClient):
-    def get_stock_zh_a_codes(self, codes=None):
-        return {"600000": {"code": "600000", "exchange": "SH"}}
+    def get_securities(self, *, symbols=None, asset_type="stock", market="zh_a", exchanges=None, limit=20000):
+        return {"600000": {"symbol": "600000", "exchange": "SH"}}
 
-    def get_stock_zh_a_last_updates(self, period, adjust, codes=None):
+    def get_bars_last_update(self, *, asset_type="stock", market="zh_a", period="daily", adjust="nf", symbols=None):
         return {"600000": "bad-date"}
 
 def build_req(task_code: str) -> TaskRunReq:
@@ -115,8 +115,8 @@ class TaskErrorPropagationTests(unittest.TestCase):
             return NoopDeptServiceClient()
 
         with patch.object(TaskContext, "build_dept_http_client", build_client), \
-             patch("artemis.task_units.download.zh.stock_zh_a_hist_parent.bs.login", return_value=type("LoginResult", (), {"error_code": "0"})()), \
-             patch("artemis.task_units.download.zh.stock_zh_a_hist_parent.bs.logout", return_value=None):
+             patch("artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent.bs.login", return_value=type("LoginResult", (), {"error_code": "0"})()), \
+             patch("artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent.bs.logout", return_value=None):
             result = TaskEngine().run(
                 TaskRunReq.model_validate(
                     {
@@ -133,7 +133,7 @@ class TaskErrorPropagationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], TaskStatus.FAILED.value)
         self.assertEqual(result["stats"]["failed_phase"], "plan")
-        self.assertEqual(result["error"], "Invalid last_update format from PhoenixA for code=600000: bad-date")
+        self.assertEqual(result["error"], "Invalid last_update format from PhoenixA for symbol=600000: bad-date")
 
 
 if __name__ == "__main__":

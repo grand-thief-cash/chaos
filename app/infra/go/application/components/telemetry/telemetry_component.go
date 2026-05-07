@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -23,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
@@ -50,7 +52,10 @@ func (tc *TelemetryComponent) Start(ctx context.Context) error {
 		return err
 	}
 	if tc.cfg == nil || !tc.cfg.Enabled {
-		return errors.New("telemetry disabled or missing config")
+		// Disabled: install no-op providers so tracing/metrics APIs don't panic, but emit nothing.
+		logging.Info(ctx, "telemetry component disabled, using no-op providers")
+		tc.started = true
+		return nil
 	}
 
 	beforeRatio := tc.cfg.SampleRatio
@@ -245,14 +250,38 @@ func (tc *TelemetryComponent) stdoutWriter() (io.Writer, error) {
 	if tc.cfg.StdoutFile == "" {
 		return os.Stdout, nil
 	}
-	f, err := os.OpenFile(tc.cfg.StdoutFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("open telemetry stdout file: %w", err)
+
+	// Use lumberjack for log rotation (consistent with logging component behavior).
+	dir := filepath.Dir(tc.cfg.StdoutFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("create telemetry log dir: %w", err)
+	}
+
+	maxSize := tc.cfg.FileMaxSizeMB
+	if maxSize <= 0 {
+		maxSize = 100 // default 100MB per file
+	}
+	maxAge := tc.cfg.FileMaxAgeDays
+	if maxAge <= 0 {
+		maxAge = 7 // default keep 7 days
+	}
+	maxBackups := tc.cfg.FileMaxBackups
+	if maxBackups <= 0 {
+		maxBackups = 5
+	}
+
+	lj := &lumberjack.Logger{
+		Filename:   tc.cfg.StdoutFile,
+		MaxSize:    maxSize,
+		MaxAge:     maxAge,
+		MaxBackups: maxBackups,
+		Compress:   true,
+		LocalTime:  true,
 	}
 	tc.shutdownFuncs = append(tc.shutdownFuncs, func(ctx context.Context) error {
-		return f.Close()
+		return lj.Close()
 	})
-	return f, nil
+	return lj, nil
 }
 
 func (tc *TelemetryComponent) Stop(ctx context.Context) error {
@@ -282,8 +311,11 @@ func (tc *TelemetryComponent) HealthCheck() error {
 	if err := tc.BaseComponent.HealthCheck(); err != nil {
 		return err
 	}
-	if tc.tp == nil || tc.mp == nil {
-		return errors.New("telemetry providers not initialized")
+	// When disabled or using ExporterNone, providers may be nil — that's OK.
+	if tc.cfg != nil && tc.cfg.Enabled && tc.cfg.Exporter != ExporterNone {
+		if tc.tp == nil || tc.mp == nil {
+			return errors.New("telemetry providers not initialized")
+		}
 	}
 	return nil
 }

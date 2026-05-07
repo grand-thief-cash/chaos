@@ -147,9 +147,9 @@ func (ic *InstrumentedClient) Do(ctx context.Context, method, path string, query
 	fields = append(fields, zap.Int("status", resp.StatusCode))
 	logging.Info(ctx, "http_client_request", fields...)
 
+	// Ensure body is always drained and closed when we're done processing.
 	defer func() {
-		// Ensure body drained if not read externally
-		if out == nil {
+		if resp != nil && resp.Body != nil {
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
@@ -198,9 +198,30 @@ func (ic *InstrumentedClient) doWithRetry(ctx context.Context, req *http.Request
 		return ic.Client.Do(req)
 	}
 
+	// Buffer request body so it can be replayed on each retry attempt.
+	// After the first Do(), the original body is consumed/closed by Transport.
+	var bodyBytes []byte
+	if req.Body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(req.Body)
+		req.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read request body for retry: %w", err)
+		}
+	}
+
 	backoff := ic.Retry.InitialBackoff
 	var lastErr error
 	for attempt := 1; attempt <= ic.Retry.MaxAttempts; attempt++ {
+		// Reset body for each attempt
+		if bodyBytes != nil {
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			req.ContentLength = int64(len(bodyBytes))
+			req.GetBody = func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+			}
+		}
+
 		resp, err := ic.Client.Do(req)
 		if err == nil && resp.StatusCode < 500 {
 			return resp, nil
@@ -218,8 +239,10 @@ func (ic *InstrumentedClient) doWithRetry(ctx context.Context, req *http.Request
 			break
 		}
 		// Only retry on transient network errors or >=500
-		if nErr, ok := lastErr.(net.Error); ok && !nErr.Temporary() && !nErr.Timeout() && (resp == nil || resp.StatusCode < 500) {
-			break
+		if nErr, ok := lastErr.(net.Error); ok && !nErr.Timeout() {
+			if resp == nil || resp.StatusCode < 500 {
+				break
+			}
 		}
 
 		select {

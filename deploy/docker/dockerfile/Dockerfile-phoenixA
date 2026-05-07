@@ -1,9 +1,5 @@
 FROM alpine:latest
 
-#RUN apk --no-cache add ca-certificates tzdata && \
-#    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
-#    echo "Asia/Shanghai" > /etc/timezone && \
-#    rm -rf /var/cache/apk/*
 RUN apk --no-cache add ca-certificates tzdata libc6-compat && \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone && \
@@ -20,4 +16,4 @@ RUN chmod +x /app/phoenixa
 
 EXPOSE 8085
 
-CMD ["/app/phoenixa", "-config=./config/config.yaml", "-env=product"]
+CMD ["/app/phoenixa", "-config=./config/config.yaml", "-env=production"]

@@ -111,29 +111,35 @@ func (r *runDaoImpl) CreateSkipped(ctx context.Context, run *model.TaskRun, skip
 }
 
 func (r *runDaoImpl) TransitionToRunning(ctx context.Context, runID int64) (bool, error) {
-	res := r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.Scheduled).Updates(map[string]any{"status": bizConsts.Running, "start_time": gorm.Expr("NOW()")})
+	now := time.Now()
+	res := r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.Scheduled).Updates(map[string]any{"status": bizConsts.Running, "start_time": &now})
 	return res.RowsAffected == 1 && res.Error == nil, res.Error
 }
 
 func (r *runDaoImpl) MarkSuccess(ctx context.Context, runID int64, code int, body string) error {
 	// Add status guard to avoid overwriting TIMEOUT/FAILED states set by scanner concurrently.
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.CallbackPending}).Updates(map[string]any{"status": bizConsts.Success, "response_code": code, "response_body": body, "end_time": gorm.Expr("NOW()")}).Error
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.CallbackPending}).Updates(map[string]any{"status": bizConsts.Success, "response_code": code, "response_body": body, "end_time": &now}).Error
 }
 
 func (r *runDaoImpl) MarkFailed(ctx context.Context, runID int64, errMsg string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Failed, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Failed, "error_message": errMsg, "end_time": &now}).Error
 }
 
 func (r *runDaoImpl) MarkCanceled(ctx context.Context, runID int64) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running, bizConsts.CallbackPending}).Updates(map[string]any{"status": bizConsts.Canceled, "end_time": gorm.Expr("NOW()")}).Error
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Scheduled, bizConsts.Running, bizConsts.CallbackPending}).Updates(map[string]any{"status": bizConsts.Canceled, "end_time": &now}).Error
 }
 
 func (r *runDaoImpl) MarkSkipped(ctx context.Context, runID int64, skipType bizConsts.RunStatus) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.Scheduled).Updates(map[string]any{"status": skipType, "end_time": gorm.Expr("NOW()")}).Error
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.Scheduled).Updates(map[string]any{"status": skipType, "end_time": &now}).Error
 }
 
 func (r *runDaoImpl) MarkTimeout(ctx context.Context, runID int64, errMsg string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Timeout, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status IN ?", runID, []bizConsts.RunStatus{bizConsts.Running, bizConsts.Scheduled}).Updates(map[string]any{"status": bizConsts.Timeout, "error_message": errMsg, "end_time": &now}).Error
 }
 
 func (r *runDaoImpl) MarkCallbackPending(ctx context.Context, runID int64) error {
@@ -141,11 +147,13 @@ func (r *runDaoImpl) MarkCallbackPending(ctx context.Context, runID int64) error
 }
 
 func (r *runDaoImpl) MarkFailedTimeout(ctx context.Context, runID int64, errMsg string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.CallbackPending).Updates(map[string]any{"status": bizConsts.FailedTimeout, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.CallbackPending).Updates(map[string]any{"status": bizConsts.FailedTimeout, "error_message": errMsg, "end_time": &now}).Error
 }
 
 func (r *runDaoImpl) MarkCallbackFailed(ctx context.Context, runID int64, errMsg string) error {
-	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.CallbackPending).Updates(map[string]any{"status": bizConsts.CallbackFailed, "error_message": errMsg, "end_time": gorm.Expr("NOW()")}).Error
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.TaskRun{}).Where("id=? AND status=?", runID, bizConsts.CallbackPending).Updates(map[string]any{"status": bizConsts.CallbackFailed, "error_message": errMsg, "end_time": &now}).Error
 }
 
 func (r *runDaoImpl) MarkCallbackPendingWithDeadline(ctx context.Context, runID int64, deadline time.Time) error {

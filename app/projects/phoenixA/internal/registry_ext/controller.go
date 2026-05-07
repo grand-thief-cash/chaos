@@ -1,26 +1,3 @@
 package registry_ext
 
-import (
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/config"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
-	"github.com/grand-thief-cash/chaos/app/infra/go/application/registry"
-	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/controller"
-)
-
-func init() {
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, controller.NewStockZhAListController(), nil
-	})
-
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, controller.NewStockZhAHistController(), nil
-	})
-
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, controller.NewMarketCategoryController(), nil
-	})
-
-	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, controller.NewCategoryStockMapController(), nil
-	})
-}
+// Legacy v1 Controller registrations removed — all registrations now in controller_v2.go.

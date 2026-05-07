@@ -1,0 +1,77 @@
+# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+
+# Compiled output
+/dist
+/tmp
+/out-tsc
+/bazel-out
+
+# Node
+/node_modules
+npm-debug.log
+yarn-error.log
+
+# IDEs and editors
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/*
+
+# Miscellaneous
+/.angular/cache
+.sass-cache/
+/connect.lock
+/coverage
+/libpeerconnection.log
+testem.log
+/typings
+
+# System files
+.DS_Store
+Thumbs.db
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+/app/poc/infra/go/application/vendor/*
+/app/poc/infra/go/client/vendor/*
+/app/poc/projects/cronjob/vendor/*
+/app/projects/phoenixA/logs/*
+/app/projects/cronjob/logs/*
+/app/projects/artemis/logs/*
+/app/projects/artemis/artemis/logs/*
+
+/app/projects/artemis/whl/AmazingData-1.0.28-cp311-none-any.whl
+/app/projects/artemis/whl/tgw-1.0.8.5-py3-none-any.whl
+/app/projects/artemis/cache/*
+/app/projects/artemis/dist/*
+/app/projects/phoenixA/vendor/*
+/app/projects/phoenixA/dist/*
+/app/projects/phoenixA/config/*
+/app/projects/cronjob/vendor/*
+/app/projects/cronjob/config/*
+/app/projects/cronjob/dist/*
+
+/app/infra/go/common/vendor/*
+/app/infra/go/application/vendor/*
+
+/app/projects/cthulhu/.angular/*
+/app/projects/cthulhu/dist/*
+/app/projects/cthulhu/node_modules/*
+/app/projects/cthulhu/package-lock.json
+*.log
+go.sum
+*.whl

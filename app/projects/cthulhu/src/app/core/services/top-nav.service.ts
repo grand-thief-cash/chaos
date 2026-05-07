@@ -6,7 +6,8 @@ export interface TopNavItem { key: string; label: string; icon: string; path: st
 export class TopNavService {
   private readonly items: TopNavItem[] = [
     { key: 'cronjobs', label: 'Cron Jobs', icon: 'user', path: '/cronjobs' },
-    { key: 'artemis', label: 'Artemis', icon: 'bars', path: '/artemis' }
+    { key: 'artemis', label: 'Artemis', icon: 'bars', path: '/artemis' },
+    { key: 'workbench', label: 'Workbench', icon: 'line-chart', path: '/workbench' }
   ];
   getItems(): ReadonlyArray<TopNavItem> { return this.items; }
 }
