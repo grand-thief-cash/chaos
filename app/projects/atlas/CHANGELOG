@@ -1,6 +1,8 @@
 # VERSION
-v0.0.1
+v0.1.0
 
 # Changelog
+- v0.1.0
+    - Review design of Atlas and make necessary adjustments.
 - v0.0.1
     - Init atlas
