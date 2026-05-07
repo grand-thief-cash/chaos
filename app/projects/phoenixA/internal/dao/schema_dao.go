@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"gorm.io/gorm"
@@ -23,10 +23,10 @@ var domainAllowList = map[string]domainSpec{
 	"corporate_action":    {Table: "corporate_action", TypeColumn: "action_type"},
 }
 
-// SchemaDao discovers fields stored in JSON columns.
+// SchemaDao discovers fields stored in JSONB columns.
 type SchemaDao struct {
 	*core.BaseComponent
-	GormComp *mg.GormComponent `infra:"dep:mysql_gorm"`
+	GormComp *pg.PostgresGormComponent `infra:"dep:postgres_gorm"`
 	db       *gorm.DB
 	dsName   string
 }
@@ -60,8 +60,8 @@ type FieldsResult struct {
 	SampleCount int64    `json:"sample_count"`
 }
 
-// DiscoverFields queries the database for distinct JSON keys in data_json.
-// It samples up to sampleSize rows to avoid full table scans.
+// DiscoverFields queries the database for distinct JSONB keys in data_json.
+// Uses PostgreSQL jsonb_object_keys() — far more efficient than MySQL JSON_TABLE.
 func (d *SchemaDao) DiscoverFields(ctx context.Context, domain, dataType string, sampleSize int) (*FieldsResult, error) {
 	spec, ok := domainAllowList[domain]
 	if !ok {
@@ -83,18 +83,14 @@ func (d *SchemaDao) DiscoverFields(ctx context.Context, domain, dataType string,
 		return &FieldsResult{Domain: domain, DataType: dataType, Fields: []string{}, SampleCount: 0}, nil
 	}
 
-	// Extract distinct JSON keys from sampled rows
-	// MySQL JSON_KEYS returns an array of keys per row; we union them across rows.
+	// Extract distinct JSONB keys using PostgreSQL jsonb_object_keys()
 	query := fmt.Sprintf(`
-		SELECT DISTINCT jk.field_name
+		SELECT DISTINCT k AS field_name
 		FROM (
-			SELECT data_json FROM %s WHERE %s = ? LIMIT ?
+			SELECT data_json FROM %s WHERE %s = $1 LIMIT $2
 		) sub,
-		JSON_TABLE(
-			JSON_KEYS(sub.data_json), '$[*]'
-			COLUMNS (field_name VARCHAR(128) PATH '$')
-		) jk
-		ORDER BY jk.field_name
+		LATERAL jsonb_object_keys(sub.data_json) AS k
+		ORDER BY field_name
 	`, spec.Table, spec.TypeColumn)
 
 	var fields []string
