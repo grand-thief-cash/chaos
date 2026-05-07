@@ -1,6 +1,5 @@
 import os
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import AmazingData as ad
 import pandas as pd
@@ -9,37 +8,29 @@ from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
-
-
-def _parse_date_to_int(date_str: Optional[str]) -> Optional[int]:
-    """Convert 'YYYY-MM-DD' to int YYYYMMDD for SDK."""
-    if not date_str:
-        return None
-    try:
-        datetime.strptime(date_str, "%Y-%m-%d")
-        return int(date_str.replace("-", ""))
-    except ValueError:
-        return None
+from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params, get_sdk_date_kwargs
 
 
 class StockZHAIndustryWeightSWHY(WorkerUnit):
-    """下载申万行业指数成分股日权重数据（来源：AmazingData InfoData get_industry_weight）。"""
+    """下载申万行业指数成分股日权重数据（来源：AmazingData InfoData get_industry_weight）。
+
+    SDK参数支持（per AmazingData_development_guide.md V1.0.24）：
+      get_industry_weight(code_list, local_path, is_local, begin_date?, end_date?)
+      - code_list: 行业指数代码列表（来自 get_industry_base_info）
+      - begin_date/end_date: 交易日期（可选）
+
+    ctx.params:
+      - symbols: list[str]  — 行业指数代码列表（如 get_industry_base_info 返回的 INDEX_CODE）
+      - start_date: int/str  — 交易日期起始（映射到 SDK begin_date）
+      - end_date: int/str    — 交易日期结束（映射到 SDK end_date）
+    """
 
     def parameter_check(self, ctx: TaskContext):
         params = ctx.incoming_params or {}
-        # symbols, start_date, end_date are all optional
         symbols = params.get("symbols")
         if symbols is not None and not isinstance(symbols, list):
             ctx.fail(f"symbols must be a list, got {type(symbols).__name__}", phase='parameter_check')
             return
-        for d in ("start_date", "end_date"):
-            val = params.get(d)
-            if val is not None:
-                try:
-                    datetime.strptime(str(val), "%Y-%m-%d")
-                except ValueError:
-                    ctx.fail(f"{d} must be YYYY-MM-DD format, got '{val}'", phase='parameter_check')
-                    return
 
     def before_execute(self, ctx: TaskContext) -> None:
         from artemis.core.sdk.manager import sdk_mgr
@@ -60,28 +51,22 @@ class StockZHAIndustryWeightSWHY(WorkerUnit):
         cache_dir = os.path.abspath(task_engine_cfg.amazing_data_cache_dir)
         os.makedirs(cache_dir, exist_ok=True)
 
-        params = ctx.params or {}
-
-        # Resolve code_list: cronjob > task.yaml > fallback to PhoenixA
-        symbols = params.get("symbols")
-        if symbols:
-            code_list = symbols
+        # Resolve code_list: explicit symbols or fallback to PhoenixA
+        explicit_symbols = get_symbols_from_params(ctx)
+        if explicit_symbols is not None:
+            code_list = explicit_symbols
         else:
             phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
             securities = phoenixA_client.get_securities(asset_type="stock", market="zh_a")
             code_list = list(securities.keys())
 
-        # Build SDK kwargs
-        sdk_kwargs: Dict[str, Any] = {"local_path": cache_dir, "is_local": False}
-        begin_date = _parse_date_to_int(params.get("start_date"))
-        end_date = _parse_date_to_int(params.get("end_date"))
-        if begin_date is not None:
-            sdk_kwargs["begin_date"] = begin_date
-        if end_date is not None:
-            sdk_kwargs["end_date"] = end_date
+        # Convert start_date/end_date → SDK begin_date/end_date
+        sdk_date_kwargs = get_sdk_date_kwargs(ctx)
 
         try:
-            result = self._info_data.get_industry_weight(code_list, **sdk_kwargs)
+            result = self._info_data.get_industry_weight(
+                code_list, local_path=cache_dir, is_local=False, **sdk_date_kwargs
+            )
             return result
         except Exception as e:
             ctx.fail(f"fetch SWHY industry weight failed: {e}", phase='execute')
