@@ -1,7 +1,20 @@
 # VERSION
-v0.8.0
+v0.9.0
 
 # Changelog
+- v0.9.0
+    - **PhoenixA feature module** — new `/phoenixa` route group for data platform monitoring
+        - New page: **Write Buffer Stats** (`/phoenixa/buffer`)
+            - Real-time dashboard showing buffer enabled status, per-table metrics
+            - Summary statistics: total submitted, flushed, pending, active buffers
+            - Per-buffer table with key, submitted_rows, flushed_rows, pending_items, flush_count
+            - Auto-refresh every 10 seconds
+            - Pending items > 1000 highlighted in red
+        - New service: `PhoenixAService` with `getBufferStats()` API call
+        - New models: `BufferStats`, `WriteBufferStatus`
+        - Shell component with `<router-outlet>` (same pattern as artemis/cronjobs)
+        - Lazy-loaded routes registered in `app.routes.ts`
+        - Environment configs updated with `phoenixAApiBase` for dev/prod/home
 - v0.8.0
     - **Renamed diagnostics → Transaction Details**
         - Model: `DiagnosticEvent` → `BarDetailEvent`, `diagnostics` → `bar_details`
