@@ -1,7 +1,22 @@
 # VERSION
-v0.25.0
+- v0.25.1
 
 # Changelog
+- v0.25.1
+    - **Config hardening — task.yaml naming fix + Mairui key externalization + task rename**
+        - Fixed `timeframe → period` naming inconsistency in `config/task.yaml` for `BACKTRADER_CAMPAIGN` and `BACKTRADER_RUN` variants (was using `timeframe`, code `parameter_check` requires `period`)
+        - Extracted hardcoded Mairui API license from `stock_zh_a_mkt_category_mairui.py` into `config.yaml` under `sdk.mairui.license`; task now reads from config with clear error if missing
+        - Renamed `STOCK_ZH_A_MKT_CATEGORY` → `STOCK_ZH_A_MKT_CATEGORY_MAIRUI` (task code, class `StockZHAMktCategoryMairui`, file `stock_zh_a_mkt_category_mairui.py`) to eliminate ambiguity with `STOCK_ZH_A_MKT_CATEGORY_SWHY`
+        - Fixed `get_symbols_from_params()` silently falling back to full download when `symbols` is provided but `exchange` is missing — now raises `ValueError` so the task fails immediately with a clear error instead of hanging on unintended full download
+    - **Industry WEIGHT/DAILY orchestrator refactor** — split into OrchestratorUnit + WorkerUnit per index code
+        - `STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY`: now OrchestratorUnit, resolves index codes then plans one `_CHILD` per index
+        - `STOCK_ZH_A_INDUSTRY_DAILY_SWHY`: same refactor
+        - New child task codes: `STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY_CHILD`, `STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD`
+        - Each child downloads + processes + sinks a single industry index, enabling fine-grained retry, progress tracking, and timeout isolation
+        - `STOCK_ZH_A_INDUSTRY_CONSTITUENT_SWHY` unchanged (static data, small payload)
+        - Cronjob-facing task code names unchanged — no cronjob config updates needed
+        - Fixed industry tasks incorrectly using `get_symbols_from_params()` (stock pattern requiring `symbols`+`exchange`) — industry `symbols` are SDK-format index codes (e.g. `["851426.SI"]`), no `exchange` needed; extracted shared `_resolve_index_codes()` helper
+        - Fixed child tasks losing `trace_id` in logs — OpenTelemetry context was not propagated to ThreadPoolExecutor worker threads; added `_run_with_context()` wrapper that captures and attaches the parent's OTel context
 - v0.25.0
     - **Incremental Download & Parameter Unification** — all download tasks now support per-symbol, per-date-range incremental pulls
         - **Shared utilities** (`download/zh/utils.py`):

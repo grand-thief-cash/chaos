@@ -45,8 +45,15 @@ tasks:
         config:
           # symbols, start_date, end_date are optional
           # cronjob can override any field; omit symbols to download all industry indices
-          start_date: null
+          start_date: "2025-05-01"
           end_date: null
+          symbols: ["851422.SI"]
+          
+
+  STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY_CHILD:
+    variants:
+      - match: {}
+        config: {}
 
   STOCK_ZH_A_INDUSTRY_DAILY_SWHY:
     variants:
@@ -54,6 +61,11 @@ tasks:
         config:
           start_date: null
           end_date: null
+
+  STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD:
+    variants:
+      - match: {}
+        config: {}
 
   STOCK_ZH_A_INDUSTRY_CONSTITUENT_SWHY:
     variants:
@@ -120,7 +132,7 @@ tasks:
         config:
           mode: "historical"
           market: "CN_A"
-          timeframe: "daily"
+          period: "daily"
           adjust: "nf"
           cash: 100000.0
           commission: 0.001
@@ -134,7 +146,7 @@ tasks:
         config:
           mode: "historical"
           market: "CN_A"
-          timeframe: "daily"
+          period: "daily"
           adjust: "nf"
           cash: 100000.0
           commission: 0.001

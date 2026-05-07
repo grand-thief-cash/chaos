@@ -5,29 +5,24 @@ import AmazingData as ad
 import pandas as pd
 
 from artemis import consts
-from artemis.consts import DeptServices
+from artemis.consts import DeptServices, Taxonomy
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
-from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params
+from artemis.engines.task_engine.download.zh.stock_zh_a_industry_weight_swhy_parent import _resolve_index_codes
 
 
 class StockZHAIndustryConstituentSWHY(WorkerUnit):
-    """下载申万行业指数成分股数据（来源：AmazingData InfoData get_industry_constituent）。
-
-    SDK参数支持（per AmazingData_development_guide.md V1.0.24）：
-      get_industry_constituent(code_list, local_path, is_local)
-      - code_list: 行业指数代码列表（来自 get_industry_base_info）
-      - 注意：此接口不支持 begin_date/end_date
+    """下载申万行业指数成分股数据。
 
     ctx.params:
-      - symbols: list[str]  — 行业指数代码列表（可选，不传则从 PhoenixA 获取全部股票代码）
+      - symbols: list[str] — 行业指数代码（SDK格式如 ["851426.SI"]），不传则从 PhoenixA 获取全部
     """
 
     def parameter_check(self, ctx: TaskContext):
         params = ctx.incoming_params or {}
         symbols = params.get("symbols")
         if symbols is not None and not isinstance(symbols, list):
-            ctx.fail(f"symbols must be a list, got {type(symbols).__name__}", phase='parameter_check')
+            ctx.fail(f"symbols must be a list of index codes (e.g. ['851426.SI']), got {type(symbols).__name__}", phase='parameter_check')
             return
 
     def before_execute(self, ctx: TaskContext) -> None:
@@ -49,15 +44,7 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
         cache_dir = os.path.abspath(task_engine_cfg.amazing_data_cache_dir)
         os.makedirs(cache_dir, exist_ok=True)
 
-
-        # Resolve code_list: explicit symbols or fallback to PhoenixA
-        explicit_symbols = get_symbols_from_params(ctx)
-        if explicit_symbols is not None:
-            code_list = explicit_symbols
-        else:
-            phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
-            securities = phoenixA_client.get_securities(asset_type="stock", market="zh_a")
-            code_list = list(securities.keys())
+        code_list = _resolve_index_codes(ctx)
 
         try:
             result = self._info_data.get_industry_constituent(code_list, local_path=cache_dir, is_local=False)
@@ -68,15 +55,20 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
 
     def post_process(self, ctx: TaskContext, result: Dict[str, Any]) -> List[Dict[str, Any]]:
         processed = []
+        seen = set()
         for code, df in result.items():
             if not isinstance(df, pd.DataFrame) or df.empty:
                 continue
             for _, row in df.iterrows():
                 con_code = str(row.get("CON_CODE", "")).strip()
-                # Extract pure symbol from con_code (e.g. "603648.SH" → "603648")
                 symbol = con_code.split(".")[0] if "." in con_code else con_code
+                index_code = str(row.get("INDEX_CODE", code))
+                key = (index_code, symbol)
+                if key in seen:
+                    continue
+                seen.add(key)
                 processed.append({
-                    "index_code": str(row.get("INDEX_CODE", code)),
+                    "index_code": index_code,
                     "con_code": con_code,
                     "symbol": symbol,
                     "indate": str(row.get("INDATE", "")),
@@ -102,4 +94,3 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
         )
         if ok is False:
             ctx.fail("failed to sink SWHY industry constituents to phoenixA", phase='sink')
-

@@ -116,11 +116,11 @@ PostgreSQL 16 默认数据目录在 `/var/lib/postgresql/16/main/`，已在 NVMe
 sudo systemctl stop postgresql
 
 # 移动默认数据目录到自定义位置
-sudo rsync -av /var/lib/postgresql/16/main/ /nvme/pgdata/
-sudo chown -R postgres:postgres /nvme/pgdata
+sudo rsync -av /var/lib/postgresql/16/main/ /home/machine/pg_data1
+sudo chown -R postgres:postgres /home/machine/pg_data1
 
 # 修改 postgresql.conf
-sudo sed -i "s|data_directory = .*|data_directory = '/nvme/pgdata'|" /etc/postgresql/16/main/postgresql.conf
+sudo sed -i "s|data_directory = .*|data_directory = '/home/machine/pg_data1'|" /etc/postgresql/16/main/postgresql.conf
 
 sudo systemctl start postgresql
 ```
@@ -129,16 +129,16 @@ sudo systemctl start postgresql
 
 ```bash
 # 创建 PostgreSQL 温存储目录
-sudo mkdir -p /sata8t/pgdata_warm
-sudo chown postgres:postgres /sata8t/pgdata_warm
+sudo mkdir -p /gw8tvol1/pgdata_warm
+sudo chown postgres:postgres /gw8tvol1/pgdata_warm
 
 # 创建备份相关目录
-sudo mkdir -p /sata8t/backups/pg_basebackup
-sudo mkdir -p /sata8t/backups/pg_wal_archive
-sudo mkdir -p /sata8t/backups/neo4j_dump
-sudo mkdir -p /sata8t/scripts
-sudo chown -R postgres:postgres /sata8t/backups/pg_basebackup
-sudo chown -R postgres:postgres /sata8t/backups/pg_wal_archive
+sudo mkdir -p /gw8tvol1/backups/pg_basebackup
+sudo mkdir -p /gw8tvol1/backups/pg_wal_archive
+sudo mkdir -p /gw8tvol1/backups/neo4j_dump
+sudo mkdir -p /gw8tvol1/scripts
+sudo chown -R postgres:postgres /gw8tvol1/backups/pg_basebackup
+sudo chown -R postgres:postgres /gw8tvol1/backups/pg_wal_archive
 ```
 
 ---
@@ -169,7 +169,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 应看到 timescaledb 和 vector 两个扩展
 
 -- 6. 创建 SATA SSD 上的表空间（分钟线、温存储用）
-CREATE TABLESPACE warm_storage LOCATION '/sata8t/pgdata_warm';
+CREATE TABLESPACE warm_storage LOCATION '/gw8tvol1/pgdata_warm';
 
 -- 7. 验证表空间
 \db
@@ -185,6 +185,45 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA kg GRANT ALL ON TABLES TO chaos_app;
 
 -- 退出
 \q
+```
+
+
+```sql
+-- 1. 创建 dev 数据库
+CREATE DATABASE chaos_dev;
+
+-- 2. 切换
+\c chaos_dev
+
+-- 3. schema（和生产对齐）
+CREATE SCHEMA IF NOT EXISTS kg;
+
+-- 4. 安装扩展（必须在每个 DB 单独安装）
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 5. 验证
+\dx
+
+-- 6. dev 专用用户
+CREATE USER chaos_app_dev WITH PASSWORD 'dev_password_here';
+
+-- 7. 数据库权限
+GRANT ALL PRIVILEGES ON DATABASE chaos_dev TO chaos_app_dev;
+
+-- 8. schema 权限
+GRANT ALL PRIVILEGES ON SCHEMA public TO chaos_app_dev;
+GRANT ALL PRIVILEGES ON SCHEMA kg TO chaos_app_dev;
+
+-- 9. 默认权限（避免后续建表权限问题）
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL ON TABLES TO chaos_app_dev;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA kg
+GRANT ALL ON TABLES TO chaos_app_dev;
+
+-- 10. 生产隔离 I/O
+CREATE TABLESPACE warm_storage_dev LOCATION '/gw8tvol1/pgdata_warm_dev';
 ```
 
 ---

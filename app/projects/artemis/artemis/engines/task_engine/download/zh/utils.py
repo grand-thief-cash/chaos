@@ -55,11 +55,9 @@ def get_symbols_from_params(ctx: TaskContext) -> Optional[List[str]]:
 
     exchange = str(params.get('exchange', '')).strip().upper()
     if not exchange:
-        ctx.logger.error({
-            'event': 'missing_exchange',
-            'reason': 'exchange is required when symbols is specified',
-        })
-        return None
+        raise ValueError("exchange is required when symbols is specified. "
+                         f"Got symbols={raw}, but exchange is empty. "
+                         "Example: symbols=['000001'] + exchange='SZ'")
 
     symbols = [str(s).strip() for s in raw if str(s).strip()]
     code_list = [f"{sym}.{exchange}" for sym in symbols]
