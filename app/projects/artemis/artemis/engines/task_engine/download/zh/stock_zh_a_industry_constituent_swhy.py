@@ -8,10 +8,20 @@ from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
+from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params
 
 
 class StockZHAIndustryConstituentSWHY(WorkerUnit):
-    """下载申万行业指数成分股数据（来源：AmazingData InfoData get_industry_constituent）。"""
+    """下载申万行业指数成分股数据（来源：AmazingData InfoData get_industry_constituent）。
+
+    SDK参数支持（per AmazingData_development_guide.md V1.0.24）：
+      get_industry_constituent(code_list, local_path, is_local)
+      - code_list: 行业指数代码列表（来自 get_industry_base_info）
+      - 注意：此接口不支持 begin_date/end_date
+
+    ctx.params:
+      - symbols: list[str]  — 行业指数代码列表（可选，不传则从 PhoenixA 获取全部股票代码）
+    """
 
     def parameter_check(self, ctx: TaskContext):
         params = ctx.incoming_params or {}
@@ -39,12 +49,11 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
         cache_dir = os.path.abspath(task_engine_cfg.amazing_data_cache_dir)
         os.makedirs(cache_dir, exist_ok=True)
 
-        params = ctx.params or {}
 
-        # Resolve code_list: cronjob > task.yaml > fallback to PhoenixA
-        symbols = params.get("symbols")
-        if symbols:
-            code_list = symbols
+        # Resolve code_list: explicit symbols or fallback to PhoenixA
+        explicit_symbols = get_symbols_from_params(ctx)
+        if explicit_symbols is not None:
+            code_list = explicit_symbols
         else:
             phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
             securities = phoenixA_client.get_securities(asset_type="stock", market="zh_a")

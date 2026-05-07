@@ -60,6 +60,60 @@ tasks:
       - match: {}
         config: {}
 
+  # Financial Statements
+  # symbols + exchange: 指定股票代码和交易所，缺省则全量下载
+  # start_date/end_date: YYYY-MM-DD，对应 SDK 的报告期范围
+  STOCK_ZH_A_BALANCE_SHEET:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_CASH_FLOW:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_INCOME:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_PROFIT_EXPRESS:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_PROFIT_NOTICE:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  # Corporate Actions
+  # start_date/end_date: YYYY-MM-DD，对应 SDK 的公告日期范围
+  STOCK_ZH_A_DIVIDEND:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_RIGHT_ISSUE:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
   BACKTRADER_CAMPAIGN:
     variants:
       - match: { mode: "historical" }
