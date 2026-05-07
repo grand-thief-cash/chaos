@@ -3,6 +3,7 @@ package grpc_client
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"google.golang.org/grpc"
@@ -39,7 +40,7 @@ func GetGRPCClient(container *core.Container, clientName string) (*grpc.ClientCo
 	}
 	grpcComponent, ok := component.(*GRPCClientComponent)
 	if !ok {
-		return nil, err
+		return nil, fmt.Errorf("component grpc_clients is not *GRPCClientComponent (got %T)", component)
 	}
 	return grpcComponent.GetClient(clientName)
 }

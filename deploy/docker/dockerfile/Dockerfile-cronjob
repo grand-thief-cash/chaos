@@ -20,4 +20,4 @@ RUN chmod +x /app/cronjob
 
 EXPOSE 8082
 
-CMD ["/app/cronjob", "-config=./config/config.yaml", "-env=product"]
+CMD ["/app/cronjob", "-config=./config/config.yaml", "-env=production"]

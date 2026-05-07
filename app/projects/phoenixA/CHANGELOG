@@ -1,7 +1,129 @@
 # VERSION
-v0.3.2
+v1.5.0
 
 # Changelog
+- v1.5.0
+    - **PostgreSQL Migration Phase 1** — taxonomy & industry tables migrated to PostgreSQL
+        - **Only TaxonomyDao** switched from `mysql_gorm` to `postgres_gorm`
+        - All other DAOs (security, bars, strategy_run, financial_statement, corporate_action, schema) remain on MySQL
+        - New PostgreSQL migration: `migrations/postgresql/security/0001_security_init.sql`
+            - 5 tables: taxonomy_category, taxonomy_security_map, industry_constituent, industry_weight, industry_daily
+            - PG-native types: BIGSERIAL, BOOLEAN, JSONB, TIMESTAMPTZ, NUMERIC
+        - **JSONB advantages leveraged**:
+            - `taxonomy_category.attrs_json` uses JSONB with GIN index (`idx_tc_attrs_gin`)
+            - Enables fast `@>` containment queries: e.g. `WHERE attrs_json @> '{"is_pub": 1}'`
+            - Enables `?` key-existence queries: e.g. `WHERE attrs_json ? 'change_reason'`
+            - `TaxonomyCategoryFilters` gains `AttrsContains` and `AttrsHasKey` fields
+        - `config.yaml`: added `postgres_gorm.data_sources.security` (schema: `security_dev`)
+        - `mysql_gorm` kept enabled — all non-taxonomy DAOs still read/write MySQL
+        - Taxonomy model updated: `tinyint unsigned` → `smallint`, `tinyint(1)` → `boolean`, `json` → `jsonb`
+- v1.4.0
+    - **Taxonomy V2** — multi-taxonomy, multi-market support for industry data
+        - New fields: `taxonomy` (swhy/citic/gics/concept/region/mairui) and `market` (zh_a/us/jp/hk) on all taxonomy/industry tables
+        - `taxonomy_category`: added `index_code` field (行业指数代码, separated from attrs_json)
+        - `industry_constituent` / `industry_weight`: added `symbol` field (pure code, joins security_registry); `con_code` retained as raw SDK value
+        - Route pattern changed: `/api/v2/taxonomy/{source}/{taxonomy}/{market}/...`
+        - Breaking: old `/api/v2/taxonomy/{source}/...` routes still work but taxonomy/market default to empty
+        - New migration: `0002_taxonomy_v2.sql` — DROP + recreate all taxonomy/industry tables
+        - Updated model, DAO, service, controller for taxonomy+market dimensions
+- v1.3.2
+    - Adjusted folder structure of migration, postgresql migration supported.
+- v1.3.1
+    - **Bug Fixes**:
+        - [Critical] Fixed `data_json` double-encoding: `FinancialStatement.DataJSON` and `CorporateAction.DataJSON` changed from `string` to `json.RawMessage` — API responses now return proper nested JSON objects instead of escaped JSON strings
+        - [Medium] Fixed `SchemaDao.Overview()` missing sort — added `sort.Slice` by domain name for deterministic output
+        - [Minor] Fixed `FieldsResult.SampleCount` — now returns `min(totalCount, sampleSize)` instead of always returning totalCount
+        - [Minor] Fixed `SchemaDao.Overview()` silently swallowing errors from count queries and field discovery
+        - [Low] Added max `page_size` cap (1000) in `FinancialStatementService` and `CorporateActionService` to prevent unbounded table scans
+- v1.3.0
+    - **Schema Discovery API** — dynamic field introspection for JSON-stored data
+        - New endpoints:
+            - `GET /api/v2/schema/domains` — list all data domains
+            - `GET /api/v2/schema/types?domain=...` — list data types in a domain
+            - `GET /api/v2/schema/fields?domain=...&type=...` — discover actual fields from stored data via MySQL JSON_KEYS()
+            - `GET /api/v2/schema/overview` — summary of all domains with row counts and field counts
+        - Uses domain allow-list for safety (prevents arbitrary table access)
+        - Supports `sample_size` parameter to control query performance
+        - New DAO: `SchemaDao` with `DiscoverFields()`, `ListTypes()`, `Overview()`
+        - New Controller: `SchemaController`
+- v1.2.0
+    - Added unified financial statement support (balance sheet / income / cashflow / profit_express / profit_notice):
+        - New table: `financial_statement` with JSON column for 180+ numeric fields
+        - Design rationale: JSON storage avoids 180-column wide table; single table serves all statement types for extensibility
+        - UNIQUE KEY on (source, symbol, market, statement_type, reporting_period, report_type, statement_code) ensures upsert idempotency
+        - New model: `FinancialStatement`, `FinancialStatementFilters`
+        - New DAO/Service/Controller: `FinancialStatementDao`, `FinancialStatementService`, `FinancialStatementController`
+        - New API endpoints:
+            - `POST /api/v2/financial/{source}/{statement_type}/upsert`
+            - `GET  /api/v2/financial/{source}/{statement_type}?symbol=...&period_start=...&period_end=...`
+        - Registered components: `dao_financial_stmt`, `svc_financial_stmt`, `ctrl_financial_stmt`
+        - New reference constants (`internal/consts/financial.go`):
+            - `FIN_STMT_*`: statement type identifiers
+            - `REPORT_TYPE_*`: Q1/H1/Q3/Annual (报告期名称 1-4)
+            - `STMT_CODE_*`: statement codes 1-10 (合并报表/母公司报表 variants)
+            - `PROFIT_NOTICE_*`: 业绩预告类型代码 1-11
+        - Updated `0001_init.sql` migration with new table definition
+    - Added corporate action support (dividend / right_issue):
+        - New table: `corporate_action` with JSON column for variable data fields
+        - UNIQUE KEY on (source, symbol, market, action_type, report_period, ann_date) ensures upsert idempotency
+        - New model/DAO/Service/Controller: `CorporateAction*`
+        - New API endpoints:
+            - `POST /api/v2/corporate-action/{source}/{action_type}/upsert`
+            - `GET  /api/v2/corporate-action/{source}/{action_type}?symbol=...&period_start=...&period_end=...`
+        - New reference constants (`internal/consts/corporate_action.go`):
+            - `CORP_ACTION_*`: action type identifiers
+            - `DIV_PROGRESS_*`: dividend progress codes 1-19
+            - `RI_PROGRESS_*`: right issue progress codes 1-22
+- v1.1.0
+    - Added industry constituent and weight data support:
+        - New tables: `industry_constituent`, `industry_weight`, `industry_daily`
+        - New models: `IndustryConstituent`, `IndustryWeight`, `IndustryDaily`
+        - New API endpoints:
+            - `POST /api/v2/taxonomy/{source}/industry-constituents/upsert`
+            - `GET  /api/v2/taxonomy/{source}/industry-constituents/by_index/{indexCode}`
+            - `GET  /api/v2/taxonomy/{source}/industry-constituents/by_stock/{conCode}`
+            - `POST /api/v2/taxonomy/{source}/industry-weights/upsert`
+            - `GET  /api/v2/taxonomy/{source}/industry-weights/{indexCode}?trade_date=...`
+            - `POST /api/v2/taxonomy/{source}/industry-daily/upsert`
+            - `GET  /api/v2/taxonomy/{source}/industry-daily?index_code=...&start_date=...&end_date=...`
+        - Extended TaxonomyController/Service/DAO with constituent, weight and daily operations
+        - Updated `0001_init.sql` migration with new table definitions
+- v1.0.1
+    - Fixed sql migration issue and compact to a single one.
+    - Fixed issue in phoenixA deployment: Not deleting expired migration sql files.
+- v1.0.0
+    - **[BREAKING] PhoenixA v2 Architecture Refactoring**
+    - Unified field naming across all projects:
+        - `code` → `symbol`, `date` → `trade_date`, `company` → `name`
+        - `timeframe` → `period` (in strategy_run_summary table & all APIs)
+        - `data_source` → `source`
+    - New unified tables:
+        - `security_registry` (replaces `stock_zh_a_list`)
+        - `bars_{asset_type}_{market}_{period}_{adjust}` (replaces `stock_zh_a_hist_*`)
+        - `bars_ext_{source}_{asset_type}_{market}_{period}` (source-specific extension columns)
+        - `taxonomy_category` (replaces `mkt_category_mairui`, `mkt_category_swhy`)
+        - `taxonomy_security_map` (replaces `category_stock_map`)
+    - New v2 API routes:
+        - `/api/v2/securities` — unified security registry CRUD
+        - `/api/v2/bars/{asset_type}/{market}` — unified bars query & upsert
+        - `/api/v2/taxonomy/{source}` — unified taxonomy categories & mappings
+    - Backward-compatible v1 routes preserved (proxied to v2 logic)
+    - Added `0005_v2_architecture.sql` — new table schema
+    - Added `0006_rename_timeframe_to_period.sql` — strategy_run_summary column rename
+    - Added `0007_data_migration_and_cleanup.sql` — data migration & old table cleanup
+    - Added `docs/UNIFIED_TERMINOLOGY.md` — cross-project field naming spec
+    - Removed all legacy v1 model/dao/service/controller files
+    - Updated `docs/2026-04-14 ARCHITECTURE_DESIGN_FOR_PHOENIXA.md`
+- v0.3.6
+    - Added SWHY stock category
+    - Fixed Stock ZH A hist upsert error.
+- v0.3.5
+    - Added exchange filter in STOCK_ZH_A_LIST
+- v0.3.4
+    - Added comments to migrations sql.
+- v0.3.3
+    - Added strategy_run_summary.
+    - Added strategy_run_artifact.
 - v0.3.2
     - Added task import and export.
     - Added dev-home env.

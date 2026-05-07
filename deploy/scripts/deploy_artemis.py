@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import os
 import paramiko
 import sys
@@ -18,12 +19,16 @@ REMOTE_PASS = "123456"
 REMOTE_CONFIG_PATH = "/home/machine/data_volume/artemis/config"
 
 DOCKERFILE_PATH = "../docker/dockerfile/Dockerfile-artemis"
+BASE_DOCKERFILE_PATH = "../docker/dockerfile/Dockerfile-artemis-base"
 DOCKER_COMPOSE_FILE = "artemis.yaml"
 DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
 SERVICE_NAME = "artemis"
 
-VPN = "192.168.31.170:7890"
+PRIMARY_PROXY = "192.168.31.170:7890"
+BACKUP_PROXY  = "192.168.31.169:7890"
+
+BASE_IMAGE = "python:3.11-slim"
 
 FORCE_DOCKER_BUILD = True
 FORCE_DOCKER_COMPOSE_BUILD = True
@@ -149,75 +154,149 @@ def get_remote_version(ssh):
     return None
 
 
-def build_remote_image(ssh, version):
-    print("🔨 开始远程 docker build...")
+def compute_deps_hash():
+    """根据 requirements.txt + minius wheels 内容计算依赖哈希，用于基础镜像缓存。"""
+    h = hashlib.md5()
 
-    # 先检查代理可用性
-    proxy_available = check_proxy_available(ssh, VPN)
+    req_path = os.path.normpath(os.path.join(os.path.dirname(__file__), PY_PROJECT_PATH, "requirements.txt"))
+    with open(req_path, 'rb') as f:
+        h.update(f.read())
 
-    if proxy_available:
-        cmd = (
-            f"cd {REMOTE_DEPLOY_PATH} && "
-            f"docker build --network=host --progress=plain "
-            f"--build-arg HTTP_PROXY=http://{VPN} "
-            f"--build-arg HTTPS_PROXY=http://{VPN} "
-            f"-t {SERVICE_NAME}:{version} ."
-        )
-    else:
-        print("⚠️ 使用无代理模式构建")
-        cmd = (
-            f"cd {REMOTE_DEPLOY_PATH} && "
-            f"docker build --network=host --progress=plain "
-            f"-t {SERVICE_NAME}:{version} ."
-        )
+    minius_path = os.path.normpath(os.path.join(os.path.dirname(__file__), MINIUS_LOCAL_PATH))
+    wheels = sorted(f for f in os.listdir(minius_path) if f.endswith('.whl'))
+    for w in wheels:
+        h.update(w.encode())
 
-    print(f"执行命令: {cmd}")
+    tag = h.hexdigest()[:12]
+    print(f"✔ 依赖哈希: {tag}")
+    return tag
 
-    # 使用 exec_command 并等待完成
-    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=600)  # 10分钟超时
 
-    # 实时打印输出
-    import select
-    import sys
+def pull_base_image(ssh, proxy):
+    """先用代理拉取基础镜像，避免 build 时 buildkit 直连超时"""
+    print(f"📦 拉取基础镜像: {BASE_IMAGE}")
+    cmd = f"docker pull {BASE_IMAGE}"
+    if proxy:
+        cmd = f"HTTP_PROXY=http://{proxy} HTTPS_PROXY=http://{proxy} {cmd}"
 
+    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=600)
+
+    import sys as _sys
     while True:
-        # 检查是否有输出
         if stdout.channel.recv_ready():
-            data = stdout.channel.recv(1024).decode()
-            sys.stdout.write(data)
-            sys.stdout.flush()
-
-        if stderr.channel.recv_stderr_ready():
-            data = stderr.channel.recv_stderr(1024).decode()
-            sys.stderr.write(data)
-            sys.stderr.flush()
-
-        # 检查命令是否完成
-        if stdout.channel.exit_status_ready() and not stdout.channel.recv_ready() and not stderr.channel.recv_stderr_ready():
+            _sys.stdout.write(stdout.channel.recv(1024).decode())
+            _sys.stdout.flush()
+        if stdout.channel.exit_status_ready() and not stdout.channel.recv_ready():
             break
-
         time.sleep(0.1)
 
     exit_code = stdout.channel.recv_exit_status()
     if exit_code != 0:
-        print(f"❌ Docker build 失败，退出码: {exit_code}")
+        err = stderr.read().decode().strip()
+        print(f"⚠️ 拉取基础镜像失败: {err}")
+        return False
+    print(f"✔ 基础镜像拉取完成: {BASE_IMAGE}")
+    return True
+
+
+def ensure_base_image(ssh, deps_hash):
+    """确保远程存在基础依赖镜像，不存在则构建。"""
+    base_tag = f"artemis-base:{deps_hash}"
+
+    # 检查是否已存在
+    image_id = remote_exec(ssh, f"docker images -q {base_tag}").strip()
+    if image_id:
+        print(f"✔ 基础镜像已存在: {base_tag}，跳过构建")
+        return base_tag
+
+    print(f"🔨 构建基础依赖镜像: {base_tag}")
+    proxy = detect_remote_proxy(ssh)
+    pull_base_image(ssh, proxy)
+
+    cmd = f"cd {REMOTE_DEPLOY_PATH} && docker build --network=host --progress=plain"
+    if proxy:
+        cmd += f" --build-arg HTTP_PROXY=http://{proxy} --build-arg HTTPS_PROXY=http://{proxy}"
+    cmd += f" -f Dockerfile-base -t {base_tag} ."
+
+    print(f"执行命令: {cmd}")
+    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=600)
+
+    import sys as _sys
+    while True:
+        if stdout.channel.recv_ready():
+            data = stdout.channel.recv(1024).decode()
+            _sys.stdout.write(data)
+            _sys.stdout.flush()
+        if stderr.channel.recv_stderr_ready():
+            data = stderr.channel.recv_stderr(1024).decode()
+            _sys.stderr.write(data)
+            _sys.stderr.flush()
+        if stdout.channel.exit_status_ready() and not stdout.channel.recv_ready() and not stderr.channel.recv_stderr_ready():
+            break
+        time.sleep(0.1)
+
+    exit_code = stdout.channel.recv_exit_status()
+    if exit_code != 0:
+        print(f"❌ 基础镜像构建失败，退出码: {exit_code}")
         sys.exit(1)
-    else:
-        print("✅ Docker build 成功")
+    print(f"✅ 基础镜像构建成功: {base_tag}")
+    return base_tag
+
+
+def build_app_image(ssh, version, base_tag):
+    """构建应用镜像 (从基础镜像开始，仅 COPY 代码，非常快)。"""
+    print("🔨 构建应用镜像...")
+    deps_hash = base_tag.split(":")[1]
+
+    cmd = (f"cd {REMOTE_DEPLOY_PATH} && docker build --network=host --progress=plain"
+           f" --build-arg BASE_TAG={deps_hash}"
+           f" -t {SERVICE_NAME}:{version} .")
+
+    print(f"执行命令: {cmd}")
+    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=300)
+
+    import sys as _sys
+    while True:
+        if stdout.channel.recv_ready():
+            data = stdout.channel.recv(1024).decode()
+            _sys.stdout.write(data)
+            _sys.stdout.flush()
+        if stderr.channel.recv_stderr_ready():
+            data = stderr.channel.recv_stderr(1024).decode()
+            _sys.stderr.write(data)
+            _sys.stderr.flush()
+        if stdout.channel.exit_status_ready() and not stdout.channel.recv_ready() and not stderr.channel.recv_stderr_ready():
+            break
+        time.sleep(0.1)
+
+    exit_code = stdout.channel.recv_exit_status()
+    if exit_code != 0:
+        print(f"❌ 应用镜像构建失败，退出码: {exit_code}")
+        sys.exit(1)
+    print("✅ 应用镜像构建成功")
+
+
 def docker_compose_up(ssh):
     cmd = f"cd {REMOTE_DEPLOY_PATH} && docker compose -f docker-compose.yaml up -d"
     remote_exec(ssh, cmd)
     print("✔ docker compose 启动完成")
 
 
-def clean_old_images(ssh, version):
-    # 删除旧版本镜像
+def clean_old_images(ssh, version, deps_hash):
+    # 删除旧版本应用镜像
     cmd = f"docker images {SERVICE_NAME} --format '{{{{.Tag}}}}'"
     tags = remote_exec(ssh, cmd).splitlines()
     for t in tags:
         if t and t != version:
-            print(f"🧹 删除旧镜像: {t}")
+            print(f"🧹 删除旧应用镜像: {t}")
             remote_exec(ssh, f"docker rmi {SERVICE_NAME}:{t}")
+
+    # 删除旧基础镜像（保留当前哈希）
+    base_tags = remote_exec(ssh, f"docker images artemis-base --format '{{{{.Tag}}}}'").splitlines()
+    for t in base_tags:
+        if t and t != deps_hash:
+            print(f"🧹 删除旧基础镜像: artemis-base:{t}")
+            remote_exec(ssh, f"docker rmi artemis-base:{t}")
 
     # 删除 dangling image (<none>)
     print("🧹 删除悬空镜像 (<none>)")
@@ -260,9 +339,16 @@ def upload_files(compose_file):
     dockerfile_local_path = os.path.normpath(os.path.join(os.path.dirname(__file__), DOCKERFILE_PATH))
     sftp_upload(ssh, dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
 
+    # Upload the base Dockerfile for deps caching
+    base_dockerfile_local_path = os.path.normpath(os.path.join(os.path.dirname(__file__), BASE_DOCKERFILE_PATH))
+    sftp_upload(ssh, base_dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile-base")
+
     sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
-    sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-prod.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
+    sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-production.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
     sftp_upload(ssh, PY_PROJECT_PATH+"/config/task.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
+
+    # 确保远程缓存目录存在
+    remote_exec(ssh, f"mkdir -p /home/machine/oss_volume/artemis_cache")
 
     # Upload only wheel files from local minius directory. Abort if minius missing or no wheels found.
     local_minius = os.path.normpath(os.path.join(os.path.dirname(__file__), MINIUS_LOCAL_PATH))
@@ -288,16 +374,19 @@ def upload_files(compose_file):
 
     ssh.close()
 
-def check_proxy_available(ssh, proxy):
-    check_cmd = f"timeout 5 curl -x http://{proxy} -s -o /dev/null -w '%{{http_code}}' https://www.google.com"
-    result = remote_exec(ssh, check_cmd).strip()
-
-    if result.startswith("2") or result.startswith("3"):
-        print(f"✓ 代理 {proxy} 可用")
-        return True
-    else:
-        print(f"⚠️ 代理 {proxy} 不可用 (状态码: {result})")
-        return False
+def detect_remote_proxy(ssh):
+    """从远程服务器检测可用的代理"""
+    print("🔍 检测远程服务器代理...")
+    for name, proxy_url in [("主代理", PRIMARY_PROXY), ("备用代理", BACKUP_PROXY)]:
+        cmd = f'curl --connect-timeout 3 --silent --proxy http://{proxy_url} -o /dev/null -w "%{{http_code}}" https://www.google.com 2>/dev/null'
+        stdin, stdout, stderr = ssh.exec_command(cmd)
+        code = stdout.read().decode().strip()
+        if code == "200":
+            print(f"✅ 远程{name}可用: http://{proxy_url}")
+            return proxy_url
+        print(f"   {name}不可达: http://{proxy_url}")
+    print("⚠️ 远程无可用代理")
+    return None
 #########################################
 # --------------- 主流程 ----------------
 #########################################
@@ -307,27 +396,32 @@ def main():
 
     compose_file = create_temp_compose(version)
 
+    deps_hash = compute_deps_hash()
+
     ssh = ssh_connect()
 
     print("⬆️ 上传 Python 项目文件...")
     upload_files(compose_file)
-    #
+
     remote_version = get_remote_version(ssh)
     print("远程版本:", remote_version)
-    #
+
     need_build = FORCE_DOCKER_BUILD or (remote_version != version)
-    #
+
     if need_build:
-        build_remote_image(ssh, version)
-    #
+        # 1. 确保基础依赖镜像存在（依赖不变时跳过）
+        base_tag = ensure_base_image(ssh, deps_hash)
+        # 2. 构建应用镜像（仅 COPY 代码，非常快）
+        build_app_image(ssh, version, base_tag)
+
     stop_old_container(ssh)
-    #
+
     docker_compose_up(ssh)
-    #
+
     wait_container(ssh)
-    #
-    clean_old_images(ssh, version)
-    #
+
+    clean_old_images(ssh, version, deps_hash)
+
     # print(f"🎉 部署成功！当前版本：{version}")
 
 

@@ -141,7 +141,7 @@ class TaskContext:
         return self.status in (TaskStatus.SUCCESS.value, TaskStatus.FAILED.value, TaskStatus.CANCELED.value, TaskStatus.SKIPPED.value)
 
     @property
-    def run_id(self) -> int:
+    def run_id(self) -> int | str:
         return self.task_meta.run_id
 
     @property

@@ -1,22 +1,5 @@
-FROM python:3.11-slim
-
-ENV PYTHONUNBUFFERED=1
-ENV TZ=Asia/Shanghai
-
-RUN apt-get update && apt-get install -y tzdata libgssapi-krb5-2 libkrb5-3 && \
-    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
-    echo "Asia/Shanghai" > /etc/timezone && \
-    rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
-
-# If the build context contains a `minius` directory with wheel files, copy and install them.
-# This allows offline/local wheel installation during docker build.
-COPY minius /minius
-RUN sh -c 'if [ -d /minius ] && ls /minius/*.whl 1> /dev/null 2>&1; then pip install --no-cache-dir /minius/*.whl; fi'
+ARG BASE_TAG=latest
+FROM artemis-base:${BASE_TAG}
 
 COPY artemis /app
 

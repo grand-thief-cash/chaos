@@ -3,17 +3,15 @@ package mysqlgorm
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/migration"
 	mysqlDriver "gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -107,19 +105,27 @@ func (c *GormComponent) Start(ctx context.Context) error {
 			cancel()
 		}
 
-		// Migrations (optional for gorm raw SQL files)
+		// Migrations (version-tracked via _migrations table)
 		if ds.MigrateEnabled {
-			if strings.TrimSpace(ds.MigrateDir) == "" {
+			if strings.TrimSpace(ds.MigrateBase) == "" {
 				_ = sqlDB.Close()
-				return fmt.Errorf("mysql_gorm datasource %s migrate_enabled=true but migrate_dir empty", name)
+				return fmt.Errorf("mysql_gorm datasource %s migrate_enabled=true but migrate_base empty", name)
 			}
+			migrateDir := migration.ResolveMigrateDir(ds.MigrateBase, migration.DialectMySQL, name)
 			migStart := time.Now()
-			logging.Infof(ctx, "[mysql_gorm] datasource %s running migrations dir=%s", name, ds.MigrateDir)
-			if err := runGormMigrations(ctx, sqlDB, ds.MigrateDir); err != nil {
+			logging.Infof(ctx, "[mysql_gorm] datasource %s running migrations dir=%s", name, migrateDir)
+			result, err := migration.Run(ctx, sqlDB, migration.DialectMySQL, migrateDir, "")
+			if err != nil {
 				_ = sqlDB.Close()
 				return fmt.Errorf("mysql_gorm datasource %s migrations failed: %w", name, err)
 			}
-			logging.Infof(ctx, "[mysql_gorm] datasource %s migrations completed dur=%s", name, time.Since(migStart))
+			if len(result.Applied) > 0 {
+				logging.Infof(ctx, "[mysql_gorm] datasource %s applied %d migrations: %v dur=%s",
+					name, len(result.Applied), result.Applied, time.Since(migStart))
+			} else {
+				logging.Infof(ctx, "[mysql_gorm] datasource %s all %d migrations already applied, nothing to do",
+					name, len(result.Skipped))
+			}
 		}
 
 		c.mutex.Lock()
@@ -210,41 +216,6 @@ func buildDSN(ds *DataSourceConfig) (string, error) {
 		params.Set(k, v)
 	}
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s", ds.User, ds.Password, ds.Host, port, ds.Database, params.Encode()), nil
-}
-
-// runGormMigrations executes .sql files (non-recursive) in lexical order; each file may contain multiple statements separated by ';'.
-func runGormMigrations(ctx context.Context, db *sql.DB, dir string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("read migrations dir: %w", err)
-	}
-	var files []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if strings.HasSuffix(strings.ToLower(name), ".sql") {
-			files = append(files, filepath.Join(dir, name))
-		}
-	}
-	sort.Strings(files)
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", f, err)
-		}
-		stmts := strings.Split(string(b), ";")
-		for _, s := range stmts {
-			if strings.TrimSpace(s) == "" {
-				continue
-			}
-			if _, err := db.ExecContext(ctx, s); err != nil {
-				return fmt.Errorf("exec %s failed: %w", f, err)
-			}
-		}
-	}
-	return nil
 }
 
 // GORM logger implementation

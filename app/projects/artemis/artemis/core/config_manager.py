@@ -5,7 +5,8 @@ from typing import Any, Dict, Optional
 import yaml
 
 from artemis.consts import Env
-from artemis.models import CallbackCfg, Config, DeptServicesCfg, HttpClientCfg, LoggingCfg, TelemetryCfg
+from artemis.consts.env import ALLOWED_ENVS, DEFAULT_ENV
+from artemis.models import CallbackCfg, Config, DataOptionsCfg, DeptServicesCfg, HttpClientCfg, LoggingCfg, TelemetryCfg
 
 
 class ConfigManager:
@@ -18,6 +19,7 @@ class ConfigManager:
         self._config_path: Optional[Path] = None
         self._env: Optional[str] = None
         self._task_variants_cache: Dict[str, Any] = {}
+        self._data_sources: Optional[Dict[str, DeptServicesCfg]] = None
 
         self._def_path_primary = Path(__file__).parent.parent / 'config' / 'config.yaml'
         self._def_path_secondary = Path(__file__).parent.parent.parent / 'config' / 'config.yaml'
@@ -39,6 +41,21 @@ class ConfigManager:
             return True
         return False
 
+    def _merge_config_dicts(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        """递归合并配置字典。
+
+        - dict 与 dict: 递归合并
+        - 其他类型（list / scalar）: override 全量覆盖
+        """
+        merged: Dict[str, Any] = dict(base)
+        for key, override_value in override.items():
+            base_value = merged.get(key)
+            if isinstance(base_value, dict) and isinstance(override_value, dict):
+                merged[key] = self._merge_config_dicts(base_value, override_value)
+            else:
+                merged[key] = override_value
+        return merged
+
     def init_config(self, path: str | None = None, env: str | None = None, force: bool = False) -> Optional[Config]:
         """Initialize or reload configuration.
         Reload triggers if:
@@ -50,6 +67,9 @@ class ConfigManager:
         """
         if self._config and not force and not self._needs_reload(path, env):
             return self._config
+
+        # 配置发生变化时，清空与配置强相关的缓存。
+        self._data_sources = None
 
         cfg_path = Path(path or os.getenv(Env.CONFIG_PATH_VAR, '')).resolve() if (
                     path or os.getenv(Env.CONFIG_PATH_VAR)) else None
@@ -63,20 +83,24 @@ class ConfigManager:
                 # fallback: empty config; do not raise to allow early imports
                 self._config = Config()
                 self._config_path = None
-                self._env = env or os.getenv(Env.CONFIG_ENV_VAR) or 'development'
+                self._env = env or os.getenv(Env.CONFIG_ENV_VAR) or DEFAULT_ENV
                 self._config.env = self._env
                 return self._config
 
         with open(cfg_path, 'r', encoding='utf-8') as f:
             base_cfg = yaml.safe_load(f) or {}
 
-        env_name = env or os.getenv(Env.CONFIG_ENV_VAR) or base_cfg.get('env') or 'development'
+        env_name = env or os.getenv(Env.CONFIG_ENV_VAR) or base_cfg.get('env') or DEFAULT_ENV
+        if env_name not in ALLOWED_ENVS:
+            raise ValueError(
+                f"Invalid environment '{env_name}'. Allowed values: {', '.join(ALLOWED_ENVS)}"
+            )
 
         override_file = cfg_path.parent / Env.OVERRIDE_FILENAME_PATTERN.format(env=env_name)
         if override_file.exists():
             with open(override_file, 'r', encoding='utf-8') as f:
                 override_cfg = yaml.safe_load(f) or {}
-            merged = {**base_cfg, **override_cfg}
+            merged = self._merge_config_dicts(base_cfg, override_cfg)
         else:
             merged = base_cfg
 
@@ -109,7 +133,7 @@ class ConfigManager:
         return self._config or self.init_config()
 
     def environment(self) -> str:
-        return self._env or 'development'
+        return self._env or DEFAULT_ENV
 
     def task_default(self, task_code: str) -> Dict[str, Any]:
         return self.get_config().task_defaults.get(task_code, {})
@@ -132,6 +156,99 @@ class ConfigManager:
 
     def dept_services_config(self) -> Optional[DeptServicesCfg]:
         return self.get_config().dept_services
+
+    def engine_config(self):
+        return self.get_config().engine
+
+    def task_engine_config(self):
+        return self.get_config().engine.task_engine
+
+    def data_options_config(self) -> DataOptionsCfg:
+        """返回 Workbench 数据维度选项配置。"""
+        return self.get_config().data_options
+
+    # ── Data source scanning for Workbench ──────────────────────
+
+    def _ensure_data_sources(self) -> None:
+        """Lazily scan config files for available data sources."""
+        if self._data_sources is not None:
+            return
+        self._data_sources = {}
+
+        current_source = 'production' if self.environment() == 'production' else 'relx'
+
+        # production: only expose current config, no scanning
+        if self.environment() == 'production':
+            dept = self.dept_services_config()
+            if dept:
+                self._data_sources[current_source] = dept
+            return
+
+        # development: scan all config-*.yaml in config directory
+        config_dir = self._config_path.parent if self._config_path else (
+            self._def_path_primary.parent if self._def_path_primary.exists() else self._def_path_secondary.parent
+        )
+        if not config_dir or not config_dir.exists():
+            dept = self.dept_services_config()
+            if dept:
+                self._data_sources[current_source] = dept
+            return
+
+        # current config → "relx"（development）/ "production"（production）
+        dept = self.dept_services_config()
+        if dept:
+            self._data_sources[current_source] = dept
+
+        # scan config-{name}.yaml files
+        _SOURCE_NAME_MAP = {
+            'home': 'home',
+            'production': 'production',
+        }
+        for cfg_file in sorted(config_dir.glob('config-*.yaml')):
+            stem = cfg_file.stem  # e.g. "config-home" → "config-home"
+            suffix = stem.replace('config-', '', 1)  # "home", "production"
+            source_name = _SOURCE_NAME_MAP.get(suffix)
+            if source_name is None:
+                continue
+            try:
+                with open(cfg_file, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f) or {}
+                ds = data.get('dept_services')
+                if ds and isinstance(ds, dict):
+                    self._data_sources[source_name] = DeptServicesCfg(**ds)
+            except Exception:
+                continue
+
+    def get_dept_services_for_source(self, source_name: Optional[str] = None) -> DeptServicesCfg:
+        """Return dept_services for a named data source.
+
+        Raises ValueError if source is not available or switching is disabled in production.
+        """
+        self._ensure_data_sources()
+
+        if source_name is None:
+            current_source = 'production' if self.environment() == 'production' else 'relx'
+            dept = self._data_sources.get(current_source)
+            if dept is None:
+                raise ValueError("No current data source configured")
+            return dept
+
+        if source_name not in self._data_sources:
+            raise ValueError(f"Data source '{source_name}' is not available")
+
+        return self._data_sources[source_name]
+
+    def available_sources(self) -> Dict[str, Any]:
+        """Return available data sources and the current source name.
+
+        Returns: {"sources": [...], "current": "relx|production"}
+        """
+        self._ensure_data_sources()
+        current_source = 'production' if self.environment() == 'production' else 'relx'
+        return {
+            "sources": list(self._data_sources.keys()),
+            "current": current_source,
+        }
 
     def _load_task_yaml(self) -> Dict[str, Any]:
         if self._task_variants_cache:

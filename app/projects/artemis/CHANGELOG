@@ -1,7 +1,204 @@
 # VERSION
-v0.10.4
+v0.24.0
 
 # Changelog
+- v0.24.0
+    - **Taxonomy V2** — unified source/taxonomy/market for industry data pipeline
+        - New `Taxonomy` enum in `consts/data_source.py` (swhy/citic/gics/concept/region/mairui)
+        - `PhoenixAClient`: all taxonomy/industry methods now accept `taxonomy` and `market` params; API paths updated to `/api/v2/taxonomy/{source}/{taxonomy}/{market}/...`
+        - `StockZHAMarketCategorySWHY`: source unified to `amazing_data`, taxonomy=`swhy`; `code` now uses `INDUSTRY_CODE` (not `INDEX_CODE`); `index_code` stored as separate field; parent_code logic fixed to use INDUSTRY_CODE hierarchy
+        - `StockZHAIndustryConstituentSWHY`: extracts pure `symbol` from `con_code` (e.g. `603648.SH` → `603648`); adds taxonomy/market to sink
+        - `StockZHAIndustryWeightSWHY`: same symbol extraction + taxonomy/market
+        - `StockZHAIndustryDailySWHY`: adds taxonomy/market to sink
+        - `StockZHAMarketCategory` (Mairui): adds taxonomy=`mairui`, market=`zh_a` to sink
+- v0.23.1
+    - Fixed bugs of downloading industry/company actions/financial stuff.
+- v0.23.0
+    - **Field Catalog & Data Documentation**
+        - New `artemis/consts/field_catalog.py` — single source of truth for all JSON-stored data field metadata
+        - Structured as `CATALOG[domain][data_type] → List[FieldEntry]` for extensibility
+        - Covers all 7 data types: balance_sheet, income, cashflow, profit_express, profit_notice, dividend, right_issue
+        - Public API: `get_fields()`, `get_field_names()`, `get_field_map()`, `list_domains()`, `list_types()`
+        - New `docs/financial_data_fields.md` — comprehensive field reference documentation with query examples
+- v0.22.0
+    - **Balance Sheet financial data pipeline** (`get_balance_sheet`)
+        - New task: `STOCK_ZH_A_BALANCE_SHEET` — downloads A-share balance sheet data via AmazingData SDK
+        - Design: uses JSON column for 180+ financial fields (extensible to income/cashflow statements)
+        - PhoenixA client: `upsert_financial_statements()`, `query_financial_statements()`
+        - Batch sink in 500-record chunks to avoid oversized HTTP requests
+    - **Cash Flow financial data pipeline** (`get_cash_flow`)
+        - New task: `STOCK_ZH_A_CASH_FLOW` — downloads A-share cash flow statement data via AmazingData SDK
+        - Reuses unified `financial_statement` table with `statement_type='cashflow'`
+    - **Income Statement financial data pipeline** (`get_income`)
+        - New task: `STOCK_ZH_A_INCOME` — downloads A-share income statement data via AmazingData SDK
+        - Reuses unified `financial_statement` table with `statement_type='income'`
+    - **Profit Express financial data pipeline** (`get_profit_express`)
+        - New task: `STOCK_ZH_A_PROFIT_EXPRESS` — downloads A-share profit express data via AmazingData SDK
+        - Reuses unified `financial_statement` table with `statement_type='profit_express'`
+        - Handles both DataFrame and dict return types from SDK
+    - **Profit Notice financial data pipeline** (`get_profit_notice`)
+        - New task: `STOCK_ZH_A_PROFIT_NOTICE` — downloads A-share profit notice (业绩预告) data via AmazingData SDK
+        - Reuses unified `financial_statement` table with `statement_type='profit_notice'`
+        - Handles both DataFrame and dict return types from SDK
+    - **Financial reference data constants** (`artemis/consts/financial.py`)
+        - `FinancialStatementType`: balance_sheet / income / cashflow / profit_express / profit_notice
+        - `ReportType`: Q1(1) / H1(2) / Q3(3) / Annual(4)
+        - `StatementCode`: 1-10 most common codes (合并报表/母公司报表/调整/更正前 etc.)
+        - `ProfitNoticeType`: 1-11 业绩预告类型代码 (略减/略增/扭亏/预减/预增 etc.)
+    - **Corporate Action data pipeline** — new domain: `corporate_action` table
+        - New task: `STOCK_ZH_A_DIVIDEND` — downloads A-share dividend data via AmazingData SDK (`get_dividend`)
+        - New task: `STOCK_ZH_A_RIGHT_ISSUE` — downloads A-share right issue data via AmazingData SDK (`get_right_issue`)
+        - New `BaseCorporateActionTask` base class with configurable metadata fields
+        - PhoenixA client: `upsert_corporate_actions()`, `query_corporate_actions()`
+        - Reference constants: `CorporateActionType`, `DividendProgress`, `RightIssueProgress`
+    - Added to `tasks_export_2026-04-26.json`:
+        - `stock_zh_a_balance_sheet`: weekly SAT 06:00, ASYNC mode with 30min timeout
+        - `stock_zh_a_cash_flow`: weekly SAT 06:30, ASYNC mode with 30min timeout
+        - `stock_zh_a_income`: weekly SAT 07:00, ASYNC mode with 30min timeout
+        - `stock_zh_a_profit_express`: weekly SAT 07:30, ASYNC mode with 30min timeout
+        - `stock_zh_a_profit_notice`: weekly SAT 08:00, ASYNC mode with 30min timeout
+        - `stock_zh_a_dividend`: weekly SAT 08:30, ASYNC mode with 30min timeout
+        - `stock_zh_a_right_issue`: weekly SAT 09:00, ASYNC mode with 30min timeout
+- v0.21.0
+    - **Renamed diagnostics → bar_details / Transaction Details**
+        - `enable_diagnostics` → `enable_bar_details`, `diagnostics_level` → `bar_details_level` across base strategy, executor, workbench model, and result normalizer
+        - `diagnostic_events` → `bar_detail_events` in strategy instance
+        - Artifacts key `diagnostics` → `bar_details`
+    - **Fixed `_getpairs()` ValueError in `@register_strategy` decorator**
+        - Changed to `_getitems()` which returns proper `(key, value)` tuples instead of bare strings
+    - **Added order result diagnostics in base strategy**
+        - `notify_order()` now records `ORDER_BUY_OK` / `ORDER_SELL_OK` / `ORDER_FAILED` events to bar_detail_events
+        - Shows execution price, size, commission for completed orders; reason and cash for failed orders
+    - **Grid trading: pre-order cash check**
+        - Before placing BUY, checks `estimated_cost > available_cash` and records SKIP with reason "资金不足" instead of letting backtrader margin-reject
+    - **FIFO order-pair trade statistics fallback**
+        - When backtrader TradeAnalyzer reports 0 trades (position never returns to 0, e.g. grid trading), uses FIFO matching of completed BUY/SELL orders to compute trade_count, win_count, loss_count, win_rate
+    - **Industry Daily data pipeline** (`get_industry_daily`)
+        - New task: `STOCK_ZH_A_INDUSTRY_DAILY_SWHY` — downloads SWHY industry index daily OHLCV + PE/PB/market cap
+        - PhoenixA client: `upsert_industry_daily()`, `query_industry_daily()`
+        - PhoenixA client: `query_industry_categories()`, `query_industry_constituents_by_index()`, `query_industry_constituents_by_stock()`
+    - **Workbench Industry Explorer API**
+        - `GET /workbench/industry/categories` — industry hierarchy query
+        - `GET /workbench/industry/constituents` — constituents by industry index
+        - `GET /workbench/industry/by-stock` — reverse lookup: stock → industries
+        - `GET /workbench/industry/daily` — industry index daily bars
+    - Added to `tasks_export_2026-04-25.json` (daily at 17:30 MON-FRI)
+- v0.20.1
+    - Upgraded baostock to v0.9.1
+    - Added record of a grid line of an order in grid line trading.
+    - Added grid rollback in grid trading.
+- v0.20.0
+    - **Bugfix: STOCK_ZH_A_HIST field name mismatch**
+        - Fixed `date→trade_date`, `code→symbol` field mapping for PhoenixA v2 API compatibility
+        - Separated standard bars and baostock ext data (`turn`, `pe_ttm`, etc.) into `bars` + `ext` payloads
+        - Renamed `pctChg→pct_chg` to match PhoenixA `StandardBar` JSON tags
+        - Fixed empty `trade_date` causing MySQL `Error 1292` on upsert
+    - **Unified `code→symbol` variable naming across codebase**
+        - `stock_zh_a_hist_child.py`: `code→bs_code`, `raw_code→symbol`; sink calls `upsert_bars()` (v2) instead of `upsert_stock_zh_a_hist()` (legacy)
+        - `stock_zh_a_hist_parent.py`: `code_list→symbol_list`, `codes→symbols`, `code_infos→symbol_infos`; calls `get_securities()` / `get_bars_last_update()` (v2)
+        - `campaign.py`: `code_infos→symbol_infos`; migrated to v2 API
+        - `phoenixA_client.py`: removed `"code"` backward-compat field from `get_securities()` return
+        - `config/task.yaml`: removed `code`, `adjustflag`, `tradestatus`, `isST` from baostock fields
+        - Updated all tests and fake clients to match v2 API signatures
+    - **Added return rate curve (收益率曲线)**
+        - `result_normalizer.py`: computes `return_curve` from `equity_curve` + `start_cash`, outputs `return_pct` per bar
+        - Added `return_curve` to `artifacts`, `plot_series`, and `plot_manifest`
+        - Frontend: new `ReturnCurveChartComponent` with ECharts percentage Y-axis
+    - **Added Grid Trading strategy (网格策略)**
+        - New `strategies/grid_trading.py`: `@register_strategy(code="grid_trading")`
+        - Params: `upper_price`, `lower_price`, `grid_lines`, `order_size`, `grid_mode` with full `param_schema`
+        - `grid_mode`: `arithmetic` (等差/固定价差) or `geometric` (等比/log 等差)
+        - Each grid line independently tracks position state (filled/empty)
+        - Auto-discovered by frontend via `GET /workbench/strategies`
+    - **Added K-Line chart with Buy/Sell markers in backtest results**
+        - Backend: includes original OHLCV bars in backtest response `artifacts.bars`
+        - Frontend: new `BacktestKLineChartComponent` — candlestick chart with green ▲"B" / red ▼"S" signal annotations
+        - Placed above equity curve chart in research page layout
+    - **Added strategy engine documentation**
+        - `docs/2026-04-15 STRATEGY_ENGINE_STRATEGIES_GUIDE.md`: comprehensive guide covering architecture, base class, registration, parameter schema, each strategy's logic/params/code, data flow, frontend integration, and how to add new strategies
+    - Added `test_stock_hist_symbol_v2.py`: 22 tests for code→symbol refactoring
+    - Updated `test_workbench_providers.py`: migrated fake clients to v2 API
+- v0.19.0
+    - Use previous python env to build image when there is no dependency update.
+- v0.18.0
+    - **Strategy Engine DX Refactor — BaseRecordingStrategy + Decorator Registration + Shared Executor**
+    - New `strategies/base.py`:
+        - `BaseRecordingStrategy` base class: unifies equity_curve / position_curve / signal_events / order_events / trade_events recording across all strategies; subclasses only implement `__init__()` + `on_bar()`
+        - `@register_strategy` decorator: auto-extracts `default_params` from backtrader `params` via `_getpairs()`, eliminates duplicate definition between strategy class and registry_map
+    - New `strategy_engine/executor.py`:
+        - `execute_backtest()` — shared backtest execution function used by both Workbench and TaskEngine paths
+        - `extract_analyzer_results()` — single implementation, replaces duplicates in `workbench/backtest.py` and `task_engine/backtest/run.py`
+    - Enhanced `StrategySpec.validate_params()`:
+        - Added `float` type + min/max range validation
+        - Added `str` type validation
+        - Added `enum` type + options validation
+        - Added `max` upper bound for int/float
+        - Added `default`, `description`, `display_name` metadata fields for frontend form rendering
+    - Added `version` field to `StrategySpec` (default `"v1"`)
+    - Refactored `SmaCrossStrategy`: 111 lines → 46 lines (with decorator metadata), pure strategy logic ~20 lines
+    - Refactored `services/workbench/backtest.py`: uses `execute_backtest()`, removed duplicate `_extract_analyzer_results`
+    - Refactored `task_engine/backtest/run.py`: uses `execute_backtest()`, removed duplicate `_extract_analyzer_results`
+    - `strategy_registry.py` now supports both decorator-based and legacy `registry_map.py` registration (backward compatible)
+    - Test fixes:
+        - Fixed `test_backtrader_phase1.py`: `timeframe` → `period` in test request bodies and assertions (aligned with v0.17.0 rename)
+        - Fixed `test_workbench_phase1_contract.py`: `FakePhoenixClient` updated from `get_stock_zh_a_hist_bars()` to `get_bars()` (aligned with v0.17.0 provider refactor); monkeypatch adapted for `execute_backtest` path
+    - Added architecture review doc: `docs/2026-04-15 REVIEW_STRATEGY_ENGINE_ARCHITECTURE.md`
+- v0.17.0
+    - **Unified field naming & PhoenixA v2 API migration**
+    - PhoenixAClient refactored to use v2 API endpoints:
+        - `get_bars()` / `upsert_bars()` — unified bars via `/api/v2/bars/{asset_type}/{market}`
+        - `get_securities()` / `upsert_securities()` — via `/api/v2/securities`
+        - `upsert_taxonomy_categories()` — via `/api/v2/taxonomy/{source}/categories/upsert`
+        - Automatic `trade_date→date` / `symbol→code` field mapping for CacheEngine compatibility
+    - All legacy client methods preserved as backward-compatible aliases
+    - Replaced per-asset-type providers with unified `PhoenixBarsProvider`
+    - Renamed `timeframe` → `period` across all backtest code:
+        - `BacktestResultNormalizer`, `BacktraderRunTask`, `BacktraderCampaignTask`
+        - Removed `timeframe→period` remapping hack in `workbench/backtest.py`
+    - Updated `DataProviderRegistry`:
+        - New primary spec: `phoenixa_bars` (supports daily/weekly/min5/min15/min30/min60)
+        - Legacy alias `phoenixa_hist_daily` preserved for existing task configs
+- v0.16.0
+    - Refactor backend query contracts in workbench.py and workbench_routes.py to standardize period, current, and source validation.
+    - Update source scanning in config_manager.py so available_sources() returns relx/home/production and current, never default.
+    - Centralize normalization in market_data.py and backtest.py via a shared normalize_dimensions() and MarketDataQuery-style flow.
+    - Update existing tests in test_config_manager.py and add route/service/frontend coverage for period, current, relx, and index -> nf behavior.
+    - Added Provider Layer。
+- v0.15.1
+    - Added SWHY stock category
+- v0.15.0
+    - Added phase I of CacheEngine.
+        - Added Arrow + mmap
+        - Added compaction API
+        - Added Partition Resolver
+        - Added unit tests for cache engine
+        - Added multiple data dimension in workbench
+- v0.14.0
+    - Added Task Cancel API, invoked by cronjob.
+    - Added Timeout control for task engine.
+    - Added exchange support for filtering stock list.
+    - Fixed issue of using wrong parameters in STOCK_ZH_A_HIST.
+- v0.13.1
+    - Added exchange filter in STOCK_ZH_A_LIST
+- v0.13.0
+    - Added multi-datasource in Workbench and related data provider interfaces.
+- v0.12.2
+    - Added design documents and proposals.
+    - Refactor to extract services.
+- v0.12.1
+    - Added skewness, kurtosis, support and breakout indicators.
+- v0.12.0
+    - Extracted `analyzers/` and `data_providers/` into independent module folders under `strategy_engine`, aligning with the existing `strategies/` structure.
+    - Added Strategy Research Workbench.
+- v0.11.1
+    - Fixed design flaws of strategy engine.
+    - Rename backtrade units to bt_engine.
+    - Added comments to core logic.
+- v0.11.0
+    - Added BACKTRADER_CAMPAIGN and BACKTRADER_RUN.
+    - Added strategies engine to work with task framework.
+    - Added strategies API in phoenixA_client.py
+    - Changed docs of artemis.
 - v0.10.4
     - Commented SDKs auto disconnection.
     - Fixed wrong callback parameters to cronjob.

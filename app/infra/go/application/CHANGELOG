@@ -1,7 +1,84 @@
 # VERSION
-v0.16.2
+v0.17.2
 
 # Changelog
+- v0.17.2
+    - Added "How TO USE" readout.
+- v0.17.1
+    - **[BUG FIX] BaseComponent data race on `active` field** (core/component.go):
+        - `active` field was read/written without synchronization (Start/Stop/IsActive/HealthCheck/SetActive).
+        - Concurrent goroutines (e.g., health checks during startup/shutdown) could trigger data races.
+        - Fix: replaced `bool` with `atomic.Bool`; protected `deps` slice with `sync.RWMutex`.
+        - `Dependencies()` now returns a copy to prevent external mutation.
+    - **[BUG FIX] grpc_client `GetGRPCClient` silent nil error** (grpc_client/utils.go):
+        - When type assertion `component.(*GRPCClientComponent)` failed, code returned `nil, err` where `err` was always `nil` (from successful `Resolve`).
+        - Callers received `(nil, nil)` — a silent failure with no error indication.
+        - Fix: return explicit `fmt.Errorf` describing the type mismatch.
+    - **[BUG FIX] http_client response body leak** (http_client/client.go):
+        - When `out != nil` and HTTP status >= 400, the response body was partially read but never closed.
+        - Fix: unified deferred body drain + close for all code paths (regardless of `out` parameter).
+    - **[BUG FIX] http_client retry body consumption** (http_client/client.go):
+        - `doWithRetry` re-used the same `*http.Request` across retry attempts, but `http.Transport` consumes and closes the body after the first attempt.
+        - Subsequent retries sent requests with empty bodies (silent data loss for POST/PUT).
+        - Fix: buffer request body upfront; reset `req.Body` + `req.GetBody` before each retry attempt.
+        - Also removed deprecated `nErr.Temporary()` check.
+    - **[BUG FIX] grpc_server zero-value config defaults** (grpc_server/component.go):
+        - `MaxRecvMsgSize=0` and `MaxSendMsgSize=0` were passed directly to gRPC, effectively rejecting ALL messages.
+        - `GracefulTimeout=0` caused `time.Until(deadline)` to be in the past, triggering immediate forced stop.
+        - Empty `Address` caused listen to fail without clear defaults.
+        - Fix: added `applyDefaults()` — Address=":50051", MaxRecvMsgSize=4MB, MaxSendMsgSize=4MB, GracefulTimeout=10s.
+    - **[BUG FIX] prometheus missing config defaults** (prometheus/prometheus_component.go):
+        - Empty `Address` and `Path` caused broken metrics endpoint.
+        - Fix: default Address=":9090", Path="/metrics".
+    - **[TEST] Added unit tests for core package** (core/*_test.go):
+        - `TestBaseComponent_ConcurrentActiveAccess`: verifies no data race on active field.
+        - `TestBaseComponent_ConcurrentDependencyAccess`: verifies thread-safe dependency operations.
+        - `TestBaseComponent_HealthCheck`: lifecycle state transitions.
+        - `TestContainer_RegisterAndResolve`: basic registration and lookup.
+        - `TestContainer_Replace`: replace semantics (inactive only).
+        - `TestContainer_SortComponentsByDependencies`: topological sort ordering.
+        - `TestContainer_CircularDependency`: cycle detection.
+        - `TestContainer_ValidateDependencies_MissingDep`: missing dependency detection.
+        - `TestContainer_ListRegistered`: returns defensive copy.
+        - `TestContainer_Config`: config set/get.
+        - `TestLifecycleManager_StartAll_FailureCleanup`: cleanup on partial start failure.
+        - `TestLifecycleManager_StopAll_Idempotent`: idempotent shutdown.
+- v0.17.0
+    - PostgreSQL GORM component enhancements:
+        - Added `schema` config field: auto-sets `search_path` and creates schema if not exists (supports multi-schema like `public` + `kg`).
+        - Added `enable_pgvector` config field: auto-creates `vector` extension for PGVector support.
+        - Fixed `buildDSN`: removed dead `url.Values` code, injects `search_path` into DSN params.
+        - Fixed SQL migration parser: now handles PostgreSQL `$$` dollar-quoting blocks (e.g., functions, triggers) correctly instead of naively splitting on `;`.
+        - Added `isValidIdentifier` input validation to prevent SQL injection in schema/table names used in dynamic SQL (`EnsureHypertable`, `ensureTimescaleExtension`).
+        - Added `ensurePGVectorExtension` function.
+    - Telemetry component fixes:
+        - Disabled mode no longer returns error; creates no-op providers so tracing/metrics APIs are still safe to call.
+        - Added file log rotation via lumberjack when `stdout_file` is set (consistent with logging component).
+        - New config fields: `file_max_size_mb`, `file_max_age_days`, `file_max_backups`.
+        - Fixed `HealthCheck` to not fail when using `ExporterNone` or disabled mode.
+    - **Migration directory convention redesigned**:
+        - New hierarchical structure: `{migrate_base}/{db_type}/{datasource_name}/`
+        - Example: `./migrations/postgresql/kg/0001_init.sql`
+        - Config field renamed: `migrate_dir` → `migrate_base` (component auto-resolves full path)
+        - All datasources can share the same `migrate_base` root
+        - Added `migration.ResolveMigrateDir()` helper for path resolution
+        - Supported db_type directories: `postgresql/`, `mysql/` (extensible to `clickhouse/`, etc.)
+    - New shared migration package (`components/migration`):
+        - Version-tracked migrations via `_migrations` table (auto-created per datasource).
+        - Tracks applied migrations by filename — already-applied files are skipped.
+        - Supports both MySQL and PostgreSQL dialects.
+        - PostgreSQL `$$` dollar-quoting handled correctly.
+        - Each migration file runs inside a transaction (with fallback for non-transactional DDL).
+        - Migration files must follow naming convention: `NNNN_description.sql`.
+    - PostgreSQL GORM component updated:
+        - Uses `migrate_base` + auto-resolve instead of `migrate_dir`
+        - Removed legacy `runGormMigrations` / `splitSQLStatements`
+    - MySQL GORM component updated:
+        - Uses `migrate_base` + auto-resolve instead of `migrate_dir`
+        - Uses shared migration package (version-tracked, replaces old re-run-all approach)
+        - Removed legacy `runGormMigrations`
+- v0.16.3
+    - Moved go infra docs to infra folder.
 - v0.16.2
     - Added non-export in telemetry component
 - v0.16.1

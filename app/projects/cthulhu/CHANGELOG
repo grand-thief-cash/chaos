@@ -1,7 +1,71 @@
 # VERSION
-v0.4.2
+v0.8.0
 
 # Changelog
+- v0.8.0
+    - **Renamed diagnostics → Transaction Details**
+        - Model: `DiagnosticEvent` → `BarDetailEvent`, `diagnostics` → `bar_details`
+        - Component renamed to `BacktestBarDetailsComponent` (`app-backtest-bar-details`)
+        - Config divider renamed to "Transaction Details"
+    - **Transaction Details table improvements**
+        - Resizable columns via `nz-resizable` (drag column edges to resize)
+        - Shortened action labels: `ORDER_BUY_OK` → `✓ BUY`, `ORDER_SELL_OK` → `✓ SELL`, `ORDER_FAILED` → `✗ FAIL`
+        - Added magenta color for `ORDER_FAILED` actions
+        - CSV export filename changed to `bar_details_*.csv`
+    - **Return Distribution chart** (`return-distribution-chart.component.ts`)
+        - Histogram of daily returns with normal distribution overlay
+        - Stats panel: Mean, Std Dev, Skewness, Kurtosis (excess), Median, Samples
+        - Color-coded skewness/kurtosis values (green/orange/red by severity)
+        - Interpretation text box explaining distribution characteristics
+        - Available in both Market Data page and Strategy Research page
+        - Toggle button to show/hide on demand (default hidden)
+    - **Strategy Configuration redesign**
+        - Two-section card layout: "Strategy Parameters" and "Data & Capital"
+        - Compact CSS Grid fields (4 columns × 160px, no full-width stretching)
+        - Vertical label layout (label above input) with 12px labels
+        - Bottom bar with Run Backtest button and Transaction Details toggle side by side
+    - **Cron Jobs: Fixed active runs navigation**
+        - Run ID link: `/cronjobs/run/:id` → `/cronjobs/tasks/:taskId/runs/:runId`
+        - Task ID now clickable, linking to task detail page
+    - **Industry Explorer page** (`/workbench/industry`)
+        - Two search modes: "Industry → Stocks" and "Stock → Industries"
+        - Industry hierarchy browser with breadcrumb drill-down navigation
+        - Constituent stocks table for selected industry
+        - Industry index daily bars table with PE/PB/market cap columns
+        - Red/green coloring for close vs pre_close
+    - Added Industry API methods to WorkbenchApiService
+    - Added industry data model interfaces (IndustryCategory, IndustryConstituent, IndustryDailyBar)
+- v0.7.1
+    - Fixed bug of displaying mode selection in gridline strategy.
+- v0.7.0
+    - Added K-Line chart with Buy/Sell signal markers in backtest results (`backtest-kline-chart.component.ts`).
+        - Candlestick chart rendered from backtest OHLCV bars data.
+        - Green triangle ▲ + "B" label for buy signals, red triangle ▼ + "S" label for sell signals.
+        - Includes volume sub-chart and DataZoom.
+    - Added Return Rate Curve chart (`return-curve-chart.component.ts`).
+        - Percentage Y-axis with green/red coloring based on positive/negative returns.
+        - Zero baseline markLine.
+    - Updated `BacktestArtifacts` model: added `return_curve: ReturnPoint[]` and `bars?: Bar[]` fields.
+    - Updated Research page layout: Stats → K-Line Chart → Equity Curve → Return Curve.
+- v0.6.1
+    - Propagate response-field renames through workbench.model.ts and workbench-api.service.ts so requests/responses use period and current.
+    - Move selected source/dimension state into workbench.store.ts, then simplify market-data.page.ts and strategy-config.component.ts to consume store state without hardcoded fallbacks.
+- v0.6.0
+    - Added multi-datasource switch in Workbench page.
+    - Fixed missing consts in cronjob callback.
+    - Added multi-dimension selection in workbench.
+- v0.5.1
+    - Rename candlestick chart to chart panel.
+    - Added break-support line.
+    - Added skewness & kurtosis indicators.
+    - Fixed overlap charts.
+    - Added height control of subcharts.
+    - Fixed coexisted scroll bars of charts.
+- v0.5.0
+    - Added candlestick chart as common component.
+    - Added Workbench to research strategy.
+    - Added toggle to control Y-axis.
+    - Added flexible indicators on candlestick.
 - v0.4.2
     - Move cronjob service from common folder to cronjob folder.
 - v0.4.1

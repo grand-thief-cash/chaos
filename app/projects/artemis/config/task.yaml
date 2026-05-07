@@ -26,5 +26,65 @@ tasks:
         config:
            period: "daily"
            adjust: "nf"
+           exchange: "SH,SZ,BJ"
            start_date: "2016-01-01"
-           fields: "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
+           fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
+
+      - match: { period: "daily", adjust: "hfq" }
+        config:
+           period: "daily"
+           adjust: "hfq"
+           exchange: "SH,SZ"
+           start_date: "2009-01-01"
+           fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
+
+  # Industry SWHY
+  STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY:
+    variants:
+      - match: {}
+        config:
+          # symbols, start_date, end_date are optional
+          # cronjob can override any field; omit symbols to download all industry indices
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_INDUSTRY_DAILY_SWHY:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_INDUSTRY_CONSTITUENT_SWHY:
+    variants:
+      - match: {}
+        config: {}
+
+  BACKTRADER_CAMPAIGN:
+    variants:
+      - match: { mode: "historical" }
+        config:
+          mode: "historical"
+          market: "CN_A"
+          timeframe: "daily"
+          adjust: "nf"
+          cash: 100000.0
+          commission: 0.001
+          data_provider_code: "phoenixa_hist_daily"
+          analyzer_profile: "default_hist_v1"
+          persist_artifacts: ["analyzers", "trades", "equity_curve", "plot_manifest", "plot_series"]
+
+  BACKTRADER_RUN:
+    variants:
+      - match: { mode: "historical" }
+        config:
+          mode: "historical"
+          market: "CN_A"
+          timeframe: "daily"
+          adjust: "nf"
+          cash: 100000.0
+          commission: 0.001
+          data_provider_code: "phoenixa_hist_daily"
+          analyzer_profile: "default_hist_v1"
+          persist_artifacts: ["analyzers", "trades", "equity_curve", "plot_manifest", "plot_series"]
+

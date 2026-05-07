@@ -1,0 +1,39 @@
+[project]
+name = "atlas"
+version = "0.1.0"
+description = "Atlas — Industry Chain Knowledge Graph Engine for investment analysis"
+readme = "README.md"
+authors = [{name = "Atlas Team"}]
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110.0",
+  "uvicorn>=0.23.0",
+  "httpx>=0.25.0",
+  "pydantic>=2.6.0",
+  "PyYAML>=6.0.0",
+  "python-dotenv>=1.0.0",
+  "neo4j>=5.20.0",
+  "litellm>=1.40.0",
+  "pymupdf>=1.24.0",
+  "beautifulsoup4>=4.12.0",
+  "python-multipart>=0.0.9",
+  "tenacity>=8.2.0",
+  "sqlalchemy[asyncio]>=2.0.0",
+  "asyncpg>=0.29.0",
+  "psycopg2-binary>=2.9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4.0", "pytest-asyncio>=0.21.0"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["atlas*"]
+exclude = ["tests"]
+

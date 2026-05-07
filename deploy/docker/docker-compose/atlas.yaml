@@ -1,0 +1,78 @@
+services:
+  atlas:
+    build:
+      context: ../../../
+      dockerfile: deploy/docker/dockerfile/Dockerfile-atlas
+    container_name: atlas
+    ports:
+      - "18400:18400"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      - LLM_API_KEY=${LLM_API_KEY}
+      - ATLAS_CONFIG=/app/config/atlas.yaml
+      - PG_DSN=postgresql://atlas:atlas_password@postgres:5432/atlas
+    volumes:
+      - atlas_data:/app/data
+      - ../../../app/projects/atlas/config:/app/config:ro
+    restart: unless-stopped
+    networks:
+      - atlas-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: atlas-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=atlas
+      - POSTGRES_USER=atlas
+      - POSTGRES_PASSWORD=atlas_password
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../../../app/projects/atlas/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - atlas-net
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: atlas-neo4j
+    ports:
+      - "7474:7474"   # Browser UI
+      - "7687:7687"   # Bolt protocol
+    environment:
+      - NEO4J_AUTH=neo4j/atlas_password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_memory_heap_initial__size=256m
+      - NEO4J_dbms_memory_heap_max__size=512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - atlas-net
+
+volumes:
+  atlas_data:
+  neo4j_data:
+  neo4j_logs:
+  pg_data:
+
+networks:
+  atlas-net:
+    driver: bridge
+

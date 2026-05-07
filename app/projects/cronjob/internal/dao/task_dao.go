@@ -23,6 +23,7 @@ type TaskDao interface {
 	UpdateStatus(ctx context.Context, id int64, status bizConsts.TaskStatus) error
 	SoftDelete(ctx context.Context, id int64) error
 	ExistsByName(ctx context.Context, name string) bool
+	ReactivateByName(ctx context.Context, name string, t *model.Task) (int64, bool, error)
 	// ListFiltered allows querying tasks by multiple optional filters.
 	ListFiltered(ctx context.Context, f *model.TaskListFilters, limit, offset int) ([]*model.Task, error)
 	CountFiltered(ctx context.Context, f *model.TaskListFilters) (int64, error)
@@ -227,4 +228,46 @@ func (d *TaskDaoImpl) ExistsByName(ctx context.Context, name string) bool {
 	var count int64
 	d.db.WithContext(ctx).Model(&model.Task{}).Where("name=? AND deleted=0", name).Count(&count)
 	return count > 0
+}
+
+// ReactivateByName finds a soft-deleted task by name and reactivates it with new field values.
+// Returns (id, true) if reactivated, (0, false) if no soft-deleted record found.
+func (d *TaskDaoImpl) ReactivateByName(ctx context.Context, name string, t *model.Task) (int64, bool, error) {
+	var existing model.Task
+	if err := d.db.WithContext(ctx).Unscoped().Where("name=? AND deleted=1", name).First(&existing).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+
+	updates := map[string]interface{}{
+		"description":          t.Description,
+		"cron_expr":            t.CronExpr,
+		"timezone":             t.Timezone,
+		"exec_type":            t.ExecType,
+		"http_method":          t.HTTPMethod,
+		"target_service":       t.TargetService,
+		"target_path":          t.TargetPath,
+		"headers_json":         t.HeadersJSON,
+		"body_template":        t.BodyTemplate,
+		"retry_policy_json":    t.RetryPolicyJSON,
+		"max_concurrency":      t.MaxConcurrency,
+		"concurrency_policy":   t.ConcurrencyPolicy,
+		"callback_method":      t.CallbackMethod,
+		"callback_timeout_sec": t.CallbackTimeoutSec,
+		"overlap_action":       t.OverlapAction,
+		"failure_action":       t.FailureAction,
+		"status":               t.Status,
+		"deleted":              0,
+		"version":              gorm.Expr("version + 1"),
+	}
+	res := d.db.WithContext(ctx).Model(&model.Task{}).Where("id=? AND deleted=1", existing.ID).Updates(updates)
+	if res.Error != nil {
+		return 0, false, res.Error
+	}
+	existing.Version++
+	t.ID = existing.ID
+	t.Version = existing.Version
+	return existing.ID, true, nil
 }

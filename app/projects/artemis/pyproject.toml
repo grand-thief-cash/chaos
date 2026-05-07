@@ -9,9 +9,12 @@ dependencies = [
   "fastapi>=0.110.0",
   "uvicorn>=0.23.0",
   "httpx>=0.25.0",
+  "requests>=2.32.0",
   "pydantic>=2.6.0",
   "PyYAML>=6.0.0",
-  "python-dotenv>=1.0.0"
+  "python-dotenv>=1.0.0",
+  "pandas>=2.2.0",
+  "backtrader>=1.9.78.123"
 ]
 
 [project.optional-dependencies]

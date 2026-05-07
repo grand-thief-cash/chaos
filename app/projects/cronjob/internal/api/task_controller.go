@@ -458,12 +458,25 @@ func (tmc *TaskMgmtController) ImportTasks(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 
-		// 检查是否已存在同名任务
+		// 检查是否已存在同名活跃任务
 		if tmc.TaskSvc.TaskDaoImpl().ExistsByName(ctx, t.Name) {
 			failedTasks = append(failedTasks, map[string]any{
 				"name":  taskData.Name,
 				"error": "Task name already exists",
 			})
+			continue
+		}
+
+		// 尝试重新激活同名软删除任务
+		if _, reactivated, err := tmc.TaskSvc.TaskDaoImpl().ReactivateByName(ctx, t.Name, t); err != nil {
+			logging.Error(ctx, fmt.Sprintf("Import task %s reactivate failed: %v", t.Name, err))
+			failedTasks = append(failedTasks, map[string]any{
+				"name":  taskData.Name,
+				"error": err.Error(),
+			})
+			continue
+		} else if reactivated {
+			successCount++
 			continue
 		}
 
