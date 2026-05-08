@@ -1,7 +1,34 @@
 # VERSION
-v0.10.0
+v0.11.0
 
 # Changelog
+- v0.11.0
+    - **Atlas Knowledge Graph feature module** (`/atlas`) — new route group for KG exploration and analysis
+        - New page: **Dashboard** (`/atlas/dashboard`)
+            - Graph statistics cards: total nodes, total edges, recent events count, pipeline runs count
+            - Node type breakdown with color-coded tags
+            - Recent events table: entity, type, direction, severity, source count, time bucket
+            - Pipeline runs table with trigger button: date, docs, events new/deduped, cost, status
+        - New page: **Graph Explorer** (`/atlas/graph`)
+            - Company search with ECharts force-directed graph visualization
+            - Interactive: click node to explore, drag to rearrange
+            - Details panel with tabs: Relationships, Timeline, Competitors
+            - Color-coded nodes by type (Company=blue, Product=cyan, Resource=orange, etc.)
+        - New page: **Events & Impact** (`/atlas/events`)
+            - Event list with filters: event type selector, entity name search
+            - Impact analysis panel: direct impacts, indirect impacts, LLM analysis text
+            - Severity/direction color coding (red=high/up, green=low/down, orange=medium)
+        - New page: **Company Review** (`/atlas/company`)
+            - Company name search with LLM-generated investment review
+            - Graph data summary: relationships count, competitors, events, resource dependencies
+            - Full review text display
+        - New page: **Document Management** (`/atlas/documents`)
+            - File upload modal with doc type and company selection
+            - Document list with type/status filters
+            - Extract button for pending documents
+        - New service: `AtlasApiService` — API client for Atlas backend endpoints
+        - Atlas top-nav entry: icon=deployment-unit, path=/atlas
+        - Environment configs updated with `atlasApiBase` for dev/prod
 - v0.10.0
     - **Factor Engine page** (`/artemis/factors`) — new tab-based dashboard for factor management
         - **Factor Registry tab**: browse all registered factors with name, Chinese name, category (color-tagged), formula, unit, higher-is-better indicator, and market data requirement

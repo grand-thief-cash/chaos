@@ -24,6 +24,10 @@ export const routes: Routes = [
         path: 'workbench',
         loadChildren: () => import('../features/workbench/workbench.routes').then(m => m.WORKBENCH_ROUTES)
       },
+      {
+        path: 'atlas',
+        loadChildren: () => import('../features/atlas/atlas.routes').then(m => m.ATLAS_ROUTES)
+      },
       { path: '**', redirectTo: 'cronjobs' }
     ]
   }
