@@ -1,7 +1,52 @@
 # VERSION
-- v0.25.1
+- v0.26.0
 
 # Changelog
+- v0.26.0
+    - **Factor Engine** — Fundamental factor computation engine (`artemis/engines/factor_engine/`)
+        - 7 factor groups with 39 factors implemented and self-registered:
+            - **Profitability** (6): ROE, ROA, Gross Margin, Operating Margin, Net Margin, ROIC
+            - **Growth** (5): Revenue/NI Growth YoY (single-quarter based), Revenue/NI CAGR 3Y, OCF Growth
+            - **Quality** (5): Accrual Ratio, Cash Conversion, FCF Quality, Earnings Stability, Goodwill Ratio
+            - **Solvency** (6): Debt Ratio, Current/Quick Ratio, Interest Coverage, Net Debt/EBITDA, Cash/ST Debt
+            - **Valuation** (7): PE_TTM, PB, PS_TTM, PEG, EV/EBITDA, PCF, Dividend Yield
+            - **Efficiency** (5): Asset/Inventory/Receivable Turnover, Cash Cycle, Capex/Revenue
+            - **Per Share** (5): EPS_TTM, BPS, CFPS, FCF Per Share, DPS
+        - `ttm.py`: Chinese cumulative statement to TTM conversion + single-quarter derivation with Q1-Q4 boundary handling
+        - `point_in_time.py`: PIT time alignment via `ann_date` filter, prevents look-ahead bias, supports report revision dedup
+        - `normalizer.py`: MAD winsorization (MAD=0 fallback), industry Z-Score (std=0 fallback), incremental normalization, market-cap neutralization
+        - `pipeline.py`: Full `run_full()` + incremental `run_incremental()` pipeline, Protocol-based data provider (swappable)
+        - `storage/factor_store.py`: In-memory MVP storage with PhoenixA-compatible interface for future migration
+        - `registry.py`: Global factor registry with auto-registration + metadata query
+        - Financial sector exclusion flag (`exclude_financial`), data freshness scoring (`FactorFreshness`)
+    - **Market Regime Engine** — Continuous state-space market regime estimator (`artemis/engines/regime_engine/`)
+        - State-Space design: 6-dimensional continuous state vector + 2 transition signals
+            - `trend_strength`, `risk_appetite`, `volatility_stress`, `market_breadth`, `liquidity`, `sector_concentration`
+            - `breadth_momentum` (leading indicator), `vol_acceleration` (leading indicator)
+        - 6 MVP feature computers: Trend, Breadth, Volatility, Liquidity, Style, Industry
+        - `estimator.py`: Continuous state estimator with sigmoid mapping + EMA smoothing (asymmetric: vol_stress rises instantly, decays smoothly)
+        - `allocator.py`: Continuous strategy weight mapping (no if-else) + position limit + factor weight adjustment
+        - `pipeline.py`: Full run/backfill pipeline with Protocol-based data provider
+        - `models.py`: `derive_labels()` derives discrete labels from continuous scores (for logging/frontend only, strategy engine does NOT consume labels)
+        - `storage/regime_store.py`: In-memory MVP storage
+    - **Services & API**
+        - `services/factor_service.py`: Factor computation service + mock data provider
+        - `services/regime_service.py`: Regime service + mock data provider
+        - `api/http_gateway/factor_routes.py`: `/factors/compute/full`, `/factors/compute/incremental`, `/factors/snapshot`, `/factors/rank`, `/factors/meta`
+        - `api/http_gateway/regime_routes.py`: `/regime/compute`, `/regime/backfill`, `/regime/current`, `/regime/history`, `/regime/features`
+        - Both routers registered in main FastAPI app
+    - **Bug fixes during review**
+        - Fixed `get_quarter()`/`get_year()` crashing on empty/short/garbage input strings (now returns 0)
+        - Fixed `_val()` silent mismatch when `reporting_period` column is int but period param is string (now casts to str)
+        - Fixed `_val()` KeyError when requested field does not exist in DataFrame (now returns None)
+        - Fixed `_sigmoid_clip()` OverflowError for extreme input values (now clamps exp input)
+        - Fixed `zscore_by_industry()` silently dropping symbols not in `industry_map` (now assigns sentinel group)
+    - **Tests**
+        - `test_factor_engine.py`: 58 tests covering TTM, single-quarter, PIT, safe_div, normalizer MAD/Z-Score/incremental, registry, avg_balance
+        - `test_regime_engine.py`: 33 tests covering clip, sigmoid, label derivation, estimator smoothing, allocator weights/position, serialization
+    - Design docs:
+        - `docs/2026-05-08 [PLANNING] FEATURE_FUNDAMENTAL_FACTOR_ENGINE.md` (rev.2)
+        - `docs/2026-05-08 [PLANNING] FEATURE_MARKET_REGIME_ENGINE.md` (rev.2 — continuous state-space refactor)
 - v0.25.1
     - **Config hardening — task.yaml naming fix + Mairui key externalization + task rename**
         - Fixed `timeframe → period` naming inconsistency in `config/task.yaml` for `BACKTRADER_CAMPAIGN` and `BACKTRADER_RUN` variants (was using `timeframe`, code `parameter_check` requires `period`)
