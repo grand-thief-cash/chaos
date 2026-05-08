@@ -302,6 +302,37 @@ class PhoenixAClient(HTTPDeptServiceClient):
 
     # ──────────── Taxonomy (v2) ────────────
 
+    def sync_mappings_from_constituents(
+        self,
+        source: str,
+        taxonomy: str = "",
+        market: str = "zh_a",
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Sync taxonomy_security_map from industry_constituent + taxonomy_category JOIN."""
+        path = f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/mapping/sync_from_constituents"
+        try:
+            resp = self.post(path, {})
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_sync_mappings_failure',
+                    'run_id': run_id,
+                    'source': source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_sync_mappings_exception',
+                    'run_id': run_id,
+                    'source': source,
+                    'error': str(e),
+                })
+            return False
+
     def upsert_taxonomy_categories(
         self,
         categories: List[Dict[str, Any]],

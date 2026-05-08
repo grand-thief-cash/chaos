@@ -1,3 +1,4 @@
+import math
 import os
 from typing import Any, Dict, List
 
@@ -9,6 +10,17 @@ from artemis.consts import DeptServices, Taxonomy
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
 from artemis.engines.task_engine.download.zh.utils import get_sdk_date_kwargs
+
+
+def _safe_float(val, default=0.0):
+    """Convert to float, replacing nan/inf with default (JSON-compliant)."""
+    try:
+        f = float(val)
+        if not math.isfinite(f):
+            return default
+        return f
+    except (ValueError, TypeError):
+        return default
 
 
 class StockZHAIndustryDailySWHYChild(WorkerUnit):
@@ -51,27 +63,45 @@ class StockZHAIndustryDailySWHYChild(WorkerUnit):
             return {}
 
     def post_process(self, ctx: TaskContext, result: Dict[str, Any]) -> List[Dict[str, Any]]:
-        processed = []
+        seen = {}
+        dup_count = 0
         for code, df in result.items():
             if not isinstance(df, pd.DataFrame) or df.empty:
                 continue
-            for _, row in df.iterrows():
-                processed.append({
-                    "index_code": str(row.get("INDEX_CODE", code)),
-                    "trade_date": str(row.get("TRADE_DATE", "")),
-                    "open": float(row.get("OPEN", 0.0)),
-                    "high": float(row.get("HIGH", 0.0)),
-                    "close": float(row.get("CLOSE", 0.0)),
-                    "low": float(row.get("LOW", 0.0)),
-                    "pre_close": float(row.get("PRE_CLOSE", 0.0)),
-                    "amount": float(row.get("AMOUNT", 0.0)),
-                    "volume": float(row.get("VOLUME", 0.0)),
-                    "pb": float(row.get("PB", 0.0)),
-                    "pe": float(row.get("PE", 0.0)),
-                    "total_cap": float(row.get("TOTAL_CAP", 0.0)),
-                    "a_float_cap": float(row.get("A_FLOAT_CAP", 0.0)),
-                })
-        return processed
+            trade_date_in_index = "TRADE_DATE" in df.index.names
+            for idx, row in df.iterrows():
+                index_code = str(row.get("INDEX_CODE", code))
+                if trade_date_in_index:
+                    ts = idx
+                    trade_date = ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
+                else:
+                    trade_date = str(row.get("TRADE_DATE", ""))
+                key = (index_code, trade_date)
+                if key in seen:
+                    dup_count += 1
+                seen[key] = {
+                    "index_code": index_code,
+                    "trade_date": trade_date,
+                    "open": _safe_float(row.get("OPEN")),
+                    "high": _safe_float(row.get("HIGH")),
+                    "close": _safe_float(row.get("CLOSE")),
+                    "low": _safe_float(row.get("LOW")),
+                    "pre_close": _safe_float(row.get("PRE_CLOSE")),
+                    "amount": _safe_float(row.get("AMOUNT")),
+                    "volume": _safe_float(row.get("VOLUME")),
+                    "pb": _safe_float(row.get("PB")),
+                    "pe": _safe_float(row.get("PE")),
+                    "total_cap": _safe_float(row.get("TOTAL_CAP")),
+                    "a_float_cap": _safe_float(row.get("A_FLOAT_CAP")),
+                }
+        if dup_count > 0:
+            ctx.logger.info({
+                'event': 'swhy_daily_dedup',
+                'duplicates_dropped': dup_count,
+                'kept': len(seen),
+                'run_id': ctx.run_id,
+            })
+        return list(seen.values())
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):
         if not processed:

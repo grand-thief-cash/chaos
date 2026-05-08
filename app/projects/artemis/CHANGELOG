@@ -1,7 +1,18 @@
 # VERSION
-- v0.26.0
+- v0.27.0
 
 # Changelog
+- v0.27.0
+    - **Industry data fixes — trade_date format + taxonomy_security_map sync + naming unification + parent_code bug fix**
+        - Fixed `STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY_CHILD` `trade_date` format: raw SDK value (YYYYMMDD, e.g. `20260507`) now normalized to `YYYY-MM-DD` (e.g. `2026-05-07`) before sinking to PhoenixA, consistent with `industry_daily` task
+        - `STOCK_ZH_A_INDUSTRY_CONSTITUENT_SWHY` sink: after upserting constituents, now calls `sync_mappings_from_constituents()` to auto-populate `taxonomy_security_map` (derives category_code → symbol mappings from constituent + category data via PhoenixA JOIN endpoint)
+        - `PhoenixAClient`: new `sync_mappings_from_constituents()` method calling `POST /api/v2/taxonomy/{source}/{taxonomy}/{market}/mapping/sync_from_constituents`
+        - **Naming: `symbols` → `index_codes` for industry tasks** — resolves ambiguity where `symbols` meant stock codes in stock tasks but index codes in industry tasks; `_resolve_index_codes()` and all 3 industry task `parameter_check` methods now read `index_codes` parameter
+        - Fixed `config/task.yaml` defaults for `STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY` and `STOCK_ZH_A_INDUSTRY_DAILY_SWHY`: removed hardcoded test values (`start_date: "2025-05-01"`, `symbols: ["851426.SI"]`), now correctly set to `start_date: null`, `end_date: null` (matching documentation)
+        - **Bug fix: `STOCK_ZH_A_MKT_CATEGORY_SWHY` parent_code always NULL** — replaced code-prefix matching (assumed fixed 2/4/6-digit INDUSTRY_CODE) with name-based hierarchy matching using LEVEL1_NAME/LEVEL2_NAME fields; now correctly resolves parent for level-2 and level-3 entries regardless of INDUSTRY_CODE format
+        - `STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY_CHILD` post_process: added diagnostic logging showing skipped code, data type, and processed count for debugging empty SDK results
+        - Added dedup debug logging to `STOCK_ZH_A_INDUSTRY_CONSTITUENT_SWHY` and `STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD` — logs `duplicates_dropped` count and `kept` count when dedup occurs
+
 - v0.26.0
     - **Factor Engine** — Fundamental factor computation engine (`artemis/engines/factor_engine/`)
         - 7 factor groups with 39 factors implemented and self-registered:
@@ -62,6 +73,8 @@
         - Cronjob-facing task code names unchanged — no cronjob config updates needed
         - Fixed industry tasks incorrectly using `get_symbols_from_params()` (stock pattern requiring `symbols`+`exchange`) — industry `symbols` are SDK-format index codes (e.g. `["851426.SI"]`), no `exchange` needed; extracted shared `_resolve_index_codes()` helper
         - Fixed child tasks losing `trace_id` in logs — OpenTelemetry context was not propagated to ThreadPoolExecutor worker threads; added `_run_with_context()` wrapper that captures and attaches the parent's OTel context
+        - Fixed `STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD` sink failure: SDK returns `nan`/`inf` float values which `json.dumps()` cannot serialize — added `_safe_float()` helper that replaces non-finite values with `0.0`; applied to both DAILY and WEIGHT child tasks
+        - Fixed `STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD` PostgreSQL upsert error: `ON CONFLICT DO UPDATE command cannot affect row a second time` — added deduplication by `(index_code, trade_date)` in `post_process` to prevent duplicate unique-key rows in a single batch
 - v0.25.0
     - **Incremental Download & Parameter Unification** — all download tasks now support per-symbol, per-date-range incremental pulls
         - **Shared utilities** (`download/zh/utils.py`):
