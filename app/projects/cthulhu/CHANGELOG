@@ -1,7 +1,67 @@
 # VERSION
-v0.8.0
+v0.11.0
 
 # Changelog
+- v0.11.0
+    - **Atlas Knowledge Graph feature module** (`/atlas`) — new route group for KG exploration and analysis
+        - New page: **Dashboard** (`/atlas/dashboard`)
+            - Graph statistics cards: total nodes, total edges, recent events count, pipeline runs count
+            - Node type breakdown with color-coded tags
+            - Recent events table: entity, type, direction, severity, source count, time bucket
+            - Pipeline runs table with trigger button: date, docs, events new/deduped, cost, status
+        - New page: **Graph Explorer** (`/atlas/graph`)
+            - Company search with ECharts force-directed graph visualization
+            - Interactive: click node to explore, drag to rearrange
+            - Details panel with tabs: Relationships, Timeline, Competitors
+            - Color-coded nodes by type (Company=blue, Product=cyan, Resource=orange, etc.)
+        - New page: **Events & Impact** (`/atlas/events`)
+            - Event list with filters: event type selector, entity name search
+            - Impact analysis panel: direct impacts, indirect impacts, LLM analysis text
+            - Severity/direction color coding (red=high/up, green=low/down, orange=medium)
+        - New page: **Company Review** (`/atlas/company`)
+            - Company name search with LLM-generated investment review
+            - Graph data summary: relationships count, competitors, events, resource dependencies
+            - Full review text display
+        - New page: **Document Management** (`/atlas/documents`)
+            - File upload modal with doc type and company selection
+            - Document list with type/status filters
+            - Extract button for pending documents
+        - New service: `AtlasApiService` — API client for Atlas backend endpoints
+        - Atlas top-nav entry: icon=deployment-unit, path=/atlas
+        - Environment configs updated with `atlasApiBase` for dev/prod
+- v0.10.0
+    - **Factor Engine page** (`/artemis/factors`) — new tab-based dashboard for factor management
+        - **Factor Registry tab**: browse all registered factors with name, Chinese name, category (color-tagged), formula, unit, higher-is-better indicator, and market data requirement
+        - **Compute tab**: trigger full-market or incremental (by symbols) factor computation with date & market selector
+        - **Snapshot tab**: query single-symbol factor snapshot showing raw and normalized factor values in sorted tables
+        - **Ranking tab**: view top-N factor rankings across the market with selectable factor and date; factor dropdown populated from registry
+    - **Regime Engine page** (`/artemis/regime`) — new tab-based dashboard for market regime analysis
+        - **Current Regime tab**: real-time regime state display with
+            - Market label alert banner (BULL_TREND/BEAR_TREND/PANIC/SIDEWAYS) with color-coded severity
+            - 6-dimension state gauge cards with progress bars (Trend Strength, Risk Appetite, Volatility Stress, Market Breadth, Liquidity, Sector Concentration)
+            - Transition signals (Breadth Momentum, Vol Acceleration) with directional arrows and color coding
+            - Strategy allocation table (strategy weights, factor weight adjustments, position limit, holding period)
+        - **History tab**: scrollable table of historical regime records with all state dimensions, labels, and allocation info; configurable limit
+        - **Features tab**: query raw regime features (8 input metrics) for any trade date with color-coded values
+        - **Compute tab**: single-day regime computation and batch backfill by comma-separated dates
+    - New services: `FactorService`, `RegimeService` — API clients for Artemis `/factors/*` and `/regime/*` endpoints
+    - New models: `FactorMeta`, `FactorSnapshot`, `FactorRankItem`, `FactorComputeResult`, `RegimeResult`, `RegimeFeatures`, `RegimeComputeResult`
+    - Artemis side-menu updated: added "Factor Engine" (order 4) and "Regime Engine" (order 5) menu items
+- v0.9.1
+    - Added phoenixA on top-nav bar.
+- v0.9.0
+    - **PhoenixA feature module** — new `/phoenixa` route group for data platform monitoring
+        - New page: **Write Buffer Stats** (`/phoenixa/buffer`)
+            - Real-time dashboard showing buffer enabled status, per-table metrics
+            - Summary statistics: total submitted, flushed, pending, active buffers
+            - Per-buffer table with key, submitted_rows, flushed_rows, pending_items, flush_count
+            - Auto-refresh every 10 seconds
+            - Pending items > 1000 highlighted in red
+        - New service: `PhoenixAService` with `getBufferStats()` API call
+        - New models: `BufferStats`, `WriteBufferStatus`
+        - Shell component with `<router-outlet>` (same pattern as artemis/cronjobs)
+        - Lazy-loaded routes registered in `app.routes.ts`
+        - Environment configs updated with `phoenixAApiBase` for dev/prod/home
 - v0.8.0
     - **Renamed diagnostics → Transaction Details**
         - Model: `DiagnosticEvent` → `BarDetailEvent`, `diagnostics` → `bar_details`

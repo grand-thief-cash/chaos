@@ -17,8 +17,16 @@ export const routes: Routes = [
         loadChildren: () => import('../features/artemis/artemis.routes').then(m => m.ARTEMIS_ROUTES)
       },
       {
+        path: 'phoenixa',
+        loadChildren: () => import('../features/phoenixa/phoenixa.routes').then(m => m.PHOENIXA_ROUTES)
+      },
+      {
         path: 'workbench',
         loadChildren: () => import('../features/workbench/workbench.routes').then(m => m.WORKBENCH_ROUTES)
+      },
+      {
+        path: 'atlas',
+        loadChildren: () => import('../features/atlas/atlas.routes').then(m => m.ATLAS_ROUTES)
       },
       { path: '**', redirectTo: 'cronjobs' }
     ]

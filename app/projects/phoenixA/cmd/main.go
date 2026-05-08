@@ -5,6 +5,7 @@ import (
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application"
 	_ "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/api"
+	_ "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/config"
 	_ "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/registry_ext"
 	//_ "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/api"
 	//_ "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/config"

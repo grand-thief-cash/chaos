@@ -1,6 +1,11 @@
--- Atlas Knowledge Graph — Initial PostgreSQL Schema
--- Version: 001
--- Date: 2026-04-29
+-- Atlas Knowledge Graph — PostgreSQL Schema
+-- ⚠️ DEPRECATED: This migration is NOT used directly.
+-- Atlas data persistence is handled by PhoenixA (data middleware).
+-- See: app/projects/phoenixA/migrations/postgresql/kg/0001_kg_init.sql
+--
+-- This file is kept for reference only.
+-- All CRUD operations go through PhoenixA's /api/v1/kg/* endpoints.
+-- Atlas connects to phoenixA via atlas.connectors.phoenixa_client
 
 -- ① 文档元数据
 CREATE TABLE IF NOT EXISTS documents (

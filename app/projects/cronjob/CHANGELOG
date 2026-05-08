@@ -1,7 +1,11 @@
 # VERSION
-v0.14.2
+v0.14.3
 
 # Changelog
+- v0.14.3
+    - Updated `docs/2026-05-07 CONFIG_OF_CRONJOB_AND_ARTEMIS.md`: expanded task.yaml parameter documentation with types, formats, and examples for all tasks; marked resolved issues
+    - Updated config doc: `STOCK_ZH_A_MKT_CATEGORY` → `STOCK_ZH_A_MKT_CATEGORY_MAIRUI` (aligned with Artemis rename)
+    - Updated config doc: `STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY` and `STOCK_ZH_A_INDUSTRY_DAILY_SWHY` now OrchestratorUnit (split per index); added `_CHILD` internal tasks to task directory and internal tasks section
 - v0.14.2
     - Fixed task import failing on re-import after soft-delete: reactivate soft-deleted tasks by updating all fields and setting deleted=0, instead of hard-deleting (which was blocked by FK constraint from task_runs).
 - v0.14.1

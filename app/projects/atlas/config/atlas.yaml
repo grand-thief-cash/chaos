@@ -17,10 +17,6 @@ logging:
     max_age: 72h
     cleanup_enabled: true
 
-postgres:
-  dsn: "${PG_DSN:postgresql://atlas:atlas_password@localhost:5433/atlas}"
-  pool_size: 10
-
 neo4j:
   uri: bolt://localhost:7687
   username: neo4j
@@ -28,47 +24,101 @@ neo4j:
   database: neo4j
   max_connection_pool_size: 50
 
+minio:
+  endpoint: "localhost:9000"
+  access_key: "${MINIO_ACCESS_KEY:minioadmin}"
+  secret_key: "${MINIO_SECRET_KEY:minioadmin}"
+  secure: false
+  bucket: atlas-documents
+
+skills:
+  # 抽取技能 prompt 文件路径（相对于项目根目录或绝对路径）
+  extraction_prompt: "../../tools/py/skills/[2026-04-28]INDUSTRY_EXTRATION_SKILLS.md"
+
 llm:
-  # 抽取用强模型
-  extraction_model: gpt-4o
-  # 过滤/分类用便宜模型
-  filter_model: gpt-4o-mini
-  # 综述生成用强模型
-  summary_model: gpt-4o
+  # DeepSeek V4 双模型策略
+  extraction_model: "deepseek/deepseek-v4-flash"
+  filter_model: "deepseek/deepseek-v4-flash"
+  summary_model: "deepseek/deepseek-v4-flash"
+  reasoning_model: "deepseek/deepseek-v4-pro"
   api_key: "${LLM_API_KEY}"
+  api_base: "https://api.deepseek.com"
   max_retries: 3
   request_timeout: 120
-  # 批量抽取的并发数（控制速率）
   batch_concurrency: 3
 
 document:
   storage_dir: ./data/documents
-  # 单个 chunk 最大字符数
   chunk_max_chars: 3000
-  # chunk 之间的重叠字符数
   chunk_overlap_chars: 200
 
 pipeline:
-  # 新闻来源
   news_sources:
+    - type: rss
+      name: sina_finance
+      url: "https://finance.sina.com.cn/rss/"
     - type: rss
       name: eastmoney
       url: ""
     - type: rss
       name: cls
       url: ""
-  # 每日新闻最大获取条数
   daily_max_news: 200
-  # 过滤后最大抽取条数
   daily_max_extraction: 50
 
 graph:
-  # 实体融合：公司名称相似度阈值
   company_merge_threshold: 0.85
-  # 影响分析：最大传导层数
   impact_max_hops: 3
-  # 低 confidence 阈值（低于此值标记警告）
   low_confidence_threshold: 0.5
+
+taxonomy:
+  doc_types:
+    - earnings
+    - research
+    - industry
+    - news
+    - policy
+    - announcement
+    - manual
+
+  event_types:
+    - price_change
+    - supply_change
+    - policy_new
+    - policy_change
+    - tariff_change
+    - tech_breakthrough
+    - capacity_change
+    - merger_acquisition
+    - investment
+    - leadership_change
+    - earnings_beat
+    - earnings_miss
+    - accident_disaster
+    - sanction
+    - other
+
+  relationship_types:
+    - SUPPLIER_OF
+    - CUSTOMER_OF
+    - DEPENDS_ON_RESOURCE
+    - CONSUMES_RESOURCE
+    - PRODUCES_RESOURCE
+    - EXTRACTS_RESOURCE
+    - COMPETITOR_OF
+    - BELONGS_TO_INDUSTRY
+    - OPERATES_IN_MARKET
+    - PRODUCES
+    - USES_TECHNOLOGY
+    - OWNS_ASSET
+    - SUBSIDIARY_OF
+    - INVESTED_IN
+    - PART_OF_PRODUCT
+    - APPLIED_IN
+    - INVOLVED_IN_EVENT
+    - IMPACTED_BY_POLICY
+    - IMPACT_ON
+    - OTHER
 
 dept_services:
   cronjob:

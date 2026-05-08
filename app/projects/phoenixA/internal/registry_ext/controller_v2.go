@@ -36,4 +36,15 @@ func init() {
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, controller.NewSchemaController(), nil
 	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, controller.NewKgController(), nil
+	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		if cfg.Neo4j == nil || !cfg.Neo4j.Enabled {
+			return false, nil, nil
+		}
+		return true, controller.NewGraphController(), nil
+	})
 }

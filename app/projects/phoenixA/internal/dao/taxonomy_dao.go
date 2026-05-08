@@ -168,6 +168,31 @@ func (d *TaxonomyDao) DeleteCategory(ctx context.Context, source, taxonomy, mark
 
 // ──────────── Security Mappings ────────────
 
+// SyncMappingsFromConstituents derives category→symbol mappings from industry_constituent + taxonomy_category.
+// For each (source, taxonomy, market), it JOINs industry_constituent with taxonomy_category on index_code
+// and inserts into taxonomy_security_map.
+func (d *TaxonomyDao) SyncMappingsFromConstituents(ctx context.Context, source, taxonomy, market string) (int64, error) {
+	sql := `
+		INSERT INTO taxonomy_security_map (source, taxonomy, category_code, symbol, asset_type, market)
+		SELECT DISTINCT ic.source, ic.taxonomy, tc.code, ic.symbol, 'stock', ic.market
+		FROM industry_constituent ic
+		JOIN taxonomy_category tc
+		  ON tc.index_code = ic.index_code
+		 AND tc.source = ic.source
+		 AND tc.taxonomy = ic.taxonomy
+		 AND tc.market  = ic.market
+		WHERE ic.source   = ?
+		  AND ic.taxonomy = ?
+		  AND ic.market   = ?
+		ON CONFLICT (source, taxonomy, category_code, symbol, asset_type, market) DO NOTHING
+	`
+	result := d.db.WithContext(ctx).Exec(sql, source, taxonomy, market)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 // BatchUpsertMappings upserts taxonomy-security mappings.
 func (d *TaxonomyDao) BatchUpsertMappings(ctx context.Context, source, taxonomy string, list []*model.TaxonomySecurityMap) error {
 	if len(list) == 0 {

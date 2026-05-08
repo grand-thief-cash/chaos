@@ -2,9 +2,10 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
@@ -15,7 +16,7 @@ import (
 // CorporateActionDao handles persistence for corporate action data.
 type CorporateActionDao struct {
 	*core.BaseComponent
-	GormComp *mg.GormComponent `infra:"dep:mysql_gorm"`
+	GormComp *pg.PostgresGormComponent `infra:"dep:postgres_gorm"`
 	db       *gorm.DB
 	dsName   string
 }
@@ -90,6 +91,17 @@ func (d *CorporateActionDao) Query(ctx context.Context, source string, f *model.
 		if f.ProgressCode != "" {
 			q = q.Where("progress_code = ?", f.ProgressCode)
 		}
+		// PostgreSQL JSONB containment: data_json @> '{"key": value}'
+		if len(f.DataContains) > 0 {
+			jsonBytes, err := json.Marshal(f.DataContains)
+			if err == nil {
+				q = q.Where("data_json @> ?::jsonb", string(jsonBytes))
+			}
+		}
+		// PostgreSQL JSONB key existence: data_json ? 'key'
+		if f.DataHasKey != "" {
+			q = q.Where("data_json ?? ?", f.DataHasKey)
+		}
 	}
 	if limit > 0 {
 		q = q.Limit(limit)
@@ -128,6 +140,15 @@ func (d *CorporateActionDao) Count(ctx context.Context, source string, f *model.
 		}
 		if f.ProgressCode != "" {
 			q = q.Where("progress_code = ?", f.ProgressCode)
+		}
+		if len(f.DataContains) > 0 {
+			jsonBytes, err := json.Marshal(f.DataContains)
+			if err == nil {
+				q = q.Where("data_json @> ?::jsonb", string(jsonBytes))
+			}
+		}
+		if f.DataHasKey != "" {
+			q = q.Where("data_json ?? ?", f.DataHasKey)
 		}
 	}
 	if err := q.Count(&cnt).Error; err != nil {

@@ -12,4 +12,5 @@ const (
 	COMPONENT_TELEMETRY     = "telemetry"
 	COMPONENT_MYSQL_GORM    = "mysql_gorm"
 	COMPONENT_POSTGRES_GORM = "postgres_gorm"
+	COMPONENT_NEO4J         = "neo4j"
 )

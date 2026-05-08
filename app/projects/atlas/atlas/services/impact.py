@@ -1,11 +1,14 @@
-"""Impact analysis engine — propagate events along the supply chain graph."""
+"""Impact analysis engine — propagate events along the supply chain graph.
+
+All Neo4j queries go through PhoenixA's /api/v1/graph/* endpoints.
+"""
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from atlas.connectors.neo4j_client import get_session
 from atlas.connectors.llm_client import call_summary
+from atlas.connectors import phoenixa_client
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +30,8 @@ async def analyze_event_impact(
     2. BFS along supply-chain relationships to find indirectly affected companies.
     3. Call LLM to generate impact reasoning for key companies.
     """
-    direct = _get_direct_impacts(event_name)
-    indirect = _get_indirect_impacts(event_name, max_hops)
+    direct = await _get_direct_impacts(event_name)
+    indirect = await _get_indirect_impacts(event_name, max_hops)
 
     # Merge and deduplicate
     all_companies = {}
@@ -46,17 +49,13 @@ async def analyze_event_impact(
         reverse=True,
     )[:10]
 
+    analysis_text = ""
     if top_companies:
         graph_context = _format_graph_context(event_name, top_companies)
-        llm_result = await call_summary(
-            context=graph_context,
-            prompt=_IMPACT_ANALYSIS_PROMPT,
-        )
+        llm_result = await call_summary(context=graph_context, prompt=_IMPACT_ANALYSIS_PROMPT)
         analysis_text = llm_result.get("content", "")
-    else:
-        analysis_text = ""
 
-    return {
+    result = {
         "event": event_name,
         "direct_impacts": direct,
         "indirect_impacts": indirect,
@@ -64,20 +63,25 @@ async def analyze_event_impact(
         "llm_analysis": analysis_text,
     }
 
+    # Persist impact log via phoenixA
+    try:
+        await phoenixa_client.create_impact_log({
+            "event_name": event_name,
+            "impact_json": result,
+        })
+    except Exception as e:
+        logger.warning("Failed to persist impact log: %s", e)
 
-def _get_direct_impacts(event_name: str) -> list[dict]:
-    cypher = """
-    MATCH (e:Event {name: $name})-[r:IMPACT_ON]->(c:Company)
-    RETURN c.normalized_name AS company, c.ticker AS ticker,
-           r.impact_direction AS direction, r.impact_type AS type,
-           r.impact_strength AS strength, r.transmission_path AS path
-    """
-    with get_session() as session:
-        return session.run(cypher, name=event_name).data()
+    return result
 
 
-def _get_indirect_impacts(event_name: str, max_hops: int) -> list[dict]:
-    """BFS from directly impacted companies along supply chain rels."""
+async def _get_direct_impacts(event_name: str) -> list[dict]:
+    """Get directly impacted companies via PhoenixA graph API."""
+    return await phoenixa_client.graph_get_event_impacts(event_name)
+
+
+async def _get_indirect_impacts(event_name: str, max_hops: int) -> list[dict]:
+    """BFS from directly impacted companies along supply chain rels via PhoenixA."""
     rel_filter = "|".join(_TRANSMISSION_RELS)
     cypher = f"""
     MATCH (e:Event {{name: $name}})-[:IMPACT_ON]->(direct:Company)
@@ -91,8 +95,7 @@ def _get_indirect_impacts(event_name: str, max_hops: int) -> list[dict]:
     ORDER BY hop
     LIMIT 50
     """
-    with get_session() as session:
-        return session.run(cypher, name=event_name).data()
+    return await phoenixa_client.run_cypher(cypher, {"name": event_name})
 
 
 def _format_graph_context(event_name: str, companies: list[dict]) -> str:
@@ -122,7 +125,7 @@ _IMPACT_ANALYSIS_PROMPT = """你是一个专业的金融产业链分析师。
 
 
 async def analyze_company_exposure(company_name: str) -> dict[str, Any]:
-    """Analyze a company's risk exposure — what events/resources/policies affect it."""
+    """Analyze a company's risk exposure via PhoenixA graph API."""
     cypher = """
     MATCH (c:Company {normalized_name: $name})
     OPTIONAL MATCH (e:Event)-[r1:IMPACT_ON]->(c)
@@ -135,110 +138,15 @@ async def analyze_company_exposure(company_name: str) -> dict[str, Any]:
                              supply_status: res.supply_status}) AS resources,
            collect(DISTINCT {policy: p.name, scope: p.impact_scope}) AS policies
     """
-    with get_session() as session:
-        result = session.run(cypher, name=company_name).single()
+    rows = await phoenixa_client.run_cypher(cypher, {"name": company_name})
 
-    if result is None:
+    if not rows:
         return {"company": company_name, "events": [], "resources": [], "policies": []}
 
+    result = rows[0]
     return {
         "company": company_name,
-        "events": [e for e in result["events"] if e.get("event")],
-        "resources": [r for r in result["resources"] if r.get("resource")],
-        "policies": [p for p in result["policies"] if p.get("policy")],
+        "events": [e for e in (result.get("events") or []) if e.get("event")],
+        "resources": [r for r in (result.get("resources") or []) if r.get("resource")],
+        "policies": [p for p in (result.get("policies") or []) if p.get("policy")],
     }
-
-
-async def generate_company_review(company_name: str) -> dict[str, Any]:
-    """Generate an investment-oriented company development review using graph data + LLM."""
-    from atlas.services.graph_service import (
-        get_company_full, get_company_timeline, get_competitors,
-    )
-
-    company_data = get_company_full(company_name)
-    if not company_data:
-        return {"company": company_name, "review": "未找到该公司信息"}
-
-    timeline = get_company_timeline(company_name)
-    competitors = get_competitors(company_name)
-    exposure = await analyze_company_exposure(company_name)
-
-    context = _format_review_context(company_name, company_data, timeline, competitors, exposure)
-
-    llm_result = await call_summary(context=context, prompt=_COMPANY_REVIEW_PROMPT)
-
-    return {
-        "company": company_name,
-        "review": llm_result.get("content", ""),
-        "graph_data": {
-            "relationships_count": len(company_data.get("relationships", [])),
-            "events_count": len(timeline),
-            "competitors_count": len(competitors),
-            "risk_exposure": exposure,
-        },
-    }
-
-
-def _format_review_context(
-    name: str,
-    company_data: dict,
-    timeline: list[dict],
-    competitors: list[dict],
-    exposure: dict,
-) -> str:
-    lines = [f"公司: {name}", ""]
-
-    # Company info
-    info = company_data.get("company", {})
-    if info:
-        lines.append(f"基本信息: ticker={info.get('ticker','')}, country={info.get('country','')}")
-
-    # Relationships summary
-    rels = company_data.get("relationships", [])
-    if rels:
-        lines.append(f"\n关系总数: {len(rels)}")
-        for r in rels[:30]:
-            lines.append(
-                f"  - [{r.get('rel_type','')}] → {r.get('neighbor',{}).get('name','')} "
-                f"({r.get('neighbor_label','')})"
-            )
-
-    # Timeline
-    if timeline:
-        lines.append(f"\n时间线事件 ({len(timeline)}):")
-        for t in timeline[:20]:
-            lines.append(f"  - [{t.get('time','')}] {t.get('rel_type','')} → {t.get('neighbor_name','')}")
-
-    # Competitors
-    if competitors:
-        lines.append(f"\n竞品 ({len(competitors)}):")
-        for c in competitors:
-            lines.append(f"  - {c.get('competitor','')} (产品:{c.get('product','')}, 类型:{c.get('competition_type','')})")
-
-    # Risk exposure
-    if exposure.get("resources"):
-        lines.append("\n资源依赖:")
-        for r in exposure["resources"]:
-            lines.append(f"  - {r.get('resource','')} (价格趋势:{r.get('price_trend','')}, 供给:{r.get('supply_status','')})")
-
-    return "\n".join(lines)
-
-
-_COMPANY_REVIEW_PROMPT = """你是一个专业的金融分析师。
-根据以下知识图谱数据，为投资者生成该公司的发展综述。
-
-重点关注：
-1. 产业链位置与核心竞争力
-2. 主要产品与市场
-3. 上下游关系及议价能力
-4. 竞品格局
-5. 主要风险敞口（资源依赖/政策风险/竞争压力）
-6. 近期重要事件及其影响
-7. 投资关注要点与建议
-
-要求：
-- 客观、专业、简洁
-- 不编造信息，只基于提供的数据
-- 用 Markdown 格式输出
-"""
-

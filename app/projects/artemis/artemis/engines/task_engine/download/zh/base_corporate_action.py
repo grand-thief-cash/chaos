@@ -5,7 +5,19 @@ Subclasses define:
   - ACTION_TYPE: str
   - REPORT_PERIOD_FIELD: str  (SDK column for report year, e.g. 'REPORT_PERIOD' / 'RIGHTSISSUE_YEAR')
   - PROGRESS_FIELD: str       (SDK column for progress code, e.g. 'DIV_PROGRESS' / 'PROGRESS')
-  - _sdk_call(info_data, code_list, cache_dir) -> result
+  - _sdk_call(info_data, code_list, cache_dir, **sdk_date_kwargs) -> result
+
+Supports incremental downloads via ctx.params:
+  - symbols: list[str]  — AmazingData format codes, e.g. ['000001.SZ', '600519.SH']
+    When absent, downloads full historical code list from SDK.
+  - start_date: int  — announcement date start (e.g. 20240101), mapped to SDK begin_date
+  - end_date: int    — announcement date end, mapped to SDK end_date
+
+SDK parameter support (per AmazingData_development_guide.md V1.0.24):
+  Both corporate action APIs (get_dividend, get_right_issue)
+  accept: code_list (required), local_path, is_local, begin_date (optional), end_date (optional)
+
+PhoenixA upserts are idempotent (ON CONFLICT UPDATE), safe for repeated calls.
 """
 import json
 import os
@@ -19,6 +31,7 @@ from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
+from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params, get_sdk_date_kwargs
 
 
 # Fields extracted as structured DB columns; excluded from data_json.
@@ -55,20 +68,48 @@ class BaseCorporateActionTask(WorkerUnit):
         os.makedirs(cache_dir, exist_ok=True)
 
         try:
-            calendar = self._base_data.get_calendar()
-            today = calendar[-1]
-            all_code_list = self._base_data.get_hist_code_list(
-                security_type='EXTRA_STOCK_A_SH_SZ',
-                start_date=20130101,
-                end_date=today,
-            )
-            return self._sdk_call(self._info_data, all_code_list, cache_dir)
+            # Resolve code_list: explicit symbols or full SDK pull
+            explicit_symbols = get_symbols_from_params(ctx)
+            if explicit_symbols is not None:
+                code_list = explicit_symbols
+                mode = 'incremental'
+            else:
+                calendar = self._base_data.get_calendar()
+                today = calendar[-1]
+                code_list = self._base_data.get_hist_code_list(
+                    security_type='EXTRA_STOCK_A_SH_SZ',
+                    start_date=20130101,
+                    end_date=today,
+                )
+                mode = 'full'
+
+            if not code_list:
+                ctx.fail(f"no valid symbols for {self.ACTION_TYPE}", phase='execute')
+                return None
+
+            # Convert our start_date/end_date to SDK begin_date/end_date
+            sdk_date_kwargs = get_sdk_date_kwargs(ctx)
+
+            ctx.logger.info({
+                'event': f'{self.ACTION_TYPE}_execute_start',
+                'code_count': len(code_list),
+                'sdk_date_kwargs': sdk_date_kwargs,
+                'mode': mode,
+                'run_id': ctx.run_id,
+            })
+
+            return self._sdk_call(self._info_data, code_list, cache_dir, **sdk_date_kwargs)
         except Exception as e:
             ctx.fail(f"fetch {self.ACTION_TYPE} failed: {e}", phase='execute')
             return None
 
     @abstractmethod
-    def _sdk_call(self, info_data, code_list, cache_dir):
+    def _sdk_call(self, info_data, code_list, cache_dir, **sdk_date_kwargs):
+        """Call the specific SDK method. Override in subclass.
+
+        sdk_date_kwargs may contain begin_date and/or end_date (int),
+        mapped from our unified start_date/end_date params.
+        """
         raise NotImplementedError
 
     def _normalize_result(self, result) -> Iterable[pd.DataFrame]:

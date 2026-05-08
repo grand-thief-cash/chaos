@@ -39,26 +39,92 @@ tasks:
            fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
 
   # Industry SWHY
+  # 注意：行业任务的 index_codes 是 SDK 格式的行业指数代码（如 "851426.SI"），
+  #       不需要 exchange 参数（与股票任务的 symbols 不同）
   STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY:
     variants:
       - match: {}
         config:
-          # symbols, start_date, end_date are optional
-          # cronjob can override any field; omit symbols to download all industry indices
-          start_date: null
-          end_date: null
+          start_date: "2026-05-01"     # "YYYY-MM-DD" 或 null（不限）
+          end_date: null       # "YYYY-MM-DD" 或 null（不限）
+          # index_codes: ["851426.SI", "801010.SI"]  # string[]，行业指数代码（SDK格式），如 ["851426.SI", "801010.SI"]
+
+  STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY_CHILD:
+    variants:
+      - match: {}
+        config: {}
 
   STOCK_ZH_A_INDUSTRY_DAILY_SWHY:
     variants:
       - match: {}
         config:
-          start_date: null
-          end_date: null
+          start_date: null     # "YYYY-MM-DD" 或 null（不限）
+          end_date: null       # "YYYY-MM-DD" 或 null（不限）
+          # index_codes: null  # string[]，行业指数代码（SDK格式），如 ["851426.SI"]
+
+  STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD:
+    variants:
+      - match: {}
+        config: {}
 
   STOCK_ZH_A_INDUSTRY_CONSTITUENT_SWHY:
     variants:
       - match: {}
         config: {}
+
+  # Financial Statements
+  # symbols + exchange: 指定股票代码和交易所，缺省则全量下载
+  # start_date/end_date: YYYY-MM-DD，对应 SDK 的报告期范围
+  STOCK_ZH_A_BALANCE_SHEET:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_CASH_FLOW:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_INCOME:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_PROFIT_EXPRESS:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_PROFIT_NOTICE:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  # Corporate Actions
+  # start_date/end_date: YYYY-MM-DD，对应 SDK 的公告日期范围
+  STOCK_ZH_A_DIVIDEND:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
+
+  STOCK_ZH_A_RIGHT_ISSUE:
+    variants:
+      - match: {}
+        config:
+          start_date: null
+          end_date: null
 
   BACKTRADER_CAMPAIGN:
     variants:
@@ -66,7 +132,7 @@ tasks:
         config:
           mode: "historical"
           market: "CN_A"
-          timeframe: "daily"
+          period: "daily"
           adjust: "nf"
           cash: 100000.0
           commission: 0.001
@@ -80,7 +146,7 @@ tasks:
         config:
           mode: "historical"
           market: "CN_A"
-          timeframe: "daily"
+          period: "daily"
           adjust: "nf"
           cash: 100000.0
           commission: 0.001

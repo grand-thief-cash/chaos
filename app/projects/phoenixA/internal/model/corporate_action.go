@@ -17,7 +17,7 @@ type CorporateAction struct {
 	ReportPeriod string          `gorm:"type:varchar(10);not null;default:'';uniqueIndex:uk_corp_action;index:idx_report_period" json:"report_period"`
 	AnnDate      string          `gorm:"type:varchar(10);not null;default:'';uniqueIndex:uk_corp_action" json:"ann_date"`
 	ProgressCode string          `gorm:"type:varchar(8);not null;default:''" json:"progress_code"`
-	DataJSON     json.RawMessage `gorm:"column:data_json;type:json;not null" json:"data_json"`
+	DataJSON     json.RawMessage `gorm:"column:data_json;type:jsonb;not null;default:'{}'" json:"data_json"`
 	CreatedAt    time.Time       `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt    time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
 }
@@ -33,4 +33,7 @@ type CorporateActionFilters struct {
 	PeriodStart  string
 	PeriodEnd    string
 	ProgressCode string
+	// PostgreSQL JSONB filters
+	DataContains map[string]interface{} // data_json @> '{"key": value}'  containment query
+	DataHasKey   string                 // data_json ? 'key'  key existence check
 }

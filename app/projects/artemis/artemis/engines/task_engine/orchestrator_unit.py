@@ -8,6 +8,19 @@ from artemis.core.task_registry import registry
 from .base import BaseTaskUnit
 
 
+def _run_with_context(context, fn, *args, **kwargs):
+    """Run fn with an explicitly propagated OpenTelemetry context in a worker thread."""
+    try:
+        from opentelemetry import context as otel_ctx
+        token = otel_ctx.attach(context)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            otel_ctx.detach(token)
+    except ImportError:
+        return fn(*args, **kwargs)
+
+
 class OrchestratorUnit(BaseTaskUnit):
     def plan(self, ctx: TaskContext) -> List[Dict[str, Any]]:
         """Return a list of child specs.
@@ -136,10 +149,19 @@ class OrchestratorUnit(BaseTaskUnit):
                 child_ctx = self._build_child_ctx(ctx, task_code, child_params, idx)
                 child = child_ctx.exec_cls()
 
-                # Run the child with timeout
+                # Run the child with timeout, propagating OTel trace context
                 worker_task_timeout = cfg_mgr.task_engine_config().worker_task_timeout
+                try:
+                    from opentelemetry import context as otel_ctx
+                    parent_otel_context = otel_ctx.get_current()
+                except ImportError:
+                    parent_otel_context = None
+
                 with ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(child.run, child_ctx)
+                    if parent_otel_context is not None:
+                        future = pool.submit(_run_with_context, parent_otel_context, child.run, child_ctx)
+                    else:
+                        future = pool.submit(child.run, child_ctx)
                     try:
                         future.result(timeout=worker_task_timeout)
                     except FuturesTimeout:

@@ -5,19 +5,24 @@ import AmazingData as ad
 import pandas as pd
 
 from artemis import consts
-from artemis.consts import DeptServices
+from artemis.consts import DeptServices, Taxonomy
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
+from artemis.engines.task_engine.download.zh.stock_zh_a_industry_weight_swhy_parent import _resolve_index_codes
 
 
 class StockZHAIndustryConstituentSWHY(WorkerUnit):
-    """下载申万行业指数成分股数据（来源：AmazingData InfoData get_industry_constituent）。"""
+    """下载申万行业指数成分股数据。
+
+    ctx.params:
+      - symbols: list[str] — 行业指数代码（SDK格式如 ["851426.SI"]），不传则从 PhoenixA 获取全部
+    """
 
     def parameter_check(self, ctx: TaskContext):
         params = ctx.incoming_params or {}
-        symbols = params.get("symbols")
-        if symbols is not None and not isinstance(symbols, list):
-            ctx.fail(f"symbols must be a list, got {type(symbols).__name__}", phase='parameter_check')
+        index_codes = params.get("index_codes")
+        if index_codes is not None and not isinstance(index_codes, list):
+            ctx.fail(f"index_codes must be a list of index codes (e.g. ['851426.SI']), got {type(index_codes).__name__}", phase='parameter_check')
             return
 
     def before_execute(self, ctx: TaskContext) -> None:
@@ -39,16 +44,7 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
         cache_dir = os.path.abspath(task_engine_cfg.amazing_data_cache_dir)
         os.makedirs(cache_dir, exist_ok=True)
 
-        params = ctx.params or {}
-
-        # Resolve code_list: cronjob > task.yaml > fallback to PhoenixA
-        symbols = params.get("symbols")
-        if symbols:
-            code_list = symbols
-        else:
-            phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
-            securities = phoenixA_client.get_securities(asset_type="stock", market="zh_a")
-            code_list = list(securities.keys())
+        code_list = _resolve_index_codes(ctx)
 
         try:
             result = self._info_data.get_industry_constituent(code_list, local_path=cache_dir, is_local=False)
@@ -59,21 +55,35 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
 
     def post_process(self, ctx: TaskContext, result: Dict[str, Any]) -> List[Dict[str, Any]]:
         processed = []
+        seen = set()
+        dup_count = 0
         for code, df in result.items():
             if not isinstance(df, pd.DataFrame) or df.empty:
                 continue
             for _, row in df.iterrows():
                 con_code = str(row.get("CON_CODE", "")).strip()
-                # Extract pure symbol from con_code (e.g. "603648.SH" → "603648")
                 symbol = con_code.split(".")[0] if "." in con_code else con_code
+                index_code = str(row.get("INDEX_CODE", code))
+                key = (index_code, symbol)
+                if key in seen:
+                    dup_count += 1
+                    continue
+                seen.add(key)
                 processed.append({
-                    "index_code": str(row.get("INDEX_CODE", code)),
+                    "index_code": index_code,
                     "con_code": con_code,
                     "symbol": symbol,
                     "indate": str(row.get("INDATE", "")),
                     "outdate": str(row.get("OUTDATE", "")),
                     "index_name": str(row.get("INDEX_NAME", "")),
                 })
+        if dup_count > 0:
+            ctx.logger.info({
+                'event': 'swhy_constituent_dedup',
+                'duplicates_dropped': dup_count,
+                'kept': len(processed),
+                'run_id': ctx.run_id,
+            })
         return processed
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):
@@ -93,4 +103,11 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
         )
         if ok is False:
             ctx.fail("failed to sink SWHY industry constituents to phoenixA", phase='sink')
+            return
 
+        phoenixA_client.sync_mappings_from_constituents(
+            consts.DataSource.DS_AMAZING_DATA.value,
+            taxonomy=Taxonomy.SWHY.value,
+            market="zh_a",
+            run_id=ctx.run_id,
+        )
