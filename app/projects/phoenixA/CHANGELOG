@@ -1,7 +1,56 @@
 # VERSION
-v1.7.0
+v1.8.0
 
 # Changelog
+- v1.8.0
+    - **Knowledge Graph (KG) Domain** — data persistence layer for Atlas KG Engine
+        - New PostgreSQL schema: `kg` with 6 tables (documents, extractions, events, graph_ingestions, daily_runs, impact_logs)
+        - New `kg.events` table: normalized/deduplicated event store with fingerprint-based identity
+            - Columns: event_fingerprint, entity_name, event_type, direction, time_bucket, severity, source_doc_ids[], source_count
+            - Supports event merging: when duplicate event arrives, source_doc_ids and source_count are updated
+        - Updated `kg.documents`: added `source_type` column (graph_building vs event_triggering)
+        - Updated `kg.daily_runs`: new columns for docs_graph_building, docs_event, events_new, events_deduped
+        - Updated `kg.impact_logs`: added `event_id` FK linking to normalized events
+        - New model: `KgDocument`, `KgExtraction`, `KgEvent`, `KgGraphIngestion`, `KgDailyRun`, `KgImpactLog` with GORM tags
+        - New custom types: `StringArray` (PostgreSQL TEXT[]), `JSONB` (PostgreSQL JSONB) with Scanner/Valuer
+        - New DAO: `KgDao` — unified DAO for all 6 kg tables with filter structs
+        - New Service: `KgService` — thin business logic layer wrapping DAO
+        - New Controller: `KgController` — 17 HTTP endpoints:
+            - Documents: POST/GET/GET/{id}/PUT
+            - Extractions: POST/GET/GET/{id}
+            - Events: POST/GET/GET/{id}/PUT + GET /recent
+            - Graph Ingestions: POST
+            - Daily Runs: POST/GET
+            - Impact Logs: POST/GET
+        - Routes registered at `/api/v1/kg/*`
+        - New constants: COMP_DAO_KG, COMP_SVC_KG, COMP_CTRL_KG, DB_PG_KG
+        - Updated migration: `migrations/postgresql/kg/0001_kg_init.sql`
+    - **Graph API (Neo4j)** — HTTP proxy to Neo4j graph database for Atlas
+        - Integrates Neo4j infra component (v0.18.0) into PhoenixA
+        - New DAO: `GraphDao` — wraps Neo4j component with typed query methods
+            - `MergeNode`, `MergeEdge` — idempotent MERGE operations
+            - `SearchNodes`, `GetCompanyFull`, `GetCompanyChain` — graph traversal queries
+            - `GetCompanyTimeline`, `GetCompetitors`, `GetEventImpacts` — specialized reads
+            - `GetGraphStats` — node/edge count aggregation
+            - `EnsureSchema` — create constraints and indexes
+            - `GetResourceRelatedCompanies` — for impact analysis
+        - New Service: `GraphService` — thin wrapper with logging
+        - New Controller: `GraphController` — 14 HTTP endpoints:
+            - `POST /api/v1/graph/cypher` — read-only Cypher execution
+            - `POST /api/v1/graph/cypher/write` — write Cypher execution
+            - `POST /api/v1/graph/nodes/merge` + `/merge-batch` — node merge (single + batch)
+            - `POST /api/v1/graph/edges/merge` + `/merge-batch` — edge merge (single + batch)
+            - `GET /api/v1/graph/search?q=...` — full-text node search
+            - `GET /api/v1/graph/company/{name}` — company + all relationships
+            - `GET /api/v1/graph/company/{name}/chain` — supply chain BFS
+            - `GET /api/v1/graph/company/{name}/timeline` — time-ordered events
+            - `GET /api/v1/graph/company/{name}/competitors` — competitor list
+            - `GET /api/v1/graph/event/{name}/impacts` — event impact on companies
+            - `GET /api/v1/graph/stats` — graph statistics
+            - `POST /api/v1/graph/schema/ensure` — create constraints/indexes
+        - Graph API conditionally registered (only when `neo4j.enabled: true`)
+        - Neo4j config section added to `config.yaml`
+        - New constants: COMP_DAO_GRAPH, COMP_SVC_GRAPH, COMP_CTRL_GRAPH
 - v1.7.0
     - **Write Buffer** — in-process batch write optimization for high-frequency small upserts
         - New component: `WriteBufferManager` (`internal/buffer/write_buffer.go`)

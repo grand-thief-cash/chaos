@@ -36,4 +36,15 @@ func init() {
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, dao.NewSchemaDao("security"), nil
 	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, dao.NewKgDao("security"), nil
+	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		if cfg.Neo4j == nil || !cfg.Neo4j.Enabled {
+			return false, nil, nil
+		}
+		return true, dao.NewGraphDao(), nil
+	})
 }
