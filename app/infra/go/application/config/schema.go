@@ -9,6 +9,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysql"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	neo4jcomp "github.com/grand-thief-cash/chaos/app/infra/go/application/components/neo4j"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/prometheus"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
@@ -25,6 +26,7 @@ type AppConfig struct {
 	MySQL        *mysql.MySQLConfig             `yaml:"mysql" json:"mysql"`
 	MySQLGORM    *mysqlgorm.Config              `yaml:"mysql_gorm" json:"mysql_gorm"`
 	PostgresGORM *postgresgorm.Config           `yaml:"postgres_gorm" json:"postgres_gorm"`
+	Neo4j        *neo4jcomp.Config              `yaml:"neo4j" json:"neo4j"`
 	HTTPServer   *http_server.HTTPServerConfig  `yaml:"http_server" json:"http_server"`
 	HTTPClient   *http_client.HTTPClientsConfig `yaml:"http_clients" json:"http_clients"`
 	Redis        *redis.Config                  `yaml:"redis" json:"redis"`

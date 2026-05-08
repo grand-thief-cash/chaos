@@ -1,18 +1,13 @@
-"""Document upload & extraction endpoints."""
+"""Document upload & management endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, Query
 from pydantic import BaseModel
 
+from atlas.connectors import phoenixa_client, minio_client
 from atlas.services.ingestion import ingest_document
-from atlas.services.llm_extractor import extract_document_chunks
-from atlas.services.graph_service import ingest_extraction_result
 
 router = APIRouter()
-
-# In-memory doc store (replace with MySQL in production)
-_doc_store: dict[str, dict] = {}
-_chunk_store: dict[str, list[str]] = {}
 
 
 class UploadResponse(BaseModel):
@@ -22,18 +17,10 @@ class UploadResponse(BaseModel):
     status: str
 
 
-class ExtractResponse(BaseModel):
-    doc_id: str
-    chunks_processed: int
-    nodes_created: int
-    edges_created: int
-    total_cost: float
-
-
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
-    source_type: str = Form("unknown"),
+    doc_type: str = Form("manual"),
     company_name: str = Form(""),
     source_url: str = Form(""),
 ):
@@ -42,27 +29,70 @@ async def upload_document(
     meta, chunks = ingest_document(
         filename=file.filename or "unknown",
         data=data,
-        source_type=source_type,
+        source_type=doc_type,
         company_name=company_name,
         source_url=source_url,
     )
-    _doc_store[meta.doc_id] = meta.model_dump()
-    _chunk_store[meta.doc_id] = chunks
+
+    # Upload raw file to MinIO
+    file_path = minio_client.upload_document(
+        data=data,
+        doc_id=meta.doc_id,
+        filename=file.filename or "unknown",
+        doc_type=doc_type,
+    )
+
+    # Determine source_type classification
+    source_type = "event_triggering" if doc_type in ("news", "policy", "announcement") else "graph_building"
+
+    # Register in phoenixA
+    try:
+        await phoenixa_client.create_document({
+            "doc_id": meta.doc_id,
+            "title": meta.title,
+            "doc_type": doc_type,
+            "source_type": source_type,
+            "company": company_name,
+            "file_path": file_path,
+            "content_hash": meta.content_hash,
+            "processed": False,
+        })
+    except Exception:
+        pass  # Non-fatal: document is still accessible locally
+
     return UploadResponse(
         doc_id=meta.doc_id,
         title=meta.title,
         chunk_count=meta.chunk_count,
-        status=meta.status.value,
+        status="uploaded",
     )
 
 
-@router.post("/{doc_id}/extract", response_model=ExtractResponse)
+@router.post("/{doc_id}/extract")
 async def extract_document(doc_id: str):
     """Trigger LLM extraction for a previously uploaded document."""
-    chunks = _chunk_store.get(doc_id)
-    if not chunks:
-        return ExtractResponse(doc_id=doc_id, chunks_processed=0,
-                               nodes_created=0, edges_created=0, total_cost=0)
+    from atlas.services.llm_extractor import extract_document_chunks
+    from atlas.services.graph_builder import build_graph_from_extraction
+
+    # Get document chunks from local storage or re-parse
+    doc = await phoenixa_client.get_document(doc_id)
+    if not doc:
+        return {"error": "Document not found", "doc_id": doc_id}
+
+    # Try to get the file from MinIO and re-parse
+    file_path = doc.get("file_path", "")
+    file_data = minio_client.download_document(file_path) if file_path else None
+
+    if file_data is None:
+        return {"error": "Document file not found in storage", "doc_id": doc_id}
+
+    from atlas.services.ingestion import extract_text, split_into_chunks
+    from atlas.core.config import get_config
+    cfg = get_config()["document"]
+
+    filename = file_path.split("/")[-1] if "/" in file_path else file_path
+    text = extract_text(filename, file_data)
+    chunks = split_into_chunks(text, cfg.get("chunk_max_chars", 3000), cfg.get("chunk_overlap_chars", 200))
 
     results = await extract_document_chunks(chunks, doc_id=doc_id)
 
@@ -74,45 +104,56 @@ async def extract_document(doc_id: str):
     for result, raw in results:
         total_cost += raw.get("cost", 0.0)
         if result is not None:
-            counts = ingest_extraction_result(result)
-            total_nodes += counts["nodes"]
-            total_edges += counts["edges"]
+            counts = await build_graph_from_extraction(result)
+            total_nodes += counts["nodes_created"]
+            total_edges += counts["edges_created"]
             chunks_ok += 1
 
-    return ExtractResponse(
-        doc_id=doc_id,
-        chunks_processed=chunks_ok,
-        nodes_created=total_nodes,
-        edges_created=total_edges,
-        total_cost=total_cost,
-    )
+    # Mark as processed
+    try:
+        await phoenixa_client.update_document(doc_id, {"processed": True})
+    except Exception:
+        pass
 
-
-@router.post("/batch-extract")
-async def batch_extract(background_tasks: BackgroundTasks):
-    """Trigger extraction for all pending documents (background task)."""
-    pending = [
-        doc_id for doc_id, meta in _doc_store.items()
-        if meta.get("status") == "pending"
-    ]
-    background_tasks.add_task(_batch_extract_worker, pending)
-    return {"message": f"Batch extraction started for {len(pending)} documents", "doc_ids": pending}
-
-
-async def _batch_extract_worker(doc_ids: list[str]):
-    for doc_id in doc_ids:
-        try:
-            await extract_document(doc_id)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error("Failed to extract doc %s: %s", doc_id, e)
+    return {
+        "doc_id": doc_id,
+        "chunks_processed": chunks_ok,
+        "nodes_created": total_nodes,
+        "edges_created": total_edges,
+        "total_cost": total_cost,
+    }
 
 
 @router.get("")
-async def list_documents(status: str | None = None):
-    """List all documents, optionally filtered by status."""
-    docs = list(_doc_store.values())
-    if status:
-        docs = [d for d in docs if d.get("status") == status]
+async def list_documents(
+    doc_type: str = "",
+    source_type: str = "",
+    status: str = "",
+    limit: int = Query(50, le=200),
+    offset: int = 0,
+):
+    """List all documents from phoenixA."""
+    processed = None
+    if status == "completed":
+        processed = True
+    elif status == "pending":
+        processed = False
+
+    docs = await phoenixa_client.list_documents(
+        doc_type=doc_type,
+        source_type=source_type,
+        processed=processed,
+        limit=limit,
+        offset=offset,
+    )
     return {"documents": docs, "total": len(docs)}
+
+
+@router.get("/{doc_id}")
+async def get_document(doc_id: str):
+    """Get a single document."""
+    doc = await phoenixa_client.get_document(doc_id)
+    if not doc:
+        return {"error": "Document not found", "doc_id": doc_id}
+    return doc
 

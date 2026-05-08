@@ -8,34 +8,64 @@ from typing import Any
 from pydantic import ValidationError
 
 from atlas.connectors.llm_client import call_extraction
+from atlas.core.config import get_config
 from atlas.models.graph_schema import ExtractionResult
 
 logger = logging.getLogger(__name__)
-
-# Path to the skill prompt (relative to project root)
-_SKILL_PATH = Path(__file__).resolve().parents[3] / ".." / "tools" / "py" / "skills" / "industry_extraction_skills.md"
 
 _cached_prompt: str | None = None
 
 
 def _load_skill_prompt() -> str:
+    """Load the extraction skill prompt from the configured path.
+
+    Resolution order:
+    1. config skills.extraction_prompt (relative to atlas project root or absolute)
+    2. Fallback: scan well-known locations
+    """
     global _cached_prompt
-    if _cached_prompt is None:
-        # Try multiple possible locations
-        candidates = [
-            _SKILL_PATH,
-            Path(__file__).resolve().parents[4] / "tools" / "py" / "skills" / "industry_extraction_skills.md",
-        ]
-        for p in candidates:
-            if p.exists():
-                _cached_prompt = p.read_text(encoding="utf-8")
-                logger.info("Loaded extraction skill prompt from %s", p)
-                break
-        if _cached_prompt is None:
-            raise FileNotFoundError(
-                f"Cannot find industry_extraction_skills.md in {[str(c) for c in candidates]}"
-            )
-    return _cached_prompt
+    if _cached_prompt is not None:
+        return _cached_prompt
+
+    cfg = get_config()
+    project_root = Path(__file__).resolve().parents[2]  # atlas/ project root
+
+    # Try configured path first
+    configured_path = cfg.get("skills", {}).get("extraction_prompt", "")
+    candidates: list[Path] = []
+
+    if configured_path:
+        p = Path(configured_path)
+        if p.is_absolute():
+            candidates.append(p)
+        else:
+            # Resolve relative to atlas project root
+            candidates.append(project_root / p)
+
+    # Fallback candidates (legacy)
+    candidates.extend([
+        project_root / ".." / ".." / "tools" / "py" / "skills" / "[2026-04-28]INDUSTRY_EXTRATION_SKILLS.md",
+        project_root / ".." / ".." / "tools" / "py" / "skills" / "industry_extraction_skills.md",
+    ])
+
+    for p in candidates:
+        resolved = p.resolve()
+        if resolved.exists():
+            _cached_prompt = resolved.read_text(encoding="utf-8")
+            logger.info("Loaded extraction skill prompt from %s", resolved)
+            return _cached_prompt
+
+    raise FileNotFoundError(
+        f"Cannot find extraction skill prompt. Searched: {[str(c.resolve()) for c in candidates]}. "
+        f"Configure 'skills.extraction_prompt' in atlas.yaml."
+    )
+
+
+def reload_skill_prompt() -> str:
+    """Force reload the skill prompt (e.g. after config change)."""
+    global _cached_prompt
+    _cached_prompt = None
+    return _load_skill_prompt()
 
 
 async def extract_from_chunk(

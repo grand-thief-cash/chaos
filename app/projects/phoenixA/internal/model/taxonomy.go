@@ -64,7 +64,7 @@ type IndustryWeight struct {
 	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"index_code"`
 	ConCode   string    `gorm:"type:varchar(64);not null;default:''" json:"con_code"`
 	Symbol    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"symbol"`
-	TradeDate string    `gorm:"type:varchar(10);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"trade_date"`
+	TradeDate string    `gorm:"type:date;not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"trade_date"`
 	Weight    float64   `gorm:"type:decimal(10,6)" json:"weight"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
@@ -80,7 +80,7 @@ type IndustryDaily struct {
 	Taxonomy  string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"taxonomy"`
 	Market    string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_idx_mkt_dt" json:"market"`
 	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"index_code"`
-	TradeDate string    `gorm:"type:varchar(10);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"trade_date"`
+	TradeDate string    `gorm:"type:date;not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"trade_date"`
 	Open      float64   `gorm:"type:decimal(20,4)" json:"open"`
 	High      float64   `gorm:"type:decimal(20,4)" json:"high"`
 	Close     float64   `gorm:"type:decimal(20,4)" json:"close"`

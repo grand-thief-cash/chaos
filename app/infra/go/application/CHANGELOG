@@ -1,7 +1,19 @@
 # VERSION
-v0.17.2
+v0.18.0
 
 # Changelog
+- v0.18.0
+    - **Neo4j Component** — reusable Neo4j driver component for graph database access
+        - New package: `components/neo4j` (config.go, component.go, factory.go)
+        - `Neo4jComponent`: manages `neo4j.DriverWithContext`, Start/Stop/HealthCheck lifecycle
+        - `RunCypher(ctx, cypher, params)` — read-only query returning `[]map[string]any`
+        - `RunCypherWrite(ctx, cypher, params)` — write query returning affected count
+        - `toSerializable()` — recursive converter for Neo4j Node/Relationship/Path types to JSON-safe maps
+        - Config: URI, username, password, database, max_connection_pool_size, encrypted
+        - New constant: `COMPONENT_NEO4J = "neo4j"`
+        - AppConfig updated: `Neo4j *neo4j.Config` field
+        - Registry auto-registration in `registry/neo4j.go`
+        - Requires: `github.com/neo4j/neo4j-go-driver/v5`
 - v0.17.2
     - Added "How TO USE" readout.
 - v0.17.1

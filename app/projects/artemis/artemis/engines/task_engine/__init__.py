@@ -5,11 +5,14 @@ from artemis.consts import TaskCode
 from artemis.core import registry
 from artemis.engines.task_engine.base import BaseTaskUnit
 from artemis.engines.task_engine.backtest import BacktraderCampaignTask, BacktraderRunTask
-from artemis.engines.task_engine.download.zh import StockZhAHistParent, StockZhAHistChild, StockZHAMarketCategory, StockZHAMarketCategorySWHY
+from artemis.engines.task_engine.download.zh import (
+    StockZhAHistParent, StockZhAHistChild,
+    StockZHAMktCategoryMairui, StockZHAMarketCategorySWHY,
+    StockZHAIndustryWeightSWHY, StockZHAIndustryWeightSWHYChild,
+    StockZHAIndustryDailySWHY, StockZHAIndustryDailySWHYChild,
+)
 from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 from artemis.engines.task_engine.download.zh.stock_zh_a_industry_constituent_swhy import StockZHAIndustryConstituentSWHY
-from artemis.engines.task_engine.download.zh.stock_zh_a_industry_weight_swhy import StockZHAIndustryWeightSWHY
-from artemis.engines.task_engine.download.zh.stock_zh_a_industry_daily_swhy import StockZHAIndustryDailySWHY
 from artemis.engines.task_engine.download.zh.stock_zh_a_balance_sheet import StockZHABalanceSheet
 from artemis.engines.task_engine.download.zh.stock_zh_a_cash_flow import StockZHACashFlow
 from artemis.engines.task_engine.download.zh.stock_zh_a_income import StockZHAIncome
@@ -39,9 +42,9 @@ registry.register(
 )
 
 registry.register(
-    TaskCode.STOCK_ZH_A_MKT_CATEGORY,
-    module=StockZHAMarketCategory.__module__,
-    class_name=StockZHAMarketCategory.__name__
+    TaskCode.STOCK_ZH_A_MKT_CATEGORY_MAIRUI,
+    module=StockZHAMktCategoryMairui.__module__,
+    class_name=StockZHAMktCategoryMairui.__name__
 )
 
 registry.register(
@@ -63,9 +66,21 @@ registry.register(
 )
 
 registry.register(
+    TaskCode.STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY_CHILD,
+    module=StockZHAIndustryWeightSWHYChild.__module__,
+    class_name=StockZHAIndustryWeightSWHYChild.__name__,
+)
+
+registry.register(
     TaskCode.STOCK_ZH_A_INDUSTRY_DAILY_SWHY,
     module=StockZHAIndustryDailySWHY.__module__,
     class_name=StockZHAIndustryDailySWHY.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD,
+    module=StockZHAIndustryDailySWHYChild.__module__,
+    class_name=StockZHAIndustryDailySWHYChild.__name__,
 )
 
 registry.register(

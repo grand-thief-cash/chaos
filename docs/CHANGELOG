@@ -1,7 +1,9 @@
 # VERSION
-v0.0.1
+v0.1.1
 
 # Changelog
+- v0.1.1
+    - Updated 2026-04-30 INSTALL_AND_CONFIG_POSTGRESQL.md
 - v0.1.0
     - Added 2026-04-30 INSTALL_AND_CONFIG_POSTGRESQL.md document.
 - v0.0.1

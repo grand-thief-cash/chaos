@@ -7,7 +7,9 @@ export class TopNavService {
   private readonly items: TopNavItem[] = [
     { key: 'cronjobs', label: 'Cron Jobs', icon: 'user', path: '/cronjobs' },
     { key: 'artemis', label: 'Artemis', icon: 'bars', path: '/artemis' },
-    { key: 'workbench', label: 'Workbench', icon: 'line-chart', path: '/workbench' }
+    { key: 'workbench', label: 'Workbench', icon: 'line-chart', path: '/workbench' },
+    { key: 'atlas', label: 'Atlas', icon: 'deployment-unit', path: '/atlas' },
+    { key: 'phoenixa', label: 'PhoenixA', icon: 'database', path: '/phoenixa' }
   ];
   getItems(): ReadonlyArray<TopNavItem> { return this.items; }
 }

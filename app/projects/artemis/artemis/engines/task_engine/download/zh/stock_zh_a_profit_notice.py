@@ -9,8 +9,8 @@ class StockZHAProfitNotice(BaseFinancialStatementTask):
     STATEMENT_TYPE = "profit_notice"
     SDK_METHOD_NAME = "get_profit_notice"
 
-    def _sdk_call(self, info_data, code_list, cache_dir):
-        return info_data.get_profit_notice(code_list, local_path=cache_dir, is_local=False)
+    def _sdk_call(self, info_data, code_list, cache_dir, **sdk_date_kwargs):
+        return info_data.get_profit_notice(code_list, local_path=cache_dir, is_local=False, **sdk_date_kwargs)
 
     def _get_metadata_overrides(self, row):
         def _str(val):

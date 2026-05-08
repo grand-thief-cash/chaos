@@ -6,12 +6,18 @@ from artemis.engines.task_engine.worker_unit import WorkerUnit
 from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
+from artemis.core.config_manager import cfg_mgr
 
 
-class StockZHAMarketCategory(WorkerUnit):
+class StockZHAMktCategoryMairui(WorkerUnit):
 
     def execute(self, ctx):
-        url = "https://api.mairuiapi.com/hszg/list/LICENCE-66D8-9F96-0C7F0FBCD073"
+        sdk_cfg = cfg_mgr.get_config().sdk.get('mairui', {})
+        license_key = sdk_cfg.get('license', '')
+        if not license_key:
+            ctx.fail("mairui license not configured (sdk.mairui.license)", phase='execute')
+            return []
+        url = f"https://api.mairuiapi.com/hszg/list/{license_key}"
         try:
             resp = requests.get(url, timeout=10)
             resp.raise_for_status()

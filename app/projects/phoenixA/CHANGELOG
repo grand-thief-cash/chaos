@@ -1,7 +1,105 @@
 # VERSION
-v1.5.0
+v1.9.0
 
 # Changelog
+- v1.9.0
+    - **Industry data fixes — trade_date DATE type + taxonomy_security_map auto-sync**
+        - Migration `0003_industry_date_columns.sql`: `trade_date` column changed from `VARCHAR(10)` to native `DATE` type in `industry_weight` and `industry_daily` tables; dependent indexes and unique constraints rebuilt
+        - `IndustryWeight.TradeDate` / `IndustryDaily.TradeDate`: GORM tag updated from `type:varchar(10)` to `type:date` (matches existing `StandardBar` pattern)
+        - Defense-in-depth: `BatchUpsertWeights` and `BatchUpsertIndustryDaily` controllers now normalize incoming `trade_date` via `normalizeDateYYYYMMDD()` before DB write
+        - New endpoint: `POST /api/v2/taxonomy/{source}/{taxonomy}/{market}/mapping/sync_from_constituents` — derives `taxonomy_security_map` entries by JOINing `industry_constituent` with `taxonomy_category` on `index_code`; uses `ON CONFLICT DO NOTHING`
+        - `TaxonomyDao.SyncMappingsFromConstituents()`: raw SQL INSERT…SELECT with DISTINCT + JOIN + ON CONFLICT DO NOTHING
+        - `TaxonomyService.SyncMappingsFromConstituents()`: validation + logging
+    - **Write Buffer V2 — generic multi-business-type buffer**
+        - Refactored `WriteBufferManager` from bars-only to generic multi-type architecture
+        - New `genericBuffer` replaces `tableBuffer`: accepts typed `FlushFunc` per buffer key, decoupled from specific DAOs
+        - New business types supported: `industry_weight`, `industry_daily` (bars preserved as `bars` category)
+        - `WriteBufferManager` now injects `TaxonomyDao` alongside `BarsDao`
+        - `BufferStats` gains `category` field — each buffer reports its business type (bars/industry_weight/industry_daily)
+        - `TaxonomyController` now routes weight and daily upserts through the write buffer for small batches (< direct_flush_threshold), direct write for large batches
+        - `TaxonomyController` depends on `BufferManager` interface for testability
+        - Bars ext flush fixed: `barsEntry` now carries the `Query` reference, restoring `BatchUpsertExt` functionality that was lost in the generic refactor
+        - `/api/v2/buffer/stats` response now includes `category` per buffer for frontend categorization
+
+- v1.8.0
+    - **Knowledge Graph (KG) Domain** — data persistence layer for Atlas KG Engine
+        - New PostgreSQL schema: `kg` with 6 tables (documents, extractions, events, graph_ingestions, daily_runs, impact_logs)
+        - New `kg.events` table: normalized/deduplicated event store with fingerprint-based identity
+            - Columns: event_fingerprint, entity_name, event_type, direction, time_bucket, severity, source_doc_ids[], source_count
+            - Supports event merging: when duplicate event arrives, source_doc_ids and source_count are updated
+        - Updated `kg.documents`: added `source_type` column (graph_building vs event_triggering)
+        - Updated `kg.daily_runs`: new columns for docs_graph_building, docs_event, events_new, events_deduped
+        - Updated `kg.impact_logs`: added `event_id` FK linking to normalized events
+        - New model: `KgDocument`, `KgExtraction`, `KgEvent`, `KgGraphIngestion`, `KgDailyRun`, `KgImpactLog` with GORM tags
+        - New custom types: `StringArray` (PostgreSQL TEXT[]), `JSONB` (PostgreSQL JSONB) with Scanner/Valuer
+        - New DAO: `KgDao` — unified DAO for all 6 kg tables with filter structs
+        - New Service: `KgService` — thin business logic layer wrapping DAO
+        - New Controller: `KgController` — 17 HTTP endpoints:
+            - Documents: POST/GET/GET/{id}/PUT
+            - Extractions: POST/GET/GET/{id}
+            - Events: POST/GET/GET/{id}/PUT + GET /recent
+            - Graph Ingestions: POST
+            - Daily Runs: POST/GET
+            - Impact Logs: POST/GET
+        - Routes registered at `/api/v1/kg/*`
+        - New constants: COMP_DAO_KG, COMP_SVC_KG, COMP_CTRL_KG, DB_PG_KG
+        - Updated migration: `migrations/postgresql/kg/0001_kg_init.sql`
+    - **Graph API (Neo4j)** — HTTP proxy to Neo4j graph database for Atlas
+        - Integrates Neo4j infra component (v0.18.0) into PhoenixA
+        - New DAO: `GraphDao` — wraps Neo4j component with typed query methods
+            - `MergeNode`, `MergeEdge` — idempotent MERGE operations
+            - `SearchNodes`, `GetCompanyFull`, `GetCompanyChain` — graph traversal queries
+            - `GetCompanyTimeline`, `GetCompetitors`, `GetEventImpacts` — specialized reads
+            - `GetGraphStats` — node/edge count aggregation
+            - `EnsureSchema` — create constraints and indexes
+            - `GetResourceRelatedCompanies` — for impact analysis
+        - New Service: `GraphService` — thin wrapper with logging
+        - New Controller: `GraphController` — 14 HTTP endpoints:
+            - `POST /api/v1/graph/cypher` — read-only Cypher execution
+            - `POST /api/v1/graph/cypher/write` — write Cypher execution
+            - `POST /api/v1/graph/nodes/merge` + `/merge-batch` — node merge (single + batch)
+            - `POST /api/v1/graph/edges/merge` + `/merge-batch` — edge merge (single + batch)
+            - `GET /api/v1/graph/search?q=...` — full-text node search
+            - `GET /api/v1/graph/company/{name}` — company + all relationships
+            - `GET /api/v1/graph/company/{name}/chain` — supply chain BFS
+            - `GET /api/v1/graph/company/{name}/timeline` — time-ordered events
+            - `GET /api/v1/graph/company/{name}/competitors` — competitor list
+            - `GET /api/v1/graph/event/{name}/impacts` — event impact on companies
+            - `GET /api/v1/graph/stats` — graph statistics
+            - `POST /api/v1/graph/schema/ensure` — create constraints/indexes
+        - Graph API conditionally registered (only when `neo4j.enabled: true`)
+        - Neo4j config section added to `config.yaml`
+        - New constants: COMP_DAO_GRAPH, COMP_SVC_GRAPH, COMP_CTRL_GRAPH
+- v1.7.0
+    - **Write Buffer** — in-process batch write optimization for high-frequency small upserts
+        - New component: `WriteBufferManager` (`internal/buffer/write_buffer.go`)
+            - Per-table channel + goroutine architecture (lazy-created per buffer key)
+            - Flush triggers: batch full (2000 rows) / interval (configurable) / graceful shutdown
+            - Bars + ext data bundled in single submission, flushed atomically
+            - Non-blocking submit with 503 backpressure when channel full
+        - `BarsController.Upsert()` routing logic:
+            - `len(bars) >= direct_flush_threshold (500)` → bypass buffer, direct DB write (full-load path)
+            - `len(bars) < 500` → submit to write buffer (daily-update path)
+        - New endpoint: `GET /api/v2/buffer/stats` — per-buffer metrics (submitted/flushed/pending/flush_count)
+        - New biz_config section: `write_buffer` (enabled, max_batch_size, flush_interval, direct_flush_threshold, channel_size, shutdown_timeout)
+        - New `internal/config/config.go` — PhoenixA BizConfig + `SetBizConfig` init
+        - Unit tests: 6 test cases covering disabled/interval-flush/batch-full/channel-full/ext-bundled/multi-key
+        - Design doc: `docs/2026-05-07 DESIGN_BATCH_WRITE_BUFFER.md`
+- v1.6.0
+    - **PostgreSQL Migration Phase 2** — financial_statement & corporate_action tables migrated to PostgreSQL
+        - `FinancialStatementDao` and `CorporateActionDao` switched from `mysql_gorm` to `postgres_gorm`
+        - `SchemaDao` switched to `postgres_gorm`; JSON queries rewritten: `JSON_TABLE`/`JSON_KEYS` → `LATERAL jsonb_object_keys()`
+        - New PostgreSQL migration: `migrations/postgresql/security/0002_financial_data.sql`
+            - 2 tables: `financial_statement`, `corporate_action` with PG-native types
+            - JSONB GIN indexes (`jsonb_path_ops`): `idx_fs_data_gin`, `idx_ca_data_gin`
+            - Partial indexes on `ann_date` and `comp_type_code`
+        - **JSONB query capabilities**:
+            - `FinancialStatementFilters` / `CorporateActionFilters`: new `DataContains` (`@>`) and `DataHasKey` (`?`) fields
+            - Enables queries like: `WHERE data_json @> '{"TOTAL_ASSETS": 100000000}'`
+        - Model updates: `type:json` → `type:jsonb`, `int` → `smallint` for `comp_type_code`
+        - Bug fix: `_int()` in Artemis `base_financial_statement.py` — `int(float(val))` for `COMP_TYPE_CODE` type inconsistency
+        - New doc: `2026-05-07 FINANCIAL_DATA_PG_MIGRATION.md`
+        - Upgrade infra to v0.17.2 to support latest `postgres_gorm` features.
 - v1.5.0
     - **PostgreSQL Migration Phase 1** — taxonomy & industry tables migrated to PostgreSQL
         - **Only TaxonomyDao** switched from `mysql_gorm` to `postgres_gorm`

@@ -20,8 +20,8 @@ type FinancialStatement struct {
 	SecurityName    string          `gorm:"type:varchar(128);not null;default:''" json:"security_name"`
 	AnnDate         string          `gorm:"type:varchar(10);not null;default:''" json:"ann_date"`
 	ActualAnnDate   string          `gorm:"type:varchar(10);not null;default:''" json:"actual_ann_date"`
-	CompTypeCode    int             `gorm:"type:int;not null;default:0" json:"comp_type_code"` // 1:非金融 2:银行 3:保险 4:证券
-	DataJSON        json.RawMessage `gorm:"column:data_json;type:json;not null" json:"data_json"`
+	CompTypeCode    int             `gorm:"type:smallint;not null;default:0" json:"comp_type_code"` // 1:非金融 2:银行 3:保险 4:证券
+	DataJSON        json.RawMessage `gorm:"column:data_json;type:jsonb;not null;default:'{}'" json:"data_json"`
 	CreatedAt       time.Time       `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
 }
@@ -38,4 +38,7 @@ type FinancialStatementFilters struct {
 	PeriodEnd       string // range: <= this
 	ReportType      string
 	CompTypeCode    *int
+	// PostgreSQL JSONB filters
+	DataContains map[string]interface{} // data_json @> '{"key": value}'  containment query
+	DataHasKey   string                 // data_json ? 'key'  key existence check
 }

@@ -12,7 +12,7 @@ export const ARTEMIS_ROUTES: Routes = [
       { path: '', redirectTo: 'tasks', pathMatch: 'full' },
       { path: 'tasks', component: TaskListComponent, data: { breadcrumb: 'Tasks', menu: { label: 'Task List', order: 1 } } },
       { path: 'config', component: TaskYamlComponent, data: { breadcrumb: 'Config', menu: { label: 'Task Config', order: 2 } } },
-      { path: 'units', component: TaskUnitsComponent, data: { breadcrumb: 'Units', menu: { label: 'Task Units', order: 3 } } }
+      { path: 'units', component: TaskUnitsComponent, data: { breadcrumb: 'Units', menu: { label: 'Task Units', order: 3 } } },
     ]
   }
 ];

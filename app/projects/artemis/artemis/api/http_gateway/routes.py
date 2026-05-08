@@ -297,3 +297,10 @@ app.include_router(router)
 
 from artemis.api.http_gateway.workbench_routes import router as workbench_router  # noqa: E402
 app.include_router(workbench_router)
+
+from artemis.api.http_gateway.factor_routes import router as factor_router  # noqa: E402
+app.include_router(factor_router)
+
+from artemis.api.http_gateway.regime_routes import router as regime_router  # noqa: E402
+app.include_router(regime_router)
+
