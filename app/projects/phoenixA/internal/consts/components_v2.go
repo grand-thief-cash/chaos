@@ -12,6 +12,8 @@ const (
 	COMP_DAO_FINANCIAL_STMT    = "dao_financial_stmt"
 	COMP_DAO_CORP_ACTION       = "dao_corp_action"
 	COMP_DAO_SCHEMA            = "dao_schema"
+	COMP_DAO_KG                = "dao_kg"
+	COMP_DAO_GRAPH             = "dao_graph"
 
 	// Service components
 	COMP_SVC_SECURITY       = "svc_security"
@@ -20,6 +22,8 @@ const (
 	COMP_SVC_STRATEGY_RUN   = "svc_strategy_run"
 	COMP_SVC_FINANCIAL_STMT = "svc_financial_stmt"
 	COMP_SVC_CORP_ACTION    = "svc_corp_action"
+	COMP_SVC_KG             = "svc_kg"
+	COMP_SVC_GRAPH          = "svc_graph"
 
 	// Buffer components
 	COMP_WRITE_BUFFER = "write_buffer_mgr"
@@ -32,4 +36,6 @@ const (
 	COMP_CTRL_FINANCIAL_STMT = "ctrl_financial_stmt"
 	COMP_CTRL_CORP_ACTION    = "ctrl_corp_action"
 	COMP_CTRL_SCHEMA         = "ctrl_schema"
+	COMP_CTRL_KG             = "ctrl_kg"
+	COMP_CTRL_GRAPH          = "ctrl_graph"
 )

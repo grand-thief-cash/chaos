@@ -60,6 +60,15 @@ http_server:
   graceful_timeout: 10s
   enable_health: true
 
+neo4j:
+  enabled: true
+  uri: "bolt://localhost:7687"
+  username: neo4j
+  password: "${NEO4J_PASSWORD:atlas_password}"
+  database: neo4j
+  max_connection_pool_size: 50
+  encrypted: false
+
 telemetry:
   enabled: true
   service_name: phoenixA
