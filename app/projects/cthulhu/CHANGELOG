@@ -1,7 +1,25 @@
 # VERSION
-v0.9.1
+v0.10.0
 
 # Changelog
+- v0.10.0
+    - **Factor Engine page** (`/artemis/factors`) — new tab-based dashboard for factor management
+        - **Factor Registry tab**: browse all registered factors with name, Chinese name, category (color-tagged), formula, unit, higher-is-better indicator, and market data requirement
+        - **Compute tab**: trigger full-market or incremental (by symbols) factor computation with date & market selector
+        - **Snapshot tab**: query single-symbol factor snapshot showing raw and normalized factor values in sorted tables
+        - **Ranking tab**: view top-N factor rankings across the market with selectable factor and date; factor dropdown populated from registry
+    - **Regime Engine page** (`/artemis/regime`) — new tab-based dashboard for market regime analysis
+        - **Current Regime tab**: real-time regime state display with
+            - Market label alert banner (BULL_TREND/BEAR_TREND/PANIC/SIDEWAYS) with color-coded severity
+            - 6-dimension state gauge cards with progress bars (Trend Strength, Risk Appetite, Volatility Stress, Market Breadth, Liquidity, Sector Concentration)
+            - Transition signals (Breadth Momentum, Vol Acceleration) with directional arrows and color coding
+            - Strategy allocation table (strategy weights, factor weight adjustments, position limit, holding period)
+        - **History tab**: scrollable table of historical regime records with all state dimensions, labels, and allocation info; configurable limit
+        - **Features tab**: query raw regime features (8 input metrics) for any trade date with color-coded values
+        - **Compute tab**: single-day regime computation and batch backfill by comma-separated dates
+    - New services: `FactorService`, `RegimeService` — API clients for Artemis `/factors/*` and `/regime/*` endpoints
+    - New models: `FactorMeta`, `FactorSnapshot`, `FactorRankItem`, `FactorComputeResult`, `RegimeResult`, `RegimeFeatures`, `RegimeComputeResult`
+    - Artemis side-menu updated: added "Factor Engine" (order 4) and "Regime Engine" (order 5) menu items
 - v0.9.1
     - Added phoenixA on top-nav bar.
 - v0.9.0
