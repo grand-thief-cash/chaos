@@ -9,20 +9,20 @@ from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 def _resolve_index_codes(ctx: TaskContext) -> Optional[List[str]]:
     """Resolve industry index code list from params or PhoenixA.
 
-    For industry tasks, `symbols` is a list of index codes already in SDK format
+    For industry tasks, `index_codes` is a list of index codes already in SDK format
     (e.g. ["851426.SI"]). Unlike stock tasks, no `exchange` parameter is needed.
 
     Returns: list of index codes, or None on failure.
     """
     params = ctx.params or {}
-    raw = params.get("symbols")
+    raw = params.get("index_codes")
     if raw:
         if isinstance(raw, str):
             raw = [s.strip() for s in raw.split(",") if s.strip()]
         if isinstance(raw, list) and raw:
             return [str(s).strip() for s in raw if str(s).strip()]
 
-    # No explicit symbols → query PhoenixA for all SWHY industry index codes
+    # No explicit index_codes → query PhoenixA for all SWHY industry index codes
     phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
     categories = phoenixA_client.query_industry_categories(
         source=consts.DataSource.DS_AMAZING_DATA.value,
@@ -38,9 +38,9 @@ class StockZHAIndustryWeightSWHY(OrchestratorUnit):
 
     def parameter_check(self, ctx: TaskContext):
         params = ctx.incoming_params or {}
-        symbols = params.get("symbols")
-        if symbols is not None and not isinstance(symbols, list):
-            ctx.fail(f"symbols must be a list of index codes (e.g. ['851426.SI']), got {type(symbols).__name__}", phase='parameter_check')
+        index_codes = params.get("index_codes")
+        if index_codes is not None and not isinstance(index_codes, list):
+            ctx.fail(f"index_codes must be a list of index codes (e.g. ['851426.SI']), got {type(index_codes).__name__}", phase='parameter_check')
             return
 
     def before_execute(self, ctx: TaskContext) -> None:

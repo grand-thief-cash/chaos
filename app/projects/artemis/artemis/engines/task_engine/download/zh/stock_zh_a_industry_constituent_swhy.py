@@ -20,9 +20,9 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
 
     def parameter_check(self, ctx: TaskContext):
         params = ctx.incoming_params or {}
-        symbols = params.get("symbols")
-        if symbols is not None and not isinstance(symbols, list):
-            ctx.fail(f"symbols must be a list of index codes (e.g. ['851426.SI']), got {type(symbols).__name__}", phase='parameter_check')
+        index_codes = params.get("index_codes")
+        if index_codes is not None and not isinstance(index_codes, list):
+            ctx.fail(f"index_codes must be a list of index codes (e.g. ['851426.SI']), got {type(index_codes).__name__}", phase='parameter_check')
             return
 
     def before_execute(self, ctx: TaskContext) -> None:
@@ -56,6 +56,7 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
     def post_process(self, ctx: TaskContext, result: Dict[str, Any]) -> List[Dict[str, Any]]:
         processed = []
         seen = set()
+        dup_count = 0
         for code, df in result.items():
             if not isinstance(df, pd.DataFrame) or df.empty:
                 continue
@@ -65,6 +66,7 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
                 index_code = str(row.get("INDEX_CODE", code))
                 key = (index_code, symbol)
                 if key in seen:
+                    dup_count += 1
                     continue
                 seen.add(key)
                 processed.append({
@@ -75,6 +77,13 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
                     "outdate": str(row.get("OUTDATE", "")),
                     "index_name": str(row.get("INDEX_NAME", "")),
                 })
+        if dup_count > 0:
+            ctx.logger.info({
+                'event': 'swhy_constituent_dedup',
+                'duplicates_dropped': dup_count,
+                'kept': len(processed),
+                'run_id': ctx.run_id,
+            })
         return processed
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):
@@ -94,3 +103,11 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
         )
         if ok is False:
             ctx.fail("failed to sink SWHY industry constituents to phoenixA", phase='sink')
+            return
+
+        phoenixA_client.sync_mappings_from_constituents(
+            consts.DataSource.DS_AMAZING_DATA.value,
+            taxonomy=Taxonomy.SWHY.value,
+            market="zh_a",
+            run_id=ctx.run_id,
+        )

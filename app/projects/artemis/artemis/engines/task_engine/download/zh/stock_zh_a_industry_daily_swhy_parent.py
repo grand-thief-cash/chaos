@@ -12,9 +12,9 @@ class StockZHAIndustryDailySWHY(OrchestratorUnit):
 
     def parameter_check(self, ctx: TaskContext):
         params = ctx.incoming_params or {}
-        symbols = params.get("symbols")
-        if symbols is not None and not isinstance(symbols, list):
-            ctx.fail(f"symbols must be a list of index codes (e.g. ['851426.SI']), got {type(symbols).__name__}", phase='parameter_check')
+        index_codes = params.get("index_codes")
+        if index_codes is not None and not isinstance(index_codes, list):
+            ctx.fail(f"index_codes must be a list of index codes (e.g. ['851426.SI']), got {type(index_codes).__name__}", phase='parameter_check')
             return
 
     def before_execute(self, ctx: TaskContext) -> None:

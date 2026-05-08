@@ -47,15 +47,19 @@ class StockZHAMarketCategorySWHY(WorkerUnit):
         if df.empty:
             return []
 
-        # Build INDUSTRY_CODE → parent INDUSTRY_CODE lookup
-        # SWHY hierarchy: level-1 = 2-char, level-2 = 4-char, level-3 = 6-char
-        # We store INDUSTRY_CODE as `code`, so parent_code is also an INDUSTRY_CODE
-        industry_codes_by_level: Dict[int, Dict[str, str]] = {1: {}, 2: {}, 3: {}}
+        # Build name-based parent lookups
+        # LEVEL1_NAME identifies level-1 nodes; (LEVEL1_NAME, LEVEL2_NAME) identifies level-2 nodes
+        level1_by_name: Dict[str, str] = {}         # LEVEL1_NAME → INDUSTRY_CODE
+        level2_by_names: Dict[tuple, str] = {}       # (LEVEL1_NAME, LEVEL2_NAME) → INDUSTRY_CODE
         for _, row in df.iterrows():
             ic = str(row.get("INDUSTRY_CODE", "")).strip()
             level_type = int(row.get("LEVEL_TYPE", 0))
-            if ic and level_type in industry_codes_by_level:
-                industry_codes_by_level[level_type][ic] = ic
+            if level_type == 1:
+                level1_by_name[str(row.get("LEVEL1_NAME", "")).strip()] = ic
+            elif level_type == 2:
+                key = (str(row.get("LEVEL1_NAME", "")).strip(),
+                       str(row.get("LEVEL2_NAME", "")).strip())
+                level2_by_names[key] = ic
 
         processed = []
         for _, row in df.iterrows():
@@ -73,17 +77,15 @@ class StockZHAMarketCategorySWHY(WorkerUnit):
             else:
                 name = ""
 
-            # Parent code: derive from INDUSTRY_CODE hierarchy
-            # parent is the INDUSTRY_CODE of parent level
+            # Parent code: use name hierarchy matching (more robust than code prefix matching)
             parent_code = None
-            if level_type == 2 and len(industry_code) >= 4:
-                parent_prefix = industry_code[:2]
-                if parent_prefix in industry_codes_by_level[1]:
-                    parent_code = parent_prefix
-            elif level_type == 3 and len(industry_code) >= 6:
-                parent_prefix = industry_code[:4]
-                if parent_prefix in industry_codes_by_level[2]:
-                    parent_code = parent_prefix
+            if level_type == 2:
+                parent_name = str(row.get("LEVEL1_NAME", "")).strip()
+                parent_code = level1_by_name.get(parent_name)
+            elif level_type == 3:
+                parent_key = (str(row.get("LEVEL1_NAME", "")).strip(),
+                              str(row.get("LEVEL2_NAME", "")).strip())
+                parent_code = level2_by_names.get(parent_key)
 
             # Extra attributes (only non-standard fields)
             attrs = {}

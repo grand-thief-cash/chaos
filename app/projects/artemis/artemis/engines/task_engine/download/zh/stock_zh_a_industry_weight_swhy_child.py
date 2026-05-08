@@ -1,3 +1,4 @@
+import math
 import os
 from typing import Any, Dict, List
 
@@ -9,6 +10,17 @@ from artemis.consts import DeptServices, Taxonomy
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
 from artemis.engines.task_engine.download.zh.utils import get_sdk_date_kwargs
+
+
+def _safe_float(val, default=0.0):
+    """Convert to float, replacing nan/inf with default (JSON-compliant)."""
+    try:
+        f = float(val)
+        if not math.isfinite(f):
+            return default
+        return f
+    except (ValueError, TypeError):
+        return default
 
 
 class StockZHAIndustryWeightSWHYChild(WorkerUnit):
@@ -54,17 +66,34 @@ class StockZHAIndustryWeightSWHYChild(WorkerUnit):
         processed = []
         for code, df in result.items():
             if not isinstance(df, pd.DataFrame) or df.empty:
+                ctx.logger.info({
+                    'event': 'swhy_weight_post_process_skip',
+                    'code': code,
+                    'type': type(df).__name__,
+                    'empty': getattr(df, 'empty', True),
+                    'run_id': ctx.run_id,
+                })
                 continue
             for _, row in df.iterrows():
                 con_code = str(row.get("CON_CODE", "")).strip()
                 symbol = con_code.split(".")[0] if "." in con_code else con_code
+                raw_td = str(row.get("TRADE_DATE", ""))
+                if len(raw_td) == 8 and raw_td.isdigit():
+                    trade_date = f"{raw_td[:4]}-{raw_td[4:6]}-{raw_td[6:8]}"
+                else:
+                    trade_date = raw_td
                 processed.append({
                     "index_code": str(row.get("INDEX_CODE", code)),
                     "con_code": con_code,
                     "symbol": symbol,
-                    "trade_date": str(row.get("TRADE_DATE", "")),
-                    "weight": float(row.get("WEIGHT", 0.0)),
+                    "trade_date": trade_date,
+                    "weight": _safe_float(row.get("WEIGHT")),
                 })
+        ctx.logger.info({
+            'event': 'swhy_weight_post_process_result',
+            'processed_count': len(processed),
+            'run_id': ctx.run_id,
+        })
         return processed
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):
