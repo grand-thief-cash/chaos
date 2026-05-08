@@ -14,97 +14,109 @@ import (
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/dao"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
+
+	legacyDao "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/dao"
 )
 
 // ──────────────────────────────────────────────────────────────
-// bufferEntry: a single submission (bars + optional ext)
+// genericEntry: a single submission carrying any business data
 // ──────────────────────────────────────────────────────────────
 
-type bufferEntry struct {
-	Bars []*model.StandardBar
-	// ext payload kept as raw JSON + source; decoded at flush time
+type genericEntry struct {
+	Data  interface{} // the typed payload (bars, weights, daily, etc.)
+	Count int         // row count for this entry
+}
+
+// FlushFunc processes accumulated entries for a specific buffer key.
+// Returns the total number of rows flushed.
+type FlushFunc func(ctx context.Context, key string, entries []genericEntry) (int, error)
+
+// ──────────────────────────────────────────────────────────────
+// barsEntry: bars-specific payload (backward compatible)
+// ──────────────────────────────────────────────────────────────
+
+type barsEntry struct {
+	Bars    []*model.StandardBar
 	ExtJSON json.RawMessage
 	Source  string
+	Query   *model.BarsQuery // captured for ext flush
 }
 
 // ──────────────────────────────────────────────────────────────
-// tableBuffer: per-key channel + flush goroutine
+// genericBuffer: per-key channel + flush goroutine
 // ──────────────────────────────────────────────────────────────
 
-type tableBuffer struct {
-	key    string // e.g. "bars_stock_zh_a_daily_nf"
-	ch     chan bufferEntry
-	dao    *dao.BarsDao
-	q      *model.BarsQuery // template query for this key
-	cfg    Config
-	wg     sync.WaitGroup
-	cancel context.CancelFunc
+type genericBuffer struct {
+	key       string // e.g. "bars_stock_zh_a_daily_nf" or "industry_weight_amazing_data_swhy_zh_a"
+	category  string // business category: "bars", "industry_weight", "industry_daily", etc.
+	ch        chan genericEntry
+	flushFunc FlushFunc
+	cfg       Config
+	wg        sync.WaitGroup
+	cancel    context.CancelFunc
 
-	// metrics
 	submitted atomic.Int64
 	flushed   atomic.Int64
 	flushCnt  atomic.Int64
 }
 
-func newTableBuffer(key string, q *model.BarsQuery, barsDao *dao.BarsDao, cfg Config) *tableBuffer {
+func newGenericBuffer(key, category string, flushFunc FlushFunc, cfg Config) *genericBuffer {
 	ctx, cancel := context.WithCancel(context.Background())
-	tb := &tableBuffer{
-		key:    key,
-		ch:     make(chan bufferEntry, cfg.ChannelSize),
-		dao:    barsDao,
-		q:      q,
-		cfg:    cfg,
-		cancel: cancel,
+	b := &genericBuffer{
+		key:       key,
+		category:  category,
+		ch:        make(chan genericEntry, cfg.ChannelSize),
+		flushFunc: flushFunc,
+		cfg:       cfg,
+		cancel:    cancel,
 	}
-	tb.wg.Add(1)
-	go tb.loop(ctx)
-	return tb
+	b.wg.Add(1)
+	go b.loop(ctx)
+	return b
 }
 
-func (tb *tableBuffer) submit(e bufferEntry) error {
+func (b *genericBuffer) submit(e genericEntry) error {
 	select {
-	case tb.ch <- e:
-		tb.submitted.Add(int64(len(e.Bars)))
+	case b.ch <- e:
+		b.submitted.Add(int64(e.Count))
 		return nil
 	default:
-		return fmt.Errorf("write buffer channel full for key=%s (cap=%d)", tb.key, tb.cfg.ChannelSize)
+		return fmt.Errorf("write buffer channel full for key=%s (cap=%d)", b.key, b.cfg.ChannelSize)
 	}
 }
 
-func (tb *tableBuffer) loop(ctx context.Context) {
-	defer tb.wg.Done()
-	ticker := time.NewTicker(tb.cfg.FlushInterval)
+func (b *genericBuffer) loop(ctx context.Context) {
+	defer b.wg.Done()
+	ticker := time.NewTicker(b.cfg.FlushInterval)
 	defer ticker.Stop()
 
-	var pending []bufferEntry
+	var pending []genericEntry
 
 	flush := func(reason string) {
 		if len(pending) == 0 {
 			return
 		}
-		tb.doFlush(pending, reason)
-		pending = pending[:0] // reset slice, keep capacity
+		b.doFlush(pending, reason)
+		pending = pending[:0]
 	}
 
 	for {
 		select {
-		case e, ok := <-tb.ch:
+		case e, ok := <-b.ch:
 			if !ok {
-				// channel closed (shutdown)
 				flush("shutdown_drain")
 				return
 			}
 			pending = append(pending, e)
-			if tb.pendingBarCount(pending) >= tb.cfg.MaxBatchSize {
+			if b.pendingCount(pending) >= b.cfg.MaxBatchSize {
 				flush("batch_full")
 			}
 		case <-ticker.C:
 			flush("interval")
 		case <-ctx.Done():
-			// drain remaining items from channel
 			for {
 				select {
-				case e, ok := <-tb.ch:
+				case e, ok := <-b.ch:
 					if !ok {
 						flush("shutdown_final")
 						return
@@ -119,88 +131,32 @@ func (tb *tableBuffer) loop(ctx context.Context) {
 	}
 }
 
-func (tb *tableBuffer) pendingBarCount(entries []bufferEntry) int {
+func (b *genericBuffer) pendingCount(entries []genericEntry) int {
 	n := 0
 	for _, e := range entries {
-		n += len(e.Bars)
+		n += e.Count
 	}
 	return n
 }
 
-func (tb *tableBuffer) doFlush(entries []bufferEntry, reason string) {
+func (b *genericBuffer) doFlush(entries []genericEntry, reason string) {
 	if len(entries) == 0 {
 		return
 	}
 
-	// Merge all bars
-	totalBars := 0
-	for _, e := range entries {
-		totalBars += len(e.Bars)
-	}
-	merged := make([]*model.StandardBar, 0, totalBars)
-	for _, e := range entries {
-		merged = append(merged, e.Bars...)
-	}
-
 	ctx := context.Background()
-
-	// Flush bars
-	if len(merged) > 0 && tb.dao != nil {
-		if err := tb.dao.BatchUpsert(ctx, tb.q, merged); err != nil {
-			logging.Errorf(ctx, "WriteBuffer flush bars failed key=%s count=%d reason=%s err=%v",
-				tb.key, len(merged), reason, err)
-			// TODO: retry logic or dead-letter handling
-			return
-		}
+	total, err := b.flushFunc(ctx, b.key, entries)
+	if err != nil {
+		logging.Errorf(ctx, "WriteBuffer flush failed key=%s entries=%d reason=%s err=%v",
+			b.key, len(entries), reason, err)
+		return
 	}
 
-	// Flush ext (group by source, decode and write)
-	if tb.dao != nil {
-		tb.flushExt(ctx, entries)
-	}
+	b.flushed.Add(int64(total))
+	b.flushCnt.Add(1)
 
-	tb.flushed.Add(int64(len(merged)))
-	tb.flushCnt.Add(1)
-
-	logging.Infof(ctx, "WriteBuffer flushed key=%s bars=%d entries=%d reason=%s",
-		tb.key, len(merged), len(entries), reason)
-}
-
-func (tb *tableBuffer) flushExt(ctx context.Context, entries []bufferEntry) {
-	// Collect ext data by source
-	type extGroup struct {
-		source string
-		data   []*model.BarsExtBaostock
-	}
-	groups := map[string]*extGroup{}
-
-	for _, e := range entries {
-		if len(e.ExtJSON) == 0 || e.Source == "" {
-			continue
-		}
-		var ext []*model.BarsExtBaostock
-		if err := json.Unmarshal(e.ExtJSON, &ext); err != nil {
-			logging.Errorf(ctx, "WriteBuffer ext unmarshal failed key=%s source=%s err=%v",
-				tb.key, e.Source, err)
-			continue
-		}
-		g, ok := groups[e.Source]
-		if !ok {
-			g = &extGroup{source: e.Source}
-			groups[e.Source] = g
-		}
-		g.data = append(g.data, ext...)
-	}
-
-	for _, g := range groups {
-		if len(g.data) == 0 {
-			continue
-		}
-		if err := tb.dao.BatchUpsertExt(ctx, g.source, tb.q, g.data); err != nil {
-			logging.Errorf(ctx, "WriteBuffer flush ext failed key=%s source=%s count=%d err=%v",
-				tb.key, g.source, len(g.data), err)
-		}
-	}
+	logging.Infof(ctx, "WriteBuffer flushed key=%s rows=%d entries=%d reason=%s",
+		b.key, total, len(entries), reason)
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -222,6 +178,7 @@ type Config struct {
 
 type BufferStats struct {
 	Key           string `json:"key"`
+	Category      string `json:"category"`
 	SubmittedRows int64  `json:"submitted_rows"`
 	FlushedRows   int64  `json:"flushed_rows"`
 	PendingItems  int    `json:"pending_items"`
@@ -234,10 +191,11 @@ type BufferStats struct {
 
 type WriteBufferManager struct {
 	*core.BaseComponent
-	BarsDao *dao.BarsDao `infra:"dep:dao_bars"`
+	BarsDao     *legacyDao.BarsDao     `infra:"dep:dao_bars"`
+	TaxonomyDao *legacyDao.TaxonomyDao `infra:"dep:dao_taxonomy"`
 
 	mu      sync.RWMutex
-	buffers map[string]*tableBuffer
+	buffers map[string]*genericBuffer
 	cfg     Config
 }
 
@@ -259,7 +217,7 @@ func NewWriteBufferManager(cfg Config) *WriteBufferManager {
 	}
 	return &WriteBufferManager{
 		BaseComponent: core.NewBaseComponent(bizConsts.COMP_WRITE_BUFFER, consts.COMPONENT_LOGGING),
-		buffers:       make(map[string]*tableBuffer),
+		buffers:       make(map[string]*genericBuffer),
 		cfg:           cfg,
 	}
 }
@@ -276,18 +234,16 @@ func (m *WriteBufferManager) Start(ctx context.Context) error {
 
 func (m *WriteBufferManager) Stop(ctx context.Context) error {
 	m.mu.Lock()
-	buffers := make([]*tableBuffer, 0, len(m.buffers))
+	buffers := make([]*genericBuffer, 0, len(m.buffers))
 	for _, b := range m.buffers {
 		buffers = append(buffers, b)
 	}
 	m.mu.Unlock()
 
-	// Signal all buffers to stop
 	for _, b := range buffers {
 		b.cancel()
 	}
 
-	// Wait for all buffers to flush with timeout
 	done := make(chan struct{})
 	go func() {
 		for _, b := range buffers {
@@ -306,54 +262,185 @@ func (m *WriteBufferManager) Stop(ctx context.Context) error {
 	return m.BaseComponent.Stop(ctx)
 }
 
-// IsEnabled returns whether the write buffer is active.
 func (m *WriteBufferManager) IsEnabled() bool {
 	return m.cfg.Enabled
 }
 
-// DirectFlushThreshold returns the threshold above which writes bypass the buffer.
 func (m *WriteBufferManager) DirectFlushThreshold() int {
 	return m.cfg.DirectFlushThreshold
 }
 
-// Submit queues bars (and optional ext) for batched writing.
-// The caller should check IsEnabled() and DirectFlushThreshold() first.
+// ──────────── Bars submit (backward compatible) ────────────
+
 func (m *WriteBufferManager) Submit(q *model.BarsQuery, bars []*model.StandardBar, extJSON json.RawMessage, source string) error {
-	key := dao.BarsTableName(q.AssetType, q.Market, q.Period, q.Adjust)
-
-	tb := m.getOrCreate(key, q)
-
-	return tb.submit(bufferEntry{
-		Bars:    bars,
-		ExtJSON: extJSON,
-		Source:  source,
+	key := "bars_" + dao.BarsTableName(q.AssetType, q.Market, q.Period, q.Adjust)
+	buf := m.getOrCreate(key, "bars", m.barsFlushFunc())
+	return buf.submit(genericEntry{
+		Data: barsEntry{
+			Bars:    bars,
+			ExtJSON: extJSON,
+			Source:  source,
+			Query:   q,
+		},
+		Count: len(bars),
 	})
 }
 
-func (m *WriteBufferManager) getOrCreate(key string, q *model.BarsQuery) *tableBuffer {
+func (m *WriteBufferManager) barsFlushFunc() FlushFunc {
+	return func(ctx context.Context, key string, entries []genericEntry) (int, error) {
+		var allBars []*model.StandardBar
+		var firstQuery *model.BarsQuery
+		for _, e := range entries {
+			be, ok := e.Data.(barsEntry)
+			if !ok {
+				continue
+			}
+			allBars = append(allBars, be.Bars...)
+			if firstQuery == nil && be.Query != nil {
+				qCopy := *be.Query
+				firstQuery = &qCopy
+			}
+		}
+		if len(allBars) == 0 {
+			return 0, nil
+		}
+		if m.BarsDao == nil {
+			return 0, fmt.Errorf("BarsDao is nil")
+		}
+		if err := m.BarsDao.BatchUpsert(ctx, firstQuery, allBars); err != nil {
+			return 0, err
+		}
+		// Flush ext data
+		m.flushBarsExt(ctx, entries, firstQuery)
+		return len(allBars), nil
+	}
+}
+
+func (m *WriteBufferManager) flushBarsExt(ctx context.Context, entries []genericEntry, q *model.BarsQuery) {
+	type extGroup struct {
+		source string
+		data   []*model.BarsExtBaostock
+	}
+	groups := map[string]*extGroup{}
+
+	for _, e := range entries {
+		be, ok := e.Data.(barsEntry)
+		if !ok || len(be.ExtJSON) == 0 || be.Source == "" {
+			continue
+		}
+		var ext []*model.BarsExtBaostock
+		if err := json.Unmarshal(be.ExtJSON, &ext); err != nil {
+			logging.Errorf(ctx, "WriteBuffer ext unmarshal failed source=%s err=%v", be.Source, err)
+			continue
+		}
+		g, ok := groups[be.Source]
+		if !ok {
+			g = &extGroup{source: be.Source}
+			groups[be.Source] = g
+		}
+		g.data = append(g.data, ext...)
+	}
+
+	if q == nil || m.BarsDao == nil {
+		return
+	}
+	for _, g := range groups {
+		if len(g.data) == 0 {
+			continue
+		}
+		if err := m.BarsDao.BatchUpsertExt(ctx, g.source, q, g.data); err != nil {
+			logging.Errorf(ctx, "WriteBuffer flush ext failed source=%s count=%d err=%v",
+				g.source, len(g.data), err)
+		}
+	}
+}
+
+// ──────────── Industry Weight submit ────────────
+
+func (m *WriteBufferManager) SubmitIndustryWeights(source, taxonomy, market string, weights []*model.IndustryWeight) error {
+	key := fmt.Sprintf("industry_weight_%s_%s_%s", source, taxonomy, market)
+	buf := m.getOrCreate(key, "industry_weight", m.industryWeightsFlushFunc(source, taxonomy, market))
+	return buf.submit(genericEntry{
+		Data:  weights,
+		Count: len(weights),
+	})
+}
+
+func (m *WriteBufferManager) industryWeightsFlushFunc(source, taxonomy, market string) FlushFunc {
+	return func(ctx context.Context, key string, entries []genericEntry) (int, error) {
+		var all []*model.IndustryWeight
+		for _, e := range entries {
+			weights, ok := e.Data.([]*model.IndustryWeight)
+			if !ok {
+				continue
+			}
+			all = append(all, weights...)
+		}
+		if len(all) == 0 {
+			return 0, nil
+		}
+		if m.TaxonomyDao == nil {
+			return 0, fmt.Errorf("TaxonomyDao is nil")
+		}
+		if err := m.TaxonomyDao.BatchUpsertWeights(ctx, source, taxonomy, market, all); err != nil {
+			return 0, err
+		}
+		return len(all), nil
+	}
+}
+
+// ──────────── Industry Daily submit ────────────
+
+func (m *WriteBufferManager) SubmitIndustryDaily(source, taxonomy, market string, daily []*model.IndustryDaily) error {
+	key := fmt.Sprintf("industry_daily_%s_%s_%s", source, taxonomy, market)
+	buf := m.getOrCreate(key, "industry_daily", m.industryDailyFlushFunc(source, taxonomy, market))
+	return buf.submit(genericEntry{
+		Data:  daily,
+		Count: len(daily),
+	})
+}
+
+func (m *WriteBufferManager) industryDailyFlushFunc(source, taxonomy, market string) FlushFunc {
+	return func(ctx context.Context, key string, entries []genericEntry) (int, error) {
+		var all []*model.IndustryDaily
+		for _, e := range entries {
+			daily, ok := e.Data.([]*model.IndustryDaily)
+			if !ok {
+				continue
+			}
+			all = append(all, daily...)
+		}
+		if len(all) == 0 {
+			return 0, nil
+		}
+		if m.TaxonomyDao == nil {
+			return 0, fmt.Errorf("TaxonomyDao is nil")
+		}
+		if err := m.TaxonomyDao.BatchUpsertIndustryDaily(ctx, source, taxonomy, market, all); err != nil {
+			return 0, err
+		}
+		return len(all), nil
+	}
+}
+
+// ──────────── Generic helpers ────────────
+
+func (m *WriteBufferManager) getOrCreate(key, category string, flushFunc FlushFunc) *genericBuffer {
 	m.mu.RLock()
-	tb, ok := m.buffers[key]
+	b, ok := m.buffers[key]
 	m.mu.RUnlock()
 	if ok {
-		return tb
+		return b
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// double check after write lock
-	if tb, ok = m.buffers[key]; ok {
-		return tb
+	if b, ok = m.buffers[key]; ok {
+		return b
 	}
-	// Create a copy of the query template for this buffer
-	qCopy := &model.BarsQuery{
-		AssetType: q.AssetType,
-		Market:    q.Market,
-		Period:    q.Period,
-		Adjust:    q.Adjust,
-	}
-	tb = newTableBuffer(key, qCopy, m.BarsDao, m.cfg)
-	m.buffers[key] = tb
-	return tb
+	b = newGenericBuffer(key, category, flushFunc, m.cfg)
+	m.buffers[key] = b
+	return b
 }
 
 // Stats returns current metrics for all active buffers.
@@ -361,13 +448,14 @@ func (m *WriteBufferManager) Stats() []BufferStats {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	stats := make([]BufferStats, 0, len(m.buffers))
-	for _, tb := range m.buffers {
+	for _, b := range m.buffers {
 		stats = append(stats, BufferStats{
-			Key:           tb.key,
-			SubmittedRows: tb.submitted.Load(),
-			FlushedRows:   tb.flushed.Load(),
-			PendingItems:  len(tb.ch),
-			FlushCount:    tb.flushCnt.Load(),
+			Key:           b.key,
+			Category:      b.category,
+			SubmittedRows: b.submitted.Load(),
+			FlushedRows:   b.flushed.Load(),
+			PendingItems:  len(b.ch),
+			FlushCount:    b.flushCnt.Load(),
 		})
 	}
 	return stats

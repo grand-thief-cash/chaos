@@ -72,6 +72,9 @@ func init() {
 					r.Get("/categories/{code}", taxonomyCtrl.GetCategory)
 					r.Delete("/categories/{code}", taxonomyCtrl.DeleteCategory)
 
+					// Mapping sync (derives from constituents + categories)
+					r.Post("/mapping/sync_from_constituents", taxonomyCtrl.SyncMappingsFromConstituents)
+
 					// Industry Constituents
 					r.Post("/industry-constituents/upsert", taxonomyCtrl.BatchUpsertConstituents)
 					r.Get("/industry-constituents/by_index/{indexCode}", taxonomyCtrl.ListConstituentsByIndex)

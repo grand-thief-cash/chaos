@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/buffer"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/service"
@@ -16,7 +17,16 @@ import (
 // TaxonomyController handles HTTP endpoints for unified taxonomy data.
 type TaxonomyController struct {
 	*core.BaseComponent
-	Svc *service.TaxonomyService `infra:"dep:svc_taxonomy"`
+	Svc    *service.TaxonomyService   `infra:"dep:svc_taxonomy"`
+	BufMgr *buffer.WriteBufferManager `infra:"dep:write_buffer_mgr"`
+}
+
+// BufferManager is the interface the controller needs from the write buffer.
+type BufferManager interface {
+	IsEnabled() bool
+	DirectFlushThreshold() int
+	SubmitIndustryWeights(source, taxonomy, market string, weights []*model.IndustryWeight) error
+	SubmitIndustryDaily(source, taxonomy, market string, daily []*model.IndustryDaily) error
 }
 
 func NewTaxonomyController() *TaxonomyController {
@@ -103,6 +113,21 @@ func (c *TaxonomyController) DeleteCategory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /api/v2/taxonomy/{source}/{taxonomy}/{market}/mapping/sync_from_constituents
+func (c *TaxonomyController) SyncMappingsFromConstituents(w http.ResponseWriter, r *http.Request) {
+	source, taxonomy, market := taxonomyParams(r)
+	if source == "" || taxonomy == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "source and taxonomy are required"})
+		return
+	}
+	n, err := c.Svc.SyncMappingsFromConstituents(r.Context(), source, taxonomy, market)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "rows_synced": n})
 }
 
 // POST /api/v2/taxonomy/{source}/{taxonomy}/mapping/upsert
@@ -248,9 +273,20 @@ func (c *TaxonomyController) BatchUpsertWeights(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.BatchUpsertWeights(r.Context(), source, taxonomy, market, list); err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
-		return
+	for _, w := range list {
+		w.TradeDate = normalizeDateYYYYMMDD(w.TradeDate)
+	}
+	// Route through write buffer for small batches, direct write for large ones
+	if c.BufMgr != nil && c.BufMgr.IsEnabled() && len(list) < c.BufMgr.DirectFlushThreshold() {
+		if err := c.BufMgr.SubmitIndustryWeights(source, taxonomy, market, list); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, apiError{Error: "write buffer full"})
+			return
+		}
+	} else {
+		if err := c.Svc.BatchUpsertWeights(r.Context(), source, taxonomy, market, list); err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
 }
@@ -286,9 +322,19 @@ func (c *TaxonomyController) BatchUpsertIndustryDaily(w http.ResponseWriter, r *
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	if err := c.Svc.BatchUpsertIndustryDaily(r.Context(), source, taxonomy, market, list); err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
-		return
+	for _, r := range list {
+		r.TradeDate = normalizeDateYYYYMMDD(r.TradeDate)
+	}
+	if c.BufMgr != nil && c.BufMgr.IsEnabled() && len(list) < c.BufMgr.DirectFlushThreshold() {
+		if err := c.BufMgr.SubmitIndustryDaily(source, taxonomy, market, list); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, apiError{Error: "write buffer full"})
+			return
+		}
+	} else {
+		if err := c.Svc.BatchUpsertIndustryDaily(r.Context(), source, taxonomy, market, list); err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
 }
