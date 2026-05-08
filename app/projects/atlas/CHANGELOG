@@ -1,7 +1,45 @@
 # VERSION
-v0.1.0
+v0.2.0
 
 # Changelog
+- v0.2.0
+    - Implement full Atlas Knowledge Graph Engine backend
+    - **Architecture: Neo4j access via PhoenixA data middleware**
+        - Atlas does NOT connect to Neo4j directly (same pattern as PostgreSQL via phoenixA)
+        - All graph read/write operations go through PhoenixA's /api/v1/graph/* endpoints
+        - neo4j_client.py rewritten as thin compatibility shim delegating to phoenixa_client
+        - Removed neo4j Python driver dependency from pyproject.toml
+    - Add PhoenixA integration: replace direct PostgreSQL with phoenixa_client HTTP connector
+    - Add phoenixa_client graph methods: run_cypher, merge_node/edge (single + batch), search, company/event queries
+    - Add MinIO S3 connector for document storage
+    - Add RSS news fetcher connector
+    - Add event dedup service with fingerprint-based deduplication (Layer 2)
+    - Add impact rules engine with deterministic rule-based scoring
+    - Add graph builder service with quality gate — writes via phoenixa_client batch merge
+    - Add graph query service — reads via phoenixa_client graph endpoints
+    - Add company review service with LLM-generated investment analysis
+    - Add extraction API endpoints (trigger + query)
+    - Add web-clip API endpoint for browser bookmarklet
+    - Add events, daily-runs, impact-logs query endpoints
+    - Update daily pipeline with event dedup + graph builder integration
+    - Update documents API to use phoenixA + MinIO persistence
+    - Update graph API — all functions async, use phoenixa_client
+    - Update config: add taxonomy, minio, DeepSeek V4 model config
+    - Update graph_schema: extended EventType and SourceType enums
+    - Add Cthulhu frontend Atlas feature module:
+        - Dashboard: graph stats, recent events, daily runs
+        - Graph Explorer: ECharts supply chain visualization
+        - Events & Impact: event list, LLM impact analysis
+        - Company Review: LLM-generated investment review
+        - Document Management: upload, list, extract
+    - Add unit tests:
+        - test_event_dedup: 9 tests (fingerprint + time bucket)
+        - test_impact_rules: 15 tests (scoring + rules + propagation)
+        - test_ingestion: 9 tests (hash, chunking, text extraction)
+        - test_graph_schema: 6 tests (model validation + enums)
+        - test_phoenixa_graph: 12 tests (graph HTTP client mocks)
+        - test_graph_builder: 10 tests (quality gate + node props + label resolution)
+        - test_neo4j_client: 5 tests (PhoenixA delegation shim)
 - v0.1.0
     - Review design of Atlas and make necessary adjustments.
 - v0.0.1

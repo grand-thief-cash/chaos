@@ -16,8 +16,11 @@ from pydantic import BaseModel, Field
 class SourceType(str, Enum):
     EARNINGS = "earnings"
     RESEARCH = "research"
+    INDUSTRY = "industry"
     NEWS = "news"
+    POLICY = "policy"
     ANNOUNCEMENT = "announcement"
+    MANUAL = "manual"
 
 
 class ValueChainPosition(str, Enum):
@@ -84,11 +87,26 @@ class AssetType(str, Enum):
 
 
 class EventType(str, Enum):
+    PRICE_CHANGE = "price_change"
+    SUPPLY_CHANGE = "supply_change"
+    POLICY_NEW = "policy_new"
+    POLICY_CHANGE = "policy_change"
+    TARIFF_CHANGE = "tariff_change"
+    TECH_BREAKTHROUGH = "tech_breakthrough"
+    CAPACITY_CHANGE = "capacity_change"
+    MERGER_ACQUISITION = "merger_acquisition"
+    INVESTMENT = "investment"
+    LEADERSHIP_CHANGE = "leadership_change"
+    EARNINGS_BEAT = "earnings_beat"
+    EARNINGS_MISS = "earnings_miss"
+    ACCIDENT_DISASTER = "accident_disaster"
+    SANCTION = "sanction"
     POLICY = "policy"
     EARNINGS = "earnings"
     ACCIDENT = "accident"
     MACRO = "macro"
     INDUSTRY = "industry"
+    OTHER = "other"
 
 
 class EventScope(str, Enum):
