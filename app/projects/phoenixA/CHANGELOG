@@ -1,7 +1,26 @@
 # VERSION
-v1.8.0
+v1.9.0
 
 # Changelog
+- v1.9.0
+    - **Industry data fixes — trade_date DATE type + taxonomy_security_map auto-sync**
+        - Migration `0003_industry_date_columns.sql`: `trade_date` column changed from `VARCHAR(10)` to native `DATE` type in `industry_weight` and `industry_daily` tables; dependent indexes and unique constraints rebuilt
+        - `IndustryWeight.TradeDate` / `IndustryDaily.TradeDate`: GORM tag updated from `type:varchar(10)` to `type:date` (matches existing `StandardBar` pattern)
+        - Defense-in-depth: `BatchUpsertWeights` and `BatchUpsertIndustryDaily` controllers now normalize incoming `trade_date` via `normalizeDateYYYYMMDD()` before DB write
+        - New endpoint: `POST /api/v2/taxonomy/{source}/{taxonomy}/{market}/mapping/sync_from_constituents` — derives `taxonomy_security_map` entries by JOINing `industry_constituent` with `taxonomy_category` on `index_code`; uses `ON CONFLICT DO NOTHING`
+        - `TaxonomyDao.SyncMappingsFromConstituents()`: raw SQL INSERT…SELECT with DISTINCT + JOIN + ON CONFLICT DO NOTHING
+        - `TaxonomyService.SyncMappingsFromConstituents()`: validation + logging
+    - **Write Buffer V2 — generic multi-business-type buffer**
+        - Refactored `WriteBufferManager` from bars-only to generic multi-type architecture
+        - New `genericBuffer` replaces `tableBuffer`: accepts typed `FlushFunc` per buffer key, decoupled from specific DAOs
+        - New business types supported: `industry_weight`, `industry_daily` (bars preserved as `bars` category)
+        - `WriteBufferManager` now injects `TaxonomyDao` alongside `BarsDao`
+        - `BufferStats` gains `category` field — each buffer reports its business type (bars/industry_weight/industry_daily)
+        - `TaxonomyController` now routes weight and daily upserts through the write buffer for small batches (< direct_flush_threshold), direct write for large batches
+        - `TaxonomyController` depends on `BufferManager` interface for testability
+        - Bars ext flush fixed: `barsEntry` now carries the `Query` reference, restoring `BatchUpsertExt` functionality that was lost in the generic refactor
+        - `/api/v2/buffer/stats` response now includes `category` per buffer for frontend categorization
+
 - v1.8.0
     - **Knowledge Graph (KG) Domain** — data persistence layer for Atlas KG Engine
         - New PostgreSQL schema: `kg` with 6 tables (documents, extractions, events, graph_ingestions, daily_runs, impact_logs)

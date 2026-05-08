@@ -112,6 +112,19 @@ func (s *TaxonomyService) DeleteMapping(ctx context.Context, source, taxonomy, c
 	return s.Dao.DeleteMapping(ctx, source, taxonomy, categoryCode, symbol)
 }
 
+// SyncMappingsFromConstituents derives category→symbol mappings from constituents and categories.
+func (s *TaxonomyService) SyncMappingsFromConstituents(ctx context.Context, source, taxonomy, market string) (int64, error) {
+	if source == "" || taxonomy == "" {
+		return 0, errors.New("source and taxonomy are required")
+	}
+	n, err := s.Dao.SyncMappingsFromConstituents(ctx, source, taxonomy, market)
+	if err != nil {
+		return 0, err
+	}
+	logging.Infof(ctx, "TaxonomyService SyncMappingsFromConstituents source=%s taxonomy=%s market=%s rows=%d", source, taxonomy, market, n)
+	return n, nil
+}
+
 // ──────────── Industry Constituents ────────────
 
 // BatchUpsertConstituents upserts industry index constituents.
