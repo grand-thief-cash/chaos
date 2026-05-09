@@ -2,6 +2,8 @@
 v0.18.0
 
 # Changelog
+- v0.18.1
+    - Removed toolchain from go.mod to allow users to use their preferred Go version (e.g., 1.23+).
 - v0.18.0
     - **Neo4j Component** — reusable Neo4j driver component for graph database access
         - New package: `components/neo4j` (config.go, component.go, factory.go)
