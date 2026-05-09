@@ -1,6 +1,9 @@
 -- Atlas Knowledge Graph schema tables
 -- Managed by phoenixA postgres_gorm component (data source: kg)
 -- This migration is idempotent (uses IF NOT EXISTS)
+-- Storage tier (see 2026-05-09 STORAGE_TIER_PLANNING.md v2):
+--   - kg.documents / kg.events / kg.daily_runs / kg.graph_ingestions -> pg_default
+--   - kg.extractions / kg.impact_logs -> warm_storage
 
 -- Ensure kg schema exists
 CREATE SCHEMA IF NOT EXISTS kg;
@@ -18,7 +21,7 @@ CREATE TABLE IF NOT EXISTS kg.documents (
     content_hash    VARCHAR(64),                     -- 内容哈希（去重用）
     processed       BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMP DEFAULT NOW()
-);
+) TABLESPACE pg_default;
 
 CREATE INDEX IF NOT EXISTS idx_kg_documents_doc_type   ON kg.documents(doc_type);
 CREATE INDEX IF NOT EXISTS idx_kg_documents_company    ON kg.documents(company);
@@ -41,11 +44,11 @@ CREATE TABLE IF NOT EXISTS kg.extractions (
     created_at      TIMESTAMP DEFAULT NOW(),
 
     UNIQUE(doc_id, chunk_index, prompt_version)
-);
+) TABLESPACE warm_storage;
 
-CREATE INDEX IF NOT EXISTS idx_kg_extractions_graph_json ON kg.extractions USING GIN (graph_json);
-CREATE INDEX IF NOT EXISTS idx_kg_extractions_doc_id ON kg.extractions (doc_id);
-CREATE INDEX IF NOT EXISTS idx_kg_extractions_status ON kg.extractions (status);
+CREATE INDEX IF NOT EXISTS idx_kg_extractions_graph_json ON kg.extractions USING GIN (graph_json) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_kg_extractions_doc_id ON kg.extractions (doc_id) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_kg_extractions_status ON kg.extractions (status) TABLESPACE warm_storage;
 
 -- ③ 规范化事件表（事件去重核心, Layer 2）
 CREATE TABLE IF NOT EXISTS kg.events (
@@ -63,7 +66,7 @@ CREATE TABLE IF NOT EXISTS kg.events (
     last_seen_at      TIMESTAMP DEFAULT NOW(),
     impact_triggered  BOOLEAN DEFAULT FALSE,
     created_at        TIMESTAMP DEFAULT NOW()
-);
+) TABLESPACE pg_default;
 
 CREATE INDEX IF NOT EXISTS idx_kg_events_type        ON kg.events(event_type);
 CREATE INDEX IF NOT EXISTS idx_kg_events_entity      ON kg.events(entity_name);
@@ -78,7 +81,7 @@ CREATE TABLE IF NOT EXISTS kg.graph_ingestions (
     edges_created   INT DEFAULT 0,
     nodes_merged    INT DEFAULT 0,
     ingested_at     TIMESTAMP DEFAULT NOW()
-);
+) TABLESPACE pg_default;
 
 -- ⑤ 每日流水线运行记录
 CREATE TABLE IF NOT EXISTS kg.daily_runs (
@@ -96,7 +99,7 @@ CREATE TABLE IF NOT EXISTS kg.daily_runs (
     status              VARCHAR(16),
     started_at          TIMESTAMP,
     completed_at        TIMESTAMP
-);
+) TABLESPACE pg_default;
 
 CREATE INDEX IF NOT EXISTS idx_kg_daily_runs_date ON kg.daily_runs(run_date);
 
@@ -109,8 +112,8 @@ CREATE TABLE IF NOT EXISTS kg.impact_logs (
     source_doc_id   VARCHAR(64),
     impact_json     JSONB NOT NULL,
     created_at      TIMESTAMP DEFAULT NOW()
-);
+ ) TABLESPACE warm_storage;
 
-CREATE INDEX IF NOT EXISTS idx_kg_impact_logs_json     ON kg.impact_logs USING GIN (impact_json);
-CREATE INDEX IF NOT EXISTS idx_kg_impact_logs_event    ON kg.impact_logs (event_name);
-CREATE INDEX IF NOT EXISTS idx_kg_impact_logs_event_id ON kg.impact_logs (event_id);
+CREATE INDEX IF NOT EXISTS idx_kg_impact_logs_json     ON kg.impact_logs USING GIN (impact_json) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_kg_impact_logs_event    ON kg.impact_logs (event_name) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_kg_impact_logs_event_id ON kg.impact_logs (event_id) TABLESPACE warm_storage;

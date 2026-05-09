@@ -1,7 +1,41 @@
 # VERSION
-v1.9.0
+1.10.0
 
 # Changelog
+- 1.10.0
+    - **Data Catalog API** — comprehensive data asset discovery and metadata service
+        - New endpoint: `GET /api/v2/catalog/overview` — aggregate stats: total tables, rows, disk usage, per-domain and per-storage-tier breakdown
+        - New endpoint: `GET /api/v2/catalog/tables` — list all tables with row counts, sizes, time ranges, storage tier; supports `?domain=` filter
+        - New endpoint: `GET /api/v2/catalog/tables/{schema}/{table}` — table detail: column metadata, JSONB key discovery, index info, data lineage
+        - New endpoint: `GET /api/v2/catalog/storage` — tablespace-level storage info (NVMe vs SATA distribution)
+        - New endpoint: `GET /api/v2/catalog/graph` — Neo4j graph catalog: available flag, node labels, relationship types, total nodes/edges
+        - All endpoints support `?refresh=true` to bypass 5-minute in-memory cache
+        - New `CatalogDao`: queries PostgreSQL system catalogs (`pg_class`, `pg_stat_user_tables`, `information_schema`, `pg_tablespace`) with TimescaleDB hypertable detection (graceful fallback when not installed)
+        - SQL injection protection: identifier validation via regex for dynamic column/table names in `GetTimeRange`
+        - New `CatalogService`: merges dynamic DB metadata with static registry of table descriptions, column descriptions, domain classifications, and data lineage info; supports factor/regime domains for future tables and Neo4j graph metadata observation
+        - 5-minute in-memory cache with `sync.RWMutex` for table listing (avoids repeated `pg_total_relation_size` calls)
+        - Reuses existing `SchemaDao` for JSONB key introspection (no duplication)
+        - New `CatalogController`: 5 HTTP handlers with standard error responses
+        - New constants: `COMP_DAO_CATALOG`, `COMP_SVC_CATALOG`, `COMP_CTRL_CATALOG`
+        - New model structs: `CatalogOverview`, `TableCatalogEntry`, `TableDetail`, `ColumnMeta`, `IndexMeta`, `DataLineage`, `StorageInfo`, `TablespaceInfo`, `GraphCatalogOverview`, `GraphLabelInfo`, `GraphRelTypeInfo`, etc.
+        - Exported `dao.HumanSize()` utility for human-readable byte formatting
+    - **Storage Tier Planning** — new documentation
+        - `docs/2026-05-09 STORAGE_TIER_PLANNING.md`: complete table-to-storage mapping based on 372+ planned factors, revised data volume estimates, and "avoid migration" principle
+        - Core strategy: NVMe only for PGVector KNN + metadata (<100 GB); all business data (bars, factors, strategy, financial) on 8TB SATA SSD from day one
+        - TimescaleDB hypertable + compression planning for all time-series tables
+    - **PostgreSQL storage-tier migration SQL**
+        - `migrations/postgresql/security/0001_security_init.sql`: now places small metadata tables on `pg_default` and industry tables on `warm_storage` at creation time
+        - `migrations/postgresql/security/0002_financial_data.sql`: now places financial tables and indexes on `warm_storage` at creation time
+        - `migrations/postgresql/security/0003_industry_date_columns.sql`: recreated indexes now stay on `warm_storage`
+        - `migrations/postgresql/kg/0001_kg_init.sql`: now places KG metadata tables on `pg_default` and large JSONB tables on `warm_storage`
+        - `migrations/postgresql/security/0004_storage_tier_setup.sql`: legacy backfill migration for existing deployments; explicitly documents that hot/warm is controlled by PostgreSQL `TABLESPACE`, not `config.yaml`
+    - **Data Catalog Design** — new documentation
+        - `docs/2026-05-09 DATA_CATALOG_DESIGN.md`: API contracts, data models, architecture, Cthulhu dashboard wireframes, Neo4j graph catalog support
+    - **Unit Tests** — catalog model/DAO/service coverage
+        - `model/catalog_test.go`: JSON serialization tests for all catalog model structs (CatalogOverview, TableCatalogEntry, TableDetail, StorageInfo), omitempty validation
+        - `dao/catalog_dao_test.go`: `HumanSize` formatting, SQL identifier safety regex
+        - `service/catalog_service_test.go`: static metadata registry (exact match, prefix match, priority, fallback), column descriptions, lineage, time columns, domain completeness
+
 - v1.9.1
     - Removed toolchain from go.mod to allow users to use their preferred Go version (e.g., 1.23+).
 - v1.9.0
