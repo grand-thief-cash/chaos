@@ -2,6 +2,7 @@
 -- PhoenixA PostgreSQL Migration 0003: trade_date DATE type
 -- Scope: industry_weight, industry_daily
 -- Changes: trade_date VARCHAR(10) → DATE
+-- Storage tier: recreated indexes stay on warm_storage
 -- ============================================================
 
 -- Drop dependent indexes and constraints first
@@ -25,7 +26,7 @@ ALTER TABLE industry_weight ADD CONSTRAINT uk_src_tax_idx_sym_dt UNIQUE (source,
 ALTER TABLE industry_daily ADD CONSTRAINT uk_src_tax_idx_mkt_dt UNIQUE (source, taxonomy, index_code, market, trade_date);
 
 -- Recreate indexes
-CREATE INDEX idx_iw_index_date ON industry_weight (source, taxonomy, index_code, trade_date);
-CREATE INDEX idx_iw_symbol_date ON industry_weight (symbol, market, trade_date);
-CREATE INDEX idx_id_index_date ON industry_daily (source, taxonomy, index_code, trade_date);
-CREATE INDEX idx_id_trade_date ON industry_daily (source, taxonomy, trade_date);
+CREATE INDEX idx_iw_index_date ON industry_weight (source, taxonomy, index_code, trade_date) TABLESPACE warm_storage;
+CREATE INDEX idx_iw_symbol_date ON industry_weight (symbol, market, trade_date) TABLESPACE warm_storage;
+CREATE INDEX idx_id_index_date ON industry_daily (source, taxonomy, index_code, trade_date) TABLESPACE warm_storage;
+CREATE INDEX idx_id_trade_date ON industry_daily (source, taxonomy, trade_date) TABLESPACE warm_storage;

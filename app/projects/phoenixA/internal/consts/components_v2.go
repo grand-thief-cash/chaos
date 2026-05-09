@@ -14,6 +14,7 @@ const (
 	COMP_DAO_SCHEMA            = "dao_schema"
 	COMP_DAO_KG                = "dao_kg"
 	COMP_DAO_GRAPH             = "dao_graph"
+	COMP_DAO_CATALOG           = "dao_catalog"
 
 	// Service components
 	COMP_SVC_SECURITY       = "svc_security"
@@ -24,6 +25,7 @@ const (
 	COMP_SVC_CORP_ACTION    = "svc_corp_action"
 	COMP_SVC_KG             = "svc_kg"
 	COMP_SVC_GRAPH          = "svc_graph"
+	COMP_SVC_CATALOG        = "svc_catalog"
 
 	// Buffer components
 	COMP_WRITE_BUFFER = "write_buffer_mgr"
@@ -38,4 +40,5 @@ const (
 	COMP_CTRL_SCHEMA         = "ctrl_schema"
 	COMP_CTRL_KG             = "ctrl_kg"
 	COMP_CTRL_GRAPH          = "ctrl_graph"
+	COMP_CTRL_CATALOG        = "ctrl_catalog"
 )
