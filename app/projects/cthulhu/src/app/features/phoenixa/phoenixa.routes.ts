@@ -1,6 +1,6 @@
 import {Routes} from '@angular/router';
 import {PhoenixAShellComponent} from './phoenixa.component';
-import {BufferStatsComponent} from './pages';
+import {BufferStatsComponent, DataCatalogComponent, TableDetailComponent} from './pages';
 
 export const PHOENIXA_ROUTES: Routes = [
   {
@@ -8,9 +8,13 @@ export const PHOENIXA_ROUTES: Routes = [
     component: PhoenixAShellComponent,
     data: { breadcrumb: 'PhoenixA', menuGroup: { title: 'PhoenixA', icon: 'database' } },
     children: [
-      { path: '', redirectTo: 'buffer', pathMatch: 'full' },
-      { path: 'buffer', component: BufferStatsComponent, data: { breadcrumb: 'Write Buffer', menu: { label: 'Write Buffer', order: 1 } } }
+      { path: '', redirectTo: 'catalog', pathMatch: 'full' },
+      { path: 'catalog', component: DataCatalogComponent, data: { breadcrumb: 'Data Catalog', menu: { label: 'Data Catalog', order: 1 } } },
+      { path: 'catalog/:schema/:table', component: TableDetailComponent, data: { breadcrumb: 'Table Detail' } },
+      { path: 'buffer', component: BufferStatsComponent, data: { breadcrumb: 'Write Buffer', menu: { label: 'Write Buffer', order: 2 } } }
     ]
   }
 ];
+
+
 
