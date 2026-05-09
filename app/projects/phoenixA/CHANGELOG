@@ -2,6 +2,8 @@
 v1.9.0
 
 # Changelog
+- v1.9.1
+    - Removed toolchain from go.mod to allow users to use their preferred Go version (e.g., 1.23+).
 - v1.9.0
     - **Industry data fixes — trade_date DATE type + taxonomy_security_map auto-sync**
         - Migration `0003_industry_date_columns.sql`: `trade_date` column changed from `VARCHAR(10)` to native `DATE` type in `industry_weight` and `industry_daily` tables; dependent indexes and unique constraints rebuilt
