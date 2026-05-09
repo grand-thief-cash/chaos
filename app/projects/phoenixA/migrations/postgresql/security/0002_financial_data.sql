@@ -8,6 +8,8 @@
 --   - Native jsonb operators (->, ->>, @>) for ad-hoc filtering
 --   - jsonb_object_keys() for schema discovery (replacing JSON_TABLE)
 --   - Partial indexes for common query patterns
+-- Storage tier (see 2026-05-09 STORAGE_TIER_PLANNING.md v2):
+--   - financial_statement / corporate_action -> warm_storage (SATA, business data)
 -- ============================================================
 
 -- 1. financial_statement
@@ -28,18 +30,18 @@ CREATE TABLE IF NOT EXISTS financial_statement (
     created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_fin_stmt UNIQUE (source, symbol, market, statement_type, reporting_period, report_type, statement_code)
-);
+) TABLESPACE warm_storage;
 
 -- B-tree indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_fs_symbol_type
-    ON financial_statement (symbol, statement_type);
+    ON financial_statement (symbol, statement_type) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_fs_report_period
-    ON financial_statement (reporting_period);
+    ON financial_statement (reporting_period) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_fs_ann_date
-    ON financial_statement (ann_date)
+    ON financial_statement (ann_date) TABLESPACE warm_storage
     WHERE ann_date != '';
 CREATE INDEX IF NOT EXISTS idx_fs_comp_type
-    ON financial_statement (comp_type_code)
+    ON financial_statement (comp_type_code) TABLESPACE warm_storage
     WHERE comp_type_code > 0;
 
 -- GIN index on JSONB: enables fast @>, ?, ?| queries on data_json
@@ -47,7 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_fs_comp_type
 -- e.g. WHERE data_json ? 'TOTAL_ASSETS'
 -- e.g. WHERE data_json ->> 'TOTAL_ASSETS' IS NOT NULL
 CREATE INDEX IF NOT EXISTS idx_fs_data_gin
-    ON financial_statement USING GIN (data_json jsonb_path_ops);
+    ON financial_statement USING GIN (data_json jsonb_path_ops) TABLESPACE warm_storage;
 
 -- 2. corporate_action
 CREATE TABLE IF NOT EXISTS corporate_action (
@@ -63,19 +65,19 @@ CREATE TABLE IF NOT EXISTS corporate_action (
     created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_corp_action UNIQUE (source, symbol, market, action_type, report_period, ann_date)
-);
+) TABLESPACE warm_storage;
 
 -- B-tree indexes
 CREATE INDEX IF NOT EXISTS idx_ca_symbol_action
-    ON corporate_action (symbol, action_type);
+    ON corporate_action (symbol, action_type) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_ca_report_period
-    ON corporate_action (report_period)
+    ON corporate_action (report_period) TABLESPACE warm_storage
     WHERE report_period != '';
 CREATE INDEX IF NOT EXISTS idx_ca_ann_date
-    ON corporate_action (ann_date)
+    ON corporate_action (ann_date) TABLESPACE warm_storage
     WHERE ann_date != '';
 
 -- GIN index on JSONB
 CREATE INDEX IF NOT EXISTS idx_ca_data_gin
-    ON corporate_action USING GIN (data_json jsonb_path_ops);
+    ON corporate_action USING GIN (data_json jsonb_path_ops) TABLESPACE warm_storage;
 

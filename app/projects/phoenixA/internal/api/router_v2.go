@@ -136,6 +136,21 @@ func init() {
 			r.Get("/overview", schemaCtrl.Overview)
 		})
 
+		// ====== Data Catalog ======
+		catalogCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_CATALOG)
+		if err != nil {
+			return err
+		}
+		catalogCtrl := catalogCtrlComp.(*controller.CatalogController)
+
+		r.Route("/api/v2/catalog", func(r chi.Router) {
+			r.Get("/overview", catalogCtrl.Overview)
+			r.Get("/tables", catalogCtrl.ListTables)
+			r.Get("/tables/{schema}/{table}", catalogCtrl.GetTableDetail)
+			r.Get("/storage", catalogCtrl.StorageInfo)
+			r.Get("/graph", catalogCtrl.GraphCatalog)
+		})
+
 		// ====== Knowledge Graph (KG) ======
 		kgCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_KG)
 		if err != nil {

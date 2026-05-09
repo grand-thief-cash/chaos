@@ -4,6 +4,10 @@
 -- Scope: taxonomy_category, taxonomy_security_map,
 --        industry_constituent, industry_weight, industry_daily
 --
+-- Storage tier (see 2026-05-09 STORAGE_TIER_PLANNING.md v2):
+--   - taxonomy_category / taxonomy_security_map  -> pg_default (NVMe, small metadata)
+--   - industry_constituent / industry_weight / industry_daily -> warm_storage (SATA, business data)
+--
 -- JSONB advantages leveraged:
 --   - GIN index on attrs_json for fast @>, ?, ?| queries
 --   - Native jsonb operators available for ad-hoc filtering
@@ -25,7 +29,7 @@ CREATE TABLE IF NOT EXISTS taxonomy_category (
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_src_tax_mkt_code UNIQUE (source, taxonomy, market, code)
-);
+) TABLESPACE pg_default;
 CREATE INDEX IF NOT EXISTS idx_tc_parent ON taxonomy_category (source, taxonomy, market, parent_code);
 CREATE INDEX IF NOT EXISTS idx_tc_level ON taxonomy_category (source, taxonomy, market, level);
 CREATE INDEX IF NOT EXISTS idx_tc_index_code ON taxonomy_category (source, taxonomy, index_code);
@@ -43,7 +47,7 @@ CREATE TABLE IF NOT EXISTS taxonomy_security_map (
     asset_type    VARCHAR(16) NOT NULL DEFAULT 'stock',
     market        VARCHAR(16) NOT NULL DEFAULT 'zh_a',
     CONSTRAINT uk_src_tax_cat_sec UNIQUE (source, taxonomy, category_code, symbol, asset_type, market)
-);
+) TABLESPACE pg_default;
 CREATE INDEX IF NOT EXISTS idx_tsm_symbol ON taxonomy_security_map (symbol, asset_type, market);
 CREATE INDEX IF NOT EXISTS idx_tsm_category ON taxonomy_security_map (source, taxonomy, category_code);
 
@@ -62,9 +66,9 @@ CREATE TABLE IF NOT EXISTS industry_constituent (
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_src_tax_idx_sym UNIQUE (source, taxonomy, index_code, symbol, market)
-);
-CREATE INDEX IF NOT EXISTS idx_ic_index_code ON industry_constituent (source, taxonomy, index_code);
-CREATE INDEX IF NOT EXISTS idx_ic_symbol ON industry_constituent (symbol, market);
+) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_ic_index_code ON industry_constituent (source, taxonomy, index_code) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_ic_symbol ON industry_constituent (symbol, market) TABLESPACE warm_storage;
 
 -- 4. industry_weight
 CREATE TABLE IF NOT EXISTS industry_weight (
@@ -80,9 +84,9 @@ CREATE TABLE IF NOT EXISTS industry_weight (
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_src_tax_idx_sym_dt UNIQUE (source, taxonomy, index_code, symbol, market, trade_date)
-);
-CREATE INDEX IF NOT EXISTS idx_iw_index_date ON industry_weight (source, taxonomy, index_code, trade_date);
-CREATE INDEX IF NOT EXISTS idx_iw_symbol_date ON industry_weight (symbol, market, trade_date);
+) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_iw_index_date ON industry_weight (source, taxonomy, index_code, trade_date) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_iw_symbol_date ON industry_weight (symbol, market, trade_date) TABLESPACE warm_storage;
 
 -- 5. industry_daily
 CREATE TABLE IF NOT EXISTS industry_daily (
@@ -106,6 +110,6 @@ CREATE TABLE IF NOT EXISTS industry_daily (
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_src_tax_idx_mkt_dt UNIQUE (source, taxonomy, index_code, market, trade_date)
-);
-CREATE INDEX IF NOT EXISTS idx_id_index_date ON industry_daily (source, taxonomy, index_code, trade_date);
-CREATE INDEX IF NOT EXISTS idx_id_trade_date ON industry_daily (source, taxonomy, trade_date);
+) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_id_index_date ON industry_daily (source, taxonomy, index_code, trade_date) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_id_trade_date ON industry_daily (source, taxonomy, trade_date) TABLESPACE warm_storage;

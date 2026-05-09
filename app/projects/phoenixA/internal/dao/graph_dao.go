@@ -205,6 +205,27 @@ func (d *GraphDao) GetGraphStats(ctx context.Context) (map[string]any, error) {
 	}, nil
 }
 
+// GetRelTypeCounts returns relationship type counts for the catalog.
+func (d *GraphDao) GetRelTypeCounts(ctx context.Context) (map[string]int, error) {
+	cypher := `
+		MATCH ()-[r]->()
+		RETURN type(r) AS rel_type, count(r) AS cnt
+		ORDER BY cnt DESC
+	`
+	rows, err := d.Neo4j.RunCypher(ctx, cypher, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get rel type counts: %w", err)
+	}
+	result := make(map[string]int, len(rows))
+	for _, row := range rows {
+		relType, _ := row["rel_type"].(string)
+		if cnt, ok := row["cnt"].(int64); ok {
+			result[relType] = int(cnt)
+		}
+	}
+	return result, nil
+}
+
 // EnsureSchema creates Neo4j constraints and indexes.
 func (d *GraphDao) EnsureSchema(ctx context.Context) error {
 	constraints := []string{
@@ -230,4 +251,3 @@ func (d *GraphDao) EnsureSchema(ctx context.Context) error {
 	}
 	return nil
 }
-
