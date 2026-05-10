@@ -1,6 +1,6 @@
 <nz-layout>
   <nz-header class="header-bar">
-    <div class="logo"></div>
+    <div class="logo"><img src="/assets/cthulhu.png" alt="Cthulhu" class="logo-img" /></div>
     <ul nz-menu nzTheme="dark" nzMode="horizontal" class="header-menu">
       <li nz-menu-item *ngFor="let nav of navItems" [routerLink]="nav.path" routerLinkActive="ant-menu-item-selected" [nzSelected]="router.url.startsWith(nav.path)">
         <span nz-icon [nzType]="nav.icon"></span>

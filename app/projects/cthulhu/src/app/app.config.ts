@@ -14,11 +14,11 @@ import {
 } from '@ant-design/icons-angular/icons';
 import {provideEchartsCore} from 'ngx-echarts';
 import * as echarts from 'echarts/core';
-import {LineChart, ScatterChart, CandlestickChart, BarChart} from 'echarts/charts';
+import {LineChart, ScatterChart, CandlestickChart, BarChart, PieChart} from 'echarts/charts';
 import {GridComponent, TooltipComponent, LegendComponent, DataZoomComponent} from 'echarts/components';
 import {CanvasRenderer} from 'echarts/renderers';
 
-echarts.use([LineChart, ScatterChart, CandlestickChart, BarChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer]);
+echarts.use([LineChart, ScatterChart, CandlestickChart, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer]);
 import {errorNotificationInterceptor} from './core/errors/error-notification.interceptor';
 import {ERROR_NOTIFICATIONS_OPTIONS, STATUS_MESSAGE_MAP} from './core/errors/error-notification.model';
 
