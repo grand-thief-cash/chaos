@@ -7,7 +7,8 @@ import {
   TableCatalogEntry,
   TableDetail,
   StorageInfo,
-  GraphCatalogOverview
+  GraphCatalogOverview,
+  BusinessOverview
 } from '../models/phoenixa.models';
 import {environment} from '../../../../environments/environment';
 
@@ -47,6 +48,16 @@ export class PhoenixAService {
 
   getGraphCatalog(): Observable<GraphCatalogOverview> {
     return this.http.get<GraphCatalogOverview>(`${BASE_URL}/api/v2/catalog/graph`);
+  }
+
+  getDataDictionary(refresh = false): Observable<any> {
+    const params = refresh ? '?refresh=true' : '';
+    return this.http.get(`${BASE_URL}/api/v2/catalog/data-dictionary${params}`);
+  }
+
+  getBusinessOverview(refresh = false): Observable<BusinessOverview> {
+    const params = refresh ? '?refresh=true' : '';
+    return this.http.get<BusinessOverview>(`${BASE_URL}/api/v2/catalog/business-overview${params}`);
   }
 }
 

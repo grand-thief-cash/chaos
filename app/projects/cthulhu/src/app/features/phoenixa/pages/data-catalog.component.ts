@@ -6,7 +6,9 @@ import {PhoenixAService} from '../services/phoenixa.service';
 import {
   CatalogOverview,
   TableCatalogEntry,
-  GraphCatalogOverview
+  GraphCatalogOverview,
+  BusinessOverview,
+  BusinessDomain
 } from '../models/phoenixa.models';
 import {NzCardModule} from 'ng-zorro-antd/card';
 import {NzTableModule} from 'ng-zorro-antd/table';
@@ -22,6 +24,7 @@ import {NzProgressModule} from 'ng-zorro-antd/progress';
 import {NzSpinModule} from 'ng-zorro-antd/spin';
 import {NzEmptyModule} from 'ng-zorro-antd/empty';
 import {NzIconModule} from 'ng-zorro-antd/icon';
+import {NzCollapseModule} from 'ng-zorro-antd/collapse';
 import {NgxEchartsModule} from 'ngx-echarts';
 import type {EChartsOption} from 'echarts';
 
@@ -45,6 +48,7 @@ import type {EChartsOption} from 'echarts';
     NzSpinModule,
     NzEmptyModule,
     NzIconModule,
+    NzCollapseModule,
     NgxEchartsModule
   ],
   template: `
@@ -142,8 +146,66 @@ import type {EChartsOption} from 'echarts';
         </nz-card>
       }
 
+      <!-- Business Domain Overview -->
+      @if (businessOverview?.domains?.length) {
+        <nz-card nzTitle="业务数据概览" style="margin-bottom: 16px;">
+          <nz-collapse>
+            @for (d of businessOverview!.domains; track d.domain) {
+              <nz-collapse-panel [nzHeader]="d.label + ' \u2014 ' + d.description + ' (' + d.table_count + ' \u8868, ' + formatRows(d.total_rows) + ' \u884C)'">
+                <div style="margin-bottom: 12px;">
+                  <span style="color: #666;">{{ d.description }}</span>
+                </div>
+                @if (d.tables?.length) {
+                  <div style="margin-bottom: 10px;">
+                    <strong>\u6570\u636E\u8868\uFF1A</strong>
+                    @for (t of d.tables; track t) {
+                      <nz-tag nzColor="blue" style="cursor: pointer; margin: 2px 0;"
+                              (click)="goToDetailByName(t)">{{ t }}</nz-tag>
+                    }
+                  </div>
+                }
+                @if (d.api_endpoints?.length) {
+                  <div style="margin-bottom: 10px;">
+                    <strong>API \u7AEF\u70B9\uFF1A</strong>
+                    @for (ep of d.api_endpoints; track ep.path + ep.method) {
+                      <div style="margin: 4px 0; display: flex; align-items: center; gap: 6px;">
+                        <nz-tag [nzColor]="ep.method === 'GET' ? 'blue' : 'green'"
+                                style="min-width: 44px; text-align: center;">{{ ep.method }}</nz-tag>
+                        <code>{{ ep.path }}</code>
+                        <span style="color: #999; font-size: 12px;">{{ ep.description }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+                @if (d.example_calls?.length) {
+                  <div style="margin-bottom: 10px;">
+                    <strong>\u793A\u4F8B\u8C03\u7528\uFF1A</strong>
+                    @for (ex of d.example_calls; track ex.title) {
+                      <div style="margin: 4px 0;">
+                        <span style="color: #666; margin-right: 4px;">{{ ex.title }}:</span>
+                        <code style="background: #f0f5ff; padding: 2px 6px; border-radius: 3px;">{{ ex.url }}</code>
+                      </div>
+                    }
+                  </div>
+                }
+                @if (d.cross_refs?.length) {
+                  <div>
+                    <strong>\u5173\u8054\u8868\uFF1A</strong>
+                    @for (cr of d.cross_refs; track cr.to_table) {
+                      <nz-tag nzColor="geekblue" style="margin: 2px;">
+                        {{ cr.to_table }} <span style="color:#999;">({{ cr.join_key }}) {{ cr.description }}</span>
+                      </nz-tag>
+                    }
+                  </div>
+                }
+              </nz-collapse-panel>
+            }
+          </nz-collapse>
+        </nz-card>
+      }
+
       <!-- Tables List -->
-      <nz-card nzTitle="数据表详情" [nzExtra]="filterExtra">
+      <nz-card nzTitle="\u6570\u636E\u8868\u8BE6\u60C5" [nzExtra]="filterExtra">
         <ng-template #filterExtra>
           <div style="display: flex; gap: 8px; align-items: center;">
             <nz-input-group [nzPrefix]="searchIcon" style="width: 200px;">
@@ -216,7 +278,6 @@ import type {EChartsOption} from 'echarts';
 export class DataCatalogComponent implements OnInit, OnDestroy {
   private service = inject(PhoenixAService);
   private router = inject(Router);
-  private intervalId: any;
 
   loading = true;
   overview: CatalogOverview | null = null;
@@ -229,6 +290,7 @@ export class DataCatalogComponent implements OnInit, OnDestroy {
   storagePieOptions: EChartsOption | null = null;
   domainBarOptions: EChartsOption | null = null;
   graphCatalog: GraphCatalogOverview | null = null;
+  businessOverview: BusinessOverview | null = null;
 
   private domainColors: Record<string, string> = {
     bars: 'blue', security: 'green', taxonomy: 'orange',
@@ -238,11 +300,9 @@ export class DataCatalogComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.refresh(false);
-    this.intervalId = setInterval(() => this.refresh(false), 60000);
   }
 
   ngOnDestroy() {
-    if (this.intervalId) clearInterval(this.intervalId);
   }
 
   refresh(force: boolean) {
@@ -267,6 +327,10 @@ export class DataCatalogComponent implements OnInit, OnDestroy {
       next: (g) => { this.graphCatalog = g; },
       error: () => { this.graphCatalog = { available: false, total_nodes: 0, total_edges: 0 }; }
     });
+    this.service.getBusinessOverview().subscribe({
+      next: (b) => { this.businessOverview = b; },
+      error: () => {}
+    });
   }
 
   filterTables() {
@@ -286,6 +350,13 @@ export class DataCatalogComponent implements OnInit, OnDestroy {
 
   goToDetail(t: TableCatalogEntry) {
     this.router.navigate(['/phoenixa/catalog', t.schema, t.table_name]);
+  }
+
+  goToDetailByName(tableName: string) {
+    const t = this.allTables.find(tbl => tbl.table_name === tableName);
+    if (t) {
+      this.router.navigate(['/phoenixa/catalog', t.schema, t.table_name]);
+    }
   }
 
   getDomainColor(domain: string): string {

@@ -77,6 +77,10 @@ export interface TableDetail extends TableCatalogEntry {
   columns: ColumnMeta[];
   indexes: IndexMeta[];
   data_lineage?: DataLineage;
+  api_endpoints?: ApiEndpointRef[];
+  example_calls?: ExampleCall[];
+  related_tables?: CrossRef[];
+  business_domain?: BusinessDomainSummary;
 }
 
 export interface ColumnMeta {
@@ -138,6 +142,48 @@ export interface GraphRelTypeInfo {
   type: string;
   count: number;
   description?: string;
+}
+
+// ─── Business Data Visibility Models ───
+
+export interface ApiEndpointRef {
+  method: string;
+  path: string;
+  description: string;
+}
+
+export interface ExampleCall {
+  title: string;
+  url: string;
+}
+
+export interface CrossRef {
+  to_table: string;
+  join_key: string;
+  description: string;
+}
+
+export interface BusinessDomainSummary {
+  domain: string;
+  label: string;
+  description: string;
+  tables_in_domain: string[];
+}
+
+export interface BusinessDomain {
+  domain: string;
+  label: string;
+  description: string;
+  table_count: number;
+  total_rows: number;
+  tables: string[];
+  api_endpoints?: ApiEndpointRef[];
+  example_calls?: ExampleCall[];
+  cross_refs?: CrossRef[];
+}
+
+export interface BusinessOverview {
+  domains: BusinessDomain[];
 }
 
 
