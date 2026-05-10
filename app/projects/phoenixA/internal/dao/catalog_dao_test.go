@@ -39,7 +39,7 @@ func TestSafeIdentifierRe(t *testing.T) {
 		"A123",
 	}
 	for _, id := range valid {
-		if !safeIdentifierRe.MatchString(id) {
+		if !SafeIdentifierRe.MatchString(id) {
 			t.Errorf("expected %q to be a safe identifier", id)
 		}
 	}
@@ -52,9 +52,10 @@ func TestSafeIdentifierRe(t *testing.T) {
 		"",
 		"foo()",
 		"foo;bar",
+		"schema.table",
 	}
 	for _, id := range invalid {
-		if safeIdentifierRe.MatchString(id) {
+		if SafeIdentifierRe.MatchString(id) {
 			t.Errorf("expected %q to be rejected as unsafe identifier", id)
 		}
 	}

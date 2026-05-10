@@ -1,7 +1,51 @@
 # VERSION
-1.10.0
+1.13.0
 
 # Changelog
+- 1.13.0
+    - **Business-Level Data Visibility** — comprehensive business metadata in data catalog
+        - New endpoint: `GET /api/v2/catalog/business-overview` — domain-grouped view with API endpoints, example calls, cross-references
+        - Enhanced `GET /api/v2/catalog/data-dictionary` — now includes `api_endpoints`, `related_tables`, `example_calls` per table
+        - Enhanced `GET /api/v2/catalog/tables/{schema}/{table}` — now includes `api_endpoints`, `related_tables`, `example_calls`, `business_domain`
+        - New static registry: `domainApiRegistry` maps each business domain (bars, security, taxonomy, financial, corporate_action, kg, strategy) to its API surface, example queries, and table cross-references
+        - Fixed JSONB field discovery: handle double-encoded JSONB strings (jsonb_typeof='string') with CASE normalization
+        - Fixed GORM placeholder conflict: PostgreSQL JSONB `?` operator escaped with `??` in Raw queries
+        - Frontend: business domain overview section added to data catalog page with domain descriptions, API listings, and cross-reference navigation
+        - Frontend: table detail page now shows "业务数据" section with API endpoints, example calls, and related table connections
+- 1.12.0
+    - **JSONB Field Discovery** — see what's inside your JSONB columns
+        - `GetTableDetail` now returns full JSONB key metadata: field name, value type (string/number/boolean/object/array), and up to 3 sample values
+        - Fixed: `discoverJSONBKeys` was stripping value_type and sample_vals, only returned key names — now returns complete `JSONBKeyInfo` structs
+        - Frontend table detail page shows JSONB fields in a structured table (field name, type tag, sample values) instead of plain tag list
+    - **Data Catalog Performance & Bug Fixes**
+        - Fix: `GetDataDictionary` now caches results for 10 minutes — previously every request triggered N×4 SQL queries (columns/indexes/enums/time-range) against all tables
+        - Fix: `discoverEnumValues` now skips 20+ known high-cardinality columns (name, symbol, description, etc.) — previously queried every text column in every table
+        - Fix: `SafeIdentifierRe` no longer allows dots in SQL identifiers — defense-in-depth against injection via `schema.table` patterns
+        - Fix: `ListTables` returns `[]` instead of JSON `null` when domain filter matches nothing
+        - Fix: `GetTableDetail` controller returns 500 for internal errors (was returning 404 for all errors)
+        - Fix: Cache update race condition in `getTables` — `cacheTime` now set before `cachedTables`
+    - **Date Normalization**
+        - Fix: `normalizeDateYYYYMMDD` in Go now handles `YYYYMMDD` format (e.g. `"20260507"` → `"2026-05-07"`)
+    - **Test Fixes**
+        - Fix: `taxonomy_controller_test` nil pointer dereference on `ParentCode` — JSON `null` → `*string` nil check
+        - Fix: `catalog_dao_test` referenced unexported `safeIdentifierRe` → `SafeIdentifierRe`
+        - Fix: `corporate_action_controller_test` and `financial_statement_controller_test` — `DataJSON` type mismatch (`string` → `json.RawMessage`) + double-encoded JSON handling
+    - **Migration SQL**
+        - New: `migrations/postgresql/security/0005_security_registry.sql` — security registry table on `pg_default`
+        - New: `migrations/postgresql/security/0006_bars_daily.sql` — bars daily tables on `warm_storage`
+        - New: `migrations/postgresql/security/0007_bars_ext.sql` — bars extension table on `warm_storage`
+        - New: `migrations/postgresql/security/0008_strategy.sql` — strategy run tables (summary on `pg_default`, artifact on `warm_storage`)
+- 1.11.0
+    - New endpoint: `GET /api/v2/catalog/data-dictionary` — comprehensive machine-readable metadata for all tables (columns, types, JSONB keys, enum values, indexes, lineage, time ranges). Suitable for UI and LLM function calling
+    - New: `SchemaDao.DiscoverJSONBKeysGeneric()` — generic JSONB key discovery for any table/column with value type inference and sample values
+    - Fix: `CatalogService.discoverJSONBKeys()` now uses generic discovery as fallback — JSONB keys shown on table detail page for ALL tables, not just financial_statement/corporate_action
+    - Fix: `CatalogDao.GetTableIndexes` — use `model.StringArray` instead of `[]string` for `array_agg` scan target
+    - Fix: Exported `SafeIdentifierRe` and `CatalogDao.DB()` for service layer access
+- 1.10.2
+    - Fix: `CatalogDao.GetTableIndexes` — use `model.StringArray` instead of `[]string` for `array_agg` scan target, resolves "unsupported data type: &[]" error on PostgreSQL array columns
+- 1.10.1
+    - Added migration files for bars
+    - Fixed missing schema in CatalogService.getTables
 - 1.10.0
     - **Data Catalog API** — comprehensive data asset discovery and metadata service
         - New endpoint: `GET /api/v2/catalog/overview` — aggregate stats: total tables, rows, disk usage, per-domain and per-storage-tier breakdown

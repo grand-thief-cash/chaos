@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -59,7 +60,11 @@ func (c *CatalogController) GetTableDetail(w http.ResponseWriter, r *http.Reques
 
 	detail, err := c.Svc.GetTableDetail(r.Context(), schema, table, refresh)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, apiError{Error: err.Error()})
+		if strings.Contains(err.Error(), "not found") {
+			writeJSON(w, http.StatusNotFound, apiError{Error: err.Error()})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
@@ -83,4 +88,27 @@ func (c *CatalogController) GraphCatalog(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, info)
+}
+
+// GET /api/v2/catalog/data-dictionary
+// Returns comprehensive metadata for all tables — suitable for UI and LLM function calling.
+func (c *CatalogController) DataDictionary(w http.ResponseWriter, r *http.Request) {
+	refresh := r.URL.Query().Get("refresh") == "true"
+	dict, err := c.Svc.GetDataDictionary(r.Context(), refresh)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, dict)
+}
+
+// GET /api/v2/catalog/business-overview
+func (c *CatalogController) BusinessOverview(w http.ResponseWriter, r *http.Request) {
+	refresh := r.URL.Query().Get("refresh") == "true"
+	overview, err := c.Svc.GetBusinessOverview(r.Context(), refresh)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
 }
