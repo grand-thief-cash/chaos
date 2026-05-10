@@ -1,7 +1,12 @@
 # VERSION
-v0.18.0
+v0.18.2
 
 # Changelog
+- v0.18.2
+    - Added three forms of context awareness to SplitPostgresStatements in migration:
+        - Line comments — ignore all characters until newline
+        - Single-quoted strings — support '' escaping
+        - Split statements with ; only when outside all three contexts (line comments, single-quoted strings, and dollar-quoting)
 - v0.18.1
     - Removed toolchain from go.mod to allow users to use their preferred Go version (e.g., 1.23+).
 - v0.18.0
