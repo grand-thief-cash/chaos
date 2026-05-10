@@ -132,4 +132,14 @@ export class CronjobsApiService {
     formData.append('file', file);
     return this._http.post(`${this.API_BASE}/tasks/import`, formData);
   }
+
+  // ─── Artemis task.yaml integration ───
+
+  getTaskYaml(): Observable<{path: string, content: string}> {
+    return this._http.get<{path: string, content: string}>(`${environment.artemisApiBase}/runtime/task-yaml`);
+  }
+
+  updateTaskYaml(content: string): Observable<{updated: boolean}> {
+    return this._http.put<{updated: boolean}>(`${environment.artemisApiBase}/runtime/task-yaml`, {content});
+  }
 }
