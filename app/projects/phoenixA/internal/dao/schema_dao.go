@@ -84,10 +84,20 @@ func (d *SchemaDao) DiscoverFields(ctx context.Context, domain, dataType string,
 	}
 
 	// Extract distinct JSONB keys using PostgreSQL jsonb_object_keys()
+	// data_json may be stored as a JSONB string (double-encoded) instead of native object.
+	// Normalize: if 'object' use directly; if 'string' parse inner content.
 	query := fmt.Sprintf(`
 		SELECT DISTINCT k AS field_name
 		FROM (
-			SELECT data_json FROM %s WHERE %s = $1 LIMIT $2
+			SELECT
+				CASE jsonb_typeof(data_json)
+					WHEN 'object' THEN data_json
+					WHEN 'string' THEN (data_json #>> '{}')::jsonb
+				END AS data_json
+			FROM %s
+			WHERE %s = $1
+			  AND jsonb_typeof(data_json) IN ('object', 'string')
+			LIMIT $2
 		) sub,
 		LATERAL jsonb_object_keys(sub.data_json) AS k
 		ORDER BY field_name
@@ -180,4 +190,110 @@ func (d *SchemaDao) Overview(ctx context.Context) ([]DomainSummary, error) {
 		return summaries[i].Domain < summaries[j].Domain
 	})
 	return summaries, nil
+}
+
+// ─── Generic JSONB Discovery ───
+
+// JSONBKeyInfo describes a single key discovered in a JSONB column.
+type JSONBKeyInfo struct {
+	Name       string   `json:"name"`
+	ValueType  string   `json:"value_type"`  // "string", "number", "boolean", "null", "object", "array"
+	SampleVals []string `json:"sample_vals"` // up to 3 sample values (stringified)
+}
+
+// DiscoverJSONBKeysGeneric discovers keys in any JSONB column of any table.
+// schema.table.column must pass the safeIdentifierRe check.
+func (d *SchemaDao) DiscoverJSONBKeysGeneric(ctx context.Context, schema, table, column string, sampleSize int) ([]JSONBKeyInfo, error) {
+	for _, id := range []string{schema, table, column} {
+		if !SafeIdentifierRe.MatchString(id) {
+			return nil, fmt.Errorf("unsafe identifier: %q", id)
+		}
+	}
+	if sampleSize <= 0 {
+		sampleSize = 200
+	}
+
+	fullTable := table
+	if schema != "" && schema != "public" {
+		fullTable = schema + "." + table
+	}
+
+	// Discover distinct keys and infer types via jsonb_typeof
+	// data_json may be stored as JSONB string — normalize with CASE.
+	// Use ?? for PostgreSQL JSONB ? operator (GORM would eat single ? as placeholder).
+	query := fmt.Sprintf(`
+		SELECT
+			k AS key_name,
+			COALESCE(
+				(SELECT jsonb_typeof(norm.norm_col -> k)
+				 FROM (
+					SELECT
+						CASE jsonb_typeof(t.%[4]s)
+							WHEN 'object' THEN t.%[4]s
+							WHEN 'string' THEN (t.%[4]s #>> '{}')::jsonb
+						END AS norm_col
+					FROM %[1]s t
+					WHERE t.%[4]s ?? k AND jsonb_typeof(t.%[4]s) IN ('object', 'string')
+					LIMIT 1
+				 ) norm),
+				'null'
+			) AS value_type
+		FROM (
+			SELECT DISTINCT k
+			FROM (
+				SELECT
+					CASE jsonb_typeof(%[4]s)
+						WHEN 'object' THEN %[4]s
+						WHEN 'string' THEN (%[4]s #>> '{}')::jsonb
+					END AS %[4]s
+				FROM %[2]s
+				WHERE %[4]s IS NOT NULL AND jsonb_typeof(%[4]s) IN ('object', 'string')
+				LIMIT $1
+			) sub,
+			LATERAL jsonb_object_keys(sub.%[4]s) AS k
+		) keys
+		ORDER BY key_name
+	`, fullTable, fullTable, column, column)
+
+	type keyRow struct {
+		KeyName   string
+		ValueType string
+	}
+	var rows []keyRow
+	if err := d.db.WithContext(ctx).Raw(query, sampleSize).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("generic jsonb discovery for %s.%s.%s: %w", schema, table, column, err)
+	}
+
+	result := make([]JSONBKeyInfo, 0, len(rows))
+	for _, r := range rows {
+		info := JSONBKeyInfo{
+			Name:      r.KeyName,
+			ValueType: r.ValueType,
+		}
+
+		// Get sample values (up to 3 distinct non-null)
+		// Use ?? for PostgreSQL JSONB ? operator (GORM eats single ?)
+		sampleQuery := fmt.Sprintf(
+			`SELECT DISTINCT (norm.%[3]s ->> $1)::text AS val
+			 FROM (
+				SELECT
+					CASE jsonb_typeof(t.%[3]s)
+						WHEN 'object' THEN t.%[3]s
+						WHEN 'string' THEN (t.%[3]s #>> '{}')::jsonb
+					END AS %[3]s
+				FROM %[2]s t
+				WHERE t.%[3]s ?? $1 AND jsonb_typeof(t.%[3]s) IN ('object', 'string')
+			 ) norm
+			 WHERE (norm.%[3]s ->> $1) IS NOT NULL
+			 LIMIT 3`,
+			column, fullTable, column, column,
+		)
+		var samples []string
+		if err := d.db.WithContext(ctx).Raw(sampleQuery, r.KeyName).Scan(&samples).Error; err == nil {
+			info.SampleVals = samples
+		}
+
+		result = append(result, info)
+	}
+	return result, nil
 }
