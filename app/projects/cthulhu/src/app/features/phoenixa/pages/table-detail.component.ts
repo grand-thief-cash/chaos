@@ -103,19 +103,57 @@ import {NzBadgeModule} from 'ng-zorro-antd/badge';
 
         <!-- JSONB Keys -->
         @if (jsonbColumns.length > 0) {
-          <nz-card nzTitle="JSONB 字段详情" style="margin-bottom: 16px;">
+          <nz-card nzTitle="JSONB 字段详情" [nzExtra]="jsonbExtra" style="margin-bottom: 16px;">
+            <ng-template #jsonbExtra>
+              <span style="color: #999; font-size: 12px;">点击展开查看各字段的类型和样例数据</span>
+            </ng-template>
             <nz-collapse>
               <nz-collapse-panel *ngFor="let col of jsonbColumns"
-                                 [nzHeader]="col.name"
+                                 [nzHeader]="col.name + ' (' + getJsonbKeyCount(col.jsonb_keys) + ' keys)'"
                                  [nzActive]="true">
+                <!-- Type-based discovery: { type: [field, ...] } -->
                 @if (isRecord(col.jsonb_keys)) {
-                  <div *ngFor="let entry of getRecordEntries(col.jsonb_keys)" style="margin-bottom: 12px;">
-                    <strong>{{ entry[0] }}</strong>
-                    <div style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
-                      <nz-tag *ngFor="let key of entry[1]" nzColor="geekblue">{{ key }}</nz-tag>
+                  @for (entry of getRecordEntries(col.jsonb_keys); track entry[0]) {
+                    <div style="margin-bottom: 12px;">
+                      <nz-tag nzColor="blue">{{ entry[0] }}</nz-tag>
+                      <span style="color: #999; font-size: 12px; margin-left: 4px;">{{ entry[1].length }} fields</span>
+                      <div style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
+                        <nz-tag *ngFor="let key of entry[1]" nzColor="geekblue">{{ key }}</nz-tag>
+                      </div>
                     </div>
-                  </div>
-                } @else if (isArray(col.jsonb_keys)) {
+                  }
+                }
+                <!-- Generic discovery: [{ name, value_type, sample_vals }] -->
+                @if (isObjectArray(col.jsonb_keys)) {
+                  <nz-table #jsonbTable [nzData]="col.jsonb_keys" nzSize="small"
+                            [nzPageSize]="50" [nzShowPagination]="col.jsonb_keys.length > 50"
+                            [nzShowSizeChanger]="false">
+                    <thead>
+                      <tr>
+                        <th nzWidth="220px">Field Name</th>
+                        <th nzWidth="100px">Type</th>
+                        <th>Sample Values</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let k of jsonbTable.data">
+                        <td><code>{{ k.name }}</code></td>
+                        <td>
+                          <nz-tag [nzColor]="getValueTypeColor(k.value_type)">{{ k.value_type }}</nz-tag>
+                        </td>
+                        <td style="font-size: 12px; color: #666;">
+                          @if (k.sample_vals && k.sample_vals.length > 0) {
+                            <span>{{ k.sample_vals.join(', ') }}</span>
+                          } @else {
+                            <span>—</span>
+                          }
+                        </td>
+                      </tr>
+                    </tbody>
+                  </nz-table>
+                }
+                <!-- Simple string array fallback -->
+                @if (isArray(col.jsonb_keys) && !isObjectArray(col.jsonb_keys)) {
                   <div style="display: flex; flex-wrap: wrap; gap: 4px;">
                     <nz-tag *ngFor="let key of col.jsonb_keys" nzColor="geekblue">{{ key }}</nz-tag>
                   </div>
@@ -178,6 +216,73 @@ import {NzBadgeModule} from 'ng-zorro-antd/badge';
             </nz-descriptions>
           </nz-card>
         }
+
+        <!-- Business Data -->
+        @if (detail.api_endpoints?.length || detail.example_calls?.length || detail.related_tables?.length) {
+          <nz-card nzTitle="\u4E1A\u52A1\u6570\u636E" style="margin-top: 16px;">
+            @if (detail.api_endpoints?.length) {
+              <div style="margin-bottom: 16px;">
+                <h4 style="margin-bottom: 8px;">API \u7AEF\u70B9</h4>
+                <nz-table [nzData]="detail.api_endpoints || []" nzSize="small" [nzShowPagination]="false">
+                  <thead><tr>
+                    <th nzWidth="60px">Method</th>
+                    <th nzWidth="300px">Path</th>
+                    <th>Description</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr *ngFor="let ep of detail.api_endpoints">
+                      <td><nz-tag [nzColor]="ep.method === 'GET' ? 'blue' : 'green'">{{ ep.method }}</nz-tag></td>
+                      <td><code>{{ ep.path }}</code></td>
+                      <td>{{ ep.description }}</td>
+                    </tr>
+                  </tbody>
+                </nz-table>
+              </div>
+            }
+            @if (detail.example_calls?.length) {
+              <div style="margin-bottom: 16px;">
+                <h4 style="margin-bottom: 8px;">\u793A\u4F8B\u8C03\u7528</h4>
+                @for (ex of detail.example_calls; track ex.title) {
+                  <div style="margin: 4px 0;">
+                    <span style="color: #666; margin-right: 4px;">{{ ex.title }}:</span>
+                    <code style="background: #f0f5ff; padding: 2px 6px; border-radius: 3px;">{{ ex.url }}</code>
+                  </div>
+                }
+              </div>
+            }
+            @if (detail.related_tables?.length) {
+              <div style="margin-bottom: 16px;">
+                <h4 style="margin-bottom: 8px;">\u5173\u8054\u8868</h4>
+                <nz-table [nzData]="detail.related_tables || []" nzSize="small" [nzShowPagination]="false">
+                  <thead><tr>
+                    <th>\u5173\u8054\u8868</th>
+                    <th>\u5173\u8054\u952E</th>
+                    <th>\u8BF4\u660E</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr *ngFor="let cr of detail.related_tables">
+                      <td><code style="cursor:pointer; color: #1890ff;" (click)="goToTable(cr.to_table)">{{ cr.to_table }}</code></td>
+                      <td><code>{{ cr.join_key }}</code></td>
+                      <td>{{ cr.description }}</td>
+                    </tr>
+                  </tbody>
+                </nz-table>
+              </div>
+            }
+            @if (detail.business_domain) {
+              <div>
+                <h4 style="margin-bottom: 8px;">\u6240\u5C5E\u57DF</h4>
+                <nz-tag [nzColor]="getDomainColor(detail.business_domain.domain)">{{ detail.business_domain.label }}</nz-tag>
+                <span style="color: #666; margin-left: 8px;">{{ detail.business_domain.description }}</span>
+                <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px;">
+                  @for (t of detail.business_domain.tables_in_domain; track t) {
+                    <nz-tag nzColor="blue" style="cursor: pointer;" (click)="goToTable(t)">{{ t }}</nz-tag>
+                  }
+                </div>
+              </div>
+            }
+          </nz-card>
+        }
       }
     </nz-spin>
   `,
@@ -221,6 +326,12 @@ export class TableDetailComponent implements OnInit {
     this.router.navigate(['/phoenixa/catalog']);
   }
 
+  goToTable(tableName: string) {
+    // Navigate to table detail — guess schema from current detail
+    const schema = this.detail?.schema || 'security_dev';
+    this.router.navigate(['/phoenixa/catalog', schema, tableName]);
+  }
+
   getDomainColor(domain: string): string {
     const map: Record<string, string> = {
       bars: 'blue', security: 'green', taxonomy: 'orange',
@@ -254,9 +365,35 @@ export class TableDetailComponent implements OnInit {
     return Array.isArray(v);
   }
 
+  isObjectArray(v: any): v is { name: string; value_type: string; sample_vals: string[] }[] {
+    return Array.isArray(v) && v.length > 0 && typeof v[0] === 'object' && v[0] !== null && 'name' in v[0];
+  }
+
   getRecordEntries(v: any): [string, string[]][] {
     if (!this.isRecord(v)) return [];
     return Object.entries(v) as [string, string[]][];
+  }
+
+  getJsonbKeyCount(v: any): number {
+    if (this.isObjectArray(v)) return v.length;
+    if (this.isArray(v)) return v.length;
+    if (this.isRecord(v)) {
+      let total = 0;
+      for (const vals of Object.values(v)) total += (vals as string[]).length;
+      return total;
+    }
+    return 0;
+  }
+
+  getValueTypeColor(type: string): string {
+    switch (type) {
+      case 'number': return 'blue';
+      case 'string': return 'green';
+      case 'boolean': return 'cyan';
+      case 'object': return 'purple';
+      case 'array': return 'orange';
+      default: return 'default';
+    }
   }
 }
 

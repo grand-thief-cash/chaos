@@ -9,8 +9,14 @@ export const PHOENIXA_ROUTES: Routes = [
     data: { breadcrumb: 'PhoenixA', menuGroup: { title: 'PhoenixA', icon: 'database' } },
     children: [
       { path: '', redirectTo: 'catalog', pathMatch: 'full' },
-      { path: 'catalog', component: DataCatalogComponent, data: { breadcrumb: 'Data Catalog', menu: { label: 'Data Catalog', order: 1 } } },
-      { path: 'catalog/:schema/:table', component: TableDetailComponent, data: { breadcrumb: 'Table Detail' } },
+      {
+        path: 'catalog',
+        data: { breadcrumb: 'Data Catalog', menu: { label: 'Data Catalog', order: 1 } },
+        children: [
+          { path: '', component: DataCatalogComponent },
+          { path: ':schema/:table', component: TableDetailComponent, data: { breadcrumb: 'Table Detail' } }
+        ]
+      },
       { path: 'buffer', component: BufferStatsComponent, data: { breadcrumb: 'Write Buffer', menu: { label: 'Write Buffer', order: 2 } } }
     ]
   }
