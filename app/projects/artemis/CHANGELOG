@@ -1,7 +1,31 @@
 # VERSION
-- v0.27.0
+- v0.29.0
 
 # Changelog
+- v0.29.0
+    - **Code list source migration: SDK → PhoenixA**
+        - `BaseFinancialStatementTask` and `BaseCorporateActionTask` no longer call `self._base_data.get_hist_code_list()` for full symbol lists
+        - New `utils.get_code_list_from_phoenixa(ctx)` fetches securities from PhoenixA `GET /api/v2/securities` and converts to SDK format (`["000001.SZ", "600519.SH"]`)
+        - Removed `self._base_data = ad.BaseData()` from both base classes (no longer needed)
+        - Better error messages: `"empty code_list for ... (mode=...; check PhoenixA /api/v2/securities)"` instead of generic "no valid symbols"
+        - Guard against `NoopDeptServiceClient` — logs warning instead of crashing with `AttributeError`
+    - **OTEL trace_id propagation to async task threads**
+        - `TaskEngine.run()` now captures OpenTelemetry context before spawning `threading.Thread` and restores it in the worker thread
+        - Task logs in async mode now include `trace_id` and `span_id` — previously only HTTP access logs had these fields
+        - Fixed critical memory leak: `_unregister_task` was never called when OTEL was installed (every task leaked an entry in `_active_tasks`)
+    - **Financial/Corporate Action upsert dedup**
+        - `post_process()` in both base classes now deduplicates records by unique key before sinking
+        - Fixes `ON CONFLICT DO UPDATE command cannot affect row a second time` error when SDK returns duplicate rows for the same symbol+period
+    - **Log rotation fix**
+        - `_apply_config` now reads `rotate_config.max_age` (e.g. `72h`) to compute `backupCount` — was hardcoded to 7
+        - Startup cleanup: old rotated log files beyond `max_age` are deleted immediately on startup, not just at midnight rotation
+- v0.28.0
+    - **Symbol format & date normalization for financial/corporate_action data**
+        - `split_market_code()`: `"000001.SZ"` → `symbol="000001", market="zh_a"` — all tables now store pure codes, matching bars/taxonomy/security_registry convention
+        - `normalize_date_yyyymmdd()`: `"20260425"` → `"2026-04-25"` — all date fields normalized to ISO YYYY-MM-DD
+        - `BaseFinancialStatementTask.post_process()`: applies both transformations
+        - `BaseCorporateActionTask.post_process()`: applies both transformations
+        - `task.yaml`: `STOCK_ZH_A_DIVIDEND` and `STOCK_ZH_A_RIGHT_ISSUE` symbols now use pure code format (e.g., `["000001"]`) with separate `exchange` field, consistent with `STOCK_ZH_A_BALANCE_SHEET`
 - v0.27.0
     - **Industry data fixes — trade_date format + taxonomy_security_map sync + naming unification + parent_code bug fix**
         - Fixed `STOCK_ZH_A_INDUSTRY_WEIGHT_SWHY_CHILD` `trade_date` format: raw SDK value (YYYYMMDD, e.g. `20260507`) now normalized to `YYYY-MM-DD` (e.g. `2026-05-07`) before sinking to PhoenixA, consistent with `industry_daily` task

@@ -31,7 +31,7 @@ from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
-from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params, get_sdk_date_kwargs
+from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params, get_sdk_date_kwargs, split_market_code, normalize_date_yyyymmdd, get_code_list_from_phoenixa
 
 
 # Fields extracted as structured DB columns; excluded from data_json.
@@ -58,7 +58,6 @@ class BaseCorporateActionTask(WorkerUnit):
             return
 
         self._info_data = ad.InfoData()
-        self._base_data = ad.BaseData()
 
     def execute(self, ctx):
         from artemis.core.config_manager import cfg_mgr
@@ -68,23 +67,17 @@ class BaseCorporateActionTask(WorkerUnit):
         os.makedirs(cache_dir, exist_ok=True)
 
         try:
-            # Resolve code_list: explicit symbols or full SDK pull
+            # Resolve code_list: explicit symbols or PhoenixA registry
             explicit_symbols = get_symbols_from_params(ctx)
             if explicit_symbols is not None:
                 code_list = explicit_symbols
                 mode = 'incremental'
             else:
-                calendar = self._base_data.get_calendar()
-                today = calendar[-1]
-                code_list = self._base_data.get_hist_code_list(
-                    security_type='EXTRA_STOCK_A_SH_SZ',
-                    start_date=20130101,
-                    end_date=today,
-                )
+                code_list = get_code_list_from_phoenixa(ctx)
                 mode = 'full'
 
             if not code_list:
-                ctx.fail(f"no valid symbols for {self.ACTION_TYPE}", phase='execute')
+                ctx.fail(f"empty code_list for {self.ACTION_TYPE} (mode={mode}; check PhoenixA /api/v2/securities)", phase='execute')
                 return None
 
             # Convert our start_date/end_date to SDK begin_date/end_date
@@ -141,15 +134,17 @@ class BaseCorporateActionTask(WorkerUnit):
                 symbol_val = row.get('MARKET_CODE', '')
                 if pd.isna(symbol_val):
                     continue
-                symbol = str(symbol_val).strip()
-                if not symbol:
+                market_code = str(symbol_val).strip()
+                if not market_code:
                     continue
+                symbol, market = split_market_code(market_code)
 
                 ann_date_val = row.get('ANN_DATE', '')
-                ann_date = '' if pd.isna(ann_date_val) else str(ann_date_val).strip()
+                ann_date = normalize_date_yyyymmdd('' if pd.isna(ann_date_val) else str(ann_date_val).strip())
 
                 report_period_val = row.get(self.REPORT_PERIOD_FIELD, '') if self.REPORT_PERIOD_FIELD else ''
-                report_period = '' if pd.isna(report_period_val) else str(report_period_val).strip()
+                report_period_raw = '' if pd.isna(report_period_val) else str(report_period_val).strip()
+                report_period = normalize_date_yyyymmdd(report_period_raw)
 
                 progress_val = row.get(self.PROGRESS_FIELD, '') if self.PROGRESS_FIELD else ''
                 progress_code = '' if pd.isna(progress_val) else str(progress_val).strip()
@@ -172,13 +167,30 @@ class BaseCorporateActionTask(WorkerUnit):
                 processed.append({
                     'source': consts.DataSource.DS_AMAZING_DATA.value,
                     'symbol': symbol,
-                    'market': 'zh_a',
+                    'market': market,
                     'action_type': self.ACTION_TYPE,
                     'report_period': report_period,
                     'ann_date': ann_date,
                     'progress_code': progress_code,
                     'data_json': json.dumps(data_fields, ensure_ascii=False),
                 })
+
+        # Deduplicate by unique key (last occurrence wins).
+        seen = {}
+        for i, rec in enumerate(processed):
+            key = (rec.get('source', ''), rec.get('symbol', ''), rec.get('market', ''),
+                   rec.get('action_type', ''), rec.get('report_period', ''),
+                   rec.get('ann_date', ''))
+            seen[key] = i
+        if len(seen) < len(processed):
+            deduped = [processed[i] for i in sorted(seen.values())]
+            ctx.logger.info({
+                'event': f'{self.ACTION_TYPE}_dedup',
+                'before': len(processed),
+                'after': len(deduped),
+                'run_id': ctx.run_id,
+            })
+            processed = deduped
 
         ctx.logger.info({
             'event': f'{self.ACTION_TYPE}_post_process_done',
