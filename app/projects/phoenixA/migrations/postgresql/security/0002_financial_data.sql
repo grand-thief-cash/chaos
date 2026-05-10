@@ -16,16 +16,16 @@
 CREATE TABLE IF NOT EXISTS financial_statement (
     id               BIGSERIAL      PRIMARY KEY,
     source           VARCHAR(32)    NOT NULL,
-    symbol           VARCHAR(32)    NOT NULL,
+    symbol           VARCHAR(32)    NOT NULL,              -- 纯代码，如 "000001"（不含交易所后缀）
     market           VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
-    statement_type   VARCHAR(32)    NOT NULL,       -- balance_sheet / income / cashflow / profit_express / profit_notice
-    reporting_period VARCHAR(10)    NOT NULL,        -- YYYYMMDD
-    report_type      VARCHAR(32)    NOT NULL DEFAULT '',  -- 报告期名称
-    statement_code   VARCHAR(32)    NOT NULL DEFAULT '',  -- 报表类型代码
+    statement_type   VARCHAR(32)    NOT NULL,              -- balance_sheet / income / cashflow / profit_express / profit_notice
+    reporting_period VARCHAR(10)    NOT NULL,               -- YYYY-MM-DD 格式
+    report_type      VARCHAR(32)    NOT NULL DEFAULT '',    -- 报告期名称
+    statement_code   VARCHAR(32)    NOT NULL DEFAULT '',    -- 报表类型代码
     security_name    VARCHAR(128)   NOT NULL DEFAULT '',
-    ann_date         VARCHAR(10)    NOT NULL DEFAULT '',
-    actual_ann_date  VARCHAR(10)    NOT NULL DEFAULT '',
-    comp_type_code   SMALLINT       NOT NULL DEFAULT 0,   -- 1:非金融 2:银行 3:保险 4:证券
+    ann_date         VARCHAR(10)    NOT NULL DEFAULT '',    -- YYYY-MM-DD 格式
+    actual_ann_date  VARCHAR(10)    NOT NULL DEFAULT '',    -- YYYY-MM-DD 格式
+    comp_type_code   SMALLINT       NOT NULL DEFAULT 0,     -- 1:非金融 2:银行 3:保险 4:证券
     data_json        JSONB          NOT NULL DEFAULT '{}',
     created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
@@ -55,11 +55,11 @@ CREATE INDEX IF NOT EXISTS idx_fs_data_gin
 CREATE TABLE IF NOT EXISTS corporate_action (
     id               BIGSERIAL      PRIMARY KEY,
     source           VARCHAR(32)    NOT NULL,
-    symbol           VARCHAR(32)    NOT NULL,
+    symbol           VARCHAR(32)    NOT NULL,               -- 纯代码，如 "000001"（不含交易所后缀）
     market           VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
-    action_type      VARCHAR(32)    NOT NULL,       -- dividend / right_issue
-    report_period    VARCHAR(10)    NOT NULL DEFAULT '',   -- 分红/配股年度
-    ann_date         VARCHAR(10)    NOT NULL DEFAULT '',
+    action_type      VARCHAR(32)    NOT NULL,               -- dividend / right_issue
+    report_period    VARCHAR(10)    NOT NULL DEFAULT '',     -- YYYY-MM-DD 格式
+    ann_date         VARCHAR(10)    NOT NULL DEFAULT '',     -- YYYY-MM-DD 格式
     progress_code    VARCHAR(8)     NOT NULL DEFAULT '',
     data_json        JSONB          NOT NULL DEFAULT '{}',
     created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),

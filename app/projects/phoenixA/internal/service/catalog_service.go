@@ -262,6 +262,147 @@ var domainDescriptions = map[string]string{
 	"other":     "其他",
 }
 
+// ─── Business API Registry ───
+
+// tableApiMap maps table names/prefixes to their API endpoints.
+var tableApiMap = map[string][]model.ApiEndpointRef{
+	"security_registry": {
+		{Method: "GET", Path: "/api/v2/securities", Description: "查询证券列表"},
+		{Method: "GET", Path: "/api/v2/securities/{symbol}", Description: "查询单个证券"},
+		{Method: "POST", Path: "/api/v2/securities/upsert", Description: "批量写入证券"},
+	},
+	"financial_statement": {
+		{Method: "GET", Path: "/api/v2/financial/{source}/{statement_type}", Description: "查询财务报表"},
+		{Method: "POST", Path: "/api/v2/financial/{source}/{statement_type}/upsert", Description: "写入财务报表"},
+	},
+	"corporate_action": {
+		{Method: "GET", Path: "/api/v2/corporate-action/{source}/{action_type}", Description: "查询公司行为"},
+		{Method: "POST", Path: "/api/v2/corporate-action/{source}/{action_type}/upsert", Description: "写入公司行为"},
+	},
+	"taxonomy_category": {
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories", Description: "查询分类节点"},
+		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert", Description: "写入分类节点"},
+	},
+	"taxonomy_security_map": {
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/mapping/by_category/{code}", Description: "按分类查映射"},
+		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/mapping/upsert", Description: "写入映射"},
+	},
+	"industry_constituent": {
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{code}", Description: "查询行业成分"},
+		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/upsert", Description: "写入行业成分"},
+	},
+	"industry_weight": {
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{code}", Description: "查询行业权重"},
+	},
+	"industry_daily": {
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily", Description: "查询行业日线"},
+		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily/upsert", Description: "写入行业日线"},
+	},
+	"strategy_run_summary": {
+		{Method: "GET", Path: "/api/v1/strategy/run/list", Description: "查询策略列表"},
+		{Method: "GET", Path: "/api/v1/strategy/run/{run_id}", Description: "查询策略详情"},
+	},
+	"strategy_run_artifact": {
+		{Method: "GET", Path: "/api/v1/strategy/run/{run_id}/artifacts", Description: "查询策略产物"},
+	},
+	"bars_": {
+		{Method: "GET", Path: "/api/v2/bars/{asset_type}/{market}", Description: "查询K线行情"},
+		{Method: "POST", Path: "/api/v2/bars/{asset_type}/{market}/upsert", Description: "写入K线行情"},
+		{Method: "GET", Path: "/api/v2/bars/{asset_type}/{market}/last_update", Description: "最近更新时间"},
+	},
+	"factor_": {
+		{Method: "GET", Path: "/api/v2/catalog/tables", Description: "因子数据（规划中）"},
+	},
+}
+
+// domainApiRegistry maps business domains to example queries and cross-refs.
+var domainApiRegistry = map[string]struct {
+	Description  string
+	ExampleCalls []model.ExampleCall
+	CrossRefs    []model.CrossRef
+}{
+	"bars": {
+		Description: "K线行情数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询A股日线行情", URL: "GET /api/v2/bars/stock/zh_a?symbol=000001&start_date=2026-01-01"},
+			{Title: "查询指数行情", URL: "GET /api/v2/bars/index/zh_a?symbol=000001&start_date=2026-01-01"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
+		},
+	},
+	"security": {
+		Description: "证券基础信息注册表，统一的证券代码、名称、市场、上市日期等",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询A股证券列表", URL: "GET /api/v2/securities?market=zh_a"},
+			{Title: "查询单个证券", URL: "GET /api/v2/securities/000001"},
+		},
+	},
+	"taxonomy": {
+		Description: "行业分类数据，包含行业节点、证券映射、行业成分、权重、日线行情",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询申万行业分类", URL: "GET /api/v2/taxonomy/sw/industry/zh_a/categories"},
+			{Title: "按股票查所属行业", URL: "GET /api/v2/taxonomy/by_security/000001"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
+		},
+	},
+	"financial": {
+		Description: "财务报表和公司行为数据，资产负债表/利润表/现金流量表/业绩预告/分红配股",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询资产负债表", URL: "GET /api/v2/financial/amazing_data/balance_sheet?symbol=000001&page=1"},
+			{Title: "查询分红信息", URL: "GET /api/v2/corporate-action/amazing_data/dividend?symbol=000001"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
+		},
+	},
+	"strategy": {
+		Description: "策略回测运行结果和产物数据",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询策略列表", URL: "GET /api/v1/strategy/run/list?strategy_code=momentum"},
+		},
+	},
+	"kg": {
+		Description: "知识图谱数据，文档/抽取/事件/影响日志/图谱写入",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询事件", URL: "GET /api/v1/kg/events?event_type=risk"},
+		},
+	},
+	"factor": {Description: "因子数据（规划中）"},
+	"regime": {Description: "市场状态引擎数据（规划中）"},
+}
+
+func (s *CatalogService) resolveAPIs(table string) []model.ApiEndpointRef {
+	if apis, ok := tableApiMap[table]; ok {
+		return apis
+	}
+	for prefix, apis := range tableApiMap {
+		if strings.HasSuffix(prefix, "_") && strings.HasPrefix(table, prefix) {
+			return apis
+		}
+	}
+	return nil
+}
+
+func (s *CatalogService) resolveDomainMeta(domain string) (examples []model.ExampleCall, xrefs []model.CrossRef, desc string) {
+	if info, ok := domainApiRegistry[domain]; ok {
+		return info.ExampleCalls, info.CrossRefs, info.Description
+	}
+	return nil, nil, ""
+}
+
+func (s *CatalogService) listTablesInDomain(tables []model.TableCatalogEntry, domain string) []string {
+	var names []string
+	for _, t := range tables {
+		if t.Domain == domain {
+			names = append(names, t.TableName)
+		}
+	}
+	return names
+}
+
 // tablespace tier mapping
 var tablespaceTiers = map[string]struct {
 	Tier     string
@@ -283,12 +424,18 @@ type CatalogService struct {
 	cachedTables []model.TableCatalogEntry
 	cacheTime    time.Time
 	cacheTTL     time.Duration
+
+	dictMu     sync.RWMutex
+	cachedDict *model.DataDictionary
+	dictTime   time.Time
+	dictTTL    time.Duration
 }
 
 func NewCatalogService() *CatalogService {
 	return &CatalogService{
 		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_CATALOG),
 		cacheTTL:      5 * time.Minute,
+		dictTTL:       10 * time.Minute,
 	}
 }
 
@@ -375,7 +522,7 @@ func (s *CatalogService) ListTables(ctx context.Context, domain string, refresh 
 	if domain == "" {
 		return tables, nil
 	}
-	var filtered []model.TableCatalogEntry
+	filtered := make([]model.TableCatalogEntry, 0)
 	for _, t := range tables {
 		if t.Domain == domain {
 			filtered = append(filtered, t)
@@ -416,14 +563,12 @@ func (s *CatalogService) GetTableDetail(ctx context.Context, schema, table strin
 		cols[i].Description = s.getColumnDescription(table, cols[i].Name)
 	}
 
-	// Get JSONB keys for JSONB columns
-	if entry.HasJSONB {
-		for i, col := range cols {
-			if strings.Contains(col.Type, "jsonb") {
-				jsonbKeys := s.discoverJSONBKeys(ctx, schema, table, col.Name)
-				if jsonbKeys != nil {
-					cols[i].JSONBKeys = jsonbKeys
-				}
+	// Get JSONB keys for JSONB columns (check column type, not HasJSONB flag)
+	for i, col := range cols {
+		if strings.Contains(col.Type, "jsonb") {
+			jsonbKeys := s.discoverJSONBKeys(ctx, schema, table, col.Name)
+			if jsonbKeys != nil {
+				cols[i].JSONBKeys = jsonbKeys
 			}
 		}
 	}
@@ -449,6 +594,20 @@ func (s *CatalogService) GetTableDetail(ctx context.Context, schema, table strin
 		Columns:           cols,
 		Indexes:           indexes,
 		DataLineage:       meta.Lineage,
+	}
+
+	// Attach business metadata
+	detail.ApiEndpoints = s.resolveAPIs(table)
+	exCalls, xRefs, domainDesc := s.resolveDomainMeta(detail.Domain)
+	detail.ExampleCalls = exCalls
+	detail.RelatedTables = xRefs
+	if domainDesc != "" {
+		detail.BusinessDomain = &model.BusinessDomainSummary{
+			Domain:         detail.Domain,
+			Label:          domainDescriptions[detail.Domain],
+			Description:    domainDesc,
+			TablesInDomain: s.listTablesInDomain(tables, detail.Domain),
+		}
 	}
 
 	return detail, nil
@@ -504,7 +663,7 @@ func (s *CatalogService) getTables(ctx context.Context, refresh bool) ([]model.T
 	s.cacheMu.RUnlock()
 
 	// Rebuild cache
-	rows, err := s.Dao.ListTables(ctx, []string{"public", "kg"})
+	rows, err := s.Dao.ListTables(ctx, []string{"public", "kg", "security_dev", "security"})
 	if err != nil {
 		return nil, false, err
 	}
@@ -550,8 +709,8 @@ func (s *CatalogService) getTables(ctx context.Context, refresh bool) ([]model.T
 	}
 
 	s.cacheMu.Lock()
-	s.cachedTables = tables
 	s.cacheTime = time.Now()
+	s.cachedTables = tables
 	s.cacheMu.Unlock()
 
 	return tables, false, nil
@@ -611,14 +770,14 @@ func (s *CatalogService) getColumnDescription(table, column string) string {
 }
 
 // discoverJSONBKeys uses SchemaDao to discover keys in a JSONB column.
-// This is a best-effort operation; may return nil if the table/column combo isn't supported.
-// schema and column are reserved for future generic JSONB discovery.
-func (s *CatalogService) discoverJSONBKeys(ctx context.Context, _ /*schema*/, table, _ /*column*/ string) any {
+// Works for any table — first tries type-based discovery (for financial/corporate tables),
+// then falls back to generic key discovery.
+func (s *CatalogService) discoverJSONBKeys(ctx context.Context, schema, table, column string) any {
 	if s.SchemaDao == nil {
 		return nil
 	}
 
-	// Only supported for financial_statement and corporate_action currently
+	// Try type-based discovery first (for financial_statement / corporate_action)
 	spec, ok := map[string]struct {
 		Domain     string
 		TypeColumn string
@@ -626,28 +785,33 @@ func (s *CatalogService) discoverJSONBKeys(ctx context.Context, _ /*schema*/, ta
 		"financial_statement": {"financial_statement", "statement_type"},
 		"corporate_action":    {"corporate_action", "action_type"},
 	}[table]
-	if !ok {
-		return nil
-	}
-
-	// List types then get keys per type
-	types, err := s.SchemaDao.ListTypes(ctx, spec.Domain)
-	if err != nil {
-		return nil
-	}
-
-	result := map[string][]string{}
-	for _, t := range types {
-		fr, err := s.SchemaDao.DiscoverFields(ctx, spec.Domain, t, 100)
-		if err != nil || fr == nil {
-			continue
+	if ok {
+		types, err := s.SchemaDao.ListTypes(ctx, spec.Domain)
+		if err == nil {
+			result := map[string][]string{}
+			for _, t := range types {
+				fr, err := s.SchemaDao.DiscoverFields(ctx, spec.Domain, t, 100)
+				if err != nil {
+					logging.Warnf(ctx, "catalog: type-based discovery for %s/%s failed: %v", table, t, err)
+					continue
+				}
+				if fr == nil || len(fr.Fields) == 0 {
+					continue
+				}
+				result[t] = fr.Fields
+			}
+			if len(result) > 0 {
+				return result
+			}
 		}
-		result[t] = fr.Fields
 	}
-	if len(result) == 0 {
+
+	// Generic JSONB key discovery for any table
+	keys, err := s.SchemaDao.DiscoverJSONBKeysGeneric(ctx, schema, table, column, 200)
+	if err != nil || len(keys) == 0 {
 		return nil
 	}
-	return result
+	return keys
 }
 
 // ─── Neo4j graph catalog ───
@@ -742,4 +906,240 @@ func (s *CatalogService) GetGraphCatalog(ctx context.Context) (*model.GraphCatal
 	}
 
 	return overview, nil
+}
+
+// GetDataDictionary returns a comprehensive machine-readable description of all available data.
+// Suitable for UI display and LLM function calling.
+// Results are cached for dictTTL duration (default 10 minutes).
+func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*model.DataDictionary, error) {
+	// Check dict cache first
+	if !refresh {
+		s.dictMu.RLock()
+		if s.cachedDict != nil && time.Since(s.dictTime) < s.dictTTL {
+			result := s.cachedDict
+			s.dictMu.RUnlock()
+			return result, nil
+		}
+		s.dictMu.RUnlock()
+	}
+
+	tables, _, err := s.getTables(ctx, refresh)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]model.TableDictionaryEntry, 0, len(tables))
+	for _, t := range tables {
+		entry := model.TableDictionaryEntry{
+			Schema:      t.Schema,
+			TableName:   t.TableName,
+			Domain:      t.Domain,
+			Description: t.Description,
+			RowCount:    t.RowCount,
+			StorageTier: t.StorageTier,
+			Tablespace:  t.Tablespace,
+			TimeRange:   t.TimeRange,
+		}
+
+		// Get column metadata
+		cols, err := s.Dao.GetTableColumns(ctx, t.Schema, t.TableName)
+		if err != nil {
+			logging.Errorf(ctx, "data-dict: get columns for %s.%s failed: %v", t.Schema, t.TableName, err)
+		}
+		colDicts := make([]model.ColumnDictionary, 0, len(cols))
+		for _, col := range cols {
+			cd := model.ColumnDictionary{
+				Name:         col.Name,
+				Type:         col.Type,
+				Nullable:     col.Nullable,
+				IsPrimaryKey: col.IsPrimaryKey,
+				Description:  s.getColumnDescription(t.TableName, col.Name),
+			}
+			// JSONB key discovery
+			if t.HasJSONB && strings.Contains(col.Type, "jsonb") && s.SchemaDao != nil {
+				keys, err := s.SchemaDao.DiscoverJSONBKeysGeneric(ctx, t.Schema, t.TableName, col.Name, 100)
+				if err == nil && len(keys) > 0 {
+					cd.JSONBKeys = make([]model.JSONBKeyRef, 0, len(keys))
+					for _, k := range keys {
+						cd.JSONBKeys = append(cd.JSONBKeys, model.JSONBKeyRef{
+							Name:       k.Name,
+							ValueType:  k.ValueType,
+							SampleVals: k.SampleVals,
+						})
+					}
+				}
+			}
+			// Enum value discovery for known low-cardinality text columns
+			if strings.Contains(col.Type, "character") || strings.Contains(col.Type, "text") {
+				cd.EnumValues = s.discoverEnumValues(ctx, t.Schema, t.TableName, col.Name)
+			}
+			colDicts = append(colDicts, cd)
+		}
+		entry.Columns = colDicts
+
+		// Get indexes
+		indexes, err := s.Dao.GetTableIndexes(ctx, t.Schema, t.TableName)
+		if err != nil {
+			logging.Errorf(ctx, "data-dict: get indexes for %s.%s failed: %v", t.Schema, t.TableName, err)
+		}
+		entry.Indexes = indexes
+
+		// Get lineage from meta registry
+		meta := s.findMeta(t.Schema, t.TableName)
+		entry.Lineage = meta.Lineage
+
+		// Attach business metadata
+		entry.ApiEndpoints = s.resolveAPIs(t.TableName)
+		exCalls, xRefs, _ := s.resolveDomainMeta(t.Domain)
+		entry.ExampleCalls = exCalls
+		entry.RelatedTables = xRefs
+
+		if meta.TimeColumn != "" && entry.TimeRange == nil {
+			tr, trErr := s.Dao.GetTimeRange(ctx, t.Schema, t.TableName, meta.TimeColumn)
+			if trErr == nil && tr != nil {
+				entry.TimeRange = tr
+			}
+		}
+
+		entries = append(entries, entry)
+	}
+
+	dict := &model.DataDictionary{
+		GeneratedAt: time.Now(),
+		Tables:      entries,
+	}
+
+	// Cache the result
+	s.dictMu.Lock()
+	s.dictTime = time.Now()
+	s.cachedDict = dict
+	s.dictMu.Unlock()
+
+	return dict, nil
+}
+
+// GetBusinessOverview returns domain-grouped business data with APIs, examples, cross-refs.
+func (s *CatalogService) GetBusinessOverview(ctx context.Context, refresh bool) (*model.BusinessOverview, error) {
+	tables, _, err := s.getTables(ctx, refresh)
+	if err != nil {
+		return nil, err
+	}
+
+	domainTables := map[string][]model.TableCatalogEntry{}
+	for _, t := range tables {
+		domainTables[t.Domain] = append(domainTables[t.Domain], t)
+	}
+
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "strategy", "kg", "factor", "regime", "other"}
+	seen := map[string]bool{}
+	var domains []model.BusinessDomain
+
+	for _, d := range domainOrder {
+		ts, ok := domainTables[d]
+		if !ok || len(ts) == 0 {
+			continue
+		}
+		seen[d] = true
+
+		var totalRows int64
+		names := make([]string, 0, len(ts))
+		for _, t := range ts {
+			totalRows += t.RowCount
+			names = append(names, t.TableName)
+		}
+
+		info, _ := domainApiRegistry[d]
+		var allAPIs []model.ApiEndpointRef
+		for _, t := range ts {
+			if apis := s.resolveAPIs(t.TableName); len(apis) > 0 {
+				allAPIs = append(allAPIs, apis...)
+				break
+			}
+		}
+
+		domains = append(domains, model.BusinessDomain{
+			Domain:       d,
+			Label:        domainDescriptions[d],
+			Description:  info.Description,
+			TableCount:   len(ts),
+			TotalRows:    totalRows,
+			Tables:       names,
+			ApiEndpoints: allAPIs,
+			ExampleCalls: info.ExampleCalls,
+			CrossRefs:    info.CrossRefs,
+		})
+	}
+
+	for d, ts := range domainTables {
+		if seen[d] {
+			continue
+		}
+		var totalRows int64
+		names := make([]string, 0, len(ts))
+		for _, t := range ts {
+			totalRows += t.RowCount
+			names = append(names, t.TableName)
+		}
+		domains = append(domains, model.BusinessDomain{
+			Domain:     d,
+			Label:      domainDescriptions[d],
+			TableCount: len(ts),
+			TotalRows:  totalRows,
+			Tables:     names,
+		})
+	}
+
+	return &model.BusinessOverview{Domains: domains}, nil
+}
+
+// Columns to skip for enum discovery — known to be high-cardinality or uninteresting.
+var enumDiscoverySkipColumns = map[string]bool{
+	"name": true, "symbol": true, "code": true, "title": true,
+	"description": true, "source": true, "url": true, "path": true,
+	"exchange": true, "market": true, "tablespace": true, "tier": true,
+	"created_at": true, "updated_at": true, "deleted_at": true,
+	"security_name": true, "company": true, "full_name": true,
+	"index_code": true, "parent_code": true, "category_code": true,
+	"status": true, "type": true,
+}
+
+// discoverEnumValues finds distinct values for a text column (up to 20 values).
+// Only returns values if there are <= 20 distinct values (indicating enum-like behavior).
+// Skips known high-cardinality columns to avoid unnecessary queries.
+func (s *CatalogService) discoverEnumValues(ctx context.Context, schema, table, column string) []string {
+	// Skip known high-cardinality / uninteresting columns
+	if enumDiscoverySkipColumns[column] {
+		return nil
+	}
+	for _, id := range []string{schema, table, column} {
+		if !dao.SafeIdentifierRe.MatchString(id) {
+			return nil
+		}
+	}
+	fullTable := table
+	if schema != "" && schema != "public" {
+		fullTable = schema + "." + table
+	}
+
+	// Only discover if cardinality is low (enum-like)
+	query := fmt.Sprintf(
+		`SELECT val FROM (
+		    SELECT %s AS val, COUNT(*) AS cnt
+		    FROM %s
+		    WHERE %s IS NOT NULL AND %s != ''
+		    GROUP BY %s
+		    ORDER BY cnt DESC
+		    LIMIT 21
+		) sub`,
+		column, fullTable, column, column, column,
+	)
+	var vals []string
+	if err := s.Dao.DB().WithContext(ctx).Raw(query).Scan(&vals).Error; err != nil {
+		return nil
+	}
+	// If more than 20 distinct values, it's not enum-like
+	if len(vals) > 20 {
+		return nil
+	}
+	return vals
 }

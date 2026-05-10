@@ -13,7 +13,7 @@ import (
 )
 
 // safeIdentifier validates that a SQL identifier contains only safe characters.
-var safeIdentifierRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.]*$`)
+var SafeIdentifierRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // CatalogDao queries PostgreSQL system catalogs for metadata.
 type CatalogDao struct {
@@ -44,6 +44,9 @@ func (d *CatalogDao) Start(ctx context.Context) error {
 
 func (d *CatalogDao) Stop(ctx context.Context) error { return d.BaseComponent.Stop(ctx) }
 
+// DB returns the underlying gorm.DB for use by service layer queries.
+func (d *CatalogDao) DB() *gorm.DB { return d.db }
+
 // rawTableRow is the scan target for the table listing query.
 type rawTableRow struct {
 	SchemaName   string
@@ -61,7 +64,7 @@ type rawTableRow struct {
 // ListTables queries pg system catalogs for all user tables in the given schemas.
 func (d *CatalogDao) ListTables(ctx context.Context, schemas []string) ([]rawTableRow, error) {
 	if len(schemas) == 0 {
-		schemas = []string{"public", "kg"}
+		schemas = []string{"public", "kg", "security_dev", "security"}
 	}
 
 	query := `
@@ -79,7 +82,7 @@ func (d *CatalogDao) ListTables(ctx context.Context, schemas []string) ([]rawTab
 				SELECT 1 FROM information_schema.columns ic
 				WHERE ic.table_schema = n.nspname
 				  AND ic.table_name = c.relname
-				  AND ic.data_type = 'jsonb'
+				  AND ic.udt_name IN ('jsonb', 'json')
 			) AS has_jsonb,
 			EXISTS (
 				SELECT 1 FROM information_schema.tables it
@@ -127,7 +130,7 @@ func (d *CatalogDao) listTablesSimple(ctx context.Context, schemas []string) ([]
 				SELECT 1 FROM information_schema.columns ic
 				WHERE ic.table_schema = n.nspname
 				  AND ic.table_name = c.relname
-				  AND ic.data_type = 'jsonb'
+				  AND ic.udt_name IN ('jsonb', 'json')
 			) AS has_jsonb,
 			false AS is_hypertable
 		FROM pg_class c
@@ -219,7 +222,7 @@ func (d *CatalogDao) GetTableIndexes(ctx context.Context, schema, table string) 
 		IndexName string
 		IsUnique  bool
 		IndexType string
-		Columns   []string
+		Columns   model.StringArray
 	}
 	var rows []idxRow
 	if err := d.db.WithContext(ctx).Raw(query, schema, table).Scan(&rows).Error; err != nil {
@@ -230,7 +233,7 @@ func (d *CatalogDao) GetTableIndexes(ctx context.Context, schema, table string) 
 	for i, r := range rows {
 		indexes[i] = model.IndexMeta{
 			Name:     r.IndexName,
-			Columns:  r.Columns,
+			Columns:  []string(r.Columns),
 			IsUnique: r.IsUnique,
 			Type:     r.IndexType,
 		}
@@ -243,7 +246,7 @@ func (d *CatalogDao) GetTableIndexes(ctx context.Context, schema, table string) 
 func (d *CatalogDao) GetTimeRange(ctx context.Context, schema, table, column string) (*model.TimeRange, error) {
 	// Validate identifiers to prevent SQL injection
 	for _, id := range []string{schema, table, column} {
-		if !safeIdentifierRe.MatchString(id) {
+		if !SafeIdentifierRe.MatchString(id) {
 			return nil, fmt.Errorf("unsafe identifier: %q", id)
 		}
 	}

@@ -149,6 +149,8 @@ func init() {
 			r.Get("/tables/{schema}/{table}", catalogCtrl.GetTableDetail)
 			r.Get("/storage", catalogCtrl.StorageInfo)
 			r.Get("/graph", catalogCtrl.GraphCatalog)
+			r.Get("/data-dictionary", catalogCtrl.DataDictionary)
+			r.Get("/business-overview", catalogCtrl.BusinessOverview)
 		})
 
 		// ====== Knowledge Graph (KG) ======

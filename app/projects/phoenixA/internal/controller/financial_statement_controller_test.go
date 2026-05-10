@@ -59,7 +59,12 @@ func TestFinancialStatementJSONDeserialization(t *testing.T) {
 
 	// Verify data_json
 	var dataMap map[string]any
-	if err := json.Unmarshal([]byte(rec.DataJSON), &dataMap); err != nil {
+	var raw json.RawMessage = rec.DataJSON
+	var unwrapped string
+	if err := json.Unmarshal(raw, &unwrapped); err == nil {
+		raw = json.RawMessage(unwrapped)
+	}
+	if err := json.Unmarshal(raw, &dataMap); err != nil {
 		t.Fatalf("data_json not valid JSON: %v", err)
 	}
 	if dataMap["TOTAL_ASSETS"] != 5600000000000.0 {
@@ -92,7 +97,7 @@ func TestFinancialStatementFieldMapping(t *testing.T) {
 		AnnDate:         "20240320",
 		ActualAnnDate:   "20240320",
 		CompTypeCode:    2,
-		DataJSON:        `{"TOTAL_ASSETS":1}`,
+		DataJSON:        json.RawMessage(`{"TOTAL_ASSETS":1}`),
 	}
 
 	data, _ := json.Marshal(rec)
@@ -188,7 +193,7 @@ func TestFinancialStatementDataJSONRoundTrip(t *testing.T) {
 		Market:          "zh_a",
 		StatementType:   "balance_sheet",
 		ReportingPeriod: "20231231",
-		DataJSON:        string(dataBytes),
+		DataJSON:        json.RawMessage(dataBytes),
 	}
 
 	wireBytes, _ := json.Marshal(rec)

@@ -54,6 +54,10 @@ func normalizeDateYYYYMMDD(s string) string {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t.Format("2006-01-02")
 	}
+	// try YYYYMMDD (e.g. 20260507)
+	if t, err := time.Parse("20060102", s); err == nil {
+		return t.Format("2006-01-02")
+	}
 	return s
 }
 
