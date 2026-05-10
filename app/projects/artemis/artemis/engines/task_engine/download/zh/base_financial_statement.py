@@ -33,7 +33,7 @@ from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
-from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params, get_sdk_date_kwargs
+from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params, get_sdk_date_kwargs, split_market_code, normalize_date_yyyymmdd, get_code_list_from_phoenixa
 
 
 # Fields extracted as structured DB columns; everything else goes into data_json.
@@ -61,7 +61,6 @@ class BaseFinancialStatementTask(WorkerUnit):
             return
 
         self._info_data = ad.InfoData()
-        self._base_data = ad.BaseData()
 
     def execute(self, ctx):
         from artemis.core.config_manager import cfg_mgr
@@ -71,23 +70,17 @@ class BaseFinancialStatementTask(WorkerUnit):
         os.makedirs(cache_dir, exist_ok=True)
 
         try:
-            # Resolve code_list: explicit symbols or full SDK pull
+            # Resolve code_list: explicit symbols or PhoenixA registry
             explicit_symbols = get_symbols_from_params(ctx)
             if explicit_symbols is not None:
                 code_list = explicit_symbols
                 mode = 'incremental'
             else:
-                calendar = self._base_data.get_calendar()
-                today = calendar[-1]
-                code_list = self._base_data.get_hist_code_list(
-                    security_type='EXTRA_STOCK_A_SH_SZ',
-                    start_date=20130101,
-                    end_date=today,
-                )
+                code_list = get_code_list_from_phoenixa(ctx)
                 mode = 'full'
 
             if not code_list:
-                ctx.fail(f"no valid symbols for {self.STATEMENT_TYPE}", phase='execute')
+                ctx.fail(f"empty code_list for {self.STATEMENT_TYPE} (mode={mode}; check PhoenixA /api/v2/securities)", phase='execute')
                 return None
 
             # Convert our start_date/end_date to SDK begin_date/end_date
@@ -150,8 +143,8 @@ class BaseFinancialStatementTask(WorkerUnit):
             'report_type': _str(row.get('REPORT_TYPE')),
             'statement_code': _str(row.get('STATEMENT_TYPE')),
             'security_name': _str(row.get('SECURITY_NAME')),
-            'ann_date': _str(row.get('ANN_DATE')),
-            'actual_ann_date': _str(row.get('ACTUAL_ANN_DATE')),
+            'ann_date': normalize_date_yyyymmdd(_str(row.get('ANN_DATE'))),
+            'actual_ann_date': normalize_date_yyyymmdd(_str(row.get('ACTUAL_ANN_DATE'))),
             'comp_type_code': _int(row.get('COMP_TYPE_CODE')),
         }
 
@@ -166,12 +159,13 @@ class BaseFinancialStatementTask(WorkerUnit):
                 symbol_val = row.get('MARKET_CODE', '')
                 if pd.isna(symbol_val):
                     continue
-                symbol = str(symbol_val).strip()
+                market_code = str(symbol_val).strip()
+                symbol, market = split_market_code(market_code)
 
                 period_val = row.get('REPORTING_PERIOD', '')
                 if pd.isna(period_val):
                     continue
-                reporting_period = str(period_val).strip()
+                reporting_period = normalize_date_yyyymmdd(str(period_val).strip())
                 if not symbol or not reporting_period:
                     continue
 
@@ -189,13 +183,31 @@ class BaseFinancialStatementTask(WorkerUnit):
                 record = {
                     'source': consts.DataSource.DS_AMAZING_DATA.value,
                     'symbol': symbol,
-                    'market': 'zh_a',
+                    'market': market,
                     'statement_type': self.STATEMENT_TYPE,
                     'reporting_period': reporting_period,
                     'data_json': json.dumps(data_fields, ensure_ascii=False),
                 }
                 record.update(self._get_metadata_overrides(row))
                 processed.append(record)
+
+        # Deduplicate by unique key (last occurrence wins).
+        # SDK may return duplicate rows for the same (symbol, reporting_period, report_type, statement_code).
+        seen = {}
+        for i, rec in enumerate(processed):
+            key = (rec.get('source', ''), rec.get('symbol', ''), rec.get('market', ''),
+                   rec.get('statement_type', ''), rec.get('reporting_period', ''),
+                   rec.get('report_type', ''), rec.get('statement_code', ''))
+            seen[key] = i
+        if len(seen) < len(processed):
+            deduped = [processed[i] for i in sorted(seen.values())]
+            ctx.logger.info({
+                'event': f'{self.STATEMENT_TYPE}_dedup',
+                'before': len(processed),
+                'after': len(deduped),
+                'run_id': ctx.run_id,
+            })
+            processed = deduped
 
         ctx.logger.info({
             'event': f'{self.STATEMENT_TYPE}_post_process_done',

@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 
+from artemis.consts import DeptServices
 from artemis.core import TaskContext
 
 
@@ -92,5 +93,84 @@ def get_sdk_date_kwargs(ctx: TaskContext) -> Dict[str, int]:
                 'expected_format': 'YYYY-MM-DD',
             })
     return result
+
+
+# ─────────── Data Normalization Helpers ───────────
+
+
+def split_market_code(market_code: str) -> tuple:
+    """Split AmazingData MARKET_CODE into (symbol, market).
+
+    "000001.SZ" → ("000001", "zh_a")
+    "600519.SH" → ("600519", "zh_a")
+    "000001"     → ("000001", "zh_a")
+
+    All A-share stocks map to market='zh_a'.
+    """
+    code = str(market_code).strip()
+    if '.' in code:
+        return code.split('.', 1)[0], 'zh_a'
+    return code, 'zh_a'
+
+
+def normalize_date_yyyymmdd(date_str: str) -> str:
+    """Convert YYYYMMDD string to YYYY-MM-DD.
+
+    "20260425"   → "2026-04-25"
+    "2026-04-25" → "2026-04-25"  (pass through)
+    ""           → ""
+    None/NaN     → ""
+    """
+    if not date_str:
+        return ''
+    s = str(date_str).strip()
+    if not s:
+        return ''
+    if len(s) == 10 and s[4] == '-' and s[7] == '-':
+        return s  # already YYYY-MM-DD
+    digits = s.replace('.', '').replace('-', '')
+    if len(digits) == 8 and digits.isdigit():
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    return s  # return as-is if unrecognizable
+
+
+def get_code_list_from_phoenixa(ctx: TaskContext, asset_type: str = "stock", market: str = "zh_a") -> List[str]:
+    """Fetch all security codes from PhoenixA and convert to SDK format.
+
+    Returns code_list in AmazingData format: ["000001.SZ", "600519.SH"]
+    Falls back to empty list on failure.
+    """
+    phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
+    if phoenixA_client is None or not hasattr(phoenixA_client, 'get_securities'):
+        ctx.logger.warning({
+            'event': 'phoenixa_client_unavailable',
+            'run_id': ctx.run_id,
+            'reason': 'client is None or missing get_securities method',
+        })
+        return []
+    try:
+        securities = phoenixA_client.get_securities(
+            asset_type=asset_type,
+            market=market,
+        )
+    except Exception as e:
+        ctx.logger.warning({
+            'event': 'get_code_list_from_phoenixa_failed',
+            'error': str(e),
+            'run_id': ctx.run_id,
+        })
+        return []
+    code_list = []
+    for sym, info in securities.items():
+        exchange = info.get('exchange', '').upper()
+        if sym and exchange:
+            code_list.append(f"{sym}.{exchange}")
+    if not code_list:
+        ctx.logger.warning({
+            'event': 'phoenixa_securities_empty',
+            'run_id': ctx.run_id,
+            'hint': 'PhoenixA registry may be empty or API returned no data',
+        })
+    return code_list
 
 

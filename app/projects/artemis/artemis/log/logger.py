@@ -2,7 +2,9 @@ import json
 import logging
 import logging.handlers
 import os
+import re
 import sys
+import time
 from datetime import datetime
 from typing import Any, Dict
 
@@ -62,28 +64,32 @@ def _apply_config(force: bool = False):
     try:
         cfg = cfg_mgr.logging_config()
     except Exception:
-        # Fallback empty config/defaults, manual construction if needed
-        # but importing LoggingCfg here might be circular. Just use empty values.
         cfg = cfg_mgr.LoggingCfg()
 
     level = getattr(logging, cfg.level.upper(), logging.INFO)
     fmt = cfg.format
     output = cfg.output
     if output == 'file':
-        # Ensure log directory exists
         log_dir = cfg.file_config.dir
         os.makedirs(log_dir, exist_ok=True)
-        # Use TimedRotatingFileHandler with date suffix: artemis.log.YYYYMMDD
         log_file = os.path.join(log_dir, f"{cfg.file_config.filename}.log")
+
+        # Parse max_age to compute backupCount (days to keep)
+        backup_count = _parse_max_age_days(cfg)
+
         handler = logging.handlers.TimedRotatingFileHandler(
             log_file,
             when='midnight',
             interval=1,
-            backupCount=7,  # keep 7 days by default
+            backupCount=backup_count,
             encoding='utf-8'
         )
         handler.suffix = "%Y%m%d"
         handler.namer = lambda name: name if name.endswith('.log') else name
+
+        # Clean up old log files on startup
+        if cfg.rotate_config.cleanup_enabled:
+            _cleanup_old_logs(log_dir, cfg.file_config.filename, backup_count)
     elif output == 'stderr':
         handler = logging.StreamHandler(sys.stderr)
     else:
@@ -99,6 +105,40 @@ def _apply_config(force: bool = False):
     root.setLevel(level)
     _reconfigurable_handler = handler
     _config_applied = True
+
+
+def _parse_max_age_days(cfg) -> int:
+    """Parse rotate_config.max_age (e.g. '72h', '3d', '7d') to backupCount (days)."""
+    max_age = getattr(cfg, 'rotate_config', None)
+    if max_age is None:
+        return 7
+    raw = getattr(max_age, 'max_age', '72h')
+    m = re.match(r'^(\d+)([hd])$', str(raw).strip().lower())
+    if not m:
+        return 7
+    val, unit = int(m.group(1)), m.group(2)
+    if unit == 'h':
+        return max(1, val // 24)
+    return max(1, val)
+
+
+def _cleanup_old_logs(log_dir: str, base_name: str, keep_days: int):
+    """Delete rotated log files older than keep_days on startup."""
+    now = time.time()
+    cutoff = now - (keep_days * 86400)
+    pattern = re.compile(re.escape(base_name) + r'\.log\.\d{8}$')
+    try:
+        for fname in os.listdir(log_dir):
+            if not pattern.match(fname):
+                continue
+            fpath = os.path.join(log_dir, fname)
+            try:
+                if os.path.getmtime(fpath) < cutoff:
+                    os.remove(fpath)
+            except OSError:
+                pass
+    except OSError:
+        pass
 
 _apply_config()
 
