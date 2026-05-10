@@ -58,9 +58,9 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: null     # "YYYY-MM-DD" 或 null（不限）
-          end_date: null       # "YYYY-MM-DD" 或 null（不限）
-          # index_codes: null  # string[]，行业指数代码（SDK格式），如 ["851426.SI"]
+          start_date: "2026-01-01"     # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-05-01"       # "YYYY-MM-DD" 或 null（不限）
+          index_codes: ["851426.SI"]  # string[]，行业指数代码（SDK格式），如 ["851426.SI"]
 
   STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD:
     variants:
@@ -73,58 +73,81 @@ tasks:
         config: {}
 
   # Financial Statements
-  # symbols + exchange: 指定股票代码和交易所，缺省则全量下载
+  # SDK: AmazingData InfoData (get_balance_sheet / get_cash_flow / get_income / get_profit_express / get_profit_notice)
+  # 所有接口均支持 code_list 批量下载
+  # symbols: 纯代码格式（如 "000001"），缺省则全量下载；exchange 指定交易所
   # start_date/end_date: YYYY-MM-DD，对应 SDK 的报告期范围
+  # 增量模式: 指定 symbols + exchange + 日期范围
+  # 全量模式: 不指定 symbols，SDK 自动获取全部 A 股列表
   STOCK_ZH_A_BALANCE_SHEET:
     variants:
       - match: {}
         config:
-          start_date: null
-          end_date: null
+          start_date: "2026-01-01"     # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-05-01"       # "YYYY-MM-DD" 或 null（不限）
+          symbols: ["000001"]
+          exchange : "SZ"
 
   STOCK_ZH_A_CASH_FLOW:
     variants:
       - match: {}
         config:
-          start_date: null
-          end_date: null
+          start_date: "2026-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-06-01"               # "YYYY-MM-DD" 或 null（不限）
+          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_INCOME:
     variants:
       - match: {}
         config:
-          start_date: null
-          end_date: null
+          start_date: "2025-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
+          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_PROFIT_EXPRESS:
     variants:
       - match: {}
         config:
-          start_date: null
-          end_date: null
+          start_date: "2026-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
+          # symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          # exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_PROFIT_NOTICE:
     variants:
       - match: {}
         config:
-          start_date: null
-          end_date: null
+          start_date: "2026-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
+          # symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          # exchange: "SZ"             # 与 symbols 配合使用
 
   # Corporate Actions
+  # SDK: AmazingData InfoData.get_dividend / get_right_issue
+  # 支持 code_list 批量下载
+  # symbols: 纯代码格式（如 "000001"），缺省则全量下载；exchange 指定交易所
   # start_date/end_date: YYYY-MM-DD，对应 SDK 的公告日期范围
+  # 增量模式: 指定 symbols + exchange + 日期范围
+  # 全量模式: 不指定 symbols，SDK 自动获取全部 A 股列表
   STOCK_ZH_A_DIVIDEND:
     variants:
       - match: {}
         config:
-          start_date: null
-          end_date: null
+          start_date: "2026-01-01"              # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-05-01"
+          symbols: ["000001"]                   # 纯代码格式，缺省则全量下载
+          exchange: "SZ"                        # 与 symbols 配合使用（SH/SZ/BJ）
 
   STOCK_ZH_A_RIGHT_ISSUE:
     variants:
       - match: {}
         config:
-          start_date: null
-          end_date: null
+          start_date: "2025-01-01"                     # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-05-01"                    # "YYYY-MM-DD" 或 null（不限）
+          symbols: ["000713"]                 # 纯代码格式，缺省则全量下载
+          exchange: "SZ"                      # 与 symbols 配合使用
 
   BACKTRADER_CAMPAIGN:
     variants:

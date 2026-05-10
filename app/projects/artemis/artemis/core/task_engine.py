@@ -128,8 +128,27 @@ class TaskEngine:
         run_id = ctx.run_id
         cancel_event = self._register_task(run_id)
 
+        # Capture current OTEL trace context for propagation to async threads
+        otel_context = None
+        try:
+            from opentelemetry import context as otel_ctx
+            otel_context = otel_ctx.get_current()
+        except ImportError:
+            pass
+
         def _execute_with_tracking(async_mode: bool):
             try:
+                # Restore OTEL context in the new thread so trace_id appears in logs
+                if otel_context is not None:
+                    try:
+                        from opentelemetry import context as otel_ctx
+                        token = otel_ctx.attach(otel_context)
+                        try:
+                            return self._execute(ctx, async_mode=async_mode, cancel_event=cancel_event)
+                        finally:
+                            otel_ctx.detach(token)
+                    except Exception:
+                        pass
                 return self._execute(ctx, async_mode=async_mode, cancel_event=cancel_event)
             finally:
                 self._unregister_task(run_id)
