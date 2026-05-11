@@ -1,7 +1,62 @@
 # VERSION
-1.13.0
+1.14.0
 
 # Changelog
+- 1.14.0
+    - **Factor Engine Data Provider — PhoenixA Integration** — connects factor engine to PhoenixA data services
+        - New provider: `PhoenixADataProvider` in Artemis — implements `FactorDataProvider` protocol using PhoenixA HTTP APIs
+        - New API method: `GET /api/v2/taxonomy/by_security/{symbol}` — returns all taxonomy mappings for a security (for industry classification)
+        - Extended financial query API: added `ann_date_before` and `reporting_periods` parameters for PIT filtering and TTM calculations
+        - Updated factor_service.py to use PhoenixA provider (fallback to mock if PhoenixA unavailable)
+        - Fixed PhoenixAClient initialization: now reads from `dept_services.phoenixA` config instead of hardcoded URL
+    - **Factor Engine Data Contract** — formal contract between Artemis factor engine and PhoenixA
+        - New doc: `docs/2026-05-11 FACTOR_ENGINE_DATA_CONTRACT.md` — defines data mapping, field semantics, API integration, and factor coverage matrix
+        - Documents PIT filtering rules, TTM calculation requirements, and market cap derivation (close × TOT_SHARE)
+        - Covers all 7 factor categories (profitability, growth, quality, solvency, valuation, efficiency, per-share) with 36 total factors
+    - **Industry Classification Extensibility** — supports multiple taxonomy systems
+        - `get_industry_map()` now accepts flexible taxonomy parameter (sw_l1, sw_l2, sw_l3, citics, etc.)
+        - Auto-detects source from taxonomy name for extensibility
+    - **SDK Download Task Onboarding: Factor Engine Contract Update** — ensures new data sources are documented for factor engine usage
+        - New section: **阶段 6.5：Factor Engine 数据契约更新** in SDK_DOWNLOAD_TASK_ONBOARDING.md
+        - Defines when and how to update FACTOR_ENGINE_DATA_CONTRACT.md when adding new download tasks
+        - Includes field mapping format, factor coverage matrix updates, and API endpoint documentation
+        - Provides ESG data example for contract updates
+    - **Backlog: Derived Data Storage** — records requirements for storing computed data
+        - New doc: `docs/BACKLOG_DATA_DERIVED_STORAGE.md`
+        - Documents market cap calculation requirement (close × TOT_SHARE)
+        - Lists considerations for future derived data: PE, PB, technical indicators
+        - Outlines design factors: dependency management, compute nodes, incremental updates, data consistency, storage design
+    - **Comprehensive Testing** — unit and integration tests for PhoenixADataProvider
+        - New test file: `artemis/tests/test_phoenixa_factor_provider.py`
+        - Tests all FactorDataProvider methods: get_active_symbols, get_industry_map, get_financial_data, get_market_data, get_current_period
+        - Tests PIT filtering, TTM calculation, caching behavior, data JSON expansion, taxonomy extensibility
+        - Uses mocks for unit tests (no PhoenixA dependency)
+- 1.13.1
+    - **Factor Engine Data Provider — PhoenixA Integration** — connects factor engine to PhoenixA data services
+        - New provider: `PhoenixADataProvider` in Artemis — implements `FactorDataProvider` protocol using PhoenixA HTTP APIs
+        - New API method: `GET /api/v2/taxonomy/by_security/{symbol}` — returns all taxonomy mappings for a security (for industry classification)
+        - Extended financial query API: added `ann_date_before` and `reporting_periods` parameters for PIT filtering and TTM calculations
+        - Updated factor_service.py to use PhoenixA provider (fallback to mock if PhoenixA unavailable)
+    - **Factor Engine Data Contract** — formal contract between Artemis factor engine and PhoenixA
+        - New doc: `docs/2026-05-11 FACTOR_ENGINE_DATA_CONTRACT.md` — defines data mapping, field semantics, API integration, and factor coverage matrix
+        - Documents PIT filtering rules, TTM calculation requirements, and market cap derivation (close × TOT_SHARE)
+        - Covers all 7 factor categories (profitability, growth, quality, solvency, valuation, efficiency, per-share) with 36 total factors
+    - **SDK Download Task Onboarding: Factor Engine Contract Update** — ensures new data sources are documented for factor engine usage
+        - New section: **阶段 6.5：Factor Engine 数据契约更新** in SDK_DOWNLOAD_TASK_ONBOARDING.md
+        - Defines when and how to update FACTOR_ENGINE_DATA_CONTRACT.md when adding new download tasks
+        - Includes field mapping format, factor coverage matrix updates, and API endpoint documentation
+        - Provides ESG data example for contract updates
+- 1.13.1
+    - **Financial API: PIT + Multi-Period Query** — for factor engine data access
+        - New parameter: `ann_date_before` on financial statement and corporate action query APIs — Point-in-Time filter to avoid look-ahead bias
+        - New parameter: `reporting_periods` on financial statement query API — batch multi-period query (comma-separated) for TTM calculations
+    - **Catalog Cache Refresh** — VACUUM ANALYZE on manual refresh only
+        - Clicking "Refresh" button now runs `VACUUM ANALYZE` before querying pg_stat (ensures accurate row counts and sizes after data changes)
+        - Page load uses cached data — no expensive ANALYZE on every visit
+    - **Design Docs** — Redis ROI analysis and factor engine data gap analysis
+        - `docs/2026-05-11 REDIS_USAGE_ANALYSIS.md` — Redis usage evaluation for PhoenixA (conclusion: not needed for single-instance)
+        - `docs/2026-05-11 FACTOR_ENGINE_DATA_DESIGN.md` — factor data requirements vs API supply, gap analysis (all gaps resolved)
+        - Discovered: balance_sheet.data_json already contains TOT_SHARE (total shares), enabling market cap calculation via close_price × TOT_SHARE
 - 1.13.0
     - **Business-Level Data Visibility** — comprehensive business metadata in data catalog
         - New endpoint: `GET /api/v2/catalog/business-overview` — domain-grouped view with API endpoints, example calls, cross-references

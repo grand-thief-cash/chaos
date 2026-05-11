@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -72,10 +73,14 @@ func (c *FinancialStatementController) Query(w http.ResponseWriter, r *http.Requ
 		Market:        q.Get("market"),
 		PeriodStart:   q.Get("period_start"),
 		PeriodEnd:     q.Get("period_end"),
+		AnnDateBefore: q.Get("ann_date_before"),
 		ReportType:    q.Get("report_type"),
 	}
 	if v := q.Get("reporting_period"); v != "" {
 		f.ReportingPeriod = v
+	}
+	if v := q.Get("reporting_periods"); v != "" {
+		f.ReportingPeriods = strings.Split(v, ",")
 	}
 	if v := q.Get("comp_type_code"); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
