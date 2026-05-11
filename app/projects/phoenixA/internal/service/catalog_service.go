@@ -262,6 +262,106 @@ var domainDescriptions = map[string]string{
 	"other":     "其他",
 }
 
+// ─── Data Capability Registry ───
+// Describes what each table/domain can PROVIDE, for LLM function-calling discovery.
+// When a new download task is onboarded, add its capability here.
+
+var tableCapabilityRegistry = map[string]*model.DataCapability{
+	"financial_statement": {
+		Provider:            "财务报表",
+		ProviderDescription: "上市公司财务报表数据，包含资产负债表、利润表、现金流量表、业绩快报、业绩预告、以及偿债能力指标。数据按 (source, statement_type) 分区存储，支持 PIT（时间点）查询。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "balance_sheet", Label: "资产负债表", Description: "季度/年度资产负债表，含总资产、总负债、股东权益等", Source: "amazing_data"},
+			{TypeValue: "income", Label: "利润表", Description: "季度/年度利润表，含营收、净利润、EPS等", Source: "amazing_data"},
+			{TypeValue: "cashflow", Label: "现金流量表", Description: "季度/年度现金流量表，含经营/投资/筹资活动现金流", Source: "amazing_data"},
+			{TypeValue: "profit_express", Label: "业绩快报", Description: "上市公司业绩快报数据", Source: "amazing_data"},
+			{TypeValue: "profit_notice", Label: "业绩预告", Description: "上市公司业绩预告，含预告类型和预计利润范围", Source: "amazing_data"},
+			{TypeValue: "bs_balance", Label: "偿债能力指标(baostock)", Description: "季频偿债能力数据：流动比率、速动比率、现金比率、资产负债率、权益乘数等", Source: "baostock"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
+			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data/baostock）"},
+			{Name: "statement_type", Type: "varchar(32)", Description: "报表类型"},
+			{Name: "reporting_period", Type: "varchar(10)", Description: "报告期（YYYY-MM-DD）"},
+			{Name: "data_json", Type: "jsonb", Description: "业务数据字段（JSONB），内容因 statement_type 而异", InJSONB: true},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data", "baostock"}},
+			{Name: "statement_type", Type: "string", Required: true, Description: "报表类型", Enum: []string{"balance_sheet", "income", "cashflow", "profit_express", "profit_notice", "bs_balance"}},
+			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+			{Name: "period_start", Type: "string", Required: false, Description: "报告期起始（YYYY-MM-DD）"},
+			{Name: "period_end", Type: "string", Required: false, Description: "报告期截止（YYYY-MM-DD）"},
+			{Name: "ann_date_before", Type: "string", Required: false, Description: "PIT查询：仅返回公告日<=此日期的记录"},
+		},
+		RefreshSchedule:     "每日增量",
+		CoverageDescription: "A股全量上市公司，2007至今（baostock偿债能力）/ 历史全量（AmazingData三表）",
+	},
+	"corporate_action": {
+		Provider:            "公司行为",
+		ProviderDescription: "上市公司分红、配股、除权除息等公司行为数据。支持多数据来源（AmazingData/baostock），按 (source, action_type) 分区存储。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "dividend", Label: "分红(AmazingData)", Description: "现金分红数据，含每股派息、分红进度等", Source: "amazing_data"},
+			{TypeValue: "right_issue", Label: "配股(AmazingData)", Description: "配股数据，含配股比例、配股价格等", Source: "amazing_data"},
+			{TypeValue: "bs_dividend", Label: "除权除息(baostock)", Description: "除权除息详细数据：税前/税后每股股利、每股红股、每股转增资本、各关键日期", Source: "baostock"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
+			{Name: "market", Type: "varchar(16)", Description: "市场标识"},
+			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data/baostock）"},
+			{Name: "action_type", Type: "varchar(32)", Description: "行为类型"},
+			{Name: "ann_date", Type: "varchar(10)", Description: "公告日期（YYYY-MM-DD）"},
+			{Name: "report_period", Type: "varchar(10)", Description: "报告年度"},
+			{Name: "data_json", Type: "jsonb", Description: "详细数据字段（JSONB）", InJSONB: true},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data", "baostock"}},
+			{Name: "action_type", Type: "string", Required: true, Description: "行为类型", Enum: []string{"dividend", "right_issue", "bs_dividend"}},
+			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+		},
+		RefreshSchedule:     "每日增量",
+		CoverageDescription: "A股全量，2015至今（baostock除权除息）/ 历史全量（AmazingData分红配股）",
+	},
+	"bars_": {
+		Provider:            "K线行情",
+		ProviderDescription: "股票/指数/ETF的OHLCV行情数据，支持日/周/月/分钟级别，前复权/后复权/不复权。附带估值指标扩展数据（PE/PB/PS/PCF/换手率）。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "daily_nf", Label: "日K线（不复权）", Description: "日频OHLCV + 估值指标"},
+			{TypeValue: "daily_hfq", Label: "日K线（后复权）", Description: "日频OHLCV后复权 + 估值指标"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "trade_date", Type: "varchar(10)", Description: "交易日期（YYYY-MM-DD）"},
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
+			{Name: "open/high/low/close", Type: "numeric", Description: "OHLC价格"},
+			{Name: "volume", Type: "bigint", Description: "成交量"},
+			{Name: "amount", Type: "bigint", Description: "成交额"},
+			{Name: "pct_chg", Type: "numeric", Description: "涨跌幅(%)"},
+			{Name: "pe_ttm/pb_mrq/ps_ttm", Type: "numeric", Description: "估值指标（扩展表）", InJSONB: false},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "symbol", Type: "string", Required: true, Description: "证券代码"},
+			{Name: "start_date", Type: "string", Required: false, Description: "起始日期"},
+			{Name: "end_date", Type: "string", Required: false, Description: "截止日期"},
+		},
+		RefreshSchedule:     "每日增量（交易日18:00后）",
+		CoverageDescription: "A股全量（SH/SZ/BJ），2009至今（后复权）/ 2016至今（不复权）",
+	},
+	"security_registry": {
+		Provider:            "证券注册表",
+		ProviderDescription: "统一的证券基础信息注册表，包含代码、名称、市场、上市日期、资产类型等。是所有其他数据表通过 symbol 字段关联的核心维度表。",
+		OutputFields: []model.FieldDesc{
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
+			{Name: "name", Type: "varchar(128)", Description: "证券名称"},
+			{Name: "exchange", Type: "varchar(16)", Description: "交易所（SH/SZ/BJ）"},
+			{Name: "asset_type", Type: "varchar(16)", Description: "资产类型（stock/index/etf）"},
+			{Name: "market", Type: "varchar(16)", Description: "市场（zh_a/hk/us）"},
+			{Name: "list_date", Type: "varchar(10)", Description: "上市日期"},
+		},
+		RefreshSchedule:     "每日全量",
+		CoverageDescription: "A股全量（SH+SZ+BJ），含退市标记",
+	},
+}
+
 // ─── Business API Registry ───
 
 // tableApiMap maps table names/prefixes to their API endpoints.
@@ -391,6 +491,118 @@ func (s *CatalogService) resolveDomainMeta(domain string) (examples []model.Exam
 		return info.ExampleCalls, info.CrossRefs, info.Description
 	}
 	return nil, nil, ""
+}
+
+// resolveCapability finds the capability description for a table using exact/prefix matching.
+func (s *CatalogService) resolveCapability(table string) *model.DataCapability {
+	if cap, ok := tableCapabilityRegistry[table]; ok {
+		return cap
+	}
+	for prefix, cap := range tableCapabilityRegistry {
+		if strings.HasSuffix(prefix, "_") && strings.HasPrefix(table, prefix) {
+			return cap
+		}
+	}
+	return nil
+}
+
+// queryDataSources returns per-source statistics for a table.
+// Only works for tables that have a "source" column.
+func (s *CatalogService) queryDataSources(ctx context.Context, schema, table, timeColumn string) []model.DataSourceSummary {
+	fullTable := table
+	if schema != "" && schema != "public" {
+		fullTable = schema + "." + table
+	}
+	// Validate identifiers
+	for _, id := range []string{schema, table} {
+		if id != "" && !dao.SafeIdentifierRe.MatchString(id) {
+			return nil
+		}
+	}
+
+	// Check if table has "source" and "symbol" columns
+	type colCheck struct {
+		ColName string
+	}
+	var foundCols []colCheck
+	checkQ := fmt.Sprintf(
+		`SELECT column_name AS col_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' AND column_name IN ('source', 'symbol')`,
+		schema, table,
+	)
+	if err := s.Dao.DB().WithContext(ctx).Raw(checkQ).Scan(&foundCols).Error; err != nil {
+		return nil
+	}
+	hasSource, hasSymbol := false, false
+	for _, c := range foundCols {
+		if c.ColName == "source" {
+			hasSource = true
+		}
+		if c.ColName == "symbol" {
+			hasSymbol = true
+		}
+	}
+	if !hasSource {
+		return nil
+	}
+
+	type sourceRow struct {
+		Source        string
+		RowCount      int64
+		DistinctCodes int
+		MinDate       string
+		MaxDate       string
+	}
+
+	var rows []sourceRow
+	var query string
+
+	distinctExpr := "0"
+	if hasSymbol {
+		distinctExpr = "COUNT(DISTINCT symbol)"
+	}
+
+	if timeColumn != "" && dao.SafeIdentifierRe.MatchString(timeColumn) {
+		query = fmt.Sprintf(
+			`SELECT source,
+			        COUNT(*) AS row_count,
+			        %s AS distinct_codes,
+			        MIN(%s)::text AS min_date,
+			        MAX(%s)::text AS max_date
+			 FROM %s
+			 GROUP BY source
+			 ORDER BY row_count DESC`,
+			distinctExpr, timeColumn, timeColumn, fullTable,
+		)
+	} else {
+		query = fmt.Sprintf(
+			`SELECT source,
+			        COUNT(*) AS row_count,
+			        %s AS distinct_codes,
+			        '' AS min_date,
+			        '' AS max_date
+			 FROM %s
+			 GROUP BY source
+			 ORDER BY row_count DESC`,
+			distinctExpr, fullTable,
+		)
+	}
+
+	if err := s.Dao.DB().WithContext(ctx).Raw(query).Scan(&rows).Error; err != nil {
+		logging.Warnf(ctx, "catalog: query data sources for %s failed: %v", fullTable, err)
+		return nil
+	}
+
+	result := make([]model.DataSourceSummary, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, model.DataSourceSummary{
+			Source:        r.Source,
+			RowCount:      r.RowCount,
+			DistinctCodes: r.DistinctCodes,
+			MinDate:       r.MinDate,
+			MaxDate:       r.MaxDate,
+		})
+	}
+	return result
 }
 
 func (s *CatalogService) listTablesInDomain(tables []model.TableCatalogEntry, domain string) []string {
@@ -997,6 +1209,12 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 		entry.ExampleCalls = exCalls
 		entry.RelatedTables = xRefs
 
+		// Enhanced: attach capability metadata
+		entry.Capability = s.resolveCapability(t.TableName)
+
+		// Enhanced: attach per-source statistics
+		entry.DataSources = s.queryDataSources(ctx, t.Schema, t.TableName, meta.TimeColumn)
+
 		if meta.TimeColumn != "" && entry.TimeRange == nil {
 			tr, trErr := s.Dao.GetTimeRange(ctx, t.Schema, t.TableName, meta.TimeColumn)
 			if trErr == nil && tr != nil {
@@ -1146,3 +1364,70 @@ func (s *CatalogService) discoverEnumValues(ctx context.Context, schema, table, 
 	}
 	return vals
 }
+
+// GetCapabilities returns a lightweight LLM-optimized view of data availability.
+// Unlike the full data-dictionary, this only includes capability/availability info —
+// designed for LLM function-call tool registration (smaller payload).
+func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*model.DataCapabilities, error) {
+	tables, _, err := s.getTables(ctx, refresh)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group tables by domain
+	domainTables := map[string][]model.TableCatalogEntry{}
+	for _, t := range tables {
+		domainTables[t.Domain] = append(domainTables[t.Domain], t)
+	}
+
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "strategy", "kg", "factor", "regime", "other"}
+	var capabilities []model.DomainCapability
+
+	for _, d := range domainOrder {
+		ts, ok := domainTables[d]
+		if !ok || len(ts) == 0 {
+			continue
+		}
+
+		var tableCaps []model.TableCapability
+		for _, t := range ts {
+			meta := s.findMeta(t.Schema, t.TableName)
+			cap := s.resolveCapability(t.TableName)
+			sources := s.queryDataSources(ctx, t.Schema, t.TableName, meta.TimeColumn)
+
+			tc := model.TableCapability{
+				Schema:      t.Schema,
+				TableName:   t.TableName,
+				Description: t.Description,
+				RowCount:    t.RowCount,
+				TimeRange:   t.TimeRange,
+				DataSources: sources,
+				Capability:  cap,
+			}
+
+			// Get time range if not already set
+			if meta.TimeColumn != "" && tc.TimeRange == nil {
+				tr, trErr := s.Dao.GetTimeRange(ctx, t.Schema, t.TableName, meta.TimeColumn)
+				if trErr == nil && tr != nil {
+					tc.TimeRange = tr
+				}
+			}
+
+			tableCaps = append(tableCaps, tc)
+		}
+
+		info, _ := domainApiRegistry[d]
+		capabilities = append(capabilities, model.DomainCapability{
+			Domain:      d,
+			Label:       domainDescriptions[d],
+			Description: info.Description,
+			Tables:      tableCaps,
+		})
+	}
+
+	return &model.DataCapabilities{
+		GeneratedAt:  time.Now(),
+		Capabilities: capabilities,
+	}, nil
+}
+
