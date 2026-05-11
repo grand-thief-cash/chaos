@@ -10,6 +10,8 @@ from artemis.engines.task_engine.download.zh import (
     StockZHAMktCategoryMairui, StockZHAMarketCategorySWHY,
     StockZHAIndustryWeightSWHY, StockZHAIndustryWeightSWHYChild,
     StockZHAIndustryDailySWHY, StockZHAIndustryDailySWHYChild,
+    StockZhABsBalanceParent, StockZhABsBalanceChild,
+    StockZhABsDividendParent, StockZhABsDividendChild,
 )
 from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 from artemis.engines.task_engine.download.zh.stock_zh_a_industry_constituent_swhy import StockZHAIndustryConstituentSWHY
@@ -123,6 +125,30 @@ registry.register(
     TaskCode.STOCK_ZH_A_RIGHT_ISSUE,
     module=StockZHARightIssue.__module__,
     class_name=StockZHARightIssue.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_BS_BALANCE_PARENT,
+    module=StockZhABsBalanceParent.__module__,
+    class_name=StockZhABsBalanceParent.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_BS_BALANCE_CHILD,
+    module=StockZhABsBalanceChild.__module__,
+    class_name=StockZhABsBalanceChild.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_BS_DIVIDEND_PARENT,
+    module=StockZhABsDividendParent.__module__,
+    class_name=StockZhABsDividendParent.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_BS_DIVIDEND_CHILD,
+    module=StockZhABsDividendChild.__module__,
+    class_name=StockZhABsDividendChild.__name__,
 )
 
 registry.register(
