@@ -1,7 +1,29 @@
 # VERSION
-- v0.30.0
+- v0.31.0
 
 # Changelog
+- v0.31.0
+    - **Baostock quarterly solvency data download** (query_balance_data)
+        - New tasks: `STOCK_ZH_A_BS_BALANCE_PARENT` / `STOCK_ZH_A_BS_BALANCE_CHILD` — plan/child mode, per-symbol per-(year,quarter)
+        - Parent: fetches symbol list from PhoenixA, expands start_date/end_date into (year, quarter) matrix
+        - Child: calls `bs.query_balance_data(code, year, quarter)`, converts to financial_statement format (statement_type="bs_balance")
+        - Data fields: currentRatio, quickRatio, cashRatio, YOYLiability, liabilityToAsset, assetToEquity
+        - Reuses `financial_statement` table with source="baostock"
+    - **Baostock ex-rights/dividends data download** (query_dividend_data)
+        - New tasks: `STOCK_ZH_A_BS_DIVIDEND_PARENT` / `STOCK_ZH_A_BS_DIVIDEND_CHILD` — plan/child mode, per-symbol per-year
+        - Parent: expands start_date/end_date into year list, supports year_type param ("report"/"operate")
+        - Child: calls `bs.query_dividend_data(code, year, yearType)`, converts to corporate_action format (action_type="bs_dividend")
+        - Data fields: dividCashPsBeforeTax, dividCashPsAfterTax, dividStocksPs, dividReserveToStockPs, key dates
+        - Auto-derives progress_code: implemented/announced/planned
+        - Post-process dedup by (source, symbol, market, action_type, ann_date)
+        - Reuses `corporate_action` table with source="baostock"
+    - **New utility functions** (download/zh/utils.py)
+        - `date_range_to_year_quarters()`: YYYY-MM-DD date range → (year, quarter) list
+        - `symbol_exchange_to_bs_code()`: (symbol, exchange) → baostock code format (e.g. "sh.600000")
+    - **CronJob config**: `tasks_export_2026-05-11.json`
+        - `stock_zh_a_bs_balance`: weekly SAT 09:30, ASYNC, 60min timeout
+        - `stock_zh_a_bs_dividend`: weekly SAT 11:00, ASYNC, 60min timeout
+    - **Unit tests**: `test_baostock_tasks.py` — 30 tests covering utils, balance child post_process, dividend child post_process
 - v0.30.0
     - Implemented phoenixA provider.
     - Upgraded akshare version.

@@ -1,0 +1,48 @@
+{
+  "exported_at": "2026-05-11T16:00:00Z",
+  "version": "1.0",
+  "description": "Baostock 偿债能力 + 除权除息 下载任务 (plan/child 模式)",
+  "tasks": [
+    {
+      "name": "stock_zh_a_bs_balance",
+      "description": "下载沪深A股季频偿债能力数据（baostock query_balance_data）— plan/child 模式，Parent 展开 symbol × (year,quarter)",
+      "cron_expr": "0 30 9 ? * SAT",
+      "timezone": "Asia/Shanghai",
+      "target_service": "artemis",
+      "target_path": "/tasks/run/STOCK_ZH_A_BS_BALANCE_PARENT",
+      "method": "POST",
+      "body_template": "{}",
+      "headers_json": "{}",
+      "exec_type": "ASYNC",
+      "callback_method": "POST",
+      "callback_timeout_sec": 3600,
+      "concurrency_policy": "SKIP",
+      "max_concurrency": 1,
+      "overlap_action": "SKIP",
+      "failure_action": "RUN_NEW",
+      "retry_policy_json": "{\"max_attempts\": 2, \"initial_backoff\": \"120s\"}",
+      "status": "ENABLED"
+    },
+    {
+      "name": "stock_zh_a_bs_dividend",
+      "description": "下载沪深A股除权除息数据（baostock query_dividend_data）— plan/child 模式，Parent 展开 symbol × year",
+      "cron_expr": "0 0 11 ? * SAT",
+      "timezone": "Asia/Shanghai",
+      "target_service": "artemis",
+      "target_path": "/tasks/run/STOCK_ZH_A_BS_DIVIDEND_PARENT",
+      "method": "POST",
+      "body_template": "{}",
+      "headers_json": "{}",
+      "exec_type": "ASYNC",
+      "callback_method": "POST",
+      "callback_timeout_sec": 3600,
+      "concurrency_policy": "SKIP",
+      "max_concurrency": 1,
+      "overlap_action": "SKIP",
+      "failure_action": "RUN_NEW",
+      "retry_policy_json": "{\"max_attempts\": 2, \"initial_backoff\": \"120s\"}",
+      "status": "ENABLED"
+    }
+  ]
+}
+
