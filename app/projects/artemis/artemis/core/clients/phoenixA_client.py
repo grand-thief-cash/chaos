@@ -583,10 +583,18 @@ class PhoenixAClient(HTTPDeptServiceClient):
         symbol: str = "",
         period_start: str = "",
         period_end: str = "",
+        ann_date_before: str = "",
+        reporting_periods: Optional[List[str]] = None,
+        report_type: str = "",
+        comp_type_code: Optional[int] = None,
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
-        """Query financial statements via v2 API."""
+        """Query financial statements via v2 API.
+
+        Supports PIT filtering (ann_date_before) and batch period queries (reporting_periods)
+        for factor engine TTM calculations.
+        """
         path = f"/api/v2/financial/{source}/{statement_type}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
         if symbol:
@@ -595,6 +603,14 @@ class PhoenixAClient(HTTPDeptServiceClient):
             params["period_start"] = period_start
         if period_end:
             params["period_end"] = period_end
+        if ann_date_before:
+            params["ann_date_before"] = ann_date_before
+        if reporting_periods:
+            params["reporting_periods"] = ",".join(reporting_periods)
+        if report_type:
+            params["report_type"] = report_type
+        if comp_type_code is not None:
+            params["comp_type_code"] = str(comp_type_code)
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
@@ -798,6 +814,34 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 self.logger.error({
                     'event': 'phoenixA_query_constituents_by_stock_failed',
                     'con_code': con_code,
+                    'error': str(e),
+                })
+            return []
+
+    # ──────────── Taxonomy Mappings (for factor engine) ────────────
+
+    def get_taxonomy_by_security(self, symbol: str) -> List[Dict[str, Any]]:
+        """Query all taxonomy mappings for a security via v2 API.
+
+        Returns list of TaxonomySecurityMap entries with fields:
+        - source, taxonomy, category_code, symbol, asset_type, market
+
+        For factor engine: use category_code from first sw_l1 entry.
+        """
+        path = f"/api/v2/taxonomy/by_security/{symbol}"
+        try:
+            resp = self.get(path, {})
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                if isinstance(data, list):
+                    return data
+                return []
+            return []
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_taxonomy_by_security_failed',
+                    'symbol': symbol,
                     'error': str(e),
                 })
             return []
