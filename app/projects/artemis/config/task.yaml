@@ -149,6 +149,43 @@ tasks:
           symbols: ["000001"]                 # 纯代码格式，缺省则全量下载
           exchange: "SZ"                      # 与 symbols 配合使用
 
+  # Baostock 季频偿债能力
+  # SDK: baostock query_balance_data(code, year, quarter)
+  # 单 symbol 查询 → plan/child 模式
+  # start_date/end_date 展开为 (year, quarter) 序列
+  STOCK_ZH_A_BS_BALANCE_PARENT:
+    variants:
+      - match: {}
+        config:
+          start_date: "2020-01-01"
+          end_date: "2026-05-01"
+          exchange: "SH,SZ"
+          # symbol_list: "000001,600000"     # 逗号分隔，缺省则全量
+
+  STOCK_ZH_A_BS_BALANCE_CHILD:
+    variants:
+      - match: {}
+        config: {}
+
+  # Baostock 除权除息信息
+  # SDK: baostock query_dividend_data(code, year, yearType)
+  # 单 symbol 查询 → plan/child 模式
+  # start_date/end_date 展开为 year 列表
+  STOCK_ZH_A_BS_DIVIDEND_PARENT:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: "2026-05-01"
+          year_type: "report"                # "report"=预案公告年 / "operate"=除权除息年
+          exchange: "SH,SZ"
+          # symbol_list: "000001,600000"
+
+  STOCK_ZH_A_BS_DIVIDEND_CHILD:
+    variants:
+      - match: {}
+        config: {}
+
   BACKTRADER_CAMPAIGN:
     variants:
       - match: { mode: "historical" }
