@@ -112,3 +112,19 @@ func (c *CatalogController) BusinessOverview(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusOK, overview)
 }
+
+// GET /api/v2/catalog/capabilities
+// Returns a lightweight LLM-optimized view of data availability and capabilities.
+// Designed for LLM function-call tool registration — smaller payload than data-dictionary.
+// When new download tasks are onboarded, their capability is auto-reflected here
+// via the tableCapabilityRegistry + per-source DB stats.
+func (c *CatalogController) Capabilities(w http.ResponseWriter, r *http.Request) {
+	refresh := r.URL.Query().Get("refresh") == "true"
+	caps, err := c.Svc.GetCapabilities(r.Context(), refresh)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, caps)
+}
+

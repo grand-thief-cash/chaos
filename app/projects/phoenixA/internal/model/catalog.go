@@ -223,6 +223,91 @@ type TableDictionaryEntry struct {
 	ApiEndpoints  []ApiEndpointRef   `json:"api_endpoints,omitempty"`
 	ExampleCalls  []ExampleCall      `json:"example_calls,omitempty"`
 	RelatedTables []CrossRef         `json:"related_tables,omitempty"`
+	// Enhanced: per-source statistics (auto-discovered from DB)
+	DataSources []DataSourceSummary `json:"data_sources,omitempty"`
+	// Enhanced: capability description for LLM function-calling
+	Capability *DataCapability `json:"capability,omitempty"`
+}
+
+// DataSourceSummary describes per-source statistics for a table.
+// Auto-populated by querying GROUP BY source.
+type DataSourceSummary struct {
+	Source        string `json:"source"`
+	RowCount      int64  `json:"row_count"`
+	DistinctCodes int    `json:"distinct_codes"`
+	MinDate       string `json:"min_date,omitempty"`
+	MaxDate       string `json:"max_date,omitempty"`
+}
+
+// DataCapability describes what data a table/domain can provide.
+// Designed for LLM function-calling tool registration — a compact
+// machine-readable description of data availability and semantics.
+type DataCapability struct {
+	// Provider is a human-readable name, e.g. "财务报表 (三表+快报+预告)"
+	Provider string `json:"provider"`
+	// ProviderDescription explains what this data provides
+	ProviderDescription string `json:"provider_description"`
+	// DataTypes lists the sub-types available (e.g. ["balance_sheet","income","cashflow"])
+	DataTypes []DataTypeInfo `json:"data_types,omitempty"`
+	// OutputFields describes the structured output fields
+	OutputFields []FieldDesc `json:"output_fields,omitempty"`
+	// QueryParams describes how to query this data
+	QueryParams []ParamDesc `json:"query_params,omitempty"`
+	// RefreshSchedule describes how often data is refreshed
+	RefreshSchedule string `json:"refresh_schedule,omitempty"`
+	// CoverageDescription summarizes data coverage (e.g. "A股全量，2007至今")
+	CoverageDescription string `json:"coverage_description,omitempty"`
+}
+
+// DataTypeInfo describes a sub-type within a table (e.g. statement_type="balance_sheet").
+type DataTypeInfo struct {
+	TypeValue   string `json:"type_value"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Source      string `json:"source,omitempty"`
+}
+
+// FieldDesc describes an output field for capability discovery.
+type FieldDesc struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	InJSONB     bool   `json:"in_jsonb,omitempty"`
+}
+
+// ParamDesc describes a query parameter for capability discovery.
+type ParamDesc struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Required    bool     `json:"required"`
+	Description string   `json:"description"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
+// DataCapabilities is the response for GET /api/v2/catalog/capabilities.
+// A lightweight LLM-optimized view of data availability.
+type DataCapabilities struct {
+	GeneratedAt  time.Time           `json:"generated_at"`
+	Capabilities []DomainCapability  `json:"capabilities"`
+}
+
+// DomainCapability groups capabilities by business domain.
+type DomainCapability struct {
+	Domain      string            `json:"domain"`
+	Label       string            `json:"label"`
+	Description string            `json:"description"`
+	Tables      []TableCapability `json:"tables"`
+}
+
+// TableCapability is a lightweight per-table capability summary.
+type TableCapability struct {
+	Schema      string            `json:"schema"`
+	TableName   string            `json:"table_name"`
+	Description string            `json:"description"`
+	RowCount    int64             `json:"row_count"`
+	TimeRange   *TimeRange        `json:"time_range,omitempty"`
+	DataSources []DataSourceSummary `json:"data_sources,omitempty"`
+	Capability  *DataCapability   `json:"capability,omitempty"`
 }
 
 // ColumnDictionary extends ColumnMeta with value-level metadata.
