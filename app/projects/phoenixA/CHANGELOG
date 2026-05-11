@@ -1,7 +1,20 @@
 # VERSION
-1.14.0
+1.15.0
 
 # Changelog
+- 1.15.0
+    - **Data Capabilities API** — LLM-optimized data availability discovery
+        - New endpoint: `GET /api/v2/catalog/capabilities` — lightweight capability/availability view for LLM function-call tool registration
+        - Returns per-domain grouped capabilities: what data each table provides, supported query params, output fields, data types, refresh schedule, coverage description
+        - Auto-discovered per-source statistics: row count, distinct symbol count, date range (from DB `GROUP BY source`, no manual maintenance needed)
+        - New `tableCapabilityRegistry` in catalog_service.go — static capability descriptions for financial_statement, corporate_action, bars, security_registry
+        - Enhanced `GET /api/v2/catalog/data-dictionary` — now includes `capability` and `data_sources` fields per table
+    - **New model types**: `DataCapability`, `DataSourceSummary`, `DataTypeInfo`, `FieldDesc`, `ParamDesc`, `DataCapabilities`, `DomainCapability`, `TableCapability`
+    - **New data type constants**:
+        - `FIN_STMT_BS_BALANCE = "bs_balance"` — baostock quarterly solvency indicators (financial.go)
+        - `CORP_ACTION_BS_DIVIDEND = "bs_dividend"` — baostock ex-rights/dividends (corporate_action.go)
+    - **Bug fix**: `queryDataSources()` now checks for both `source` AND `symbol` column existence before querying — prevents SQL error on tables with `source` but no `symbol` column
+    - **SDK Onboarding Skill Update**: added Phase 5.5 "CronJob task export file" + Phase 6.3 "Register Data Capability" — mandatory steps when onboarding new download tasks; updated checklist with English changelog requirement
 - 1.14.0
     - **Factor Engine Data Provider — PhoenixA Integration** — connects factor engine to PhoenixA data services
         - New provider: `PhoenixADataProvider` in Artemis — implements `FactorDataProvider` protocol using PhoenixA HTTP APIs

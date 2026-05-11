@@ -151,6 +151,7 @@ func init() {
 			r.Get("/graph", catalogCtrl.GraphCatalog)
 			r.Get("/data-dictionary", catalogCtrl.DataDictionary)
 			r.Get("/business-overview", catalogCtrl.BusinessOverview)
+			r.Get("/capabilities", catalogCtrl.Capabilities)
 		})
 
 		// ====== Knowledge Graph (KG) ======
