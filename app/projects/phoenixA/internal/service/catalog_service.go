@@ -662,7 +662,10 @@ func (s *CatalogService) getTables(ctx context.Context, refresh bool) ([]model.T
 	}
 	s.cacheMu.RUnlock()
 
-	// Rebuild cache
+	// Rebuild cache (ANALYZE first on refresh to get accurate pg statistics)
+	if refresh {
+		s.Dao.AnalyzeSchemas(ctx, []string{"public", "kg", "security_dev", "security"})
+	}
 	rows, err := s.Dao.ListTables(ctx, []string{"public", "kg", "security_dev", "security"})
 	if err != nil {
 		return nil, false, err
