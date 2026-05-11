@@ -84,11 +84,17 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 		if f.ReportingPeriod != "" {
 			q = q.Where("reporting_period = ?", f.ReportingPeriod)
 		}
+		if len(f.ReportingPeriods) > 0 {
+			q = q.Where("reporting_period IN ?", f.ReportingPeriods)
+		}
 		if f.PeriodStart != "" {
 			q = q.Where("reporting_period >= ?", f.PeriodStart)
 		}
 		if f.PeriodEnd != "" {
 			q = q.Where("reporting_period <= ?", f.PeriodEnd)
+		}
+		if f.AnnDateBefore != "" {
+			q = q.Where("ann_date < ?", f.AnnDateBefore)
 		}
 		if f.ReportType != "" {
 			q = q.Where("report_type = ?", f.ReportType)
@@ -137,11 +143,17 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 		if f.ReportingPeriod != "" {
 			q = q.Where("reporting_period = ?", f.ReportingPeriod)
 		}
+		if len(f.ReportingPeriods) > 0 {
+			q = q.Where("reporting_period IN ?", f.ReportingPeriods)
+		}
 		if f.PeriodStart != "" {
 			q = q.Where("reporting_period >= ?", f.PeriodStart)
 		}
 		if f.PeriodEnd != "" {
 			q = q.Where("reporting_period <= ?", f.PeriodEnd)
+		}
+		if f.AnnDateBefore != "" {
+			q = q.Where("ann_date < ?", f.AnnDateBefore)
 		}
 		if f.ReportType != "" {
 			q = q.Where("report_type = ?", f.ReportType)
