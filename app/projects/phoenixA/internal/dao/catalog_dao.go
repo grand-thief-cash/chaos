@@ -61,6 +61,26 @@ type rawTableRow struct {
 	IsHypertable bool
 }
 
+// AnalyzeSchemas runs VACUUM ANALYZE on all tables in the given schemas to refresh pg statistics.
+// VACUUM/ANALYZE cannot run inside a transaction, so we use a raw SQL connection.
+func (d *CatalogDao) AnalyzeSchemas(ctx context.Context, schemas []string) {
+	sqlDB, err := d.db.DB()
+	if err != nil {
+		return
+	}
+	for _, s := range schemas {
+		if !SafeIdentifierRe.MatchString(s) {
+			continue
+		}
+		conn, err := sqlDB.Conn(ctx)
+		if err != nil {
+			continue
+		}
+		_, _ = conn.ExecContext(ctx, fmt.Sprintf("VACUUM ANALYZE %s", s))
+		conn.Close()
+	}
+}
+
 // ListTables queries pg system catalogs for all user tables in the given schemas.
 func (d *CatalogDao) ListTables(ctx context.Context, schemas []string) ([]rawTableRow, error) {
 	if len(schemas) == 0 {

@@ -26,13 +26,14 @@ func (CorporateAction) TableName() string { return "corporate_action" }
 
 // CorporateActionFilters for querying corporate actions.
 type CorporateActionFilters struct {
-	Symbol       string
-	Market       string
-	ActionType   string
-	ReportPeriod string
-	PeriodStart  string
-	PeriodEnd    string
-	ProgressCode string
+	Symbol        string
+	Market        string
+	ActionType    string
+	ReportPeriod  string
+	PeriodStart   string
+	PeriodEnd     string
+	AnnDateBefore string
+	ProgressCode  string
 	// PostgreSQL JSONB filters
 	DataContains map[string]interface{} // data_json @> '{"key": value}'  containment query
 	DataHasKey   string                 // data_json ? 'key'  key existence check

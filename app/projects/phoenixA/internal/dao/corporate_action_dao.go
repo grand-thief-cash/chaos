@@ -88,6 +88,9 @@ func (d *CorporateActionDao) Query(ctx context.Context, source string, f *model.
 		if f.PeriodEnd != "" {
 			q = q.Where("report_period <= ?", f.PeriodEnd)
 		}
+		if f.AnnDateBefore != "" {
+			q = q.Where("ann_date < ?", f.AnnDateBefore)
+		}
 		if f.ProgressCode != "" {
 			q = q.Where("progress_code = ?", f.ProgressCode)
 		}
@@ -137,6 +140,9 @@ func (d *CorporateActionDao) Count(ctx context.Context, source string, f *model.
 		}
 		if f.PeriodEnd != "" {
 			q = q.Where("report_period <= ?", f.PeriodEnd)
+		}
+		if f.AnnDateBefore != "" {
+			q = q.Where("ann_date < ?", f.AnnDateBefore)
 		}
 		if f.ProgressCode != "" {
 			q = q.Where("progress_code = ?", f.ProgressCode)

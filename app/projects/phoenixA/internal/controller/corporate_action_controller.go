@@ -65,13 +65,14 @@ func (c *CorporateActionController) Query(w http.ResponseWriter, r *http.Request
 	pageSize, _ := strconv.Atoi(q.Get("page_size"))
 
 	f := &model.CorporateActionFilters{
-		ActionType:   actionType,
-		Symbol:       q.Get("symbol"),
-		Market:       q.Get("market"),
-		ReportPeriod: q.Get("report_period"),
-		PeriodStart:  q.Get("period_start"),
-		PeriodEnd:    q.Get("period_end"),
-		ProgressCode: q.Get("progress_code"),
+		ActionType:    actionType,
+		Symbol:        q.Get("symbol"),
+		Market:        q.Get("market"),
+		ReportPeriod:  q.Get("report_period"),
+		PeriodStart:   q.Get("period_start"),
+		PeriodEnd:     q.Get("period_end"),
+		AnnDateBefore: q.Get("ann_date_before"),
+		ProgressCode:  q.Get("progress_code"),
 	}
 
 	list, count, err := c.Svc.Query(r.Context(), source, f, page, pageSize)
