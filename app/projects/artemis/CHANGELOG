@@ -1,7 +1,11 @@
 # VERSION
-- v0.29.0
+- v0.30.0
 
 # Changelog
+- v0.30.0
+    - Implemented phoenixA provider.
+    - Upgraded akshare version.
+    - Replaced phoenixA mock provider.
 - v0.29.0
     - **Code list source migration: SDK → PhoenixA**
         - `BaseFinancialStatementTask` and `BaseCorporateActionTask` no longer call `self._base_data.get_hist_code_list()` for full symbol lists
