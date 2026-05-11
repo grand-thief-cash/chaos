@@ -136,7 +136,7 @@ tasks:
       - match: {}
         config:
           start_date: "2026-01-01"              # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-05-01"
+          end_date: "2026-06-01"
           symbols: ["000001"]                   # 纯代码格式，缺省则全量下载
           exchange: "SZ"                        # 与 symbols 配合使用（SH/SZ/BJ）
 
@@ -144,9 +144,9 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2025-01-01"                     # "YYYY-MM-DD" 或 null（不限）
+          start_date: "1993-01-01"                     # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"                    # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000713"]                 # 纯代码格式，缺省则全量下载
+          symbols: ["000001"]                 # 纯代码格式，缺省则全量下载
           exchange: "SZ"                      # 与 symbols 配合使用
 
   BACKTRADER_CAMPAIGN:
