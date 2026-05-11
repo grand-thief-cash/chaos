@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
@@ -174,3 +175,42 @@ def get_code_list_from_phoenixa(ctx: TaskContext, asset_type: str = "stock", mar
     return code_list
 
 
+# ─────────── Baostock Helpers ───────────
+
+
+def date_range_to_year_quarters(start_date: str, end_date: str) -> List[Tuple[int, int]]:
+    """Convert a YYYY-MM-DD date range into a list of (year, quarter) tuples.
+
+    e.g. ("2024-06-01", "2025-03-31") → [(2024,2), (2024,3), (2024,4), (2025,1)]
+    Quarters are 1-indexed: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec.
+    """
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return []
+
+    result: List[Tuple[int, int]] = []
+    y, q = start.year, (start.month - 1) // 3 + 1
+    end_y, end_q = end.year, (end.month - 1) // 3 + 1
+
+    while (y, q) <= (end_y, end_q):
+        result.append((y, q))
+        q += 1
+        if q > 4:
+            q = 1
+            y += 1
+    return result
+
+
+def symbol_exchange_to_bs_code(symbol: str, exchange: str) -> Optional[str]:
+    """Convert (symbol, exchange) to baostock code format.
+
+    ("600000", "SH") → "sh.600000"
+    ("000001", "SZ") → "sz.000001"
+    Returns None if exchange is not SH/SZ/BJ.
+    """
+    ex = exchange.upper()
+    if ex in ("SH", "SZ", "BJ"):
+        return f"{ex.lower()}.{symbol}"
+    return None
