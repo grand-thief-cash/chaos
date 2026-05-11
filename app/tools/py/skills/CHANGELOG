@@ -1,7 +1,9 @@
 # VERSION
-v0.0.4
+v0.0.5
 
 # Changelog
+- v0.0.5
+    - Updated: [2026-06-11]SDK_DOWNLOAD_TASK_ONBOARDING — added new "Creating new import file for cronjob"
 - v0.0.4
     - Updated: [2026-05-10]SDK_DOWNLOAD_TASK_ONBOARDING — enhanced Phase 6 with domain classification decision tree, guidance on when to create new domains vs reuse existing ones
 - v0.0.3
