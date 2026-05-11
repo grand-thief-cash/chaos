@@ -7,7 +7,9 @@ const (
 	FIN_STMT_CASHFLOW       = "cashflow"
 	FIN_STMT_PROFIT_EXPRESS = "profit_express"
 	FIN_STMT_PROFIT_NOTICE  = "profit_notice"
+	FIN_STMT_BS_BALANCE     = "bs_balance" // baostock 季频偿债能力
 )
+
 
 // REPORT_TYPE codes — maps to REPORTING_PERIOD quarter.
 // Value stored in financial_statement.report_type as string.
