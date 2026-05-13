@@ -194,7 +194,7 @@ func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Res
 
 func (tc *TelemetryComponent) initMetrics(ctx context.Context, res *resource.Resource) error {
 	// Explicit no-op exporter: keep metrics APIs usable but emit nothing.
-	if tc.cfg.Exporter == ExporterNone {
+	if tc.cfg.Exporter == ExporterNone || tc.cfg.SampleRatio == 0 {
 		tc.mp = sdkmetric.NewMeterProvider(
 			sdkmetric.WithResource(res),
 		)
