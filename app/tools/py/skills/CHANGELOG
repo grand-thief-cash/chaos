@@ -1,7 +1,9 @@
 # VERSION
-v0.0.5
+v0.0.6
 
 # Changelog
+- v0.0.6
+    - Updated: [2026-06-11]SDK_DOWNLOAD_TASK_ONBOARDING — added new "Creating new import file for cronjob"
 - v0.0.5
     - Updated: [2026-06-11]SDK_DOWNLOAD_TASK_ONBOARDING — added new "Creating new import file for cronjob"
 - v0.0.4

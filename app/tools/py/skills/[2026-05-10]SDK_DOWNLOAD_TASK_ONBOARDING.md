@@ -705,6 +705,40 @@ curl http://localhost:8085/api/v2/catalog/tables/security_dev/your_table | pytho
   - [ ] PhoenixA 数据格式正确（symbol、日期）
   - [ ] Data Catalog 展示正常
 - [ ] **文档更新**：CHANGELOG 更新（**必须用英语书写**）
+  - [ ] **API 业务数据文档更新**：更新 `app/projects/phoenixA/docs/api_biz_data_description/` 目录
+    - [ ] 判断新数据应放入哪个文档：
+      - 公司行为数据（分红、配股等）→ 更新 `corporate_actions.md`
+      - 财务报表数据（资产负债表、利润表等）→ 更新 `financial_statements.md`
+      - 行业数据 → 更新 `taxonomy.md`
+      - 证券基础信息 → 更新 `securities.md`
+      - 行情数据 → 更新 `bars.md`
+      - 全新类型 → 创建新的 `{feature_name}.md` 文件
+    - [ ] 如果是新增 statement_type 或 action_type（复用现有表）：
+      - [ ] 在对应文档的 type 列表中追加新类型
+      - [ ] 添加 data_json 字段结构表格，**类型必须准确**：
+        - 整数类型使用 `integer`（如 `IS_CHANGED`: 1/0）
+        - 浮点类型使用 `number`（如 `TOTAL_ASSETS` 货币金额、百分比等）
+        - 字符串类型使用 `string`
+        - 布尔类型使用 `boolean`
+        - 参考 `/app/projects/artemis/artemis/consts/field_catalog.py` 获取准确类型定义
+      - [ ] 添加示例数据
+    - [ ] 如果是全新表：
+      - [ ] 创建独立的 `{feature_name}.md` 文件
+      - [ ] 按照现有文档模板编写：概述、API 端点、查询参数、响应数据、响应示例
+      - [ ] 确保字段类型与底层存储（PostgreSQL/Migration SQL）和 field_catalog.py 保持一致
+    - [ ] 更新 `README.md` 索引文件，添加新文档的链接
+    - [ ] **重要**：字段不要增加、减少、改变，确保与原有文档结构和底层数据一致
+    - [ ] **类型准确性**：避免使用模糊的 `number`/`number64` 类型，明确区分 `integer` 和 `number`
+  - [ ] **数据表参考文档更新**：更新 `app/projects/phoenixA/docs/tables_description/` 目录（可选，用于数据库层参考）
+    - [ ] 判断新数据应放入哪个拆分文档：
+      - 公司行为数据（分红、配股等）→ 更新 `corporate_action.md`
+      - 财务报表数据（资产负债表、利润表等）→ 更新 `financial_statement.md`
+      - 行业指数数据 → 更新 `industry_base_info.md` / `industry_constituent.md` / `industry_weight.md` / `industry_daily.md`
+      - 全新类型（非上述分类）→ 创建新的 `{table_name}.md` 文件
+    - [ ] 更新 `index.md` 索引文件，添加新表的链接
+    - [ ] 字段不要增加、减少、改变，确保与原有文档结构一致
+  - [ ] **数据表参考文档更新**：更新 `docs/2026-05-12 DATA_TABLES_REFERENCE.md`（可选，保留作为完整参考）
+    - [ ] 更新"待完善内容"清单，将新表标记为已完成
 
 ---
 
@@ -713,6 +747,7 @@ curl http://localhost:8085/api/v2/catalog/tables/security_dev/your_table | pytho
 | 类别 | 文件路径 |
 |------|---------|
 | SDK 文档 | `/docs/AmazingData_development_guide.md` |
+| 数据表参考文档（拆分后） | `app/projects/phoenixA/docs/tables_description/` |
 | 平台设计 | `/docs/2026-04-29 DESIGN_OF_FINANCIAL_QUANT_PLATFORM.md` |
 | 基础设施 | `/docs/2026-04-29 INFRASTRUCTURE_AND_DATA_ENGINE.md` |
 | PostgreSQL | `/docs/2026-04-30 INSTALL_AND_CONFIG_POSTGRESQL.md` |
