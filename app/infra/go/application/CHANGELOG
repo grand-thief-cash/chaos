@@ -1,7 +1,9 @@
 # VERSION
-v0.18.2
+v0.18.3
 
 # Changelog
+- v0.18.3
+    - Telemetry Component fixed unavailable none export.
 - v0.18.2
     - Added three forms of context awareness to SplitPostgresStatements in migration:
         - Line comments — ignore all characters until newline
