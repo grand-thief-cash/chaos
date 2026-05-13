@@ -45,7 +45,14 @@ func TestCorporateActionJSONDeserialization(t *testing.T) {
 
 	// Verify data_json is valid JSON
 	var dataMap map[string]any
-	if err := json.Unmarshal([]byte(rec.DataJSON), &dataMap); err != nil {
+	// data_json from Artemis may be a double-encoded JSON string
+	var raw json.RawMessage = rec.DataJSON
+	var unwrapped string
+	if err := json.Unmarshal(raw, &unwrapped); err == nil {
+		// Double-encoded: unwrap and parse again
+		raw = json.RawMessage(unwrapped)
+	}
+	if err := json.Unmarshal(raw, &dataMap); err != nil {
 		t.Fatalf("data_json is not valid JSON: %v", err)
 	}
 	if dataMap["DVD_PER_SHARE_PRE_TAX_CASH"] != 27.46 {
@@ -81,7 +88,12 @@ func TestCorporateActionRightIssueDeserialization(t *testing.T) {
 	assertEqual(t, "progress_code", rec.ProgressCode, "3")
 
 	var dataMap map[string]any
-	if err := json.Unmarshal([]byte(rec.DataJSON), &dataMap); err != nil {
+	var raw json.RawMessage = rec.DataJSON
+	var unwrapped string
+	if err := json.Unmarshal(raw, &unwrapped); err == nil {
+		raw = json.RawMessage(unwrapped)
+	}
+	if err := json.Unmarshal(raw, &dataMap); err != nil {
 		t.Fatalf("data_json invalid: %v", err)
 	}
 	if dataMap["PRICE"] != 3.12 {
@@ -110,7 +122,7 @@ func TestCorporateActionFieldMapping(t *testing.T) {
 		ReportPeriod: "20231231",
 		AnnDate:      "20240618",
 		ProgressCode: "3",
-		DataJSON:     `{"test":1}`,
+		DataJSON:     json.RawMessage(`{"test":1}`),
 	}
 
 	data, err := json.Marshal(rec)
@@ -276,7 +288,7 @@ func TestCorporateActionDataJSONIntegrity(t *testing.T) {
 	}
 
 	dataBytes, _ := json.Marshal(originalData)
-	dataStr := string(dataBytes)
+	dataStr := json.RawMessage(dataBytes)
 
 	// Put into model
 	rec := &model.CorporateAction{

@@ -2,5 +2,7 @@
 v0.0.1
 
 # Changelog
+- v0.1.0
+    - Added crawler for downloading factors from factors.directory.
 - v0.0.1
     - Init version of crawler project, not runnable yet, just a "NEW FOLDER"

@@ -1,7 +1,39 @@
 # VERSION
-v0.11.0
+v0.12.3
 
 # Changelog
+- v0.12.3
+    - New: Logo added to top navigation bar (cthulhu.png)
+    - Fix: CronJob task.yaml editor now only shows/edits the specific task's config section, not the entire YAML file
+    - Enhanced: JSONB field discovery now works for ALL tables with JSONB columns (not just financial_statement/corporate_action)
+    - New: `PhoenixAService.getDataDictionary()` API method for data dictionary endpoint
+- v0.12.2
+    - Fix: Table Detail breadcrumb now shows "Home / PhoenixA / Data Catalog / Table Detail" (nested route fix)
+    - New: CronJob task edit page shows "Artemis task.yaml 配置" collapsible panel for artemis tasks, allowing inline YAML editing
+- v0.12.1
+    - Fix: Added `PieChart` import in `app.config.ts` — storage distribution pie chart on Data Catalog page was empty because ECharts `PieChart` module was not registered (only `BarChart`/`LineChart`/etc. were imported)
+- v0.12.0
+    - **PhoenixA Data Catalog Dashboard** — data asset visibility and management UI
+        - New page: **Data Catalog** (`/phoenixa/catalog`) — now the default landing page for PhoenixA feature
+            - Summary statistics cards: total tables, total rows, data size, index size
+            - Storage distribution pie chart (ECharts): NVMe Hot vs SATA Warm usage
+            - Domain disk usage horizontal bar chart (ECharts): bars/taxonomy/kg/financial/strategy/factor sorted by size
+            - Neo4j graph summary card: total nodes, total edges, node labels, relationship types, availability state
+            - Filterable & searchable table inventory: domain filter dropdown + text search
+            - Table rows with tags: domain color-coded, TimescaleDB (TS), JSONB, Hot/Warm tier indicators
+            - Time range display for time-series tables
+            - Click-to-navigate to table detail page
+            - Auto-refresh every 60 seconds + manual force-refresh button
+        - New page: **Table Detail** (`/phoenixa/catalog/:schema/:table`) — deep-dive into individual table
+            - Overview panel: domain, description, row count, data/index size, tablespace, storage tier
+            - Time range highlight for temporal data
+            - Column list table: name, type (color-coded by category), nullable, primary key, description
+            - JSONB field discovery: collapsible panels showing discovered keys per type (e.g., balance_sheet → [TOTAL_ASSETS, ...])
+            - Index list: name, columns, unique flag, index type (GIN highlighted)
+            - Data lineage panel: source system, ingestion method, refresh schedule, API endpoint
+        - New models: `CatalogOverview`, `TableCatalogEntry`, `TableDetail`, `ColumnMeta`, `IndexMeta`, `DataLineage`, `StorageInfo`, `TablespaceInfo`, `GraphCatalogOverview`, `GraphLabelInfo`, `GraphRelTypeInfo` + related interfaces
+        - `PhoenixAService`: 5 new API methods (`getCatalogOverview`, `getCatalogTables`, `getTableDetail`, `getStorageInfo`, `getGraphCatalog`)
+        - Routes updated: default redirect changed from `/buffer` to `/catalog`; Write Buffer moved to order 2
 - v0.11.0
     - **Atlas Knowledge Graph feature module** (`/atlas`) — new route group for KG exploration and analysis
         - New page: **Dashboard** (`/atlas/dashboard`)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -71,11 +72,29 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 		Where("source = ?", source).
 		Order("symbol ASC, reporting_period DESC")
 
+	// Handle field selection
+	if f != nil && len(f.Fields) > 0 {
+		selectFields := make([]string, 0, len(f.Fields))
+		for _, field := range f.Fields {
+			// Handle JSONB nested fields: data_json.FIELD_NAME -> data_json->'FIELD_NAME'
+			if strings.HasPrefix(field, "data_json.") {
+				jsonField := strings.TrimPrefix(field, "data_json.")
+				selectFields = append(selectFields, fmt.Sprintf("data_json->'%s' as %s", jsonField, field))
+			} else {
+				selectFields = append(selectFields, field)
+			}
+		}
+		q = q.Select(selectFields)
+	}
+
 	if f != nil {
 		if f.Symbol != "" {
 			q = q.Where("symbol = ?", f.Symbol)
 		}
 		if f.Market != "" {
+			if len(f.Symbols) > 0 {
+				q = q.Where("symbol IN ?", f.Symbols)
+			}
 			q = q.Where("market = ?", f.Market)
 		}
 		if f.StatementType != "" {
@@ -84,11 +103,17 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 		if f.ReportingPeriod != "" {
 			q = q.Where("reporting_period = ?", f.ReportingPeriod)
 		}
+		if len(f.ReportingPeriods) > 0 {
+			q = q.Where("reporting_period IN ?", f.ReportingPeriods)
+		}
 		if f.PeriodStart != "" {
 			q = q.Where("reporting_period >= ?", f.PeriodStart)
 		}
 		if f.PeriodEnd != "" {
 			q = q.Where("reporting_period <= ?", f.PeriodEnd)
+		}
+		if f.AnnDateBefore != "" {
+			q = q.Where("ann_date < ?", f.AnnDateBefore)
 		}
 		if f.ReportType != "" {
 			q = q.Where("report_type = ?", f.ReportType)
@@ -128,6 +153,9 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 		if f.Symbol != "" {
 			q = q.Where("symbol = ?", f.Symbol)
 		}
+		if len(f.Symbols) > 0 {
+			q = q.Where("symbol IN ?", f.Symbols)
+		}
 		if f.Market != "" {
 			q = q.Where("market = ?", f.Market)
 		}
@@ -137,11 +165,17 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 		if f.ReportingPeriod != "" {
 			q = q.Where("reporting_period = ?", f.ReportingPeriod)
 		}
+		if len(f.ReportingPeriods) > 0 {
+			q = q.Where("reporting_period IN ?", f.ReportingPeriods)
+		}
 		if f.PeriodStart != "" {
 			q = q.Where("reporting_period >= ?", f.PeriodStart)
 		}
 		if f.PeriodEnd != "" {
 			q = q.Where("reporting_period <= ?", f.PeriodEnd)
+		}
+		if f.AnnDateBefore != "" {
+			q = q.Where("ann_date < ?", f.AnnDateBefore)
 		}
 		if f.ReportType != "" {
 			q = q.Where("report_type = ?", f.ReportType)

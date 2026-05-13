@@ -1,5 +1,7 @@
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 
+from artemis.consts import DeptServices
 from artemis.core import TaskContext
 
 
@@ -94,3 +96,121 @@ def get_sdk_date_kwargs(ctx: TaskContext) -> Dict[str, int]:
     return result
 
 
+# ─────────── Data Normalization Helpers ───────────
+
+
+def split_market_code(market_code: str) -> tuple:
+    """Split AmazingData MARKET_CODE into (symbol, market).
+
+    "000001.SZ" → ("000001", "zh_a")
+    "600519.SH" → ("600519", "zh_a")
+    "000001"     → ("000001", "zh_a")
+
+    All A-share stocks map to market='zh_a'.
+    """
+    code = str(market_code).strip()
+    if '.' in code:
+        return code.split('.', 1)[0], 'zh_a'
+    return code, 'zh_a'
+
+
+def normalize_date_yyyymmdd(date_str: str) -> str:
+    """Convert YYYYMMDD string to YYYY-MM-DD.
+
+    "20260425"   → "2026-04-25"
+    "2026-04-25" → "2026-04-25"  (pass through)
+    ""           → ""
+    None/NaN     → ""
+    """
+    if not date_str:
+        return ''
+    s = str(date_str).strip()
+    if not s:
+        return ''
+    if len(s) == 10 and s[4] == '-' and s[7] == '-':
+        return s  # already YYYY-MM-DD
+    digits = s.replace('.', '').replace('-', '')
+    if len(digits) == 8 and digits.isdigit():
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    return s  # return as-is if unrecognizable
+
+
+def get_code_list_from_phoenixa(ctx: TaskContext, asset_type: str = "stock", market: str = "zh_a") -> List[str]:
+    """Fetch all security codes from PhoenixA and convert to SDK format.
+
+    Returns code_list in AmazingData format: ["000001.SZ", "600519.SH"]
+    Falls back to empty list on failure.
+    """
+    phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
+    if phoenixA_client is None or not hasattr(phoenixA_client, 'get_securities'):
+        ctx.logger.warning({
+            'event': 'phoenixa_client_unavailable',
+            'run_id': ctx.run_id,
+            'reason': 'client is None or missing get_securities method',
+        })
+        return []
+    try:
+        securities = phoenixA_client.get_securities(
+            asset_type=asset_type,
+            market=market,
+        )
+    except Exception as e:
+        ctx.logger.warning({
+            'event': 'get_code_list_from_phoenixa_failed',
+            'error': str(e),
+            'run_id': ctx.run_id,
+        })
+        return []
+    code_list = []
+    for sym, info in securities.items():
+        exchange = info.get('exchange', '').upper()
+        if sym and exchange:
+            code_list.append(f"{sym}.{exchange}")
+    if not code_list:
+        ctx.logger.warning({
+            'event': 'phoenixa_securities_empty',
+            'run_id': ctx.run_id,
+            'hint': 'PhoenixA registry may be empty or API returned no data',
+        })
+    return code_list
+
+
+# ─────────── Baostock Helpers ───────────
+
+
+def date_range_to_year_quarters(start_date: str, end_date: str) -> List[Tuple[int, int]]:
+    """Convert a YYYY-MM-DD date range into a list of (year, quarter) tuples.
+
+    e.g. ("2024-06-01", "2025-03-31") → [(2024,2), (2024,3), (2024,4), (2025,1)]
+    Quarters are 1-indexed: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec.
+    """
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return []
+
+    result: List[Tuple[int, int]] = []
+    y, q = start.year, (start.month - 1) // 3 + 1
+    end_y, end_q = end.year, (end.month - 1) // 3 + 1
+
+    while (y, q) <= (end_y, end_q):
+        result.append((y, q))
+        q += 1
+        if q > 4:
+            q = 1
+            y += 1
+    return result
+
+
+def symbol_exchange_to_bs_code(symbol: str, exchange: str) -> Optional[str]:
+    """Convert (symbol, exchange) to baostock code format.
+
+    ("600000", "SH") → "sh.600000"
+    ("000001", "SZ") → "sz.000001"
+    Returns None if exchange is not SH/SZ/BJ.
+    """
+    ex = exchange.upper()
+    if ex in ("SH", "SZ", "BJ"):
+        return f"{ex.lower()}.{symbol}"
+    return None

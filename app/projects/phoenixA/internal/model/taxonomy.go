@@ -25,12 +25,14 @@ func (TaxonomyCategory) TableName() string { return "taxonomy_category" }
 // TaxonomySecurityMap maps a category to a security.
 // Table: taxonomy_security_map
 type TaxonomySecurityMap struct {
-	Source       string `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"source"`
-	Taxonomy     string `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"taxonomy"`
-	CategoryCode string `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_cat_sec" json:"category_code"`
-	Symbol       string `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"symbol"`
-	AssetType    string `gorm:"type:varchar(16);not null;default:'stock';uniqueIndex:uk_src_tax_cat_sec" json:"asset_type"`
-	Market       string `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_cat_sec" json:"market"`
+	Source       string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"source"`
+	Taxonomy     string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"taxonomy"`
+	CategoryCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_cat_sec" json:"category_code"`
+	Symbol       string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"symbol"`
+	AssetType    string    `gorm:"type:varchar(16);not null;default:'stock';uniqueIndex:uk_src_tax_cat_sec" json:"asset_type"`
+	Market       string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_cat_sec" json:"market"`
+	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at,omitempty"`
+	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updated_at,omitempty"`
 }
 
 func (TaxonomySecurityMap) TableName() string { return "taxonomy_security_map" }
@@ -113,4 +115,21 @@ type TaxonomyCategoryFilters struct {
 	AttrsContains map[string]interface{}
 	// AttrsHasKey: JSONB ? operator, e.g. "change_reason" matches rows where attrs_json has that key.
 	AttrsHasKey string
+}
+
+// TaxonomySecurityMapWithDetail is the response structure for GET /api/v2/taxonomy/by_security/{symbol}
+// It includes fields from both taxonomy_security_map and taxonomy_category tables.
+type TaxonomySecurityMapWithDetail struct {
+	ID           uint64    `json:"id,omitempty"`
+	Source       string    `json:"source"`
+	Taxonomy     string    `json:"taxonomy"`
+	CategoryCode string    `json:"category_code"`
+	CategoryName string    `json:"category_name"`
+	Level        uint8     `json:"level"`
+	ParentCode   string    `json:"parent_code"`
+	Symbol       string    `json:"symbol"`
+	AssetType    string    `json:"asset_type"`
+	Market       string    `json:"market"`
+	CreatedAt    time.Time `json:"created_at,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at,omitempty"`
 }

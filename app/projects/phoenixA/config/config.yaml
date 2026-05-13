@@ -35,6 +35,11 @@ postgres_gorm:
   enabled: true
   log_level: info
   slow_threshold: 200ms
+  # NOTE:
+  #   hot / warm storage placement is NOT configured in this YAML.
+  #   It is controlled by PostgreSQL TABLESPACE in migration SQL
+  #   (e.g. TABLESPACE pg_default / warm_storage) and optional
+  #   DBA-side ALTER DATABASE / ALTER ROLE default_tablespace settings.
   data_sources:
     security:
       host: 127.0.0.1

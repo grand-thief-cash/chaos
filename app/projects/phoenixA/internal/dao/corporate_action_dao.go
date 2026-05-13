@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -69,12 +70,30 @@ func (d *CorporateActionDao) Query(ctx context.Context, source string, f *model.
 		Where("source = ?", source).
 		Order("symbol ASC, report_period DESC, ann_date DESC")
 
+	// Handle field selection
+	if f != nil && len(f.Fields) > 0 {
+		selectFields := make([]string, 0, len(f.Fields))
+		for _, field := range f.Fields {
+			// Handle JSONB nested fields: data_json.FIELD_NAME -> data_json->'FIELD_NAME'
+			if strings.HasPrefix(field, "data_json.") {
+				jsonField := strings.TrimPrefix(field, "data_json.")
+				selectFields = append(selectFields, fmt.Sprintf("data_json->'%s' as %s", jsonField, field))
+			} else {
+				selectFields = append(selectFields, field)
+			}
+		}
+		q = q.Select(selectFields)
+	}
+
 	if f != nil {
 		if f.Symbol != "" {
 			q = q.Where("symbol = ?", f.Symbol)
 		}
 		if f.Market != "" {
 			q = q.Where("market = ?", f.Market)
+			if len(f.Symbols) > 0 {
+				q = q.Where("symbol IN ?", f.Symbols)
+			}
 		}
 		if f.ActionType != "" {
 			q = q.Where("action_type = ?", f.ActionType)
@@ -87,6 +106,9 @@ func (d *CorporateActionDao) Query(ctx context.Context, source string, f *model.
 		}
 		if f.PeriodEnd != "" {
 			q = q.Where("report_period <= ?", f.PeriodEnd)
+		}
+		if f.AnnDateBefore != "" {
+			q = q.Where("ann_date < ?", f.AnnDateBefore)
 		}
 		if f.ProgressCode != "" {
 			q = q.Where("progress_code = ?", f.ProgressCode)
@@ -123,6 +145,9 @@ func (d *CorporateActionDao) Count(ctx context.Context, source string, f *model.
 		if f.Symbol != "" {
 			q = q.Where("symbol = ?", f.Symbol)
 		}
+		if len(f.Symbols) > 0 {
+			q = q.Where("symbol IN ?", f.Symbols)
+		}
 		if f.Market != "" {
 			q = q.Where("market = ?", f.Market)
 		}
@@ -137,6 +162,9 @@ func (d *CorporateActionDao) Count(ctx context.Context, source string, f *model.
 		}
 		if f.PeriodEnd != "" {
 			q = q.Where("report_period <= ?", f.PeriodEnd)
+		}
+		if f.AnnDateBefore != "" {
+			q = q.Where("ann_date < ?", f.AnnDateBefore)
 		}
 		if f.ProgressCode != "" {
 			q = q.Where("progress_code = ?", f.ProgressCode)
