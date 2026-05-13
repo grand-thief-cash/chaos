@@ -20,8 +20,24 @@
 | end_date | string | 否 | 截止公告日期（格式 YYYY-MM-DD） |
 | report_period | string | 否 | 按报告期过滤 |
 | progress_code | string | 否 | 按进度代码过滤 |
+| **fields** | **string** | **否** | **返回字段列表（逗号分隔），支持常规字段和 JSONB 嵌套字段（见下文说明）** |
 | limit | integer | 否 | 返回数量限制 |
 | offset | integer | 否 | 分页偏移量 |
+
+### fields 参数说明
+
+`fields` 参数允许指定返回的字段，减少数据传输量。
+
+**格式**: `fields=字段1,字段2,字段3`
+
+**支持的字段类型**:
+1. **常规字段**: 直接使用表字段名，如 `symbol`, `report_period`, `ann_date`
+2. **JSONB 嵌套字段**: 使用 `data_json.字段名` 格式，如 `data_json.DVD_PER_SHARE_PRE_TAX_CASH`, `data_json.DATE_EQY_RECORD`
+
+**示例**:
+- `fields=symbol,report_period,ann_date` - 只返回基本字段
+- `fields=symbol,data_json.DVD_PER_SHARE_PRE_TAX_CASH,data_json.DATE_EQY_RECORD` - 返回分红特定字段
+- `fields=data_json.PRICE,data_json.RATIO,data_json.COLLECTION_FUND` - 返回配股特定字段
 
 ## 路径参数
 
@@ -156,6 +172,8 @@
 
 ### 查询分红数据
 
+**请求**: `GET /api/v2/corporate-action/amazing_data/dividend?symbol=000001&page=1&page_size=10`
+
 ```json
 [
   {
@@ -195,6 +213,22 @@
     },
     "created_at": "2024-06-12T00:00:00Z",
     "updated_at": "2024-06-12T00:00:00Z"
+  }
+]
+```
+
+### 查询分红数据（使用 fields 参数过滤字段）
+
+**请求**: `GET /api/v2/corporate-action/amazing_data/dividend?symbol=000001&fields=ann_date,report_period,data_json.DVD_PER_SHARE_PRE_TAX_CASH,data_json.DATE_EQY_RECORD,data_json.DATE_EX`
+
+```json
+[
+  {
+    "ann_date": "2024-06-11",
+    "report_period": "2023",
+    "data_json->'DVD_PER_SHARE_PRE_TAX_CASH'": "data_json.DVD_PER_SHARE_PRE_TAX_CASH",
+    "data_json->'DATE_EQY_RECORD'": "data_json.DATE_EQY_RECORD",
+    "data_json->'DATE_EX'": "data_json.DATE_EX"
   }
 ]
 ```

@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
-	github.com/grand-thief-cash/chaos/app/infra/go/application v0.18.0
+	github.com/grand-thief-cash/chaos/app/infra/go/application v0.18.3
 	gorm.io/gorm v1.31.0
 )
 
@@ -66,4 +66,4 @@ require (
 	gorm.io/driver/postgres v1.6.0 // indirect
 )
 
-replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application
+//replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application
