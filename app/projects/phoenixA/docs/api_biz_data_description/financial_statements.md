@@ -20,8 +20,24 @@
 | report_type | string | 否 | 按报告期名称过滤（年报、半年报、季报） |
 | ann_date_before | string | 否 | 公告日期前过滤（Point-in-Time 查询） |
 | reporting_periods | string | 否 | 报告期列表（逗号分隔，用于 TTM 计算） |
+| **fields** | **string** | **否** | **返回字段列表（逗号分隔），支持常规字段和 JSONB 嵌套字段（见下文说明）** |
 | limit | integer | 否 | 返回数量限制 |
 | offset | integer | 否 | 分页偏移量 |
+
+### fields 参数说明
+
+`fields` 参数允许指定返回的字段，减少数据传输量。
+
+**格式**: `fields=字段1,字段2,字段3`
+
+**支持的字段类型**:
+1. **常规字段**: 直接使用表字段名，如 `symbol`, `reporting_period`, `ann_date`
+2. **JSONB 嵌套字段**: 使用 `data_json.字段名` 格式，如 `data_json.TOTAL_ASSETS`, `data_json.DVD_PER_SHARE_PRE_TAX_CASH`
+
+**示例**:
+- `fields=symbol,reporting_period,ann_date` - 只返回基本字段
+- `fields=symbol,data_json.TOTAL_ASSETS,data_json.TOT_OPERA_REV` - 返回特定 JSONB 字段
+- `fields=data_json.DVD_PER_SHARE_PRE_TAX_CASH,data_json.DATE_EQY_RECORD` - 返回分红相关 JSONB 字段
 
 ## 路径参数
 
@@ -563,6 +579,8 @@
 
 ### 查询利润表数据
 
+**请求**: `GET /api/v2/financial/amazing_data/income?symbol=000001&page=1&page_size=10`
+
 ```json
 [
   {
@@ -597,6 +615,22 @@
     },
     "created_at": "2024-03-29T00:00:00Z",
     "updated_at": "2024-03-29T00:00:00Z"
+  }
+]
+```
+
+### 查询利润表数据（使用 fields 参数过滤字段）
+
+**请求**: `GET /api/v2/financial/amazing_data/income?symbol=000001&fields=symbol,reporting_period,data_json.TOT_OPERA_REV,data_json.NET_PRO_EXCL_MIN_INT_INC,data_json.EBITDA`
+
+```json
+[
+  {
+    "symbol": "000001",
+    "reporting_period": "2023-12-31",
+    "data_json->'TOT_OPERA_REV'": "data_json.TOT_OPERA_REV",
+    "data_json->'NET_PRO_EXCL_MIN_INT_INC'": "data_json.NET_PRO_EXCL_MIN_INT_INC",
+    "data_json->'EBITDA'": "data_json.EBITDA"
   }
 ]
 ```

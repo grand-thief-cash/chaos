@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -70,6 +71,21 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 	q := d.db.WithContext(ctx).Model(&model.FinancialStatement{}).
 		Where("source = ?", source).
 		Order("symbol ASC, reporting_period DESC")
+
+	// Handle field selection
+	if f != nil && len(f.Fields) > 0 {
+		selectFields := make([]string, 0, len(f.Fields))
+		for _, field := range f.Fields {
+			// Handle JSONB nested fields: data_json.FIELD_NAME -> data_json->'FIELD_NAME'
+			if strings.HasPrefix(field, "data_json.") {
+				jsonField := strings.TrimPrefix(field, "data_json.")
+				selectFields = append(selectFields, fmt.Sprintf("data_json->'%s' as %s", jsonField, field))
+			} else {
+				selectFields = append(selectFields, field)
+			}
+		}
+		q = q.Select(selectFields)
+	}
 
 	if f != nil {
 		if f.Symbol != "" {

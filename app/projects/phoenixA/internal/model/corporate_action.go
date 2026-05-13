@@ -35,6 +35,7 @@ type CorporateActionFilters struct {
 	PeriodEnd     string
 	AnnDateBefore string
 	ProgressCode  string
+	Fields        []string // fields to return (e.g., ["symbol", "data_json->DVD_PER_SHARE_PRE_TAX_CASH"])
 	// PostgreSQL JSONB filters
 	DataContains map[string]interface{} // data_json @> '{"key": value}'  containment query
 	DataHasKey   string                 // data_json ? 'key'  key existence check
