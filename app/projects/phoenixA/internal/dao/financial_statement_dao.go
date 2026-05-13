@@ -76,6 +76,9 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 			q = q.Where("symbol = ?", f.Symbol)
 		}
 		if f.Market != "" {
+			if len(f.Symbols) > 0 {
+				q = q.Where("symbol IN ?", f.Symbols)
+			}
 			q = q.Where("market = ?", f.Market)
 		}
 		if f.StatementType != "" {
@@ -133,6 +136,9 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 	if f != nil {
 		if f.Symbol != "" {
 			q = q.Where("symbol = ?", f.Symbol)
+		}
+		if len(f.Symbols) > 0 {
+			q = q.Where("symbol IN ?", f.Symbols)
 		}
 		if f.Market != "" {
 			q = q.Where("market = ?", f.Market)
