@@ -1,7 +1,15 @@
 # VERSION
-1.16.0
+v1.17.0
 
 # Changelog
+- 1.17.0
+    - **API Field Filtering** — selective field retrieval for financial and corporate action APIs
+        - New parameter: `fields` on `GET /api/v2/financial/{source}/{statement_type}` and `GET /api/v2/corporate-action/{source}/{action_type}` — specify which fields to return
+        - Supports regular table fields: `symbol`, `reporting_period`, `ann_date`, etc.
+        - Supports JSONB nested fields using `data_json.FIELD_NAME` format: `data_json.TOTAL_ASSETS`, `data_json.DVD_PER_SHARE_PRE_TAX_CASH`, `data_json.DATE_EQY_RECORD`, etc.
+        - Reduces data transfer by only returning requested fields
+        - Updated API documentation: `docs/api_biz_data_description/financial_statements.md` and `docs/api_biz_data_description/corporate_actions.md` with fields parameter description and examples
+        - API consistency tests pass (9/9) — documentation matches implementation
 - 1.16.0
     - **API Documentation Update** — comprehensive API documentation for business data
         - Created `docs/api_biz_data_description/securities.md` — complete Securities API documentation with 5 endpoints, query parameters, response structure, field descriptions

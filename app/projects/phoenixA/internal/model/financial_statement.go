@@ -41,6 +41,7 @@ type FinancialStatementFilters struct {
 	AnnDateBefore    string   // PIT filter: ann_date < this value (avoids look-ahead bias)
 	ReportType       string
 	CompTypeCode     *int
+	Fields           []string // fields to return (e.g., ["symbol", "data_json->TOTAL_ASSETS"])
 	// PostgreSQL JSONB filters
 	DataContains map[string]interface{} // data_json @> '{"key": value}'  containment query
 	DataHasKey   string                 // data_json ? 'key'  key existence check

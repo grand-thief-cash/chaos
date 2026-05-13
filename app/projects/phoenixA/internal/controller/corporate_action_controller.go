@@ -75,6 +75,9 @@ func (c *CorporateActionController) Query(w http.ResponseWriter, r *http.Request
 		AnnDateBefore: q.Get("ann_date_before"),
 		ProgressCode:  q.Get("progress_code"),
 	}
+	if v := q.Get("fields"); v != "" {
+		f.Fields = strings.Split(v, ",")
+	}
 
 	list, count, err := c.Svc.Query(r.Context(), source, f, page, pageSize)
 	if v := q.Get("symbols"); v != "" {
