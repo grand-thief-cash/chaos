@@ -30,14 +30,18 @@ func (FinancialStatement) TableName() string { return "financial_statement" }
 
 // FinancialStatementFilters for querying financial statements.
 type FinancialStatementFilters struct {
-	Symbol          string
-	Market          string
-	StatementType   string
-	ReportingPeriod string // exact match
-	PeriodStart     string // range: >= this
-	PeriodEnd       string // range: <= this
-	ReportType      string
-	CompTypeCode    *int
+	Symbol           string
+	Symbols          []string // batch query for multiple symbols
+	Market           string
+	StatementType    string
+	ReportingPeriod  string   // exact match
+	ReportingPeriods []string // batch: IN (...)
+	PeriodStart      string   // range: >= this
+	PeriodEnd        string   // range: <= this
+	AnnDateBefore    string   // PIT filter: ann_date < this value (avoids look-ahead bias)
+	ReportType       string
+	CompTypeCode     *int
+	Fields           []string // fields to return (e.g., ["symbol", "data_json->TOTAL_ASSETS"])
 	// PostgreSQL JSONB filters
 	DataContains map[string]interface{} // data_json @> '{"key": value}'  containment query
 	DataHasKey   string                 // data_json ? 'key'  key existence check

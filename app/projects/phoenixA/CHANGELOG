@@ -1,7 +1,193 @@
 # VERSION
-v1.9.0
+v1.17.0
 
 # Changelog
+- 1.17.0
+    - **API Field Filtering** — selective field retrieval for financial and corporate action APIs
+        - New parameter: `fields` on `GET /api/v2/financial/{source}/{statement_type}` and `GET /api/v2/corporate-action/{source}/{action_type}` — specify which fields to return
+        - Supports regular table fields: `symbol`, `reporting_period`, `ann_date`, etc.
+        - Supports JSONB nested fields using `data_json.FIELD_NAME` format: `data_json.TOTAL_ASSETS`, `data_json.DVD_PER_SHARE_PRE_TAX_CASH`, `data_json.DATE_EQY_RECORD`, etc.
+        - Reduces data transfer by only returning requested fields
+        - Updated API documentation: `docs/api_biz_data_description/financial_statements.md` and `docs/api_biz_data_description/corporate_actions.md` with fields parameter description and examples
+        - API consistency tests pass (9/9) — documentation matches implementation
+- 1.16.0
+    - **API Documentation Update** — comprehensive API documentation for business data
+        - Created `docs/api_biz_data_description/securities.md` — complete Securities API documentation with 5 endpoints, query parameters, response structure, field descriptions
+        - Created `docs/api_biz_data_description/README.md` — index of all API documentation files
+        - Updated `docs/api_biz_data_description/bars.md` — fixed data types (`number` → `float64`/`integer`), added `fields` parameter support
+        - Updated `docs/api_biz_data_description/taxonomy.md` — added response format for categories endpoint (`{list, total}`), added `limit`/`offset` parameters
+        - Updated `docs/api_biz_data_description/financial_statements.md` — added `total` field documentation, fixed data types
+        - Updated `docs/api_biz_data_description/corporate_actions.md` — added `total` field documentation, fixed data types
+        - Updated `docs/api_biz_data_description/` — unified data type documentation across all API docs
+    - **Table Description Documentation** — comprehensive table-level documentation
+        - Created `docs/tables_description/index.md` — index of all table description files
+        - Created `docs/tables_description/corporate_action.md` — corporate_action table structure and fields
+        - Created `docs/tables_description/financial_statement.md` — financial_statement table structure and fields
+        - Created `docs/tables_description/industry_base_info.md` — industry_base_info table structure and fields
+        - Created `docs/tables_description/industry_constituent.md` — industry_constituent table structure and fields
+        - Created `docs/tables_description/industry_daily.md` — industry_daily table structure and fields
+        - Created `docs/tables_description/industry_weight.md` — industry_weight table structure and fields
+    - **Taxonomy by_security API Fix** — fixed field mapping issue
+        - Problem: API was returning only 6 fields instead of documented 12 fields
+        - Root cause: Old binary process (PID 187303) still running on port 8085
+        - Solution: Two-query method — fetches `taxonomy_security_map` then batch-fetches `taxonomy_category` via IN clause
+        - Added `TaxonomySecurityMapWithDetail` model with 12 fields (includes category details)
+        - Verified: All 9 API tests pass (100%)
+    - **API Consistency Testing** — automated testing framework
+        - Created `scripts/test_api_consistency.py` — verifies API responses match documentation
+        - Created `docs/API_CONSISTENCY_ANALYSIS.md` — comprehensive analysis report with issues and solutions
+        - Test coverage: Securities, Bars, Taxonomy, Financial Statements, Corporate Actions APIs
+    - **Data Documentation** — new design documentation
+        - Created `docs/2026-05-12 DATA_TABLES_REFERENCE.md` — complete reference for all business data tables
+        - Created `docs/2026-05-11 FACTOR_DATA_READINESS_API.md` — data availability guide for Factor Engine
+- 1.15.0
+    - **Data Capabilities API** — LLM-optimized data availability discovery
+        - New endpoint: `GET /api/v2/catalog/capabilities` — lightweight capability/availability view for LLM function-call tool registration
+        - Returns per-domain grouped capabilities: what data each table provides, supported query params, output fields, data types, refresh schedule, coverage description
+        - Auto-discovered per-source statistics: row count, distinct symbol count, date range (from DB `GROUP BY source`, no manual maintenance needed)
+        - New `tableCapabilityRegistry` in catalog_service.go — static capability descriptions for financial_statement, corporate_action, bars, security_registry
+        - Enhanced `GET /api/v2/catalog/data-dictionary` — now includes `capability` and `data_sources` fields per table
+    - **New model types**: `DataCapability`, `DataSourceSummary`, `DataTypeInfo`, `FieldDesc`, `ParamDesc`, `DataCapabilities`, `DomainCapability`, `TableCapability`
+    - **New data type constants**:
+        - `FIN_STMT_BS_BALANCE = "bs_balance"` — baostock quarterly solvency indicators (financial.go)
+        - `CORP_ACTION_BS_DIVIDEND = "bs_dividend"` — baostock ex-rights/dividends (corporate_action.go)
+    - **Bug fix**: `queryDataSources()` now checks for both `source` AND `symbol` column existence before querying — prevents SQL error on tables with `source` but no `symbol` column
+    - **SDK Onboarding Skill Update**: added Phase 5.5 "CronJob task export file" + Phase 6.3 "Register Data Capability" — mandatory steps when onboarding new download tasks; updated checklist with English changelog requirement
+- 1.14.0
+    - **Factor Engine Data Provider — PhoenixA Integration** — connects factor engine to PhoenixA data services
+        - New provider: `PhoenixADataProvider` in Artemis — implements `FactorDataProvider` protocol using PhoenixA HTTP APIs
+        - New API method: `GET /api/v2/taxonomy/by_security/{symbol}` — returns all taxonomy mappings for a security (for industry classification)
+        - Extended financial query API: added `ann_date_before` and `reporting_periods` parameters for PIT filtering and TTM calculations
+        - Updated factor_service.py to use PhoenixA provider (fallback to mock if PhoenixA unavailable)
+        - Fixed PhoenixAClient initialization: now reads from `dept_services.phoenixA` config instead of hardcoded URL
+    - **Factor Engine Data Contract** — formal contract between Artemis factor engine and PhoenixA
+        - New doc: `docs/2026-05-11 FACTOR_ENGINE_DATA_CONTRACT.md` — defines data mapping, field semantics, API integration, and factor coverage matrix
+        - Documents PIT filtering rules, TTM calculation requirements, and market cap derivation (close × TOT_SHARE)
+        - Covers all 7 factor categories (profitability, growth, quality, solvency, valuation, efficiency, per-share) with 36 total factors
+    - **Industry Classification Extensibility** — supports multiple taxonomy systems
+        - `get_industry_map()` now accepts flexible taxonomy parameter (sw_l1, sw_l2, sw_l3, citics, etc.)
+        - Auto-detects source from taxonomy name for extensibility
+    - **SDK Download Task Onboarding: Factor Engine Contract Update** — ensures new data sources are documented for factor engine usage
+        - New section: **阶段 6.5：Factor Engine 数据契约更新** in SDK_DOWNLOAD_TASK_ONBOARDING.md
+        - Defines when and how to update FACTOR_ENGINE_DATA_CONTRACT.md when adding new download tasks
+        - Includes field mapping format, factor coverage matrix updates, and API endpoint documentation
+        - Provides ESG data example for contract updates
+    - **Backlog: Derived Data Storage** — records requirements for storing computed data
+        - New doc: `docs/BACKLOG_DATA_DERIVED_STORAGE.md`
+        - Documents market cap calculation requirement (close × TOT_SHARE)
+        - Lists considerations for future derived data: PE, PB, technical indicators
+        - Outlines design factors: dependency management, compute nodes, incremental updates, data consistency, storage design
+    - **Comprehensive Testing** — unit and integration tests for PhoenixADataProvider
+        - New test file: `artemis/tests/test_phoenixa_factor_provider.py`
+        - Tests all FactorDataProvider methods: get_active_symbols, get_industry_map, get_financial_data, get_market_data, get_current_period
+        - Tests PIT filtering, TTM calculation, caching behavior, data JSON expansion, taxonomy extensibility
+        - Uses mocks for unit tests (no PhoenixA dependency)
+- 1.13.1
+    - **Factor Engine Data Provider — PhoenixA Integration** — connects factor engine to PhoenixA data services
+        - New provider: `PhoenixADataProvider` in Artemis — implements `FactorDataProvider` protocol using PhoenixA HTTP APIs
+        - New API method: `GET /api/v2/taxonomy/by_security/{symbol}` — returns all taxonomy mappings for a security (for industry classification)
+        - Extended financial query API: added `ann_date_before` and `reporting_periods` parameters for PIT filtering and TTM calculations
+        - Updated factor_service.py to use PhoenixA provider (fallback to mock if PhoenixA unavailable)
+    - **Factor Engine Data Contract** — formal contract between Artemis factor engine and PhoenixA
+        - New doc: `docs/2026-05-11 FACTOR_ENGINE_DATA_CONTRACT.md` — defines data mapping, field semantics, API integration, and factor coverage matrix
+        - Documents PIT filtering rules, TTM calculation requirements, and market cap derivation (close × TOT_SHARE)
+        - Covers all 7 factor categories (profitability, growth, quality, solvency, valuation, efficiency, per-share) with 36 total factors
+    - **SDK Download Task Onboarding: Factor Engine Contract Update** — ensures new data sources are documented for factor engine usage
+        - New section: **阶段 6.5：Factor Engine 数据契约更新** in SDK_DOWNLOAD_TASK_ONBOARDING.md
+        - Defines when and how to update FACTOR_ENGINE_DATA_CONTRACT.md when adding new download tasks
+        - Includes field mapping format, factor coverage matrix updates, and API endpoint documentation
+        - Provides ESG data example for contract updates
+- 1.13.1
+    - **Financial API: PIT + Multi-Period Query** — for factor engine data access
+        - New parameter: `ann_date_before` on financial statement and corporate action query APIs — Point-in-Time filter to avoid look-ahead bias
+        - New parameter: `reporting_periods` on financial statement query API — batch multi-period query (comma-separated) for TTM calculations
+    - **Catalog Cache Refresh** — VACUUM ANALYZE on manual refresh only
+        - Clicking "Refresh" button now runs `VACUUM ANALYZE` before querying pg_stat (ensures accurate row counts and sizes after data changes)
+        - Page load uses cached data — no expensive ANALYZE on every visit
+    - **Design Docs** — Redis ROI analysis and factor engine data gap analysis
+        - `docs/2026-05-11 REDIS_USAGE_ANALYSIS.md` — Redis usage evaluation for PhoenixA (conclusion: not needed for single-instance)
+        - `docs/2026-05-11 FACTOR_ENGINE_DATA_DESIGN.md` — factor data requirements vs API supply, gap analysis (all gaps resolved)
+        - Discovered: balance_sheet.data_json already contains TOT_SHARE (total shares), enabling market cap calculation via close_price × TOT_SHARE
+- 1.13.0
+    - **Business-Level Data Visibility** — comprehensive business metadata in data catalog
+        - New endpoint: `GET /api/v2/catalog/business-overview` — domain-grouped view with API endpoints, example calls, cross-references
+        - Enhanced `GET /api/v2/catalog/data-dictionary` — now includes `api_endpoints`, `related_tables`, `example_calls` per table
+        - Enhanced `GET /api/v2/catalog/tables/{schema}/{table}` — now includes `api_endpoints`, `related_tables`, `example_calls`, `business_domain`
+        - New static registry: `domainApiRegistry` maps each business domain (bars, security, taxonomy, financial, corporate_action, kg, strategy) to its API surface, example queries, and table cross-references
+        - Fixed JSONB field discovery: handle double-encoded JSONB strings (jsonb_typeof='string') with CASE normalization
+        - Fixed GORM placeholder conflict: PostgreSQL JSONB `?` operator escaped with `??` in Raw queries
+        - Frontend: business domain overview section added to data catalog page with domain descriptions, API listings, and cross-reference navigation
+        - Frontend: table detail page now shows "业务数据" section with API endpoints, example calls, and related table connections
+- 1.12.0
+    - **JSONB Field Discovery** — see what's inside your JSONB columns
+        - `GetTableDetail` now returns full JSONB key metadata: field name, value type (string/number/boolean/object/array), and up to 3 sample values
+        - Fixed: `discoverJSONBKeys` was stripping value_type and sample_vals, only returned key names — now returns complete `JSONBKeyInfo` structs
+        - Frontend table detail page shows JSONB fields in a structured table (field name, type tag, sample values) instead of plain tag list
+    - **Data Catalog Performance & Bug Fixes**
+        - Fix: `GetDataDictionary` now caches results for 10 minutes — previously every request triggered N×4 SQL queries (columns/indexes/enums/time-range) against all tables
+        - Fix: `discoverEnumValues` now skips 20+ known high-cardinality columns (name, symbol, description, etc.) — previously queried every text column in every table
+        - Fix: `SafeIdentifierRe` no longer allows dots in SQL identifiers — defense-in-depth against injection via `schema.table` patterns
+        - Fix: `ListTables` returns `[]` instead of JSON `null` when domain filter matches nothing
+        - Fix: `GetTableDetail` controller returns 500 for internal errors (was returning 404 for all errors)
+        - Fix: Cache update race condition in `getTables` — `cacheTime` now set before `cachedTables`
+    - **Date Normalization**
+        - Fix: `normalizeDateYYYYMMDD` in Go now handles `YYYYMMDD` format (e.g. `"20260507"` → `"2026-05-07"`)
+    - **Test Fixes**
+        - Fix: `taxonomy_controller_test` nil pointer dereference on `ParentCode` — JSON `null` → `*string` nil check
+        - Fix: `catalog_dao_test` referenced unexported `safeIdentifierRe` → `SafeIdentifierRe`
+        - Fix: `corporate_action_controller_test` and `financial_statement_controller_test` — `DataJSON` type mismatch (`string` → `json.RawMessage`) + double-encoded JSON handling
+    - **Migration SQL**
+        - New: `migrations/postgresql/security/0005_security_registry.sql` — security registry table on `pg_default`
+        - New: `migrations/postgresql/security/0006_bars_daily.sql` — bars daily tables on `warm_storage`
+        - New: `migrations/postgresql/security/0007_bars_ext.sql` — bars extension table on `warm_storage`
+        - New: `migrations/postgresql/security/0008_strategy.sql` — strategy run tables (summary on `pg_default`, artifact on `warm_storage`)
+- 1.11.0
+    - New endpoint: `GET /api/v2/catalog/data-dictionary` — comprehensive machine-readable metadata for all tables (columns, types, JSONB keys, enum values, indexes, lineage, time ranges). Suitable for UI and LLM function calling
+    - New: `SchemaDao.DiscoverJSONBKeysGeneric()` — generic JSONB key discovery for any table/column with value type inference and sample values
+    - Fix: `CatalogService.discoverJSONBKeys()` now uses generic discovery as fallback — JSONB keys shown on table detail page for ALL tables, not just financial_statement/corporate_action
+    - Fix: `CatalogDao.GetTableIndexes` — use `model.StringArray` instead of `[]string` for `array_agg` scan target
+    - Fix: Exported `SafeIdentifierRe` and `CatalogDao.DB()` for service layer access
+- 1.10.2
+    - Fix: `CatalogDao.GetTableIndexes` — use `model.StringArray` instead of `[]string` for `array_agg` scan target, resolves "unsupported data type: &[]" error on PostgreSQL array columns
+- 1.10.1
+    - Added migration files for bars
+    - Fixed missing schema in CatalogService.getTables
+- 1.10.0
+    - **Data Catalog API** — comprehensive data asset discovery and metadata service
+        - New endpoint: `GET /api/v2/catalog/overview` — aggregate stats: total tables, rows, disk usage, per-domain and per-storage-tier breakdown
+        - New endpoint: `GET /api/v2/catalog/tables` — list all tables with row counts, sizes, time ranges, storage tier; supports `?domain=` filter
+        - New endpoint: `GET /api/v2/catalog/tables/{schema}/{table}` — table detail: column metadata, JSONB key discovery, index info, data lineage
+        - New endpoint: `GET /api/v2/catalog/storage` — tablespace-level storage info (NVMe vs SATA distribution)
+        - New endpoint: `GET /api/v2/catalog/graph` — Neo4j graph catalog: available flag, node labels, relationship types, total nodes/edges
+        - All endpoints support `?refresh=true` to bypass 5-minute in-memory cache
+        - New `CatalogDao`: queries PostgreSQL system catalogs (`pg_class`, `pg_stat_user_tables`, `information_schema`, `pg_tablespace`) with TimescaleDB hypertable detection (graceful fallback when not installed)
+        - SQL injection protection: identifier validation via regex for dynamic column/table names in `GetTimeRange`
+        - New `CatalogService`: merges dynamic DB metadata with static registry of table descriptions, column descriptions, domain classifications, and data lineage info; supports factor/regime domains for future tables and Neo4j graph metadata observation
+        - 5-minute in-memory cache with `sync.RWMutex` for table listing (avoids repeated `pg_total_relation_size` calls)
+        - Reuses existing `SchemaDao` for JSONB key introspection (no duplication)
+        - New `CatalogController`: 5 HTTP handlers with standard error responses
+        - New constants: `COMP_DAO_CATALOG`, `COMP_SVC_CATALOG`, `COMP_CTRL_CATALOG`
+        - New model structs: `CatalogOverview`, `TableCatalogEntry`, `TableDetail`, `ColumnMeta`, `IndexMeta`, `DataLineage`, `StorageInfo`, `TablespaceInfo`, `GraphCatalogOverview`, `GraphLabelInfo`, `GraphRelTypeInfo`, etc.
+        - Exported `dao.HumanSize()` utility for human-readable byte formatting
+    - **Storage Tier Planning** — new documentation
+        - `docs/2026-05-09 STORAGE_TIER_PLANNING.md`: complete table-to-storage mapping based on 372+ planned factors, revised data volume estimates, and "avoid migration" principle
+        - Core strategy: NVMe only for PGVector KNN + metadata (<100 GB); all business data (bars, factors, strategy, financial) on 8TB SATA SSD from day one
+        - TimescaleDB hypertable + compression planning for all time-series tables
+    - **PostgreSQL storage-tier migration SQL**
+        - `migrations/postgresql/security/0001_security_init.sql`: now places small metadata tables on `pg_default` and industry tables on `warm_storage` at creation time
+        - `migrations/postgresql/security/0002_financial_data.sql`: now places financial tables and indexes on `warm_storage` at creation time
+        - `migrations/postgresql/security/0003_industry_date_columns.sql`: recreated indexes now stay on `warm_storage`
+        - `migrations/postgresql/kg/0001_kg_init.sql`: now places KG metadata tables on `pg_default` and large JSONB tables on `warm_storage`
+        - `migrations/postgresql/security/0004_storage_tier_setup.sql`: legacy backfill migration for existing deployments; explicitly documents that hot/warm is controlled by PostgreSQL `TABLESPACE`, not `config.yaml`
+    - **Data Catalog Design** — new documentation
+        - `docs/2026-05-09 DATA_CATALOG_DESIGN.md`: API contracts, data models, architecture, Cthulhu dashboard wireframes, Neo4j graph catalog support
+    - **Unit Tests** — catalog model/DAO/service coverage
+        - `model/catalog_test.go`: JSON serialization tests for all catalog model structs (CatalogOverview, TableCatalogEntry, TableDetail, StorageInfo), omitempty validation
+        - `dao/catalog_dao_test.go`: `HumanSize` formatting, SQL identifier safety regex
+        - `service/catalog_service_test.go`: static metadata registry (exact match, prefix match, priority, fallback), column descriptions, lineage, time columns, domain completeness
+
+- v1.9.1
+    - Removed toolchain from go.mod to allow users to use their preferred Go version (e.g., 1.23+).
 - v1.9.0
     - **Industry data fixes — trade_date DATE type + taxonomy_security_map auto-sync**
         - Migration `0003_industry_date_columns.sql`: `trade_date` column changed from `VARCHAR(10)` to native `DATE` type in `industry_weight` and `industry_daily` tables; dependent indexes and unique constraints rebuilt

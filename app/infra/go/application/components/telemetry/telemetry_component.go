@@ -139,8 +139,8 @@ func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Res
 	)
 
 	switch tc.cfg.Exporter {
-	case ExporterStdout:
-		writer, errW := tc.stdoutWriter()
+	case ExporterStdout, ExporterFile:
+		writer, errW := tc.fileWriter()
 		if errW != nil {
 			return errW
 		}
@@ -170,7 +170,13 @@ func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Res
 		return fmt.Errorf("trace exporter init: %w", err)
 	}
 
-	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(tc.cfg.SampleRatio))
+	// sample_ratio: 0 means never sample (no telemetry output)
+	var sampler sdktrace.Sampler
+	if tc.cfg.SampleRatio == 0 {
+		sampler = sdktrace.NeverSample()
+	} else {
+		sampler = sdktrace.ParentBased(sdktrace.TraceIDRatioBased(tc.cfg.SampleRatio))
+	}
 
 	tc.tp = sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exp),
@@ -188,7 +194,7 @@ func (tc *TelemetryComponent) initTracing(ctx context.Context, res *resource.Res
 
 func (tc *TelemetryComponent) initMetrics(ctx context.Context, res *resource.Resource) error {
 	// Explicit no-op exporter: keep metrics APIs usable but emit nothing.
-	if tc.cfg.Exporter == ExporterNone {
+	if tc.cfg.Exporter == ExporterNone || tc.cfg.SampleRatio == 0 {
 		tc.mp = sdkmetric.NewMeterProvider(
 			sdkmetric.WithResource(res),
 		)
@@ -201,8 +207,8 @@ func (tc *TelemetryComponent) initMetrics(ctx context.Context, res *resource.Res
 	)
 
 	switch tc.cfg.Exporter {
-	case ExporterStdout:
-		writer, errW := tc.stdoutWriter()
+	case ExporterStdout, ExporterFile:
+		writer, errW := tc.fileWriter()
 		if errW != nil {
 			return errW
 		}
@@ -246,9 +252,15 @@ func (tc *TelemetryComponent) initMetrics(ctx context.Context, res *resource.Res
 	return nil
 }
 
-func (tc *TelemetryComponent) stdoutWriter() (io.Writer, error) {
-	if tc.cfg.StdoutFile == "" {
+func (tc *TelemetryComponent) fileWriter() (io.Writer, error) {
+	// For stdout exporter, use actual stdout (not file)
+	if tc.cfg.Exporter == ExporterStdout {
 		return os.Stdout, nil
+	}
+
+	// For file exporter or backwards compatibility (stdout_file set), use file with rotation
+	if tc.cfg.StdoutFile == "" {
+		return nil, errors.New("file exporter requires stdout_file to be set")
 	}
 
 	// Use lumberjack for log rotation (consistent with logging component behavior).
@@ -258,17 +270,8 @@ func (tc *TelemetryComponent) stdoutWriter() (io.Writer, error) {
 	}
 
 	maxSize := tc.cfg.FileMaxSizeMB
-	if maxSize <= 0 {
-		maxSize = 100 // default 100MB per file
-	}
 	maxAge := tc.cfg.FileMaxAgeDays
-	if maxAge <= 0 {
-		maxAge = 7 // default keep 7 days
-	}
 	maxBackups := tc.cfg.FileMaxBackups
-	if maxBackups <= 0 {
-		maxBackups = 5
-	}
 
 	lj := &lumberjack.Logger{
 		Filename:   tc.cfg.StdoutFile,

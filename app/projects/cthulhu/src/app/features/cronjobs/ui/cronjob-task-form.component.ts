@@ -8,11 +8,13 @@ import {NzSelectModule} from 'ng-zorro-antd/select';
 import {NzInputNumberModule} from 'ng-zorro-antd/input-number';
 import {NzButtonModule} from 'ng-zorro-antd/button';
 import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
+import {NzCollapseModule} from 'ng-zorro-antd/collapse';
+import {FormsModule} from '@angular/forms';
 
 @Component({
   selector: 'cronjob-task-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, NzFormModule, NzInputModule, NzSelectModule, NzInputNumberModule, NzButtonModule, NzMessageModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, NzFormModule, NzInputModule, NzSelectModule, NzInputNumberModule, NzButtonModule, NzMessageModule, NzCollapseModule],
   template: `
   <form nz-form [formGroup]="form" nzLayout="horizontal" (ngSubmit)="submit()" class="task-form">
       <nz-form-item>
@@ -146,6 +148,29 @@ import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
       <button nz-button nzType="default" type="button" (click)="cancel.emit()">取消</button>
     </div>
   </form>
+
+  @if (isArtemisTask) {
+    <nz-collapse style="margin-top: 16px; max-width: 1000px;">
+      <nz-collapse-panel nzHeader="Artemis task.yaml 配置" [nzActive]="false">
+        @if (taskYamlLoading) {
+          <p>加载中...</p>
+        } @else if (taskYamlSection) {
+          <div style="margin-bottom: 8px; color: #999; font-size: 12px;">
+            任务代码: <code>{{extractedTaskCode()}}</code> — 仅编辑此任务的 variants 配置
+          </div>
+          <textarea nz-input [(ngModel)]="taskYamlSection" [rows]="15"
+                    style="font-family: monospace; font-size: 12px; width: 100%;"></textarea>
+          <div style="margin-top: 8px;">
+            <button nz-button nzType="primary" [disabled]="taskYamlSaving" (click)="saveTaskYaml()">
+              {{taskYamlSaving ? '保存中...' : '保存 YAML'}}
+            </button>
+          </div>
+        } @else {
+          <p style="color: #999;">无法加载 task.yaml 配置</p>
+        }
+      </nz-collapse-panel>
+    </nz-collapse>
+  }
   `,
   styles: [`
     .task-form { max-width: 1000px; }
@@ -193,10 +218,24 @@ export class CronjobTaskFormComponent implements OnChanges {
 
   // 下拉选项数据
   targetServices: string[] = [];
+
+  // task.yaml integration
+  fullYamlContent = '';       // full task.yaml content (preserved for merge)
+  taskYamlSection = '';       // only the matching task's config section
+  taskYamlLoading = false;
+  taskYamlSaving = false;
+
+  get isArtemisTask(): boolean {
+    return this.form.value.target_service === 'artemis';
+  }
+
   constructor(private fb: FormBuilder, private msg: NzMessageService) {}
   ngOnChanges(changes: SimpleChanges){
     if(this.value){
       this.form.patchValue(this.value);
+      if (this.value.target_service === 'artemis') {
+        this.loadTaskYaml();
+      }
     }
   }
   ngOnInit() {
@@ -223,5 +262,93 @@ export class CronjobTaskFormComponent implements OnChanges {
       this.save.emit(payload);
       this.msg.success('表单已提交');
     }
+  }
+
+  extractedTaskCode(): string {
+    const path: string = this.form.value.target_path || '';
+    const parts = path.split('/');
+    return parts[parts.length - 1] || '';
+  }
+
+  private loadTaskYaml() {
+    if (!(this as any).api || typeof (this as any).api.getTaskYaml !== 'function') return;
+    this.taskYamlLoading = true;
+    (this as any).api.getTaskYaml().subscribe({
+      next: (resp: {path: string, content: string}) => {
+        this.fullYamlContent = resp.content || '';
+        this.taskYamlSection = this.extractTaskSection(this.fullYamlContent, this.extractedTaskCode());
+        this.taskYamlLoading = false;
+      },
+      error: () => {
+        this.fullYamlContent = '';
+        this.taskYamlSection = '';
+        this.taskYamlLoading = false;
+      }
+    });
+  }
+
+  saveTaskYaml() {
+    if (!(this as any).api || typeof (this as any).api.updateTaskYaml !== 'function') return;
+    const merged = this.replaceTaskSection(this.fullYamlContent, this.extractedTaskCode(), this.taskYamlSection);
+    if (merged === null) {
+      this.msg.error('合并 YAML 失败，请检查格式');
+      return;
+    }
+    this.taskYamlSaving = true;
+    (this as any).api.updateTaskYaml(merged).subscribe({
+      next: () => {
+        this.fullYamlContent = merged;
+        this.taskYamlSaving = false;
+        this.msg.success('task.yaml 已保存（仅更新了 ' + this.extractedTaskCode() + ' 配置）');
+      },
+      error: (err: any) => {
+        this.taskYamlSaving = false;
+        this.msg.error('保存 task.yaml 失败');
+        console.error('save task.yaml error', err);
+      }
+    });
+  }
+
+  /**
+   * Extract a specific task's config section from the full YAML content.
+   * Returns the section from the task name line to the next top-level key (or end of tasks block).
+   */
+  private extractTaskSection(yaml: string, taskCode: string): string {
+    if (!yaml || !taskCode) return '';
+    const lines = yaml.split('\n');
+    const startIdx = lines.findIndex(l => l.trim() === taskCode + ':');
+    if (startIdx === -1) return '';
+    // Find where the next top-level key starts (2-space indent at task level)
+    let endIdx = lines.length;
+    for (let i = startIdx + 1; i < lines.length; i++) {
+      // Top-level keys under "tasks:" have 2-space indent and end with ":"
+      // The task block ends when we hit another 2-space indented line that's a key
+      if (i > startIdx + 1 && lines[i].match(/^  \S/)) {
+        endIdx = i;
+        break;
+      }
+    }
+    return lines.slice(startIdx, endIdx).join('\n');
+  }
+
+  /**
+   * Replace a specific task's section in the full YAML with the edited section.
+   * Returns the merged full YAML, or null if replacement fails.
+   */
+  private replaceTaskSection(yaml: string, taskCode: string, newSection: string): string | null {
+    if (!yaml || !taskCode) return null;
+    const lines = yaml.split('\n');
+    const startIdx = lines.findIndex(l => l.trim() === taskCode + ':');
+    if (startIdx === -1) return null;
+    let endIdx = lines.length;
+    for (let i = startIdx + 1; i < lines.length; i++) {
+      if (i > startIdx + 1 && lines[i].match(/^  \S/)) {
+        endIdx = i;
+        break;
+      }
+    }
+    const newLines = newSection.split('\n');
+    const merged = [...lines.slice(0, startIdx), ...newLines, ...lines.slice(endIdx)];
+    return merged.join('\n');
   }
 }

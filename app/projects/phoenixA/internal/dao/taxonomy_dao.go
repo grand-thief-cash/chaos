@@ -294,10 +294,86 @@ func (d *TaxonomyDao) ListMappingsByCategory(ctx context.Context, source, taxono
 }
 
 // ListMappingsBySymbol returns all taxonomy mappings for a given symbol.
-func (d *TaxonomyDao) ListMappingsBySymbol(ctx context.Context, symbol string) ([]*model.TaxonomySecurityMap, error) {
-	var list []*model.TaxonomySecurityMap
-	err := d.db.WithContext(ctx).Where("symbol = ?", symbol).Find(&list).Error
-	return list, err
+// Performs two queries: first fetches mappings, then fetches category details.
+func (d *TaxonomyDao) ListMappingsBySymbol(ctx context.Context, symbol string) ([]*model.TaxonomySecurityMapWithDetail, error) {
+	var list []*model.TaxonomySecurityMapWithDetail
+
+	// Query 1: Fetch all mappings for symbol
+	type MappingQuery struct {
+		Source       string
+		Taxonomy     string
+		CategoryCode string
+		Symbol       string
+		AssetType    string
+		Market       string
+	}
+	var mappings []MappingQuery
+	err := d.db.WithContext(ctx).
+		Table("taxonomy_security_map").
+		Where("symbol = ?", symbol).
+		Find(&mappings).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(mappings) == 0 {
+		return list, nil
+	}
+
+	// Collect unique category codes
+	categoryCodes := make([]string, 0, len(mappings))
+	seen := make(map[string]bool)
+	for _, m := range mappings {
+		if !seen[m.CategoryCode] {
+			categoryCodes = append(categoryCodes, m.CategoryCode)
+			seen[m.CategoryCode] = true
+		}
+	}
+
+	// Query 2: Fetch category details in batch
+	type CategoryQuery struct {
+		ID         uint64
+		Code       string
+		Name       string
+		Level      uint8
+		ParentCode string
+	}
+	var categories []CategoryQuery
+	err = d.db.WithContext(ctx).
+		Table("taxonomy_category").
+		Select("id, code, name, level, parent_code").
+		Where("code IN ?", categoryCodes).
+		Find(&categories).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// Build category lookup map
+	categoryMap := make(map[string]*CategoryQuery)
+	for i := range categories {
+		categoryMap[categories[i].Code] = &categories[i]
+	}
+
+	// Merge results
+	for _, m := range mappings {
+		cat, ok := categoryMap[m.CategoryCode]
+		detail := &model.TaxonomySecurityMapWithDetail{
+			Source:       m.Source,
+			Taxonomy:     m.Taxonomy,
+			CategoryCode: m.CategoryCode,
+			Symbol:       m.Symbol,
+			AssetType:    m.AssetType,
+			Market:       m.Market,
+		}
+		if ok {
+			detail.ID = cat.ID
+			detail.CategoryName = cat.Name
+			detail.Level = cat.Level
+			detail.ParentCode = cat.ParentCode
+		}
+		list = append(list, detail)
+	}
+
+	return list, nil
 }
 
 // DeleteMapping deletes a single mapping.

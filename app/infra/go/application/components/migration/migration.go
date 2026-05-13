@@ -265,21 +265,54 @@ func executeMigrationFile(ctx context.Context, db *sql.DB, dialect Dialect, path
 	return tx.Commit()
 }
 
-// SplitPostgresStatements splits SQL by semicolons but respects $$ dollar-quoting.
+// SplitPostgresStatements splits SQL by semicolons while respecting
+// $$ dollar-quoting, single-quoted strings (” escaped), and -- line comments.
 func SplitPostgresStatements(text string) []string {
 	var stmts []string
 	var current strings.Builder
 	inDollar := false
+	inQuote := false
+	inLineComment := false
 
 	for i := 0; i < len(text); i++ {
-		if text[i] == '$' && i+1 < len(text) && text[i+1] == '$' {
+		// -- line comment: skip everything until newline
+		if !inDollar && !inQuote && !inLineComment &&
+			text[i] == '-' && i+1 < len(text) && text[i+1] == '-' {
+			inLineComment = true
+			current.WriteByte(text[i])
+			current.WriteByte(text[i+1])
+			i++
+			continue
+		}
+		if inLineComment {
+			current.WriteByte(text[i])
+			if text[i] == '\n' {
+				inLineComment = false
+			}
+			continue
+		}
+		// $$ dollar-quoting
+		if !inQuote && text[i] == '$' && i+1 < len(text) && text[i+1] == '$' {
 			inDollar = !inDollar
 			current.WriteByte(text[i])
 			current.WriteByte(text[i+1])
 			i++
 			continue
 		}
-		if text[i] == ';' && !inDollar {
+		// single-quoted string with '' escape
+		if !inDollar && text[i] == '\'' {
+			if inQuote && i+1 < len(text) && text[i+1] == '\'' {
+				current.WriteByte(text[i])
+				current.WriteByte(text[i+1])
+				i++
+				continue
+			}
+			inQuote = !inQuote
+			current.WriteByte(text[i])
+			continue
+		}
+		// semicolon splits only outside quotes/comments
+		if text[i] == ';' && !inDollar && !inQuote && !inLineComment {
 			stmts = append(stmts, current.String())
 			current.Reset()
 			continue

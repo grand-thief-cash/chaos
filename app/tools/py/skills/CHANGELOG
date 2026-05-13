@@ -1,7 +1,15 @@
 # VERSION
-v0.0.2
+v0.0.6
 
 # Changelog
+- v0.0.6
+    - Updated: [2026-06-11]SDK_DOWNLOAD_TASK_ONBOARDING — added new "Creating new import file for cronjob"
+- v0.0.5
+    - Updated: [2026-06-11]SDK_DOWNLOAD_TASK_ONBOARDING — added new "Creating new import file for cronjob"
+- v0.0.4
+    - Updated: [2026-05-10]SDK_DOWNLOAD_TASK_ONBOARDING — enhanced Phase 6 with domain classification decision tree, guidance on when to create new domains vs reuse existing ones
+- v0.0.3
+    - New: [2026-05-10]SDK_DOWNLOAD_TASK_ONBOARDING — comprehensive skill for onboarding new SDK download tasks (Artemis + PhoenixA + CronJob + Catalog)
 - v0.0.2
     - Updated [2026-04-28]INDUSTRY_EXTRATION_SKILLS
 - v0.0.1

@@ -6,7 +6,10 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from artemis.core import cfg_mgr
+from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.engines.factor_engine.pipeline import FactorPipeline, FactorDataProvider
+from artemis.engines.factor_engine.providers.phoenixa_provider import PhoenixADataProvider
 from artemis.engines.factor_engine.registry import list_factors
 from artemis.engines.factor_engine.storage.factor_store import FactorStore
 from artemis.log.logger import get_logger
@@ -38,11 +41,47 @@ class MockFactorDataProvider:
 
 
 # ---------------------------------------------------------------------------
+# PhoenixA provider initialization
+# ---------------------------------------------------------------------------
+
+def _build_phoenix_client(source: str | None = None) -> PhoenixAClient:
+    """从配置构建 PhoenixAClient。source 指定数据源名称。"""
+    dept = cfg_mgr.get_dept_services_for_source(source)
+    if not dept or not dept.phoenixA:
+        raise ValueError("phoenixA service not configured")
+    cfg = dept.phoenixA
+    return PhoenixAClient(
+        host=cfg.host,
+        port=cfg.port,
+        logger=logger,
+        timeout_seconds=getattr(cfg, "timeout_seconds", 30),
+    )
+
+
+def _init_provider() -> FactorDataProvider:
+    """Initialize PhoenixA provider if available, otherwise use mock."""
+    try:
+        # Try to create PhoenixA client from config
+        client = _build_phoenix_client()
+        # Test connection by making a simple query
+        client.get_securities(limit=1)
+        logger.info("factor_service: using PhoenixA data provider")
+        return PhoenixADataProvider(client)
+    except Exception as e:
+        logger.warning({
+            "event": "factor_service_phoenixa_unavailable",
+            "fallback": "using MockFactorDataProvider",
+            "error": str(e),
+        })
+        return MockFactorDataProvider()
+
+
+# ---------------------------------------------------------------------------
 # Service singleton
 # ---------------------------------------------------------------------------
 
 _store = FactorStore()
-_provider: FactorDataProvider = MockFactorDataProvider()
+_provider: FactorDataProvider = _init_provider()
 _pipeline = FactorPipeline(_provider, _store)
 
 

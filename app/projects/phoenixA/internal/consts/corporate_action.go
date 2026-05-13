@@ -4,6 +4,7 @@ package consts
 const (
 	CORP_ACTION_DIVIDEND    = "dividend"
 	CORP_ACTION_RIGHT_ISSUE = "right_issue"
+	CORP_ACTION_BS_DIVIDEND = "bs_dividend" // baostock 除权除息
 )
 
 // Dividend progress codes (DIV_PROGRESS).
