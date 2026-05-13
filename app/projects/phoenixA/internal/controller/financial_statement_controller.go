@@ -76,6 +76,9 @@ func (c *FinancialStatementController) Query(w http.ResponseWriter, r *http.Requ
 		AnnDateBefore: q.Get("ann_date_before"),
 		ReportType:    q.Get("report_type"),
 	}
+	if v := q.Get("symbols"); v != "" {
+		f.Symbols = strings.Split(v, ",")
+	}
 	if v := q.Get("reporting_period"); v != "" {
 		f.ReportingPeriod = v
 	}

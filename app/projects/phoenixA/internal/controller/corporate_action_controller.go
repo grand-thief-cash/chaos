@@ -11,6 +11,7 @@ import (
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/service"
+	"strings"
 )
 
 type CorporateActionController struct {
@@ -76,6 +77,9 @@ func (c *CorporateActionController) Query(w http.ResponseWriter, r *http.Request
 	}
 
 	list, count, err := c.Svc.Query(r.Context(), source, f, page, pageSize)
+	if v := q.Get("symbols"); v != "" {
+		f.Symbols = strings.Split(v, ",")
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return

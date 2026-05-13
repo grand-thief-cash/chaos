@@ -1,7 +1,37 @@
 # VERSION
-1.15.0
+1.16.0
 
 # Changelog
+- 1.16.0
+    - **API Documentation Update** — comprehensive API documentation for business data
+        - Created `docs/api_biz_data_description/securities.md` — complete Securities API documentation with 5 endpoints, query parameters, response structure, field descriptions
+        - Created `docs/api_biz_data_description/README.md` — index of all API documentation files
+        - Updated `docs/api_biz_data_description/bars.md` — fixed data types (`number` → `float64`/`integer`), added `fields` parameter support
+        - Updated `docs/api_biz_data_description/taxonomy.md` — added response format for categories endpoint (`{list, total}`), added `limit`/`offset` parameters
+        - Updated `docs/api_biz_data_description/financial_statements.md` — added `total` field documentation, fixed data types
+        - Updated `docs/api_biz_data_description/corporate_actions.md` — added `total` field documentation, fixed data types
+        - Updated `docs/api_biz_data_description/` — unified data type documentation across all API docs
+    - **Table Description Documentation** — comprehensive table-level documentation
+        - Created `docs/tables_description/index.md` — index of all table description files
+        - Created `docs/tables_description/corporate_action.md` — corporate_action table structure and fields
+        - Created `docs/tables_description/financial_statement.md` — financial_statement table structure and fields
+        - Created `docs/tables_description/industry_base_info.md` — industry_base_info table structure and fields
+        - Created `docs/tables_description/industry_constituent.md` — industry_constituent table structure and fields
+        - Created `docs/tables_description/industry_daily.md` — industry_daily table structure and fields
+        - Created `docs/tables_description/industry_weight.md` — industry_weight table structure and fields
+    - **Taxonomy by_security API Fix** — fixed field mapping issue
+        - Problem: API was returning only 6 fields instead of documented 12 fields
+        - Root cause: Old binary process (PID 187303) still running on port 8085
+        - Solution: Two-query method — fetches `taxonomy_security_map` then batch-fetches `taxonomy_category` via IN clause
+        - Added `TaxonomySecurityMapWithDetail` model with 12 fields (includes category details)
+        - Verified: All 9 API tests pass (100%)
+    - **API Consistency Testing** — automated testing framework
+        - Created `scripts/test_api_consistency.py` — verifies API responses match documentation
+        - Created `docs/API_CONSISTENCY_ANALYSIS.md` — comprehensive analysis report with issues and solutions
+        - Test coverage: Securities, Bars, Taxonomy, Financial Statements, Corporate Actions APIs
+    - **Data Documentation** — new design documentation
+        - Created `docs/2026-05-12 DATA_TABLES_REFERENCE.md` — complete reference for all business data tables
+        - Created `docs/2026-05-11 FACTOR_DATA_READINESS_API.md` — data availability guide for Factor Engine
 - 1.15.0
     - **Data Capabilities API** — LLM-optimized data availability discovery
         - New endpoint: `GET /api/v2/catalog/capabilities` — lightweight capability/availability view for LLM function-call tool registration

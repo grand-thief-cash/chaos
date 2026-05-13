@@ -75,6 +75,9 @@ func (d *CorporateActionDao) Query(ctx context.Context, source string, f *model.
 		}
 		if f.Market != "" {
 			q = q.Where("market = ?", f.Market)
+			if len(f.Symbols) > 0 {
+				q = q.Where("symbol IN ?", f.Symbols)
+			}
 		}
 		if f.ActionType != "" {
 			q = q.Where("action_type = ?", f.ActionType)
@@ -125,6 +128,9 @@ func (d *CorporateActionDao) Count(ctx context.Context, source string, f *model.
 	if f != nil {
 		if f.Symbol != "" {
 			q = q.Where("symbol = ?", f.Symbol)
+		}
+		if len(f.Symbols) > 0 {
+			q = q.Where("symbol IN ?", f.Symbols)
 		}
 		if f.Market != "" {
 			q = q.Where("market = ?", f.Market)

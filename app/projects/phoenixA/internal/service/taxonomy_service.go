@@ -103,7 +103,7 @@ func (s *TaxonomyService) ListMappingsByCategory(ctx context.Context, source, ta
 }
 
 // ListMappingsBySymbol returns all taxonomy mappings for a given symbol.
-func (s *TaxonomyService) ListMappingsBySymbol(ctx context.Context, symbol string) ([]*model.TaxonomySecurityMap, error) {
+func (s *TaxonomyService) ListMappingsBySymbol(ctx context.Context, symbol string) ([]*model.TaxonomySecurityMapWithDetail, error) {
 	return s.Dao.ListMappingsBySymbol(ctx, symbol)
 }
 
