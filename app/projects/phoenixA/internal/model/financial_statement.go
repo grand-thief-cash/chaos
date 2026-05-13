@@ -31,6 +31,7 @@ func (FinancialStatement) TableName() string { return "financial_statement" }
 // FinancialStatementFilters for querying financial statements.
 type FinancialStatementFilters struct {
 	Symbol           string
+	Symbols          []string // batch query for multiple symbols
 	Market           string
 	StatementType    string
 	ReportingPeriod  string   // exact match

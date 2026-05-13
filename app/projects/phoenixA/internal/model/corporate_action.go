@@ -27,6 +27,7 @@ func (CorporateAction) TableName() string { return "corporate_action" }
 // CorporateActionFilters for querying corporate actions.
 type CorporateActionFilters struct {
 	Symbol        string
+	Symbols       []string // batch query for multiple symbols
 	Market        string
 	ActionType    string
 	ReportPeriod  string
