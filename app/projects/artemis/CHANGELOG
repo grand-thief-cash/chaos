@@ -1,7 +1,33 @@
 # VERSION
-- v0.31.0
+- v0.32.0
 
 # Changelog
+- v0.32.0
+    - **Fixed Baostock parent tasks parameter validation error**
+        - Removed `parameter_check()` from `STOCK_ZH_A_BS_DIVIDEND_PARENT` and `STOCK_ZH_A_BS_BALANCE_PARENT`
+        - These tasks were failing with "Missing required param: start_date" because `parameter_check` runs BEFORE config merging
+        - Config parameters (from task.yaml) are now only validated in `before_execute()` where `ctx.params` is available
+    - **Telemetry component enhancements**
+        - Added `ExporterFile` type to explicitly distinguish file output from stdout
+        - Fixed `sample_ratio: 0` behavior — now correctly disables all telemetry sampling (uses `NeverSample` sampler)
+        - Fixed `exporter: stdout` writing to file — now only writes to file when `exporter: file` or `stdout_file` is explicitly set
+        - File rotation now uses configurable defaults: 100MB max size, 7 days retention, 5 backups
+        - Telemetry config updated to use `exporter: file` for file-based output (new recommended config)
+    - **Factor availability checker script**
+        - New script: `scripts/check_factor_availability.py`
+        - Queries PhoenixA `/api/v2/catalog/capabilities` endpoint
+        - Compares factor requirements with available data sources
+        - Reports which factors are fully available, partially available, or missing data
+        - Supports text and JSON output formats
+    - **Cthulhu Workbench Factor Engine documentation**
+        - New doc: `docs/2026-05-11 CTHULHU_WORKBENCH_FACTOR_ENGINE_GUIDE.md`
+        - Comprehensive guide for Factor Registry, Compute, Snapshot, and Ranking features
+        - Explains "Mkt Data" column meaning: No = financial data only, Yes = requires market data (price/volume)
+        - Documents all API endpoints and their parameters/responses
+        - Includes best practices and troubleshooting guide
+    - **Go infra telemetry component documentation update**
+        - Documented `exporter: file` as the recommended way to write to file with rotation
+        - `exporter: stdout` now always writes to actual stdout (no file redirection)
 - v0.31.0
     - **Baostock quarterly solvency data download** (query_balance_data)
         - New tasks: `STOCK_ZH_A_BS_BALANCE_PARENT` / `STOCK_ZH_A_BS_BALANCE_CHILD` — plan/child mode, per-symbol per-(year,quarter)

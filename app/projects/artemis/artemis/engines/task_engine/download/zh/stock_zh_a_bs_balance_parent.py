@@ -28,12 +28,6 @@ from artemis.engines.task_engine.download.zh.utils import (
 
 class StockZhABsBalanceParent(OrchestratorUnit):
 
-    def parameter_check(self, ctx: TaskContext):
-        params = ctx.incoming_params
-        start_date = params.get("start_date")
-        if not start_date:
-            ctx.fail("Missing required param: start_date", phase='parameter_check')
-
     def load_dynamic_parameters(self, ctx: TaskContext):
         params = ctx.params
 
@@ -56,14 +50,11 @@ class StockZhABsBalanceParent(OrchestratorUnit):
     def before_execute(self, ctx: TaskContext) -> None:
         params = ctx.params
         start_date = params.get("start_date")
-        if not start_date:
-            ctx.fail("Missing start_date after merge", phase='before_execute')
-            return
 
         try:
             datetime.strptime(start_date, "%Y-%m-%d")
-        except ValueError:
-            ctx.fail(f"Invalid start_date format: {start_date}", phase='before_execute')
+        except (ValueError, TypeError):
+            ctx.fail(f"Invalid start_date format: {start_date}, expected YYYY-MM-DD", phase='before_execute')
             return
 
         lg = bs.login()
