@@ -6,10 +6,11 @@ See docs/2026-05-11 FACTOR_ENGINE_DATA_CONTRACT.md for contract details.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from artemis.consts.task_params import ADJUST_NONE
 from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.engines.factor_engine.ttm import normalize_date, normalize_period
 from artemis.log.logger import get_logger
@@ -27,15 +28,17 @@ class PhoenixADataProvider:
     for factor engine calculations.
     """
 
-    def __init__(self, client: PhoenixAClient, market: str = "zh_a"):
+    def __init__(self, client: PhoenixAClient, market: str = "zh_a", market_adjust: str = ADJUST_NONE):
         """Initialize provider with PhoenixA client.
 
         Args:
             client: PhoenixAClient instance
             market: Market code (default: zh_a)
+            market_adjust: Bars adjust mode for factor-engine market data
         """
         self.client = client
         self.market = market
+        self.market_adjust = market_adjust
         self._cache: Dict[tuple, any] = {}
 
     def get_active_symbols(self, market: str, as_of_date: str) -> List[str]:
@@ -99,15 +102,18 @@ class PhoenixADataProvider:
 
             # Build industry map by querying each symbol
             industry_map: Dict[str, str] = {}
+            industry_context_map: Dict[str, Dict[str, Any]] = {}
             taxonomy_lower = taxonomy.lower()
 
             for symbol in symbols:
                 try:
                     mappings = self.client.get_taxonomy_by_security(symbol)
                     for m in mappings:
-                        industry_code = self._match_industry_mapping(m, taxonomy_lower)
+                        industry_context = self._match_industry_mapping(m, taxonomy_lower)
+                        industry_code = industry_context.get("industry_code", "")
                         if industry_code:
                             industry_map[symbol] = industry_code
+                            industry_context_map[symbol] = industry_context
                             break
                 except Exception as e:
                     logger.warning({
@@ -117,6 +123,7 @@ class PhoenixADataProvider:
                     })
 
             self._cache[cache_key] = industry_map
+            self._cache[("industry_context", taxonomy, market)] = industry_context_map
             logger.info({
                 "event": "phoenixa_get_industry_map",
                 "taxonomy": taxonomy,
@@ -186,7 +193,7 @@ class PhoenixADataProvider:
         self._cache[cache_key] = result
         return result
 
-    def get_market_data(self, symbol: str, as_of_date: str) -> Optional[pd.DataFrame]:
+    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]:
         """Get market data (OHLCV) for a symbol.
 
         Args:
@@ -196,7 +203,8 @@ class PhoenixADataProvider:
         Returns:
             DataFrame with trade_date as index, columns: open, high, low, close, volume
         """
-        cache_key = ("market_data", symbol, as_of_date)
+        resolved_adjust = adjust or self.market_adjust
+        cache_key = ("market_data", symbol, as_of_date, resolved_adjust)
         if cache_key in self._cache:
             return self._cache[cache_key]
 
@@ -208,7 +216,7 @@ class PhoenixADataProvider:
                 start_date=self._to_api_date(as_of_date),
                 end_date=self._to_api_date(as_of_date),
                 period="daily",
-                adjust="nf",  # No adjustment
+                adjust=resolved_adjust,
                 fields=["trade_date", "symbol", "open", "high", "low", "close", "volume", "amount"],
                 normalize_for_cache=False,
             )
@@ -221,6 +229,7 @@ class PhoenixADataProvider:
                 # Select required columns
                 keep_cols = [c for c in ["open", "high", "low", "close", "volume", "amount"] if c in df.columns]
                 df = df[keep_cols]
+                df["adjust"] = resolved_adjust
 
                 total_share = self._get_latest_balance_value(symbol, as_of_date, "TOT_SHARE")
                 if total_share is not None:
@@ -289,6 +298,14 @@ class PhoenixADataProvider:
         """Clear internal cache."""
         self._cache.clear()
 
+    def get_industry_context(self, symbol: str, taxonomy: str, market: str) -> Dict[str, Any]:
+        cache_key = ("industry_context", taxonomy, market)
+        if cache_key not in self._cache:
+            self.get_industry_map(taxonomy, market)
+        contexts = self._cache.get(cache_key) or {}
+        value = contexts.get(symbol) or {}
+        return dict(value)
+
     def _get_active_symbols_for_market(self, market: str) -> List[str]:
         for key, value in self._cache.items():
             if len(key) == 3 and key[0] == "active_symbols" and key[1] == market:
@@ -344,54 +361,56 @@ class PhoenixADataProvider:
         return value
 
     @staticmethod
-    def _match_industry_mapping(mapping: Dict, taxonomy_lower: str) -> str:
+    def _match_industry_mapping(mapping: Dict, taxonomy_lower: str) -> Dict[str, Any]:
         def _lower(value) -> str:
             return str(value or "").strip().lower()
 
         def _text(value) -> str:
             return str(value or "").strip()
 
-        industry_code = (
-            _text(mapping.get("canonical_category_code"))
-            or _text(mapping.get("standardized_category_code"))
-            or _text(mapping.get("category_code"))
-        )
+        industry_code = _text(mapping.get("canonical_category_code"))
         if not industry_code:
-            return ""
+            return {}
 
-        mapping_taxonomies = {
-            _lower(mapping.get("canonical_taxonomy")),
-            _lower(mapping.get("standardized_taxonomy")),
-            _lower(mapping.get("taxonomy")),
-        } - {""}
-        mapping_sources = {
-            _lower(mapping.get("canonical_source")),
-            _lower(mapping.get("standardized_source")),
-            _lower(mapping.get("source")),
-        } - {""}
-        mapping_levels = {
-            _text(mapping.get("canonical_level")),
-            _text(mapping.get("standardized_level")),
-            _text(mapping.get("level")),
-        } - {""}
+        canonical_taxonomy = _lower(mapping.get("canonical_taxonomy"))
+        canonical_source = _lower(mapping.get("canonical_source"))
+        canonical_level = _text(mapping.get("canonical_level"))
+        expected_source, expected_level = PhoenixADataProvider._expected_taxonomy_target(taxonomy_lower)
+        if not expected_source:
+            return {}
+        if canonical_source != expected_source or canonical_taxonomy != expected_source:
+            return {}
+        if expected_level and canonical_level != expected_level:
+            return {}
 
-        if taxonomy_lower in mapping_taxonomies or taxonomy_lower in mapping_sources:
-            return industry_code
+        flags = mapping.get("derived_flags") or {}
+        if not isinstance(flags, dict):
+            flags = {}
 
-        if taxonomy_lower.startswith("sw"):
-            if "sw" in mapping_sources:
-                if mapping_taxonomies.intersection({"industry", "sw", "sw_l1"}) or not mapping_taxonomies:
-                    return industry_code
-                if "1" in mapping_levels and "sw" in mapping_taxonomies:
-                    return industry_code
-            if mapping_taxonomies.intersection({"sw", "sw_l1"}) and ("1" in mapping_levels or not mapping_levels):
-                return industry_code
+        return {
+            "industry_code": industry_code,
+            "canonical_source": canonical_source,
+            "canonical_taxonomy": canonical_taxonomy,
+            "canonical_level": canonical_level,
+            "canonical_index_code": _text(mapping.get("canonical_index_code")),
+            "derived_flags": {str(k): bool(v) for k, v in flags.items()},
+        }
 
-        if taxonomy_lower.startswith("citics"):
-            if "citics" in mapping_sources or mapping_taxonomies.intersection({"citics", "citics_l1"}):
-                return industry_code
+    @staticmethod
+    def _expected_taxonomy_target(taxonomy_lower: str) -> tuple[str, str]:
+        normalized = str(taxonomy_lower or "").strip().lower()
+        if normalized.startswith("sw"):
+            return "sw", PhoenixADataProvider._extract_taxonomy_level(normalized)
+        if normalized.startswith("citics"):
+            return "citics", PhoenixADataProvider._extract_taxonomy_level(normalized)
+        return normalized, ""
 
-        return ""
+    @staticmethod
+    def _extract_taxonomy_level(taxonomy_lower: str) -> str:
+        normalized = str(taxonomy_lower or "").strip().lower()
+        if "_l" in normalized:
+            return normalized.rsplit("_l", 1)[-1]
+        return "1" if normalized in {"sw", "citics"} else ""
 
     @staticmethod
     def _convert_financial_response(data: List[Dict]) -> pd.DataFrame:

@@ -9,6 +9,7 @@ from unittest.mock import Mock
 
 import pandas as pd
 
+from artemis.consts.task_params import ADJUST_FORWARD, ADJUST_NONE
 from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.engines.factor_engine.providers.phoenixa_provider import PhoenixADataProvider
 
@@ -70,8 +71,24 @@ class TestGetIndustryMap:
         """Should return symbol -> industry_code mapping."""
         # Mock taxonomy query response
         mock_phoenixa_client.get_taxonomy_by_security.side_effect = [
-            [{"source": "sw", "taxonomy": "industry", "category_code": "801010"}],
-            [{"source": "sw", "taxonomy": "industry", "category_code": "801020"}],
+            [{
+                "source": "amazing_data",
+                "taxonomy": "sw_l1",
+                "canonical_source": "sw",
+                "canonical_taxonomy": "sw",
+                "canonical_level": 1,
+                "canonical_category_code": "801010",
+                "derived_flags": {"financial_sector": True},
+            }],
+            [{
+                "source": "amazing_data",
+                "taxonomy": "sw_l1",
+                "canonical_source": "sw",
+                "canonical_taxonomy": "sw",
+                "canonical_level": 1,
+                "canonical_category_code": "801020",
+                "derived_flags": {"financial_sector": False},
+            }],
         ]
 
         result = provider.get_industry_map("sw_l1", "zh_a")
@@ -85,11 +102,35 @@ class TestGetIndustryMap:
         # Mock taxonomy query with multiple sources
         mock_phoenixa_client.get_taxonomy_by_security.side_effect = [
             [
-                {"source": "sw", "taxonomy": "industry", "category_code": "801010"},
-                {"source": "citics", "taxonomy": "industry", "category_code": "C10001"},
+                {
+                    "source": "amazing_data",
+                    "taxonomy": "sw_l1",
+                    "canonical_source": "sw",
+                    "canonical_taxonomy": "sw",
+                    "canonical_level": 1,
+                    "canonical_category_code": "801010",
+                    "derived_flags": {"financial_sector": True},
+                },
+                {
+                    "source": "amazing_data",
+                    "taxonomy": "citics_l1",
+                    "canonical_source": "citics",
+                    "canonical_taxonomy": "citics",
+                    "canonical_level": 1,
+                    "canonical_category_code": "C10001",
+                    "derived_flags": {"financial_sector": True},
+                },
             ],
             [
-                {"source": "sw", "taxonomy": "industry", "category_code": "801020"},
+                {
+                    "source": "amazing_data",
+                    "taxonomy": "sw_l1",
+                    "canonical_source": "sw",
+                    "canonical_taxonomy": "sw",
+                    "canonical_level": 1,
+                    "canonical_category_code": "801020",
+                    "derived_flags": {"financial_sector": False},
+                },
             ],
         ]
 
@@ -102,8 +143,24 @@ class TestGetIndustryMap:
     def test_uses_cache(self, provider, mock_phoenixa_client):
         """Should cache industry map for repeated calls."""
         mock_phoenixa_client.get_taxonomy_by_security.side_effect = [
-            [{"source": "sw", "taxonomy": "industry", "category_code": "801010"}],
-            [{"source": "sw", "taxonomy": "industry", "category_code": "801020"}],
+            [{
+                "source": "amazing_data",
+                "taxonomy": "sw_l1",
+                "canonical_source": "sw",
+                "canonical_taxonomy": "sw",
+                "canonical_level": 1,
+                "canonical_category_code": "801010",
+                "derived_flags": {"financial_sector": True},
+            }],
+            [{
+                "source": "amazing_data",
+                "taxonomy": "sw_l1",
+                "canonical_source": "sw",
+                "canonical_taxonomy": "sw",
+                "canonical_level": 1,
+                "canonical_category_code": "801020",
+                "derived_flags": {"financial_sector": False},
+            }],
         ]
 
         provider.get_industry_map("sw_l1", "zh_a")
@@ -119,7 +176,15 @@ class TestGetIndustryMap:
     def test_handles_different_taxonomies(self, provider, mock_phoenixa_client):
         """Should support different taxonomy systems (extensibility)."""
         mock_phoenixa_client.get_taxonomy_by_security.return_value = [
-            {"source": "citics", "taxonomy": "citics_l1", "category_code": "C10001"},
+            {
+                "source": "amazing_data",
+                "taxonomy": "citics_l1",
+                "canonical_source": "citics",
+                "canonical_taxonomy": "citics",
+                "canonical_level": 1,
+                "canonical_category_code": "C10001",
+                "derived_flags": {"financial_sector": True},
+            },
         ]
 
         result = provider.get_industry_map("citics_l1", "zh_a")
@@ -129,22 +194,39 @@ class TestGetIndustryMap:
         assert isinstance(result, dict)
         assert result.get("000001") == "C10001"
 
-    def test_prefers_future_standardized_hierarchy_fields_when_available(self, provider, mock_phoenixa_client):
+    def test_uses_canonical_hierarchy_and_derived_flags(self, provider, mock_phoenixa_client):
         mock_phoenixa_client.get_taxonomy_by_security.return_value = [
             {
                 "source": "amazing_data",
                 "taxonomy": "industry",
                 "category_code": "legacy-ignored",
+                "index_code": "legacy-ignored.SI",
                 "canonical_source": "sw",
                 "canonical_taxonomy": "sw",
                 "canonical_level": 1,
                 "canonical_category_code": "801010",
+                "canonical_category_name": "银行",
+                "canonical_parent_code": "",
+                "canonical_index_code": "801010.SI",
+                "derived_flags": {"financial_sector": True},
             },
         ]
 
         result = provider.get_industry_map("sw_l1", "zh_a")
 
         assert result.get("000001") == "801010"
+        context = provider.get_industry_context("000001", "sw_l1", "zh_a")
+        assert context["canonical_index_code"] == "801010.SI"
+        assert context["derived_flags"]["financial_sector"] is True
+
+    def test_requires_canonical_fields_from_phoenixa_contract(self, provider, mock_phoenixa_client):
+        mock_phoenixa_client.get_taxonomy_by_security.return_value = [
+            {"source": "sw", "taxonomy": "sw_l1", "category_code": "801010"},
+        ]
+
+        result = provider.get_industry_map("sw_l1", "zh_a")
+
+        assert result == {}
 
 
 class TestGetFinancialData:
@@ -306,7 +388,27 @@ class TestGetMarketData:
         assert call_args[1]["asset_type"] == "stock"
         assert call_args[1]["market"] == "zh_a"
         assert call_args[1]["period"] == "daily"
-        assert call_args[1]["adjust"] == "nf"
+        assert call_args[1]["adjust"] == ADJUST_NONE
+
+    def test_supports_configurable_market_adjust_mode(self, mock_phoenixa_client):
+        provider = PhoenixADataProvider(mock_phoenixa_client, market="zh_a", market_adjust=ADJUST_FORWARD)
+        mock_phoenixa_client.get_bars.return_value = [{
+            "trade_date": "2025-04-01",
+            "open": 12.34,
+            "high": 12.56,
+            "low": 12.28,
+            "close": 12.45,
+            "volume": 12345678,
+        }]
+        mock_phoenixa_client.query_financial_statements.return_value = {"data": [], "total": 0}
+        mock_phoenixa_client.query_corporate_actions.return_value = {"data": [], "total": 0}
+
+        result = provider.get_market_data("000001", "2025-04-01")
+
+        assert result is not None
+        assert result["adjust"].iloc[-1] == ADJUST_FORWARD
+        call_args = mock_phoenixa_client.get_bars.call_args
+        assert call_args[1]["adjust"] == ADJUST_FORWARD
 
     def test_returns_none_on_empty_response(self, provider, mock_phoenixa_client):
         """Should return None when no bars data."""
@@ -362,6 +464,16 @@ class TestCacheManagement:
 
     def test_clear_cache(self, provider, mock_phoenixa_client):
         """clear_cache should clear all cached data."""
+        mock_phoenixa_client.get_taxonomy_by_security.return_value = [{
+            "source": "amazing_data",
+            "taxonomy": "sw_l1",
+            "canonical_source": "sw",
+            "canonical_taxonomy": "sw",
+            "canonical_level": 1,
+            "canonical_category_code": "801010",
+            "derived_flags": {"financial_sector": True},
+        }]
+
         # Populate cache
         provider.get_active_symbols("zh_a", "2025-04-01")
         provider.get_industry_map("sw_l1", "zh_a")

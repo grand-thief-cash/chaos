@@ -1,8 +1,11 @@
 """Unit tests for Factor Engine core modules."""
 
+from typing import Dict, Optional
+
 import pandas as pd
 import pytest
 
+from artemis.consts.task_params import ADJUST_FORWARD, ADJUST_NONE
 from artemis.engines.factor_engine.ttm import (
     get_quarter, get_year, make_period, get_prev_quarter_period,
     _val, compute_ttm, compute_single_quarter, normalize_period,
@@ -12,11 +15,12 @@ from artemis.engines.factor_engine.point_in_time import (
 )
 from artemis.engines.factor_engine.pipeline import FactorPipeline
 from artemis.engines.factor_engine.normalizer import FactorNormalizer
-from artemis.engines.factor_engine.factors.base import safe_div, avg_balance
+from artemis.engines.factor_engine.factors.base import BaseFactor, safe_div, avg_balance
 from artemis.engines.factor_engine.factors.growth import _growth_rate, _cagr
 from artemis.engines.factor_engine.factors.per_share import PerShareFactors
 from artemis.engines.factor_engine.factors.valuation import ValuationFactors
-from artemis.engines.factor_engine.registry import FACTOR_REGISTRY, get_factor_definition, list_factors
+from artemis.engines.factor_engine.models import FactorCategory, FactorMeta
+from artemis.engines.factor_engine.registry import FACTOR_REGISTRY, get_factor_definition, get_factor_market_adjust_policy, list_factors
 from artemis.engines.factor_engine.storage.factor_store import FactorStore
 
 
@@ -407,6 +411,19 @@ class TestFactorRegistry:
         assert factor_def["provenance"]["phoenix_queries"][0]["endpoint"] == "/api/v2/corporate-action/{source}/{action_type}"
         assert "bars" in factor_def["required_data_sources"]
 
+    def test_factor_definition_exposes_market_adjust_policy(self):
+        factor_def = get_factor_definition("pe_ttm")
+
+        assert factor_def is not None
+        assert factor_def["market_adjust_policy"]["adjust"] == ADJUST_NONE
+
+    def test_factor_catalog_market_adjust_policy_is_factor_specific(self):
+        pe_policy = get_factor_market_adjust_policy("pe_ttm")
+        roe_policy = get_factor_market_adjust_policy("roe")
+
+        assert pe_policy["adjust"] == ADJUST_NONE
+        assert roe_policy == {}
+
     def test_financial_variant_pending_policy_is_exposed(self):
         meta_by_name = {item["name"]: item for item in list_factors()}
         roic_meta = meta_by_name["roic"]
@@ -423,10 +440,18 @@ class TestFinancialClassification:
 
         assert FactorPipeline._financial_company_kind(financial_data, None) == "bank"
 
-    def test_falls_back_to_industry_prefix_when_comp_type_missing(self):
+    def test_uses_phoenixa_derived_flags_when_comp_type_missing(self):
         financial_data = {"balance_sheet": pd.DataFrame({"reporting_period": ["20241231"]})}
 
-        assert FactorPipeline._financial_company_kind(financial_data, "801010") == "financial"
+        assert FactorPipeline._financial_company_kind(
+            financial_data,
+            {"derived_flags": {"financial_sector": True}},
+        ) == "financial"
+
+    def test_no_longer_uses_industry_code_prefix_fallback(self):
+        financial_data = {"balance_sheet": pd.DataFrame({"reporting_period": ["20241231"]})}
+
+        assert FactorPipeline._financial_company_kind(financial_data, {"industry_code": "801010"}) is None
 
 
 class TestSnapshotRuntimeMetadata:
@@ -450,9 +475,11 @@ class TestSnapshotRuntimeMetadata:
             current_period="20241231",
             as_of_date="20250501",
             industry_code="801010",
+            industry_context={"derived_flags": {"financial_sector": True}},
         )
 
         assert meta["company_kind"] == "bank"
+        assert meta["industry_flags"]["financial_sector"] is True
         assert meta["reporting_period"] == "20241231"
         assert meta["latest_ann_date"] == "20250321"
         assert meta["freshness"]["freshness_label"] in {"fresh", "acceptable"}
@@ -483,6 +510,7 @@ class TestSnapshotRuntimeMetadata:
             current_period="20241231",
             as_of_date="20250501",
             industry_code="801150",
+            industry_context={"derived_flags": {"financial_sector": False}},
         )
 
         assert meta["missing_reasons"]["dividend_yield"] == "missing_market_enrichment:dps"
@@ -502,6 +530,117 @@ class TestSnapshotRuntimeMetadata:
         snap = store.get_factor_snapshot("000001", "20250501", "zh_a")
         assert snap is not None
         assert snap["meta"]["reporting_period"] == "20241231"
+
+
+class _AdjustAwareFactor(BaseFactor):
+    def __init__(self, category: FactorCategory, name: str):
+        self._meta = FactorMeta(name, name, category, "test", (), requires_market_data=True)
+
+    def factor_metas(self) -> list:
+        return [self._meta]
+
+    def compute(
+        self,
+        symbol: str,
+        financial_data: Dict[str, pd.DataFrame],
+        market_data: Optional[pd.DataFrame] = None,
+        current_period: Optional[str] = None,
+    ) -> Dict[str, Optional[float]]:
+        adjust = None
+        if market_data is not None and not market_data.empty and "adjust" in market_data.columns:
+            adjust = market_data["adjust"].iloc[-1]
+        return {self._meta.name: 1.0 if adjust else None}
+
+
+class _MixedAdjustAwareFactor(BaseFactor):
+    def __init__(self):
+        self._metas = [
+            FactorMeta("valuation_probe_a", "valuation_probe_a", FactorCategory.VALUATION, "test", (), requires_market_data=True),
+            FactorMeta("valuation_probe_b", "valuation_probe_b", FactorCategory.VALUATION, "test", (), requires_market_data=True),
+        ]
+
+    def factor_metas(self) -> list:
+        return list(self._metas)
+
+    def compute(
+        self,
+        symbol: str,
+        financial_data: Dict[str, pd.DataFrame],
+        market_data: Optional[pd.DataFrame] = None,
+        current_period: Optional[str] = None,
+    ) -> Dict[str, Optional[float]]:
+        adjust = None
+        if market_data is not None and not market_data.empty and "adjust" in market_data.columns:
+            adjust = market_data["adjust"].iloc[-1]
+        return {meta.name: 1.0 if adjust else None for meta in self._metas}
+
+
+class _AdjustAwareProvider:
+    def __init__(self):
+        self.adjust_requests = []
+
+    def get_active_symbols(self, market: str, as_of_date: str):
+        return ["000001"]
+
+    def get_industry_map(self, taxonomy: str, market: str):
+        return {"000001": "801010"}
+
+    def get_industry_context(self, symbol: str, taxonomy: str, market: str):
+        return {"derived_flags": {"financial_sector": False}}
+
+    def get_financial_data(self, symbol: str, as_of_date: str):
+        return {"balance_sheet": pd.DataFrame({"reporting_period": ["20241231"], "ann_date": ["20250321"]})}
+
+    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None):
+        self.adjust_requests.append(adjust)
+        return pd.DataFrame({"close": [10.0], "adjust": [adjust or ADJUST_NONE]}, index=pd.Index(["20250501"], name="trade_date"))
+
+    def get_current_period(self, symbol: str, as_of_date: str):
+        return "20241231"
+
+
+class TestMarketAdjustPolicy:
+    def test_pipeline_uses_factor_catalog_market_adjust_policy(self, monkeypatch):
+        provider = _AdjustAwareProvider()
+        pipeline = FactorPipeline(provider, FactorStore())
+        pipeline.factor_groups = [_AdjustAwareFactor(FactorCategory.VALUATION, "valuation_probe")]
+        monkeypatch.setattr(
+            "artemis.engines.factor_engine.pipeline.get_factor_market_adjust_policy",
+            lambda name: {"adjust": ADJUST_FORWARD},
+        )
+
+        pipeline.run_full("20250501", "zh_a")
+
+        assert provider.adjust_requests == [ADJUST_FORWARD]
+
+    def test_pipeline_errors_when_factor_lacks_market_adjust_policy(self, monkeypatch):
+        provider = _AdjustAwareProvider()
+        pipeline = FactorPipeline(provider, FactorStore())
+        pipeline.factor_groups = [_AdjustAwareFactor(FactorCategory.VALUATION, "valuation_probe")]
+        monkeypatch.setattr(
+            "artemis.engines.factor_engine.pipeline.get_factor_market_adjust_policy",
+            lambda name: {},
+        )
+
+        with pytest.raises(ValueError, match="market_adjust_policy"):
+            pipeline.run_full("20250501", "zh_a")
+
+    def test_pipeline_errors_when_group_contains_mixed_market_adjust_policies(self, monkeypatch):
+        provider = _AdjustAwareProvider()
+        pipeline = FactorPipeline(provider, FactorStore())
+        pipeline.factor_groups = [_MixedAdjustAwareFactor()]
+        policy_map = {
+            "valuation_probe_a": {"adjust": ADJUST_NONE},
+            "valuation_probe_b": {"adjust": ADJUST_FORWARD},
+        }
+        monkeypatch.setattr(
+            "artemis.engines.factor_engine.pipeline.get_factor_market_adjust_policy",
+            lambda name: policy_map[name],
+        )
+
+        with pytest.raises(ValueError, match="mixed market_adjust_policy"):
+            pipeline.run_full("20250501", "zh_a")
+
 
 
 # ===================================================================

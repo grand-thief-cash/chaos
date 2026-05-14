@@ -224,7 +224,10 @@ factors:
   - name: peg
     description: 市盈率相对净利润同比增速的估值修正指标。
     management_tags: [valuation, growth_linked]
-    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, bars.stock.zh_a.daily.nf.close, financial.balance_sheet.data_json.TOT_SHARE]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, bars.stock.zh_a.daily.close, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: PEG 估值侧沿用现价总市值口径，因此 bars 使用不复权收盘价。
     availability:
       expected: conditional
       requirements: [daily close, income history >= 4 quarters, positive PE, positive NI YoY growth]
@@ -303,6 +306,9 @@ factors:
     description: 归母净利润 TTM 相对总股本的每股收益。
     management_tags: [per_share]
     source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: 每股类因子当前复用 factor-engine market snapshot，统一使用不复权日频 bars。
     availability:
       expected: ready
       requirements: [income history >= 4 quarters, balance_sheet TOT_SHARE]
@@ -312,6 +318,9 @@ factors:
     description: 归母净资产相对总股本的每股净资产。
     management_tags: [per_share]
     source_fields: [financial.balance_sheet.data_json.TOT_SHARE_EQUITY_EXCL_MIN_INT, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: BPS 当前通过统一 market snapshot 获取 shares/market context，沿用不复权 bars 口径。
     availability:
       expected: ready
       requirements: [balance_sheet current quarter]
@@ -321,6 +330,9 @@ factors:
     description: 经营现金流 TTM 相对总股本的每股经营现金流。
     management_tags: [per_share]
     source_fields: [financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: CFPS 使用统一 market snapshot 载入 shares，上游 bars 口径保持不复权。
     availability:
       expected: ready
       requirements: [cashflow history >= 4 quarters, balance_sheet TOT_SHARE]
@@ -330,6 +342,9 @@ factors:
     description: 自由现金流 TTM 相对总股本的每股自由现金流。
     management_tags: [per_share]
     source_fields: [financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT, financial.cashflow.data_json.CASH_PAID_PUR_CONST_FIOLTA, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: FCF per share 当前与其它每股类因子共享同一 market snapshot，不复权口径保持一致。
     availability:
       expected: ready
       requirements: [cashflow history >= 4 quarters, balance_sheet TOT_SHARE]

@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Protocol
 
 import pandas as pd
 
+from artemis.consts.task_params import ADJUST_BACKWARD, ADJUST_FORWARD, ADJUST_NONE
 from artemis.engines.factor_engine.factors.base import BaseFactor
 from artemis.engines.factor_engine.factors.profitability import ProfitabilityFactors
 from artemis.engines.factor_engine.factors.growth import GrowthFactors
@@ -16,7 +17,7 @@ from artemis.engines.factor_engine.factors.valuation import ValuationFactors
 from artemis.engines.factor_engine.factors.efficiency import EfficiencyFactors
 from artemis.engines.factor_engine.factors.per_share import PerShareFactors
 from artemis.engines.factor_engine.normalizer import FactorNormalizer
-from artemis.engines.factor_engine.registry import FACTOR_REGISTRY, get_factor_definition
+from artemis.engines.factor_engine.registry import FACTOR_REGISTRY, get_factor_definition, get_factor_market_adjust_policy
 from artemis.engines.factor_engine.storage.factor_store import FactorStore
 from artemis.engines.factor_engine.models import FACTOR_VERSION, FactorFreshness
 
@@ -32,13 +33,15 @@ class FactorDataProvider(Protocol):
 
     def get_industry_map(self, taxonomy: str, market: str) -> Dict[str, str]: ...
 
+    def get_industry_context(self, symbol: str, taxonomy: str, market: str) -> Dict[str, Any]: ...
+
     def get_financial_data(
         self, symbol: str, as_of_date: str,
     ) -> Dict[str, pd.DataFrame]:
         """返回 {statement_type: DataFrame}，已做 PIT 过滤。"""
         ...
 
-    def get_market_data(self, symbol: str, as_of_date: str) -> Optional[pd.DataFrame]: ...
+    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]: ...
 
     def get_current_period(self, symbol: str, as_of_date: str) -> Optional[str]: ...
 
@@ -55,7 +58,7 @@ class FactorPipeline:
         3: "insurance",
         4: "broker",
     }
-    _FINANCIAL_INDUSTRY_PREFIXES = ("80178", "80179", "80101", "80100")
+    _SUPPORTED_MARKET_ADJUSTS = {ADJUST_NONE, ADJUST_FORWARD, ADJUST_BACKWARD}
 
     def __init__(
         self,
@@ -85,23 +88,29 @@ class FactorPipeline:
             return pd.DataFrame()
 
         # 2. 行业映射
-        industry_map = self.provider.get_industry_map("sw_l1", market)
+        taxonomy = "sw_l1"
+        industry_map = self.provider.get_industry_map(taxonomy, market)
 
         # 3‑4. 计算原始因子
         raw_rows: Dict[str, dict] = {}
         snapshot_meta: Dict[str, dict] = {}
         for sym in symbols:
             fin_data = self.provider.get_financial_data(sym, as_of_date)
-            mkt_data = self.provider.get_market_data(sym, as_of_date)
             period = self.provider.get_current_period(sym, as_of_date)
+            industry_context = self.provider.get_industry_context(sym, taxonomy, market)
+            market_data_cache: Dict[str, Optional[pd.DataFrame]] = {}
+            primary_market_data: Optional[pd.DataFrame] = None
 
             sym_factors: dict = {}
             for group in self.factor_groups:
+                mkt_data = self._market_data_for_group(group, sym, as_of_date, market_data_cache)
+                if primary_market_data is None and mkt_data is not None:
+                    primary_market_data = mkt_data
                 result = group.compute(sym, fin_data, mkt_data, period)
                 sym_factors.update(result)
-            self._apply_factor_policies(sym_factors, fin_data, industry_map.get(sym))
+            self._apply_factor_policies(sym_factors, fin_data, industry_context)
             raw_rows[sym] = sym_factors
-            snapshot_meta[sym] = self._build_snapshot_meta(sym_factors, fin_data, mkt_data, period, as_of_date, industry_map.get(sym))
+            snapshot_meta[sym] = self._build_snapshot_meta(sym_factors, fin_data, primary_market_data, period, as_of_date, industry_map.get(sym), industry_context)
 
         raw_factors = pd.DataFrame.from_dict(raw_rows, orient="index")
 
@@ -132,21 +141,27 @@ class FactorPipeline:
             self.run_full(as_of_date, market)
             return
 
-        industry_map = self.provider.get_industry_map("sw_l1", market)
+        taxonomy = "sw_l1"
+        industry_map = self.provider.get_industry_map(taxonomy, market)
 
         for sym in symbols:
             fin_data = self.provider.get_financial_data(sym, as_of_date)
-            mkt_data = self.provider.get_market_data(sym, as_of_date)
             period = self.provider.get_current_period(sym, as_of_date)
+            industry_context = self.provider.get_industry_context(sym, taxonomy, market)
+            market_data_cache: Dict[str, Optional[pd.DataFrame]] = {}
+            primary_market_data: Optional[pd.DataFrame] = None
 
             raw: dict = {}
             for group in self.factor_groups:
+                mkt_data = self._market_data_for_group(group, sym, as_of_date, market_data_cache)
+                if primary_market_data is None and mkt_data is not None:
+                    primary_market_data = mkt_data
                 raw.update(group.compute(sym, fin_data, mkt_data, period))
-            self._apply_factor_policies(raw, fin_data, industry_map.get(sym))
+            self._apply_factor_policies(raw, fin_data, industry_context)
 
             ind_code = industry_map.get(sym, "unknown")
             norm = self.normalizer.zscore_incremental(raw, ind_code, industry_stats)
-            snapshot_meta = self._build_snapshot_meta(raw, fin_data, mkt_data, period, as_of_date, ind_code)
+            snapshot_meta = self._build_snapshot_meta(raw, fin_data, primary_market_data, period, as_of_date, ind_code, industry_context)
 
             self.store.save_single_factor(
                 symbol=sym,
@@ -157,13 +172,58 @@ class FactorPipeline:
                 market=market,
             )
 
+    def _market_data_for_group(
+        self,
+        group: BaseFactor,
+        symbol: str,
+        as_of_date: str,
+        market_data_cache: Dict[str, Optional[pd.DataFrame]],
+    ) -> Optional[pd.DataFrame]:
+        adjust = self._market_adjust_for_group(group)
+        if adjust is None:
+            return None
+        if adjust not in market_data_cache:
+            market_data_cache[adjust] = self.provider.get_market_data(symbol, as_of_date, adjust=adjust)
+        return market_data_cache[adjust]
+
+    def _market_adjust_for_group(self, group: BaseFactor) -> Optional[str]:
+        metas = list(group.factor_metas() or [])
+        if not any(meta.requires_market_data for meta in metas):
+            return None
+
+        adjusts = set()
+        for meta in metas:
+            if not meta.requires_market_data:
+                continue
+            resolved = self._market_adjust_for_factor(meta)
+            adjusts.add(resolved)
+
+        if len(adjusts) != 1:
+            raise ValueError(f"mixed market_adjust_policy detected in factor group: {sorted(adjusts)}")
+        return next(iter(adjusts))
+
+    def _market_adjust_for_factor(self, meta) -> str:
+        catalog_policy = get_factor_market_adjust_policy(meta.name)
+        factor_policy_adjust = self._normalize_market_adjust(catalog_policy.get("adjust"))
+        if not factor_policy_adjust:
+            raise ValueError(f"factor {meta.name} requires market data but has no explicit market_adjust_policy.adjust in factor catalog")
+        return factor_policy_adjust
+
+
+    @classmethod
+    def _normalize_market_adjust(cls, value: Optional[str]) -> Optional[str]:
+        normalized = str(value or "").strip().lower()
+        if normalized in cls._SUPPORTED_MARKET_ADJUSTS:
+            return normalized
+        return None
+
     @staticmethod
     def _apply_factor_policies(
         factor_values: Dict[str, Optional[float]],
         financial_data: Dict[str, pd.DataFrame],
-        industry_code: Optional[str],
+        industry_context: Optional[Dict[str, Any]],
     ) -> None:
-        company_kind = FactorPipeline._financial_company_kind(financial_data, industry_code)
+        company_kind = FactorPipeline._financial_company_kind(financial_data, industry_context)
         if company_kind is None:
             return
         for factor_name, meta in FACTOR_REGISTRY.items():
@@ -173,7 +233,7 @@ class FactorPipeline:
     @staticmethod
     def _financial_company_kind(
         financial_data: Dict[str, pd.DataFrame],
-        industry_code: Optional[str],
+        industry_context: Optional[Dict[str, Any]],
     ) -> Optional[str]:
         for df in financial_data.values():
             if df is None or df.empty or "comp_type_code" not in df.columns:
@@ -187,18 +247,19 @@ class FactorPipeline:
                 except (TypeError, ValueError):
                     pass
 
-        if not industry_code:
+        flags = (industry_context or {}).get("derived_flags") or {}
+        if not isinstance(flags, dict):
+            flags = {}
+        if not flags.get("financial_sector"):
             return None
-        if str(industry_code).startswith(FactorPipeline._FINANCIAL_INDUSTRY_PREFIXES):
-            return "financial"
-        return None
+        return "financial"
 
     @staticmethod
     def _is_financial_company(
         financial_data: Dict[str, pd.DataFrame],
-        industry_code: Optional[str],
+        industry_context: Optional[Dict[str, Any]],
     ) -> bool:
-        return FactorPipeline._financial_company_kind(financial_data, industry_code) is not None
+        return FactorPipeline._financial_company_kind(financial_data, industry_context) is not None
 
     @staticmethod
     def _build_snapshot_meta(
@@ -208,8 +269,9 @@ class FactorPipeline:
         current_period: Optional[str],
         as_of_date: str,
         industry_code: Optional[str],
+        industry_context: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        company_kind = FactorPipeline._financial_company_kind(financial_data, industry_code)
+        company_kind = FactorPipeline._financial_company_kind(financial_data, industry_context)
         latest_ann_date = FactorPipeline._latest_ann_date(financial_data)
         period = current_period or ""
         freshness = FactorFreshness.from_dates(
@@ -227,6 +289,7 @@ class FactorPipeline:
         return {
             "version": FACTOR_VERSION,
             "industry_code": industry_code or "unknown",
+            "industry_flags": ((industry_context or {}).get("derived_flags") or {}),
             "company_kind": company_kind or "non_financial",
             "reporting_period": period,
             "latest_ann_date": latest_ann_date,

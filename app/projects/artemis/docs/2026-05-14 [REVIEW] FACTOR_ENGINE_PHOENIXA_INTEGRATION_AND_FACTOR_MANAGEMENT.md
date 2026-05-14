@@ -132,7 +132,7 @@
 - `canonical_category_name`
 - `canonical_parent_code`
 - `canonical_index_code`
-- `is_financial_sector`
+- `derived_flags`
 
 推荐规则：
 
@@ -140,7 +140,7 @@
 2. `canonical_taxonomy` 只表达统一后的体系根，例如 `sw` / `citics`
 3. `canonical_level` 明确表达层级（1/2/3），而不是要求调用方从 `sw_l1/sw_l2` 字符串中二次解析
 4. `canonical_category_code` / `canonical_parent_code` / `canonical_index_code` 直接给出当前层级所需主键链路
-5. `is_financial_sector` 直接给出金融行业布尔值，避免 Artemis 继续依赖 `comp_type_code + category_code 前缀` 的启发式判断
+5. `derived_flags.financial_sector` 直接给出金融行业布尔值，避免 Artemis 继续依赖 `comp_type_code + category_code 前缀` 的启发式判断
 
 这样 Artemis / Cthulhu / 其他策略侧都可以统一围绕 `canonical_*` 字段构建行业标准化、行业排除、金融专用因子切换逻辑，而不是各自维护一套 taxonomy 匹配规则。
 

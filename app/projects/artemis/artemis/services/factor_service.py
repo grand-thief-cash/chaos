@@ -11,7 +11,7 @@ from artemis.core import cfg_mgr
 from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.engines.factor_engine.pipeline import FactorPipeline, FactorDataProvider
 from artemis.engines.factor_engine.providers.phoenixa_provider import PhoenixADataProvider
-from artemis.engines.factor_engine.registry import get_factor_definition, get_factor_meta, list_factors
+from artemis.engines.factor_engine.registry import get_factor_meta, list_factors
 from artemis.engines.factor_engine.storage.factor_store import FactorStore
 from artemis.engines.factor_engine.ttm import normalize_date
 from artemis.log.logger import get_logger
@@ -32,10 +32,13 @@ class MockFactorDataProvider:
     def get_industry_map(self, taxonomy: str, market: str) -> Dict[str, str]:
         return {}
 
+    def get_industry_context(self, symbol: str, taxonomy: str, market: str) -> Dict[str, Any]:
+        return {}
+
     def get_financial_data(self, symbol: str, as_of_date: str) -> Dict[str, pd.DataFrame]:
         return {}
 
-    def get_market_data(self, symbol: str, as_of_date: str) -> Optional[pd.DataFrame]:
+    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]:
         return None
 
     def get_current_period(self, symbol: str, as_of_date: str) -> Optional[str]:
