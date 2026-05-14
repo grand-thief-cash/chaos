@@ -58,3 +58,14 @@ async def get_factor_meta():
     """获取所有因子元数据。"""
     return factor_service.get_meta()
 
+
+@router.get("/availability")
+async def get_factor_availability(refresh: bool = False):
+    """获取因子可用性分析。"""
+    try:
+        return factor_service.get_availability(refresh=refresh)
+    except Exception as e:
+        logger.error({"event": "factor_availability_failed", "error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
+
+

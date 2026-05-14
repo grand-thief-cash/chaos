@@ -6,12 +6,12 @@ See docs/2026-05-11 FACTOR_ENGINE_DATA_CONTRACT.md for contract details.
 
 from __future__ import annotations
 
-import logging
 from typing import Dict, List, Optional
 
 import pandas as pd
 
 from artemis.core.clients.phoenixA_client import PhoenixAClient
+from artemis.engines.factor_engine.ttm import normalize_date, normalize_period
 from artemis.log.logger import get_logger
 
 logger = get_logger("phoenixa_factor_provider")
@@ -95,20 +95,19 @@ class PhoenixADataProvider:
             return self._cache[cache_key]
 
         try:
-            # Get all active symbols first
-            symbols = self.get_active_symbols(market, "")
+            symbols = self._get_active_symbols_for_market(market)
 
             # Build industry map by querying each symbol
             industry_map: Dict[str, str] = {}
-            # Extract source from taxonomy name (e.g., "sw_l1" -> "sw")
-            source = "sw" if "sw" in taxonomy.lower() else taxonomy
+            taxonomy_lower = taxonomy.lower()
 
             for symbol in symbols:
                 try:
                     mappings = self.client.get_taxonomy_by_security(symbol)
                     for m in mappings:
-                        if m.get("source") == source and m.get("taxonomy") == "industry":
-                            industry_map[symbol] = m.get("category_code", "")
+                        industry_code = self._match_industry_mapping(m, taxonomy_lower)
+                        if industry_code:
+                            industry_map[symbol] = industry_code
                             break
                 except Exception as e:
                     logger.warning({
@@ -153,6 +152,7 @@ class PhoenixADataProvider:
             return self._cache[cache_key]
 
         result: Dict[str, pd.DataFrame] = {}
+        api_as_of_date = self._to_api_date(as_of_date)
 
         # Query each statement type
         statement_types = ["balance_sheet", "income", "cashflow"]
@@ -162,11 +162,11 @@ class PhoenixADataProvider:
                     source=SOURCE,
                     statement_type=stmt_type,
                     symbol=symbol,
-                    ann_date_before=as_of_date,  # PIT filtering
-                    page_size=20,  # Get recent periods
+                    ann_date_before=api_as_of_date,  # PIT filtering
+                    page_size=24,  # Get enough periods for TTM/CAGR
                 )
 
-                if response.get("data"):
+                if isinstance(response, dict) and response.get("data"):
                     df = self._convert_financial_response(response["data"])
                     result[stmt_type] = df
                     logger.debug({
@@ -205,17 +205,33 @@ class PhoenixADataProvider:
                 asset_type="stock",
                 market=self.market,
                 symbol=symbol,
-                start_date=as_of_date,
-                end_date=as_of_date,
+                start_date=self._to_api_date(as_of_date),
+                end_date=self._to_api_date(as_of_date),
                 period="daily",
                 adjust="nf",  # No adjustment
+                fields=["trade_date", "symbol", "open", "high", "low", "close", "volume", "amount"],
+                normalize_for_cache=False,
             )
 
             if bars:
                 df = pd.DataFrame(bars)
+                if "trade_date" in df.columns:
+                    df["trade_date"] = df["trade_date"].map(normalize_date)
                 df.set_index("trade_date", inplace=True)
                 # Select required columns
-                df = df[["open", "high", "low", "close", "volume"]]
+                keep_cols = [c for c in ["open", "high", "low", "close", "volume", "amount"] if c in df.columns]
+                df = df[keep_cols]
+
+                total_share = self._get_latest_balance_value(symbol, as_of_date, "TOT_SHARE")
+                if total_share is not None:
+                    df["total_share"] = float(total_share)
+                    if "close" in df.columns:
+                        df["market_cap"] = df["close"].astype(float) * float(total_share)
+
+                dps = self._get_latest_dividend_per_share(symbol, as_of_date)
+                if dps is not None:
+                    df["dps"] = float(dps)
+
                 self._cache[cache_key] = df
                 return df
         except Exception as e:
@@ -248,13 +264,15 @@ class PhoenixADataProvider:
                 source=SOURCE,
                 statement_type="balance_sheet",
                 symbol=symbol,
-                ann_date_before=as_of_date,
+                ann_date_before=self._to_api_date(as_of_date),
                 page_size=1,
             )
 
-            if response.get("data"):
+            if isinstance(response, dict) and response.get("data"):
                 # Data is sorted by reporting_period DESC
-                latest_period = response["data"][0].get("reporting_period")
+                latest_period = normalize_period(
+                    response["data"][0].get("reporting_period") or response["data"][0].get("report_period"),
+                )
                 self._cache[cache_key] = latest_period
                 return latest_period
         except Exception as e:
@@ -270,6 +288,110 @@ class PhoenixADataProvider:
     def clear_cache(self):
         """Clear internal cache."""
         self._cache.clear()
+
+    def _get_active_symbols_for_market(self, market: str) -> List[str]:
+        for key, value in self._cache.items():
+            if len(key) == 3 and key[0] == "active_symbols" and key[1] == market:
+                return value
+        return self.get_active_symbols(market, "")
+
+    def _get_latest_balance_value(self, symbol: str, as_of_date: str, field: str) -> Optional[float]:
+        fin = self.get_financial_data(symbol, as_of_date)
+        balance = fin.get("balance_sheet")
+        if balance is None or balance.empty or field not in balance.columns:
+            return None
+        series = balance[field].dropna()
+        if series.empty:
+            return None
+        return float(series.iloc[0])
+
+    def _get_latest_dividend_per_share(self, symbol: str, as_of_date: str) -> Optional[float]:
+        cache_key = ("dividend_per_share", symbol, as_of_date)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        api_as_of_date = self._to_api_date(as_of_date)
+        queries = [
+            {"progress_code": "3"},
+            {},
+        ]
+        for extra in queries:
+            response = self.client.query_corporate_actions(
+                source=SOURCE,
+                action_type="dividend",
+                symbol=symbol,
+                ann_date_before=api_as_of_date,
+                page_size=20,
+                **extra,
+            )
+            if not isinstance(response, dict):
+                continue
+            for item in response.get("data", []):
+                data_json = item.get("data_json") or {}
+                value = data_json.get("DVD_PER_SHARE_PRE_TAX_CASH")
+                if value is not None:
+                    self._cache[cache_key] = float(value)
+                    return self._cache[cache_key]
+
+        self._cache[cache_key] = None
+        return None
+
+    @staticmethod
+    def _to_api_date(value: str) -> str:
+        normalized = normalize_date(value)
+        if len(normalized) == 8:
+            return f"{normalized[:4]}-{normalized[4:6]}-{normalized[6:8]}"
+        return value
+
+    @staticmethod
+    def _match_industry_mapping(mapping: Dict, taxonomy_lower: str) -> str:
+        def _lower(value) -> str:
+            return str(value or "").strip().lower()
+
+        def _text(value) -> str:
+            return str(value or "").strip()
+
+        industry_code = (
+            _text(mapping.get("canonical_category_code"))
+            or _text(mapping.get("standardized_category_code"))
+            or _text(mapping.get("category_code"))
+        )
+        if not industry_code:
+            return ""
+
+        mapping_taxonomies = {
+            _lower(mapping.get("canonical_taxonomy")),
+            _lower(mapping.get("standardized_taxonomy")),
+            _lower(mapping.get("taxonomy")),
+        } - {""}
+        mapping_sources = {
+            _lower(mapping.get("canonical_source")),
+            _lower(mapping.get("standardized_source")),
+            _lower(mapping.get("source")),
+        } - {""}
+        mapping_levels = {
+            _text(mapping.get("canonical_level")),
+            _text(mapping.get("standardized_level")),
+            _text(mapping.get("level")),
+        } - {""}
+
+        if taxonomy_lower in mapping_taxonomies or taxonomy_lower in mapping_sources:
+            return industry_code
+
+        if taxonomy_lower.startswith("sw"):
+            if "sw" in mapping_sources:
+                if mapping_taxonomies.intersection({"industry", "sw", "sw_l1"}) or not mapping_taxonomies:
+                    return industry_code
+                if "1" in mapping_levels and "sw" in mapping_taxonomies:
+                    return industry_code
+            if mapping_taxonomies.intersection({"sw", "sw_l1"}) and ("1" in mapping_levels or not mapping_levels):
+                return industry_code
+
+        if taxonomy_lower.startswith("citics"):
+            if "citics" in mapping_sources or mapping_taxonomies.intersection({"citics", "citics_l1"}):
+                return industry_code
+
+        return ""
 
     @staticmethod
     def _convert_financial_response(data: List[Dict]) -> pd.DataFrame:
@@ -287,8 +409,9 @@ class PhoenixADataProvider:
         rows = []
         for item in data:
             row = {
-                "reporting_period": item.get("reporting_period"),
-                "ann_date": item.get("ann_date"),
+                "reporting_period": normalize_period(item.get("reporting_period") or item.get("report_period")),
+                "ann_date": normalize_date(item.get("ann_date")),
+                "comp_type_code": item.get("comp_type_code"),
             }
             # Merge data_json fields
             data_json = item.get("data_json") or {}
@@ -297,8 +420,8 @@ class PhoenixADataProvider:
 
         df = pd.DataFrame(rows)
         if not df.empty:
-            df.set_index("reporting_period", inplace=True)
-            # Sort by period descending (newest first)
-            df.sort_index(ascending=False, inplace=True)
+            df = df[df["reporting_period"] != ""].copy()
+            df.sort_values(["reporting_period", "ann_date"], ascending=[False, False], inplace=True)
+            df.set_index("reporting_period", drop=False, inplace=True)
 
         return df

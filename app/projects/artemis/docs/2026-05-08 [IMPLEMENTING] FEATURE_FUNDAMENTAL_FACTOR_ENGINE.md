@@ -27,6 +27,61 @@
 | **行业标准化** | 跨行业比较必须做 z-score，否则金融 vs 科技无法排序 |
 | **时间对齐** | 财务数据有滞后性（Q1 报告 4 月才出），必须用 point-in-time 避免未来函数 |
 | **增量计算** | 日常只计算新发布报表涉及的股票，全量重算仅做定期校验 |
+| **字段命名单一事实来源** | 因子计算统一直接使用 PhoenixA canonical 字段名，不再在 Artemis 内部维持历史字段别名 |
+
+---
+
+### 1.3 因子目录与治理（2026-05-14 补充）
+
+因子引擎除了“能算”，还必须可治理、可追溯、可在 Cthulhu 清晰展示。因此新增一个静态结构化因子目录作为 P0 起点：
+
+```text
+app/projects/artemis/config/factor_catalog/
+├── manifest.yaml
+└── factors/
+    └── governance_seed.yaml
+```
+
+该目录当前优先记录治理风险最高的因子（股息、市值、金融行业排除相关），字段包括：
+
+- 因子解释描述
+- LaTeX 公式
+- PhoenixA 查询接口
+- 查询参数
+- 使用字段
+- dividend / market-cap 口径治理说明
+- financial policy（标准定义 / 金融专用定义待补 / 排除）
+
+实现推进后，catalog 已扩展为覆盖全部 39 个已注册因子，并补充静态 availability 信息：
+
+- `availability.expected`
+- `availability.requirements`
+- `availability.runtime_state`
+
+与之对应，运行态 snapshot `meta` 负责记录：
+
+- `reporting_period`
+- `latest_ann_date`
+- `freshness`
+- `company_kind`
+- `missing_reasons`
+
+因此当前设计已经明确分层：
+
+1. **静态 catalog**：定义、公式、数据来源、治理规则、理论可用条件
+2. **运行态 snapshot meta**：本次计算的数据时效、新鲜度、未算出原因
+
+在此基础上，又补充了第三层：
+
+3. **独立 availability 接口**：聚合 factor catalog 与 PhoenixA `/api/v2/catalog/capabilities`，输出 factor-level provenance、required fields、required data sources、source availability、availability status
+
+因此因子管理链路现在已经形成：
+
+- `/factors/meta` → 静态定义与治理
+- `/factors/availability` → 平台级可用性与数据供给状态
+- `/factors/snapshot` → 单标的、单日期运行态结果与 missing_reason
+
+后续 P1/P2 再把全部 39 个因子迁移到 catalog，并把 coverage / freshness / missing_reason 接入运行态管理。
 
 ---
 
@@ -106,7 +161,7 @@ Fundamental Factors
 | **ROIC** | `NOPAT_TTM / Invested_Capital_avg` | income + balance_sheet |
 
 > **NI** = `NET_PRO_EXCL_MIN_INT_INC`（归母净利润）
-> **NOPAT** = `OPERA_PROFIT_TTM × (1 - effective_tax_rate)`，其中 `effective_tax_rate = INC_TAX / TOT_PROFIT`（取最近年报的实际税率）
+> **NOPAT** = `OPERA_PROFIT_TTM × (1 - effective_tax_rate)`，其中 `effective_tax_rate = INCOME_TAX / TOTAL_PROFIT`（取最近年报的实际税率）
 > **Invested_Capital** = `TOT_SHARE_EQUITY_EXCL_MIN_INT + ST_BORROWING + LT_LOAN + BONDS_PAYABLE - CURRENCY_CAP`（股东权益 + 有息负债 - 现金）
 > 
 > **TTM 处理**：利润表/现金流量表使用 TTM 转换（详见第四章）；资产负债表使用期初期末均值。
@@ -187,13 +242,18 @@ Fundamental Factors
 | **PEG** | `PE_TTM / (NI_Growth_YoY × 100)` | PE + 增长率 |
 | **EV/EBITDA** | `(market_cap + net_debt) / EBITDA_TTM` | 行情 + balance_sheet + income |
 | **PCF** | `market_cap / OCF_TTM` | 行情 + cashflow |
-| **Dividend Yield** | `DPS_TTM / close_price` | corporate_action + 行情 |
+| **Dividend Yield** | `DVD_PER_SHARE_PRE_TAX_CASH / close_price` | corporate_action + 行情 |
 
 > ⚠️ **市值计算说明**：
 > - `market_cap = close_price × total_shares`（总股本，非流通股本）
-> - `total_shares` 来源：`security_registry` 或 bars_ext 中的 `total_share` 字段
+> - `total_shares` 当前统一来源：PhoenixA `financial/balance_sheet.data_json.TOT_SHARE`
 > - A 股有 "总股本" vs "流通A股" vs "自由流通股本"，**估值因子统一使用总股本**（与行业惯例一致）
 > - 如果 `total_shares` 数据有变动（增发/回购），需使用**当日有效的总股本**（PIT 对齐）
+
+> ⚠️ **股息口径治理说明**：
+> - `Dividend Yield` / `DPS` 当前统一使用 `corporate_action/dividend.data_json.DVD_PER_SHARE_PRE_TAX_CASH`
+> - 查询时优先 `progress_code=3`（已实施）；若无实施方案，则回退到 `as_of_date` 前最新可用公告，并在 catalog / 管理页明确标记 fallback
+> - 当前不纳入送股/转增，也不切换税后口径
 > 
 > **EV（企业价值）详细定义**：
 > ```

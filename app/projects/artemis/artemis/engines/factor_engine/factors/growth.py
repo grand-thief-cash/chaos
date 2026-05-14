@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from artemis.engines.factor_engine.factors.base import BaseFactor, safe_div
+from artemis.engines.factor_engine.factors.base import BaseFactor
 from artemis.engines.factor_engine.models import FactorCategory, FactorMeta
 from artemis.engines.factor_engine.registry import register_factor
 from artemis.engines.factor_engine.ttm import compute_ttm, compute_single_quarter, get_year, get_quarter, make_period
@@ -82,9 +82,9 @@ class GrowthFactors(BaseFactor):
         ni_ttm_3y = compute_ttm(income, "NET_PRO_EXCL_MIN_INT_INC", period_3y_ago) if income is not None else None
 
         # OCF Growth
-        ocf_ttm_now = compute_ttm(cashflow, "NET_CASH_FLOWS_OPER_ACT", period) if cashflow is not None else None
+        ocf_ttm_now = compute_ttm(cashflow, "NET_CASH_FLOW_OPERA_ACT", period) if cashflow is not None else None
         period_1y_ago = make_period(year - 1, quarter) if quarter else ""
-        ocf_ttm_prev = compute_ttm(cashflow, "NET_CASH_FLOWS_OPER_ACT", period_1y_ago) if cashflow is not None else None
+        ocf_ttm_prev = compute_ttm(cashflow, "NET_CASH_FLOW_OPERA_ACT", period_1y_ago) if cashflow is not None else None
 
         return {
             "revenue_growth_yoy": _growth_rate(rev_sq_cur, rev_sq_prev),

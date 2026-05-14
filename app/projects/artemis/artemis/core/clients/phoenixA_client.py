@@ -1,7 +1,5 @@
 from typing import Dict, Any, Iterator, List, Optional
 
-import requests
-
 from artemis.core.clients.dept_clients import HTTPDeptServiceClient
 
 
@@ -581,36 +579,50 @@ class PhoenixAClient(HTTPDeptServiceClient):
         source: str,
         statement_type: str,
         symbol: str = "",
+        symbols: Optional[List[str]] = None,
+        market: str = "",
         period_start: str = "",
         period_end: str = "",
         ann_date_before: str = "",
+        reporting_period: str = "",
         reporting_periods: Optional[List[str]] = None,
         report_type: str = "",
         comp_type_code: Optional[int] = None,
+        fields: Optional[List[str]] = None,
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
         """Query financial statements via v2 API.
 
-        Supports PIT filtering (ann_date_before) and batch period queries (reporting_periods)
-        for factor engine TTM calculations.
+        Mirrors PhoenixA controller query params:
+        `symbol`, `symbols`, `market`, `period_start`, `period_end`, `ann_date_before`,
+        `reporting_period`, `reporting_periods`, `report_type`, `comp_type_code`,
+        `fields`, `page`, and `page_size`.
         """
         path = f"/api/v2/financial/{source}/{statement_type}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
         if symbol:
             params["symbol"] = symbol
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        if market:
+            params["market"] = market
         if period_start:
             params["period_start"] = period_start
         if period_end:
             params["period_end"] = period_end
         if ann_date_before:
             params["ann_date_before"] = ann_date_before
+        if reporting_period:
+            params["reporting_period"] = reporting_period
         if reporting_periods:
             params["reporting_periods"] = ",".join(reporting_periods)
         if report_type:
             params["report_type"] = report_type
         if comp_type_code is not None:
             params["comp_type_code"] = str(comp_type_code)
+        if fields:
+            params["fields"] = ",".join([str(f) for f in fields if str(f).strip()])
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
@@ -668,8 +680,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         source: str,
         action_type: str,
         symbol: str = "",
+        symbols: Optional[List[str]] = None,
         period_start: str = "",
         period_end: str = "",
+        report_period: str = "",
+        ann_date_before: str = "",
+        progress_code: str = "",
+        fields: Optional[List[str]] = None,
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
@@ -678,10 +695,20 @@ class PhoenixAClient(HTTPDeptServiceClient):
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
         if symbol:
             params["symbol"] = symbol
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
         if period_start:
             params["period_start"] = period_start
         if period_end:
             params["period_end"] = period_end
+        if report_period:
+            params["report_period"] = report_period
+        if ann_date_before:
+            params["ann_date_before"] = ann_date_before
+        if progress_code:
+            params["progress_code"] = progress_code
+        if fields:
+            params["fields"] = ",".join([str(f) for f in fields if str(f).strip()])
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
@@ -824,7 +851,10 @@ class PhoenixAClient(HTTPDeptServiceClient):
         """Query all taxonomy mappings for a security via v2 API.
 
         Returns list of TaxonomySecurityMap entries with fields:
-        - source, taxonomy, category_code, symbol, asset_type, market
+        - source, taxonomy, category_code, category_name, level, parent_code, symbol, asset_type, market
+        - Future-compatible standardized fields, if PhoenixA adds them:
+          canonical_source, canonical_taxonomy, canonical_level,
+          canonical_category_code, canonical_category_name, canonical_parent_code
 
         For factor engine: use category_code from first sw_l1 entry.
         """
@@ -845,3 +875,25 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     'error': str(e),
                 })
             return []
+
+    def get_catalog_capabilities(self, *, refresh: bool = False) -> Dict[str, Any]:
+        """Query PhoenixA catalog capabilities for factor-availability analysis."""
+        path = "/api/v2/catalog/capabilities"
+        params: Dict[str, Any] = {}
+        if refresh:
+            params["refresh"] = "true"
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                if isinstance(data, dict):
+                    return data
+            return {"capabilities": []}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_catalog_capabilities_failed',
+                    'error': str(e),
+                })
+            return {"capabilities": []}
+

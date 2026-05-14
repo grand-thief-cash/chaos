@@ -18,12 +18,30 @@ from typing import Optional
 import pandas as pd
 
 
+def normalize_period(value: Optional[str]) -> str:
+    """Normalize period/date strings to ``YYYYMMDD`` when possible."""
+    if value is None:
+        return ""
+    digits = "".join(ch for ch in str(value).strip() if ch.isdigit())
+    if len(digits) >= 8:
+        return digits[:8]
+    if len(digits) == 4:
+        return digits
+    return ""
+
+
+def normalize_date(value: Optional[str]) -> str:
+    """Normalize a date string to ``YYYYMMDD``."""
+    return normalize_period(value)
+
+
 # ---------------------------------------------------------------------------
 # Period helpers
 # ---------------------------------------------------------------------------
 
 def get_quarter(reporting_period: str) -> int:
     """Derive quarter (1-4) from period string like '20250930'. Returns 0 on bad input."""
+    reporting_period = normalize_period(reporting_period)
     if not reporting_period or len(reporting_period) < 6:
         return 0
     try:
@@ -34,6 +52,7 @@ def get_quarter(reporting_period: str) -> int:
 
 
 def get_year(reporting_period: str) -> int:
+    reporting_period = normalize_period(reporting_period)
     if not reporting_period or len(reporting_period) < 4:
         return 0
     try:
@@ -65,15 +84,20 @@ def _val(df: Optional[pd.DataFrame], period: str, field: str) -> Optional[float]
     Returns ``None`` if the DataFrame is empty, the field/period is missing, or
     the value is NaN.
     """
+    period = normalize_period(period)
     if df is None or df.empty or not period:
         return None
     if field not in df.columns:
         return None
-    if "reporting_period" not in df.columns:
-        return None
-    # Ensure type-consistent comparison (int vs str mismatch guard)
-    rp = df["reporting_period"].astype(str)
-    mask = rp == str(period)
+
+    if "reporting_period" in df.columns:
+        rp = df["reporting_period"].map(normalize_period)
+    elif "report_period" in df.columns:
+        rp = df["report_period"].map(normalize_period)
+    else:
+        rp = pd.Series(df.index, index=df.index).map(normalize_period)
+
+    mask = rp == period
     rows = df.loc[mask, field]
     if rows.empty:
         return None
@@ -98,6 +122,7 @@ def compute_ttm(
     Returns:
         TTM 值, 数据不足时返回 ``None``
     """
+    current_period = normalize_period(current_period)
     quarter = get_quarter(current_period)
     year = get_year(current_period)
 
@@ -128,6 +153,7 @@ def compute_single_quarter(
     Q1 = Q1累计值
     Qn = Qn累计 − Q(n−1)累计  (n=2,3,4)
     """
+    report_period = normalize_period(report_period)
     quarter = get_quarter(report_period)
     year = get_year(report_period)
 

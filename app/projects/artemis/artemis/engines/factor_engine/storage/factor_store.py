@@ -29,13 +29,15 @@ class FactorStore:
         market: str,
         raw_factors: pd.DataFrame,
         normalized_factors: pd.DataFrame,
+        snapshot_meta: Optional[Dict[str, dict]] = None,
     ) -> None:
+        snapshot_meta = snapshot_meta or {}
         for sym in raw_factors.index:
             key = (sym, market, as_of_date)
             self._snapshots[key] = {
                 "raw_factors": raw_factors.loc[sym].dropna().to_dict(),
                 "norm_factors": normalized_factors.loc[sym].dropna().to_dict() if sym in normalized_factors.index else {},
-                "meta": {"version": "v1.0"},
+                "meta": snapshot_meta.get(sym, {"version": "v1.0"}),
             }
 
     def save_single_factor(

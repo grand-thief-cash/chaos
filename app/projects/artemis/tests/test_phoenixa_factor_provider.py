@@ -5,8 +5,7 @@ Requires PhoenixA service to be running.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict
+from unittest.mock import Mock
 
 import pandas as pd
 
@@ -112,7 +111,7 @@ class TestGetIndustryMap:
 
         # Should only call once (cached on second call)
         total_calls = sum(
-            call_args[1]["symbol"] == "000001"
+            call_args[0][0] == "000001"
             for call_args in mock_phoenixa_client.get_taxonomy_by_security.call_args_list
         )
         assert total_calls == 1
@@ -120,14 +119,32 @@ class TestGetIndustryMap:
     def test_handles_different_taxonomies(self, provider, mock_phoenixa_client):
         """Should support different taxonomy systems (extensibility)."""
         mock_phoenixa_client.get_taxonomy_by_security.return_value = [
-            {"source": "citics", "taxonomy": "industry", "category_code": "C10001"},
+            {"source": "citics", "taxonomy": "citics_l1", "category_code": "C10001"},
         ]
 
         result = provider.get_industry_map("citics_l1", "zh_a")
 
-        # Should query with citics source
-        mock_phoenixa_client.get_taxonomy_by_security.assert_called_once()
+        # Should query each symbol and preserve citics mapping
+        assert mock_phoenixa_client.get_taxonomy_by_security.call_count == 2
         assert isinstance(result, dict)
+        assert result.get("000001") == "C10001"
+
+    def test_prefers_future_standardized_hierarchy_fields_when_available(self, provider, mock_phoenixa_client):
+        mock_phoenixa_client.get_taxonomy_by_security.return_value = [
+            {
+                "source": "amazing_data",
+                "taxonomy": "industry",
+                "category_code": "legacy-ignored",
+                "canonical_source": "sw",
+                "canonical_taxonomy": "sw",
+                "canonical_level": 1,
+                "canonical_category_code": "801010",
+            },
+        ]
+
+        result = provider.get_industry_map("sw_l1", "zh_a")
+
+        assert result.get("000001") == "801010"
 
 
 class TestGetFinancialData:
@@ -157,6 +174,7 @@ class TestGetFinancialData:
         assert isinstance(result, dict)
         assert "balance_sheet" in result
         assert isinstance(result["balance_sheet"], pd.DataFrame)
+        assert result["balance_sheet"].iloc[0]["reporting_period"] == "20241231"
 
     def test_applies_pit_filter(self, provider, mock_phoenixa_client):
         """Should apply PIT (ann_date_before) filtering."""
@@ -211,8 +229,8 @@ class TestGetFinancialData:
 
         # Should be sorted with newest first
         periods = list(df.index)
-        assert periods[0] == "2024-12-31"
-        assert periods[1] == "2024-09-30"
+        assert periods[0] == "20241231"
+        assert periods[1] == "20240930"
 
 
 class TestGetMarketData:
@@ -242,6 +260,40 @@ class TestGetMarketData:
         assert "low" in result.columns
         assert "close" in result.columns
         assert "volume" in result.columns
+
+    def test_enriches_market_data_with_shares_and_dividend(self, provider, mock_phoenixa_client):
+        mock_phoenixa_client.get_bars.return_value = [{
+            "trade_date": "2025-04-01",
+            "open": 12.34,
+            "high": 12.56,
+            "low": 12.28,
+            "close": 12.45,
+            "volume": 12345678,
+        }]
+        mock_phoenixa_client.query_financial_statements.return_value = {
+            "data": [{
+                "reporting_period": "2024-12-31",
+                "ann_date": "2025-03-21",
+                "comp_type_code": 1,
+                "data_json": {"TOT_SHARE": 1000},
+            }],
+            "total": 1,
+        }
+        mock_phoenixa_client.query_corporate_actions.return_value = {
+            "data": [{
+                "report_period": "2023",
+                "ann_date": "2024-06-11",
+                "data_json": {"DVD_PER_SHARE_PRE_TAX_CASH": 0.5},
+            }],
+            "total": 1,
+        }
+
+        result = provider.get_market_data("000001", "2025-04-01")
+
+        assert result is not None
+        assert result["total_share"].iloc[-1] == 1000
+        assert result["dps"].iloc[-1] == 0.5
+        assert result["market_cap"].iloc[-1] == pytest.approx(12450.0)
 
     def test_passes_correct_params(self, provider, mock_phoenixa_client):
         """Should pass correct parameters to PhoenixA client."""
@@ -287,7 +339,7 @@ class TestGetCurrentPeriod:
 
         result = provider.get_current_period("000001", "2025-04-01")
 
-        assert result == "2024-12-31"
+        assert result == "20241231"
 
     def test_applies_pit_filter(self, provider, mock_phoenixa_client):
         """Should apply PIT (ann_date_before) filtering."""
@@ -387,6 +439,6 @@ class TestConvertFinancialResponse:
         result = PhoenixADataProvider._convert_financial_response(data)
 
         periods = list(result.index)
-        assert periods[0] == "2024-12-31"
-        assert periods[1] == "2024-09-30"
-        assert periods[2] == "2024-06-30"
+        assert periods[0] == "20241231"
+        assert periods[1] == "20240930"
+        assert periods[2] == "20240630"
