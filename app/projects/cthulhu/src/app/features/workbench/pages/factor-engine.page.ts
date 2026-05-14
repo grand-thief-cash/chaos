@@ -20,7 +20,7 @@ import {NzMessageService} from 'ng-zorro-antd/message';
 import {NzGridModule} from 'ng-zorro-antd/grid';
 
 import {FactorService} from '../services/factor.service';
-import {FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.models';
+import {FactorAvailabilityItem, FactorAvailabilityResponse, FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.models';
 
 @Component({
   selector: 'app-factor-engine',
@@ -33,7 +33,7 @@ import {FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.model
     NzIconModule, NzDescriptionsModule, NzInputNumberModule, NzGridModule
   ],
   template: `
-    <nz-tabset>
+    <nz-tabset [(nzSelectedIndex)]="selectedTabIndex">
       <!-- ==================== Tab 1: Factor Meta ==================== -->
       <nz-tab nzTitle="Factor Registry">
         <nz-card [nzBordered]="false">
@@ -41,8 +41,9 @@ import {FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.model
             <button nz-button nzType="default" (click)="loadMeta()" [nzLoading]="loadingMeta">
               <span nz-icon nzType="reload"></span> Refresh
             </button>
+            <input nz-input placeholder="Search factor in registry" [(ngModel)]="registrySearch" style="width: 240px; margin-left: 12px;" />
           </div>
-          <nz-table #metaTable [nzData]="factorMetas" [nzLoading]="loadingMeta"
+          <nz-table #metaTable [nzData]="filteredFactorMetas" [nzLoading]="loadingMeta"
                     nzSize="small" [nzPageSize]="50"
                     [nzShowSizeChanger]="true">
             <thead>
@@ -50,6 +51,9 @@ import {FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.model
                 <th nzWidth="140px">Name</th>
                 <th nzWidth="120px">中文名</th>
                 <th nzWidth="100px">Category</th>
+                <th nzWidth="220px">Management</th>
+                <th nzWidth="220px">Availability</th>
+                <th nzWidth="260px">PhoenixA Lineage</th>
                 <th>Formula</th>
                 <th nzWidth="60px">Unit</th>
                 <th nzWidth="60px" nz-tooltip nzTooltipTitle="Higher is Better">H↑</th>
@@ -57,11 +61,30 @@ import {FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.model
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let f of metaTable.data">
-                <td><strong>{{ f.name }}</strong></td>
+              <tr *ngFor="let f of metaTable.data" [style.background]="registrySearch && f.name === registrySearch ? '#fffbe6' : null">
+                <td>
+                  <strong>{{ f.name }}</strong>
+                  <div *ngIf="f.description" class="subtle-text">{{ f.description }}</div>
+                  <div *ngIf="f.management_tags?.length" style="margin-top: 4px;">
+                    <nz-tag *ngFor="let tag of f.management_tags" nzColor="default">{{ tag }}</nz-tag>
+                  </div>
+                </td>
                 <td>{{ f.cn_name }}</td>
                 <td>
                   <nz-tag [nzColor]="categoryColor(f.category)">{{ f.category }}</nz-tag>
+                </td>
+                <td>
+                  <nz-tag [nzColor]="financialPolicyColor(f)">{{ financialPolicyLabel(f) }}</nz-tag>
+                  <div *ngIf="f.financial_policy?.reason" class="subtle-text">{{ f.financial_policy?.reason }}</div>
+                  <div *ngIf="f.catalog_seeded" class="subtle-text">catalog {{ f.catalog_version }} · {{ f.management_phase }}</div>
+                </td>
+                <td>
+                  <nz-tag [nzColor]="availabilityColor(f.availability?.expected)">{{ f.availability?.expected || 'unknown' }}</nz-tag>
+                  <div class="subtle-text">{{ availabilityPreview(f) }}</div>
+                </td>
+                <td>
+                  <div><code>{{ primaryPhoenixPath(f) }}</code></div>
+                  <div class="subtle-text">{{ sourceFieldPreview(f) }}</div>
                 </td>
                 <td style="font-family: monospace; font-size: 12px;">{{ f.formula }}</td>
                 <td>{{ f.unit }}</td>
@@ -148,11 +171,26 @@ import {FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.model
           </div>
 
           <div *ngIf="snapshot">
+            <div *ngIf="snapshotFocusFactor" class="subtle-text" style="margin-bottom: 8px;">
+              Focus factor: <strong>{{ snapshotFocusFactor }}</strong>
+            </div>
+            <nz-divider nzText="Snapshot Meta" nzOrientation="left"></nz-divider>
+            <nz-descriptions nzSize="small" nzBordered [nzColumn]="2">
+              <nz-descriptions-item nzTitle="Reporting Period">{{ snapshot.meta.reporting_period || '-' }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Latest Ann Date">{{ snapshot.meta.latest_ann_date || '-' }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Industry">{{ snapshot.meta.industry_code || '-' }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Company Kind">{{ snapshot.meta.company_kind || '-' }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Freshness">
+                <nz-tag [nzColor]="freshnessColor(snapshot.meta.freshness?.freshness_label)">{{ snapshot.meta.freshness?.freshness_label || 'unknown' }}</nz-tag>
+              </nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Staleness Days">{{ snapshot.meta.freshness?.staleness_days ?? '-' }}</nz-descriptions-item>
+            </nz-descriptions>
+
             <nz-divider nzText="Raw Factors" nzOrientation="left"></nz-divider>
             <nz-table #rawTable [nzData]="snapshotRawEntries" nzSize="small" [nzShowPagination]="false" [nzBordered]="true">
               <thead><tr><th nzWidth="200px">Factor</th><th>Value</th></tr></thead>
               <tbody>
-                <tr *ngFor="let e of rawTable.data">
+                <tr *ngFor="let e of rawTable.data" [attr.id]="snapshotRowId('raw', e[0])" [style.background]="snapshotFocusFactor === e[0] ? '#fffbe6' : null">
                   <td style="font-weight: 500;">{{ e[0] }}</td>
                   <td style="font-family: monospace;">{{ e[1] | number:'1.4-4' }}</td>
                 </tr>
@@ -163,9 +201,20 @@ import {FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.model
             <nz-table #normTable [nzData]="snapshotNormEntries" nzSize="small" [nzShowPagination]="false" [nzBordered]="true">
               <thead><tr><th nzWidth="200px">Factor</th><th>Value</th></tr></thead>
               <tbody>
-                <tr *ngFor="let e of normTable.data">
+                <tr *ngFor="let e of normTable.data" [attr.id]="snapshotRowId('norm', e[0])" [style.background]="snapshotFocusFactor === e[0] ? '#fffbe6' : null">
                   <td style="font-weight: 500;">{{ e[0] }}</td>
                   <td style="font-family: monospace;">{{ e[1] | number:'1.4-4' }}</td>
+                </tr>
+              </tbody>
+            </nz-table>
+
+            <nz-divider nzText="Missing Reasons" nzOrientation="left"></nz-divider>
+            <nz-table #missingTable [nzData]="snapshotMissingEntries" nzSize="small" [nzShowPagination]="false" [nzBordered]="true">
+              <thead><tr><th nzWidth="200px">Factor</th><th>Reason</th></tr></thead>
+              <tbody>
+                <tr *ngFor="let e of missingTable.data" [attr.id]="snapshotRowId('missing', e[0])" [style.background]="snapshotFocusFactor === e[0] ? '#fffbe6' : null">
+                  <td style="font-weight: 500;">{{ e[0] }}</td>
+                  <td style="font-family: monospace;">{{ e[1] }}</td>
                 </tr>
               </tbody>
             </nz-table>
@@ -213,12 +262,216 @@ import {FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.model
           <nz-empty *ngIf="rankItems.length === 0 && !loadingRank" nzNotFoundContent="Select factor and date to view ranking"></nz-empty>
         </nz-card>
       </nz-tab>
+
+      <!-- ==================== Tab 5: Availability ==================== -->
+      <nz-tab nzTitle="Availability">
+        <nz-card [nzBordered]="false">
+          <div class="action-bar" style="display:flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <button nz-button nzType="default" (click)="loadAvailability(true)" [nzLoading]="loadingAvailability">
+              <span nz-icon nzType="reload"></span> Refresh
+            </button>
+            <input nz-input placeholder="Search factor / note / field" [(ngModel)]="availabilitySearch" style="width: 240px;" />
+            <nz-select [(ngModel)]="availabilityCategoryFilter" style="width: 180px;" nzPlaceHolder="Category filter">
+              <nz-option nzValue="all" nzLabel="All Categories"></nz-option>
+              <nz-option *ngFor="let category of availabilityCategoryOptions" [nzValue]="category" [nzLabel]="category"></nz-option>
+            </nz-select>
+            <nz-select [(ngModel)]="availabilityStatusFilter" style="width: 180px;" nzPlaceHolder="Status filter">
+              <nz-option nzValue="all" nzLabel="All Statuses"></nz-option>
+              <nz-option nzValue="available" nzLabel="Available"></nz-option>
+              <nz-option nzValue="partial" nzLabel="Partial"></nz-option>
+              <nz-option nzValue="missing" nzLabel="Missing"></nz-option>
+              <nz-option nzValue="unknown" nzLabel="Unknown"></nz-option>
+            </nz-select>
+            <nz-select [(ngModel)]="availabilityMissingSourceFilter" style="width: 220px;" nzPlaceHolder="Missing source filter">
+              <nz-option nzValue="all" nzLabel="All Missing Sources"></nz-option>
+              <nz-option nzValue="none" nzLabel="No Missing Sources"></nz-option>
+              <nz-option *ngFor="let source of availabilityMissingSourceOptions" [nzValue]="source" [nzLabel]="source"></nz-option>
+            </nz-select>
+            <nz-select [(ngModel)]="availabilitySortField" style="width: 200px;" nzPlaceHolder="Sort by">
+              <nz-option nzValue="availability_status" nzLabel="Sort: Status"></nz-option>
+              <nz-option nzValue="required_field_count" nzLabel="Sort: Required Fields"></nz-option>
+              <nz-option nzValue="category" nzLabel="Sort: Category"></nz-option>
+              <nz-option nzValue="name" nzLabel="Sort: Name"></nz-option>
+            </nz-select>
+            <nz-select [(ngModel)]="availabilitySortDirection" style="width: 140px;" nzPlaceHolder="Direction">
+              <nz-option nzValue="asc" nzLabel="Ascending"></nz-option>
+              <nz-option nzValue="desc" nzLabel="Descending"></nz-option>
+            </nz-select>
+            <button nz-button nzType="default" (click)="expandAllAvailabilityDetails()">Expand All</button>
+            <button nz-button nzType="default" (click)="collapseAllAvailabilityDetails()">Collapse All</button>
+            <span class="subtle-text">Capability source: {{ availabilityResponse?.capability_source || '-' }}</span>
+          </div>
+          <div *ngIf="availabilityLinkedSourceFilter" class="subtle-text" style="margin-bottom: 8px;">
+            Linked source filter: <strong>{{ availabilityLinkedSourceFilter }}</strong>
+            <button nz-button nzType="link" (click)="clearLinkedSourceFilter()">Clear</button>
+          </div>
+
+          <div *ngIf="availabilityResponse as availability">
+            <nz-descriptions nzSize="small" nzBordered [nzColumn]="4" style="margin-bottom: 16px;">
+              <nz-descriptions-item nzTitle="Available">{{ availability.summary.available || 0 }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Partial">{{ availability.summary.partial || 0 }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Missing">{{ availability.summary.missing || 0 }}</nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Unknown">{{ availability.summary.unknown || 0 }}</nz-descriptions-item>
+            </nz-descriptions>
+
+            <nz-divider nzText="Source Readiness" nzOrientation="left"></nz-divider>
+            <nz-table #sourceTable [nzData]="availabilitySourceEntries" nzSize="small" [nzShowPagination]="false" [nzBordered]="true">
+              <thead>
+                <tr>
+                  <th nzWidth="160px">Source</th>
+                  <th nzWidth="120px">Status</th>
+                  <th nzWidth="220px">Providers</th>
+                  <th>Known Fields</th>
+                  <th nzWidth="160px">Link</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let entry of sourceTable.data">
+                  <td><strong>{{ entry[0] }}</strong></td>
+                  <td><nz-tag [nzColor]="entry[1]?.available ? 'green' : 'red'">{{ entry[1]?.available ? 'ready' : 'missing' }}</nz-tag></td>
+                  <td class="subtle-text">{{ providerSummary(entry[1]?.sources) }}</td>
+                  <td class="subtle-text">{{ (entry[1]?.fields_known || []).slice(0, 5).join(' · ') || '-' }}</td>
+                  <td>
+                    <button nz-button nzType="link" (click)="toggleLinkedSourceFilter(entry[0])">{{ availabilityLinkedSourceFilter === entry[0] ? 'Linked' : 'Filter Factors' }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </nz-table>
+
+            <nz-divider nzText="Factor Availability" nzOrientation="left"></nz-divider>
+            <nz-table #availabilityTable [nzData]="filteredAvailabilityItems" [nzLoading]="loadingAvailability" nzSize="small" [nzPageSize]="50">
+              <thead>
+                <tr>
+                  <th nzWidth="160px">Actions</th>
+                  <th nzWidth="140px">Factor</th>
+                  <th nzWidth="100px">Live</th>
+                  <th nzWidth="100px">Expected</th>
+                  <th nzWidth="180px">Required Sources</th>
+                  <th nzWidth="180px">Missing Sources</th>
+                  <th nzWidth="240px">Required Fields</th>
+                  <th>Provenance</th>
+                </tr>
+              </thead>
+              <tbody>
+                <ng-container *ngFor="let item of availabilityTable.data">
+                <tr [style.background]="expandedAvailabilityRows[item.name] ? '#fafafa' : null">
+                  <td>
+                    <button nz-button nzType="link" (click)="toggleAvailabilityDetails(item.name)">{{ expandedAvailabilityRows[item.name] ? 'Hide' : 'Details' }}</button>
+                    <button nz-button nzType="link" (click)="jumpToRegistry(item)">Registry</button>
+                    <button nz-button nzType="link" (click)="jumpToRanking(item)">Ranking</button>
+                    <button nz-button nzType="link" (click)="jumpToSnapshot(item)">Snapshot</button>
+                  </td>
+                  <td>
+                    <strong>{{ item.name }}</strong>
+                    <div class="subtle-text">{{ item.cn_name }}</div>
+                  </td>
+                  <td><nz-tag [nzColor]="availabilityRuntimeColor(item.availability_status)">{{ item.availability_status }}</nz-tag></td>
+                  <td><nz-tag [nzColor]="availabilityColor(item.availability_expected)">{{ item.availability_expected }}</nz-tag></td>
+                  <td>
+                    <nz-tag *ngFor="let source of item.required_data_sources" nzColor="blue">{{ source }}</nz-tag>
+                  </td>
+                  <td>
+                    <nz-tag *ngFor="let source of item.missing_sources" nzColor="red">{{ source }}</nz-tag>
+                    <span *ngIf="!item.missing_sources.length" class="subtle-text">-</span>
+                  </td>
+                  <td>
+                    <div class="subtle-text"><strong>{{ item.required_field_count }}</strong> field(s)</div>
+                    <div *ngFor="let field of item.required_fields" class="subtle-text" style="word-break: break-all;">{{ field }}</div>
+                    <div *ngIf="!item.required_fields.length" class="subtle-text">-</div>
+                  </td>
+                  <td>
+                    <div *ngIf="item.provenance?.source_fields?.length" class="subtle-text">
+                      <strong>Source Fields</strong>
+                      <div *ngFor="let field of item.provenance?.source_fields" style="word-break: break-all;">{{ field }}</div>
+                    </div>
+                    <div *ngIf="item.provenance?.phoenix_queries?.length" class="subtle-text" style="margin-top: 6px;">
+                      <strong>PhoenixA Queries</strong>
+                      <div *ngFor="let q of item.provenance?.phoenix_queries">
+                        <code>{{ q.endpoint }}</code>
+                        <span *ngIf="q.fields?.length"> · {{ q.fields?.join(', ') }}</span>
+                      </div>
+                    </div>
+                    <div *ngIf="!item.provenance?.source_fields?.length && !item.provenance?.phoenix_queries?.length" class="subtle-text">No provenance yet</div>
+                    <div *ngIf="item.notes?.length" class="subtle-text">{{ (item.notes || []).slice(0, 2).join(' · ') }}</div>
+                  </td>
+                </tr>
+                <tr *ngIf="expandedAvailabilityRows[item.name]">
+                  <td colspan="8" style="padding: 16px; background: #fcfcfc;">
+                    <nz-descriptions nzSize="small" nzBordered [nzColumn]="2">
+                      <nz-descriptions-item nzTitle="Category">{{ item.category }}</nz-descriptions-item>
+                      <nz-descriptions-item nzTitle="Status / Expected">{{ item.availability_status }} / {{ item.availability_expected }}</nz-descriptions-item>
+                      <nz-descriptions-item nzTitle="Required Sources">{{ item.required_data_sources.join(' · ') || '-' }}</nz-descriptions-item>
+                      <nz-descriptions-item nzTitle="Missing Sources">{{ item.missing_sources.join(' · ') || '-' }}</nz-descriptions-item>
+                    </nz-descriptions>
+
+                    <div style="margin-top: 12px;">
+                      <strong>Full Required Fields</strong>
+                      <div *ngIf="item.required_fields.length; else noFieldsBlock" class="subtle-text" style="margin-top: 6px;">
+                        <div *ngFor="let field of item.required_fields" style="word-break: break-all;">{{ field }}</div>
+                      </div>
+                      <ng-template #noFieldsBlock><div class="subtle-text">-</div></ng-template>
+                    </div>
+
+                    <div style="margin-top: 12px;">
+                      <strong>Notes</strong>
+                      <div *ngIf="item.notes?.length; else noNotesBlock" class="subtle-text" style="margin-top: 6px;">
+                        <div *ngFor="let note of item.notes">{{ note }}</div>
+                      </div>
+                      <ng-template #noNotesBlock><div class="subtle-text">-</div></ng-template>
+                    </div>
+
+                    <div style="margin-top: 12px;">
+                      <strong>Source Status Details</strong>
+                      <div *ngIf="sourceStatusEntries(item).length; else noSourceStatusBlock" class="subtle-text" style="margin-top: 6px;">
+                        <div *ngFor="let sourceEntry of sourceStatusEntries(item)" style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px dashed #f0f0f0;">
+                          <div><strong>{{ sourceEntry[0] }}</strong> · {{ sourceEntry[1].available ? 'ready' : 'missing' }}</div>
+                          <div>Providers: {{ providerSummary(sourceEntry[1].sources) }}</div>
+                          <div>Time Range: {{ timeRangeLabel(sourceEntry[1].time_range) }}</div>
+                          <div>Known Fields: {{ (sourceEntry[1].fields_known || []).join(' · ') || '-' }}</div>
+                        </div>
+                      </div>
+                      <ng-template #noSourceStatusBlock><div class="subtle-text">-</div></ng-template>
+                    </div>
+
+                    <div style="margin-top: 12px;">
+                      <strong>Full Provenance</strong>
+                      <div class="subtle-text" style="margin-top: 6px;">
+                        <div><strong>Required Data Sources:</strong> {{ item.provenance?.required_data_sources?.join(' · ') || '-' }}</div>
+                        <div style="margin-top: 6px;"><strong>Source Fields</strong></div>
+                        <div *ngIf="item.provenance?.source_fields?.length; else noProvFieldsBlock">
+                          <div *ngFor="let field of item.provenance?.source_fields" style="word-break: break-all;">{{ field }}</div>
+                        </div>
+                        <ng-template #noProvFieldsBlock><div>-</div></ng-template>
+                        <div style="margin-top: 6px;"><strong>PhoenixA Queries</strong></div>
+                        <div *ngIf="item.provenance?.phoenix_queries?.length; else noProvQueriesBlock">
+                          <div *ngFor="let query of item.provenance?.phoenix_queries" style="margin-bottom: 6px;">
+                            <code>{{ query.endpoint }}</code>
+                            <div *ngIf="query.fields?.length">Fields: {{ query.fields?.join(', ') }}</div>
+                            <div *ngIf="query.params?.length">Params: {{ query.params?.join(', ') }}</div>
+                            <div *ngIf="query.notes">Notes: {{ query.notes }}</div>
+                          </div>
+                        </div>
+                        <ng-template #noProvQueriesBlock><div>-</div></ng-template>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                </ng-container>
+              </tbody>
+            </nz-table>
+            <nz-empty *ngIf="filteredAvailabilityItems.length === 0 && !loadingAvailability" nzNotFoundContent="No factors match current availability filter"></nz-empty>
+          </div>
+
+          <nz-empty *ngIf="!availabilityResponse && !loadingAvailability" nzNotFoundContent="Click Refresh to load factor availability"></nz-empty>
+        </nz-card>
+      </nz-tab>
     </nz-tabset>
   `,
   styles: [`
     .action-bar { margin-bottom: 12px; }
     .field-label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; }
     .result-msg { margin-top: 12px; padding: 8px 12px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; color: #389e0d; }
+    .subtle-text { margin-top: 4px; font-size: 12px; color: #8c8c8c; line-height: 1.4; }
     :host ::ng-deep .ant-card { margin-bottom: 0; }
   `]
 })
@@ -229,6 +482,7 @@ export class FactorEngineComponent implements OnInit {
   // -- Meta --
   factorMetas: FactorMeta[] = [];
   loadingMeta = false;
+  registrySearch = '';
 
   // -- Compute Full --
   computeDate = '';
@@ -249,6 +503,7 @@ export class FactorEngineComponent implements OnInit {
   snapshot: FactorSnapshot | null = null;
   snapshotRawEntries: [string, number][] = [];
   snapshotNormEntries: [string, number][] = [];
+  snapshotMissingEntries: [string, string][] = [];
 
   // -- Ranking --
   rankFactor = '';
@@ -257,8 +512,25 @@ export class FactorEngineComponent implements OnInit {
   loadingRank = false;
   rankItems: FactorRankItem[] = [];
 
+  // -- Availability --
+  loadingAvailability = false;
+  availabilityResponse: FactorAvailabilityResponse | null = null;
+  availabilityItems: FactorAvailabilityItem[] = [];
+  availabilitySourceEntries: [string, any][] = [];
+  availabilitySearch = '';
+  availabilityCategoryFilter = 'all';
+  availabilityStatusFilter = 'all';
+  availabilityMissingSourceFilter = 'all';
+  availabilitySortField: 'availability_status' | 'required_field_count' | 'category' | 'name' = 'availability_status';
+  availabilitySortDirection: 'asc' | 'desc' = 'asc';
+  availabilityLinkedSourceFilter = '';
+  expandedAvailabilityRows: Record<string, boolean> = {};
+  selectedTabIndex = 0;
+  snapshotFocusFactor = '';
+
   ngOnInit() {
     this.loadMeta();
+    this.loadAvailability();
   }
 
   loadMeta() {
@@ -301,6 +573,8 @@ export class FactorEngineComponent implements OnInit {
         this.snapshot = data;
         this.snapshotRawEntries = Object.entries(data.raw_factors || {}).sort() as [string, number][];
         this.snapshotNormEntries = Object.entries(data.norm_factors || {}).sort() as [string, number][];
+        this.snapshotMissingEntries = Object.entries(data.meta?.missing_reasons || {}).sort() as [string, string][];
+        this.scrollToSnapshotFocus();
         this.loadingSnap = false;
       },
       error: err => {
@@ -319,6 +593,187 @@ export class FactorEngineComponent implements OnInit {
     });
   }
 
+  loadAvailability(refresh = false) {
+    this.loadingAvailability = true;
+    this.svc.getAvailability(refresh).subscribe({
+      next: data => {
+        this.availabilityResponse = data;
+        this.availabilityItems = data.factors || [];
+        this.availabilitySourceEntries = Object.entries(data.source_status || {}).sort() as [string, any][];
+        this.expandedAvailabilityRows = {};
+        this.availabilityLinkedSourceFilter = '';
+        this.loadingAvailability = false;
+      },
+      error: err => {
+        this.msg.error('Failed to load factor availability: ' + (err.error?.detail || err.message || 'unknown error'));
+        this.loadingAvailability = false;
+      }
+    });
+  }
+
+  get filteredFactorMetas(): FactorMeta[] {
+    const query = this.registrySearch.trim().toLowerCase();
+    if (!query) {
+      return this.factorMetas;
+    }
+    return this.factorMetas.filter(item => [item.name, item.cn_name, item.category, item.description || ''].join(' ').toLowerCase().includes(query));
+  }
+
+  get filteredAvailabilityItems(): FactorAvailabilityItem[] {
+    const query = this.availabilitySearch.trim().toLowerCase();
+    const filtered = this.availabilityItems.filter(item => {
+      if (this.availabilityStatusFilter !== 'all' && item.availability_status !== this.availabilityStatusFilter) {
+        return false;
+      }
+      if (this.availabilityCategoryFilter !== 'all' && item.category !== this.availabilityCategoryFilter) {
+        return false;
+      }
+      if (this.availabilityMissingSourceFilter === 'none' && item.missing_sources.length > 0) {
+        return false;
+      }
+      if (this.availabilityMissingSourceFilter !== 'all' && this.availabilityMissingSourceFilter !== 'none' && !item.missing_sources.includes(this.availabilityMissingSourceFilter)) {
+        return false;
+      }
+      if (this.availabilityLinkedSourceFilter && !item.required_data_sources.includes(this.availabilityLinkedSourceFilter) && !item.missing_sources.includes(this.availabilityLinkedSourceFilter)) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      const haystack = [
+        item.name,
+        item.cn_name,
+        item.category,
+        item.availability_status,
+        item.availability_expected,
+        ...item.required_data_sources,
+        ...item.required_fields,
+        ...item.missing_sources,
+        ...(item.notes || []),
+        ...(item.provenance?.source_fields || []),
+        ...((item.provenance?.phoenix_queries || []).map(q => q.endpoint || '')),
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+    const direction = this.availabilitySortDirection === 'asc' ? 1 : -1;
+    const statusRank: Record<string, number> = {available: 0, partial: 1, missing: 2, unknown: 3};
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (this.availabilitySortField) {
+        case 'required_field_count':
+          cmp = a.required_field_count - b.required_field_count;
+          break;
+        case 'category':
+          cmp = a.category.localeCompare(b.category);
+          break;
+        case 'name':
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case 'availability_status':
+        default:
+          cmp = (statusRank[a.availability_status] ?? 99) - (statusRank[b.availability_status] ?? 99);
+          if (cmp === 0) {
+            cmp = a.name.localeCompare(b.name);
+          }
+          break;
+      }
+      return cmp * direction;
+    });
+  }
+
+  get availabilityCategoryOptions(): string[] {
+    return Array.from(new Set(this.availabilityItems.map(item => item.category).filter(Boolean))).sort();
+  }
+
+  get availabilityMissingSourceOptions(): string[] {
+    return Array.from(new Set(this.availabilityItems.flatMap(item => item.missing_sources || []).filter(Boolean))).sort();
+  }
+
+  toggleAvailabilityDetails(name: string): void {
+    this.expandedAvailabilityRows[name] = !this.expandedAvailabilityRows[name];
+  }
+
+  expandAllAvailabilityDetails(): void {
+    this.expandedAvailabilityRows = Object.fromEntries(this.filteredAvailabilityItems.map(item => [item.name, true]));
+  }
+
+  collapseAllAvailabilityDetails(): void {
+    this.expandedAvailabilityRows = {};
+  }
+
+  toggleLinkedSourceFilter(source: string): void {
+    this.availabilityLinkedSourceFilter = this.availabilityLinkedSourceFilter === source ? '' : source;
+  }
+
+  clearLinkedSourceFilter(): void {
+    this.availabilityLinkedSourceFilter = '';
+  }
+
+  sourceStatusEntries(item: FactorAvailabilityItem): [string, any][] {
+    return Object.entries(item.source_status || {}).sort() as [string, any][];
+  }
+
+  timeRangeLabel(timeRange?: Record<string, string> | null): string {
+    if (!timeRange) {
+      return '-';
+    }
+    const minDate = timeRange['min_date'] || '';
+    const maxDate = timeRange['max_date'] || '';
+    if (!minDate && !maxDate) {
+      return '-';
+    }
+    return `${minDate || '?'} → ${maxDate || '?'}`;
+  }
+
+  jumpToRegistry(item: FactorAvailabilityItem): void {
+    this.registrySearch = item.name;
+    this.selectedTabIndex = 0;
+    this.msg.info(`Focused ${item.name} in Factor Registry`);
+  }
+
+  jumpToRanking(item: FactorAvailabilityItem): void {
+    this.rankFactor = item.name;
+    if (!this.rankDate) {
+      this.rankDate = this.todayStr();
+    }
+    this.selectedTabIndex = 3;
+    this.loadRanking();
+  }
+
+  jumpToSnapshot(item: FactorAvailabilityItem): void {
+    this.snapshotFocusFactor = item.name;
+    this.selectedTabIndex = 2;
+    if (this.snapSymbol && this.snapDate) {
+      this.loadSnapshot();
+    } else {
+      this.msg.info(`Switched to Snapshot. Enter symbol/date to inspect ${item.name}.`);
+    }
+  }
+
+  snapshotRowId(section: 'raw' | 'norm' | 'missing', factorName: string): string {
+    return `snapshot-${section}-${factorName}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+  }
+
+  private scrollToSnapshotFocus(): void {
+    if (!this.snapshotFocusFactor) {
+      return;
+    }
+    setTimeout(() => {
+      const targets = [
+        this.snapshotRowId('raw', this.snapshotFocusFactor),
+        this.snapshotRowId('norm', this.snapshotFocusFactor),
+        this.snapshotRowId('missing', this.snapshotFocusFactor),
+      ];
+      for (const id of targets) {
+        const el = document.getElementById(id);
+        if (el) {
+          el.scrollIntoView({behavior: 'smooth', block: 'center'});
+          break;
+        }
+      }
+    }, 0);
+  }
+
   getRankValue(item: FactorRankItem): number {
     const val = item[this.rankFactor];
     return typeof val === 'number' ? val : 0;
@@ -326,10 +781,87 @@ export class FactorEngineComponent implements OnInit {
 
   categoryColor(cat: string): string {
     const map: Record<string, string> = {
-      value: 'blue', growth: 'green', quality: 'purple', momentum: 'orange',
-      size: 'cyan', volatility: 'red', dividend: 'gold', leverage: 'magenta'
+      profitability: 'green', growth: 'blue', quality: 'purple', solvency: 'gold',
+      valuation: 'magenta', efficiency: 'cyan', per_share: 'orange'
     };
     return map[cat?.toLowerCase()] || 'default';
+  }
+
+  financialPolicyLabel(meta: FactorMeta): string {
+    const mode = meta.financial_policy?.mode || (meta.exclude_financial ? 'financial_variant_pending' : 'standard');
+    const map: Record<string, string> = {
+      standard: 'Standard',
+      financial_variant_pending: 'Financial Variant Pending',
+      excluded: 'Excluded',
+    };
+    return map[mode] || mode;
+  }
+
+  financialPolicyColor(meta: FactorMeta): string {
+    const mode = meta.financial_policy?.mode || (meta.exclude_financial ? 'financial_variant_pending' : 'standard');
+    const map: Record<string, string> = {
+      standard: 'green',
+      financial_variant_pending: 'orange',
+      excluded: 'red',
+    };
+    return map[mode] || 'default';
+  }
+
+  primaryPhoenixPath(meta: FactorMeta): string {
+    return meta.phoenix_queries?.[0]?.endpoint || 'registry-only';
+  }
+
+  sourceFieldPreview(meta: FactorMeta): string {
+    const fields = meta.source_fields || [];
+    if (!fields.length) {
+      return 'No catalog lineage yet';
+    }
+    return fields.slice(0, 3).join(' · ');
+  }
+
+  availabilityPreview(meta: FactorMeta): string {
+    const reqs = meta.availability?.requirements || [];
+    if (!reqs.length) {
+      return 'Runtime details in snapshot meta';
+    }
+    return reqs.slice(0, 2).join(' · ');
+  }
+
+  availabilityColor(expected?: string): string {
+    const map: Record<string, string> = {
+      ready: 'green',
+      conditional: 'orange',
+      blocked: 'red',
+    };
+    return map[(expected || '').toLowerCase()] || 'default';
+  }
+
+  availabilityRuntimeColor(status?: string): string {
+    const map: Record<string, string> = {
+      available: 'green',
+      partial: 'orange',
+      missing: 'red',
+      unknown: 'default',
+    };
+    return map[(status || '').toLowerCase()] || 'default';
+  }
+
+  providerSummary(sources?: Record<string, number>): string {
+    const entries = Object.entries(sources || {});
+    if (!entries.length) {
+      return '-';
+    }
+    return entries.map(([name, count]) => `${name} (${count})`).join(' · ');
+  }
+
+  freshnessColor(label?: string): string {
+    const map: Record<string, string> = {
+      fresh: 'green',
+      acceptable: 'blue',
+      stale: 'orange',
+      very_stale: 'red',
+    };
+    return map[(label || '').toLowerCase()] || 'default';
   }
 
   private todayStr(): string {

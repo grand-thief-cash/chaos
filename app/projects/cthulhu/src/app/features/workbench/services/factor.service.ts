@@ -1,7 +1,7 @@
 import {inject, Injectable} from '@angular/core';
 import {HttpClient, HttpParams} from '@angular/common/http';
 import {Observable} from 'rxjs';
-import {FactorComputeResult, FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.models';
+import {FactorAvailabilityResponse, FactorComputeResult, FactorMeta, FactorRankItem, FactorSnapshot} from '../models/factor.models';
 import {environment} from '../../../../environments/environment';
 
 const BASE_URL = environment.artemisApiBase;
@@ -13,6 +13,12 @@ export class FactorService {
   /** GET /factors/meta – list all registered factors */
   getMeta(): Observable<FactorMeta[]> {
     return this.http.get<FactorMeta[]>(`${BASE_URL}/factors/meta`);
+  }
+
+  /** GET /factors/availability – factor availability analysis */
+  getAvailability(refresh: boolean = false): Observable<FactorAvailabilityResponse> {
+    const params = new HttpParams().set('refresh', String(refresh));
+    return this.http.get<FactorAvailabilityResponse>(`${BASE_URL}/factors/availability`, {params});
   }
 
   /** POST /factors/compute/full – trigger full computation */
