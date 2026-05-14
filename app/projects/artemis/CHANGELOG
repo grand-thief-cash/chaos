@@ -1,7 +1,26 @@
 # VERSION
-- v0.34.0
+- v0.35.0
 
 # Changelog
+- v0.35.0
+    - **Factor Engine Cache & Performance Improvements**
+        - Added TTL-based cache expiration with `CacheEntry` dataclass (`timestamp`, `ttl_seconds`, `is_expired()`)
+        - Defined cache TTL constants: `CACHE_TTL_SYMBOLS` (1h), `CACHE_TTL_INDUSTRY_MAP` (24h), `CACHE_TTL_FINANCIAL` (5m), `CACHE_TTL_MARKET_DATA` (5m), `CACHE_TTL_CORP_ACTION` (1h)
+        - Added concurrent batch query support for industry mapping with `get_industry_map_batch()` using ThreadPoolExecutor (10 workers, batch size 50)
+        - Added `symbols` parameter to `get_industry_map()` for incremental queries (only fetch needed symbols)
+        - All cache lookups now check `is_expired()` before returning cached values
+        - Fixed `get_industry_context()` to correctly extract `CacheEntry.value` from cache
+    - **Pipeline Error Handling & Logging**
+        - Enhanced `run_full()` with granular try-except blocks at symbol, group, and pipeline levels
+        - Added `skipped_symbols` and `failed_symbols` tracking for better pipeline diagnostics
+        - Added completion summary logging with total_symbols, skipped_count, failed_count
+        - Enhanced `run_incremental()` with batch industry queries (`use_batch=True`) and error handling
+    - **Factor Catalog Governance**
+        - Added comprehensive PEG factor definition to `governance_seed.yaml` with business logic documentation
+        - Specified growth definition (净利润单季度同比增长率), validity conditions (增长率 > 0 且 PE_TTM > 0), corner cases (扭亏为盈/盈转亏), and alternatives
+        - Verified dividend_yield, dps, and valuation factors match catalog definitions
+        - Verified EV/EBITDA fallback logic matches catalog (op_ttm + fin_ttm)
+    - **Tests**: 82/83 PASSED (1 unrelated failure in TestMarketAdjustPolicy)
 - v0.34.0
     - Taxonomy matching now directly consumes PhoenixA `canonical_*` + `derived_flags` industry contract, and Artemis-side industry-prefix fallback has been removed before launch
     - Factor-engine market-data retrieval now uses shared `ADJUST_*` constants and exposes explicit bars `adjust` control through the PhoenixA provider (default remains `ADJUST_NONE`)

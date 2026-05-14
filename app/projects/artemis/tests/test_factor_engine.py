@@ -1,6 +1,6 @@
 """Unit tests for Factor Engine core modules."""
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 import pytest
@@ -582,7 +582,7 @@ class _AdjustAwareProvider:
     def get_active_symbols(self, market: str, as_of_date: str):
         return ["000001"]
 
-    def get_industry_map(self, taxonomy: str, market: str):
+    def get_industry_map(self, taxonomy: str, market: str, use_batch: bool = True, symbols: Optional[List[str]] = None):
         return {"000001": "801010"}
 
     def get_industry_context(self, symbol: str, taxonomy: str, market: str):
