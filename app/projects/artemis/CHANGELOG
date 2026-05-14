@@ -1,7 +1,12 @@
 # VERSION
-- v0.33.0
+- v0.34.0
 
 # Changelog
+- v0.34.0
+    - Taxonomy matching now directly consumes PhoenixA `canonical_*` + `derived_flags` industry contract, and Artemis-side industry-prefix fallback has been removed before launch
+    - Factor-engine market-data retrieval now uses shared `ADJUST_*` constants and exposes explicit bars `adjust` control through the PhoenixA provider (default remains `ADJUST_NONE`)
+    - Factor-engine bars adjust is now governed only by factor catalog `market_adjust_policy`; runtime config defaults/overrides were removed to keep adjust tied to factor definition
+    - Cleaned factor catalog governance model: `phoenix_queries` no longer repeats `adjust=nf`, and bars adjust semantics now live only in `market_adjust_policy`
 - v0.33.0
     - **Factor Engine × PhoenixA contract review and fixes**
         - Normalized factor-engine `as_of_date`, `ann_date`, and `reporting_period` handling across `YYYYMMDD` and `YYYY-MM-DD`
@@ -12,7 +17,6 @@
         - `EV/EBITDA` now prefers PhoenixA `EBITDA` field when available
         - `exclude_financial=True` factor policies now actually suppress unsupported factors for banks/insurers/brokers
         - Factor ranking now honors `higher_is_better` metadata instead of always sorting descending
-        - Taxonomy matching is now future-compatible with planned PhoenixA `canonical_*` industry hierarchy fields
     - **Factor registry metadata enrichment**
         - `registry.py` now exposes `data_sources`, `ttm_required`, and `min_history_quarters`
         - Added `get_factor_meta()` for policy-aware service logic
@@ -34,7 +38,7 @@
         - Returns factor-level provenance, required fields, required data sources, source availability, and per-factor availability status (`available` / `partial` / `missing` / `unknown`)
     - **Tests**
         - Expanded `test_factor_engine.py` with canonical-field and factor-catalog governance coverage
-        - Expanded `test_phoenixa_factor_provider.py` with standardized taxonomy hierarchy compatibility coverage
+        - Expanded `test_phoenixa_factor_provider.py` with canonical taxonomy / derived-flags coverage and configurable market-adjust assertions
         - Added regression coverage for snapshot freshness / missing-reason metadata and store persistence
         - Added dedicated availability service/route coverage (`test_factor_availability.py`)
         - Verified factor-engine/provider/availability suite passes after this round of updates: 103 tests

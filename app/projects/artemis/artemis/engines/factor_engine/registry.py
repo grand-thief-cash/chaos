@@ -19,11 +19,11 @@ def _catalog_root() -> Path:
 
 
 @lru_cache(maxsize=1)
-def _load_factor_catalog() -> tuple[str, Dict[str, dict]]:
+def _load_factor_catalog() -> tuple[str, Dict[str, dict], Dict[str, dict]]:
     root = _catalog_root()
     manifest_path = root / "manifest.yaml"
     if not manifest_path.exists():
-        return "", {}
+        return "", {}, {}
 
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
     factor_files = manifest.get("factor_files") or []
@@ -48,11 +48,9 @@ def _load_factor_catalog() -> tuple[str, Dict[str, dict]]:
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
-            merged = dict(defaults)
-            merged.update(item)
-            catalog[name] = merged
+            catalog[name] = dict(item)
 
-    return version, catalog
+    return version, defaults, catalog
 
 
 def register_factor(meta: FactorMeta) -> None:
@@ -72,13 +70,15 @@ def _required_data_sources(meta: FactorMeta, catalog_item: dict) -> List[str]:
     return required
 
 
-def _serialize_factor_meta(meta: FactorMeta, catalog_version: str, catalog_item: dict) -> Dict:
-    source_fields = list(catalog_item.get("source_fields") or [])
-    required_fields = list(catalog_item.get("required_fields") or source_fields)
-    provenance = catalog_item.get("provenance") or {
+def _serialize_factor_meta(meta: FactorMeta, catalog_version: str, catalog_defaults: dict, catalog_item: dict) -> Dict:
+    merged_catalog = dict(catalog_defaults or {})
+    merged_catalog.update(catalog_item or {})
+    source_fields = list(merged_catalog.get("source_fields") or [])
+    required_fields = list(merged_catalog.get("required_fields") or source_fields)
+    provenance = merged_catalog.get("provenance") or {
         "source_fields": source_fields,
-        "phoenix_queries": list(catalog_item.get("phoenix_queries") or []),
-        "required_data_sources": _required_data_sources(meta, catalog_item),
+        "phoenix_queries": list(merged_catalog.get("phoenix_queries") or []),
+        "required_data_sources": _required_data_sources(meta, merged_catalog),
     }
     return {
         "name": meta.name,
@@ -92,29 +92,37 @@ def _serialize_factor_meta(meta: FactorMeta, catalog_version: str, catalog_item:
         "exclude_financial": meta.exclude_financial,
         "ttm_required": meta.ttm_required,
         "min_history_quarters": meta.min_history_quarters,
-        "required_data_sources": _required_data_sources(meta, catalog_item),
+        "required_data_sources": _required_data_sources(meta, merged_catalog),
         "required_fields": required_fields,
         "provenance": provenance,
         "catalog_version": catalog_version,
-        "catalog_seeded": meta.name in _load_factor_catalog()[1],
-        **{k: v for k, v in catalog_item.items() if k != "name"},
+        "catalog_seeded": meta.name in _load_factor_catalog()[2],
+        **{k: v for k, v in merged_catalog.items() if k != "name"},
     }
+
+
+def get_factor_market_adjust_policy(name: str) -> Dict[str, object]:
+    """Return the factor-specific catalog market-adjust policy."""
+    _, _, catalog = _load_factor_catalog()
+    item = catalog.get(name, {})
+    factor_policy = item.get("market_adjust_policy")
+    return dict(factor_policy or {}) if isinstance(factor_policy, dict) else {}
 
 
 def get_factor_definition(name: str) -> Dict | None:
     meta = FACTOR_REGISTRY.get(name)
     if meta is None:
         return None
-    catalog_version, catalog = _load_factor_catalog()
+    catalog_version, defaults, catalog = _load_factor_catalog()
     item = catalog.get(name, {})
-    return _serialize_factor_meta(meta, catalog_version, item)
+    return _serialize_factor_meta(meta, catalog_version, defaults, item)
 
 
 def list_factors() -> List[Dict]:
     """以 JSON-friendly 格式返回所有已注册因子。"""
-    catalog_version, catalog = _load_factor_catalog()
+    catalog_version, defaults, catalog = _load_factor_catalog()
     return [
-        _serialize_factor_meta(m, catalog_version, catalog.get(m.name, {}))
+        _serialize_factor_meta(m, catalog_version, defaults, catalog.get(m.name, {}))
         for m in FACTOR_REGISTRY.values()
     ]
 

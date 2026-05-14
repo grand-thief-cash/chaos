@@ -153,9 +153,15 @@ class APITester:
             if isinstance(data, list) and len(data) > 0:
                 item = data[0]
                 # 预期字段（来自 TaxonomySecurityMapWithDetail）
-                expected_fields = ["id", "source", "taxonomy", "category_code", "category_name",
-                               "level", "parent_code", "symbol", "asset_type", "market",
-                               "created_at", "updated_at"]
+                expected_fields = [
+                    "id", "source", "taxonomy", "category_code", "category_name",
+                    "level", "parent_code", "index_code",
+                    "canonical_source", "canonical_taxonomy", "canonical_level",
+                    "canonical_category_code", "canonical_category_name", "canonical_parent_code",
+                    "canonical_index_code", "derived_flags",
+                    "symbol", "asset_type", "market",
+                    "created_at", "updated_at",
+                ]
                 actual_fields = list(item.keys())
                 missing = set(expected_fields) - set(actual_fields)
 

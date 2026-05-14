@@ -1,5 +1,6 @@
 from typing import Dict, Any, Iterator, List, Optional
 
+from artemis.consts.task_params import ADJUST_NONE
 from artemis.core.clients.dept_clients import HTTPDeptServiceClient
 
 
@@ -167,7 +168,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         start_date: str,
         end_date: str,
         period: str = "daily",
-        adjust: str = "nf",
+        adjust: str = ADJUST_NONE,
         fields: Optional[List[str]] = None,
         source: str | None = None,
         limit: int = 5000,
@@ -201,7 +202,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         start_date: str,
         end_date: str,
         period: str = "daily",
-        adjust: str = "nf",
+        adjust: str = ADJUST_NONE,
         fields: Optional[List[str]] = None,
         source: str | None = None,
         limit: int = 5000,
@@ -449,7 +450,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         bars_raw = data.get("data", [])
         return self.upsert_bars(
             period=meta.get("period", "daily"),
-            adjust=meta.get("adjust", "nf"),
+            adjust=meta.get("adjust", ADJUST_NONE),
             source=meta.get("source", ""),
             bars=bars_raw,
             run_id=run_id,
@@ -851,12 +852,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         """Query all taxonomy mappings for a security via v2 API.
 
         Returns list of TaxonomySecurityMap entries with fields:
-        - source, taxonomy, category_code, category_name, level, parent_code, symbol, asset_type, market
-        - Future-compatible standardized fields, if PhoenixA adds them:
+        - source, taxonomy, category_code, category_name, level, parent_code, index_code, symbol, asset_type, market
+        - Standardized hierarchy fields exposed by PhoenixA:
           canonical_source, canonical_taxonomy, canonical_level,
-          canonical_category_code, canonical_category_name, canonical_parent_code
+          canonical_category_code, canonical_category_name, canonical_parent_code,
+          canonical_index_code, derived_flags
 
-        For factor engine: use category_code from first sw_l1 entry.
+        Factor engine should consume PhoenixA canonical/derived fields directly.
         """
         path = f"/api/v2/taxonomy/by_security/{symbol}"
         try:

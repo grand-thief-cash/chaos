@@ -3,9 +3,12 @@ factors:
     description: 以最新可用现金分红方案对应的税前每股现金分红，除以 as_of_date 收盘价得到的股息率。
     latex_formula: "\\mathrm{DividendYield}=\\frac{\\mathrm{DVD\\_PER\\_SHARE\\_PRE\\_TAX\\_CASH}}{\\mathrm{Close}}"
     management_tags: [dividend, valuation, governance_critical, phoenixA_contract]
+    market_adjust_policy:
+      adjust: nf
+      rationale: 股息率按 as_of_date 当日现价口径展示，当前治理约定使用不复权收盘价。
     source_fields:
       - corporate_action.dividend.data_json.DVD_PER_SHARE_PRE_TAX_CASH
-      - bars.stock.zh_a.daily.nf.close
+      - bars.stock.zh_a.daily.close
     phoenix_queries:
       - endpoint: /api/v2/corporate-action/{source}/{action_type}
         source: amazing_data
@@ -16,9 +19,9 @@ factors:
       - endpoint: /api/v2/bars/{asset_type}/{market}
         asset_type: stock
         market: zh_a
-        params: [symbol, start_date, end_date, period=daily, adjust=nf]
+        params: [symbol, start_date, end_date, period=daily]
         fields: [trade_date, close]
-        notes: 取 as_of_date 当日收盘价；当前估值口径统一使用不复权现价。
+        notes: 取 as_of_date 当日收盘价；具体复权口径由 `market_adjust_policy` 统一治理。
     governance:
       numerator_definition: 税前每股现金分红，不包含送股和转增。
       selection_policy: 优先已实施分红方案；若尚未实施，则使用 as_of_date 前最新公告方案并在管理页标记 fallback。
@@ -49,15 +52,18 @@ factors:
     description: 总市值除以归母净利润 TTM。总市值使用收盘价乘以最新可用总股本。
     latex_formula: "\\mathrm{PE}_{TTM}=\\frac{\\mathrm{Close} \\times \\mathrm{TOT\\_SHARE}}{\\mathrm{NET\\_PRO\\_EXCL\\_MIN\\_INT\\_INC}_{TTM}}"
     management_tags: [valuation, market_cap, governance_critical]
+    market_adjust_policy:
+      adjust: nf
+      rationale: 估值因子当前统一采用现价 × 总股本的总市值口径。
     source_fields:
-      - bars.stock.zh_a.daily.nf.close
+      - bars.stock.zh_a.daily.close
       - financial.balance_sheet.data_json.TOT_SHARE
       - financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC
     phoenix_queries:
       - endpoint: /api/v2/bars/{asset_type}/{market}
         asset_type: stock
         market: zh_a
-        params: [symbol, start_date, end_date, period=daily, adjust=nf]
+        params: [symbol, start_date, end_date, period=daily]
         fields: [trade_date, close]
       - endpoint: /api/v2/financial/{source}/balance_sheet
         source: amazing_data
@@ -76,8 +82,11 @@ factors:
     description: 总市值除以归母股东权益，当前统一采用总股本口径的总市值。
     latex_formula: "\\mathrm{PB}=\\frac{\\mathrm{Close} \\times \\mathrm{TOT\\_SHARE}}{\\mathrm{TOT\\_SHARE\\_EQUITY\\_EXCL\\_MIN\\_INT}}"
     management_tags: [valuation, market_cap, governance_critical]
+    market_adjust_policy:
+      adjust: nf
+      rationale: PB 延续统一现价市值口径，避免与历史复权价混用。
     source_fields:
-      - bars.stock.zh_a.daily.nf.close
+      - bars.stock.zh_a.daily.close
       - financial.balance_sheet.data_json.TOT_SHARE
       - financial.balance_sheet.data_json.TOT_SHARE_EQUITY_EXCL_MIN_INT
     governance:
@@ -89,8 +98,11 @@ factors:
     description: 总市值除以营业收入 TTM，沿用统一总市值口径。
     latex_formula: "\\mathrm{PS}_{TTM}=\\frac{\\mathrm{Close} \\times \\mathrm{TOT\\_SHARE}}{\\mathrm{OPERA\\_REV}_{TTM}}"
     management_tags: [valuation, market_cap]
+    market_adjust_policy:
+      adjust: nf
+      rationale: PS_TTM 使用当前现价总市值口径。
     source_fields:
-      - bars.stock.zh_a.daily.nf.close
+      - bars.stock.zh_a.daily.close
       - financial.balance_sheet.data_json.TOT_SHARE
       - financial.income.data_json.OPERA_REV
     governance:
@@ -101,8 +113,11 @@ factors:
     description: 总市值除以经营现金流 TTM，沿用统一总市值口径。
     latex_formula: "\\mathrm{PCF}=\\frac{\\mathrm{Close} \\times \\mathrm{TOT\\_SHARE}}{\\mathrm{NET\\_CASH\\_FLOW\\_OPERA\\_ACT}_{TTM}}"
     management_tags: [valuation, market_cap]
+    market_adjust_policy:
+      adjust: nf
+      rationale: PCF 当前按不复权现价估值展示。
     source_fields:
-      - bars.stock.zh_a.daily.nf.close
+      - bars.stock.zh_a.daily.close
       - financial.balance_sheet.data_json.TOT_SHARE
       - financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT
     governance:
@@ -113,8 +128,11 @@ factors:
     description: 企业价值除以 EBITDA，企业价值中的股权价值统一采用总股本市值。
     latex_formula: "\\mathrm{EV/EBITDA}=\\frac{\\mathrm{Close} \\times \\mathrm{TOT\\_SHARE}+\\mathrm{InterestBearingDebt}-\\mathrm{Cash}}{\\mathrm{EBITDA}_{TTM}}"
     management_tags: [valuation, market_cap, governance_critical]
+    market_adjust_policy:
+      adjust: nf
+      rationale: EV/EBITDA 中股权价值部分与其它估值因子保持一致，统一使用现价口径。
     source_fields:
-      - bars.stock.zh_a.daily.nf.close
+      - bars.stock.zh_a.daily.close
       - financial.balance_sheet.data_json.TOT_SHARE
       - financial.balance_sheet.data_json.ST_BORROWING
       - financial.balance_sheet.data_json.LT_LOAN
