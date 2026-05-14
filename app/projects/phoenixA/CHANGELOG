@@ -1,7 +1,14 @@
 # VERSION
-v1.18.0
+v1.19.0
 
 # Changelog
+- 1.19.0
+    - **API Documentation Fix** — corrected `data_json` field description and response examples
+        - Removed `MARKET_CODE`, `SECURITY_NAME`, `STATEMENT_TYPE`, `REPORT_TYPE`, `reporting_period`, `ANN_DATE`, `ACTUAL_ANN_DATE`, `COMP_TYPE_CODE` from `data_json` sections
+        - These metadata fields are stored as top-level fields, not inside `data_json`
+        - Fixed for all statement types: balance_sheet, income, cashflow, profit_express, profit_notice
+        - Corrected response example: removed metadata fields from `data_json` sample data
+        - Added note explaining the distinction between metadata fields and `data_json` fields (SDK original uppercase fields)
 - 1.18.0
     - **Taxonomy canonical hierarchy fields** — `GET /api/v2/taxonomy/by_security/{symbol}` now returns a stable standardized industry view
         - Added response fields: `index_code`, `canonical_source`, `canonical_taxonomy`, `canonical_level`, `canonical_category_code`, `canonical_category_name`, `canonical_parent_code`, `canonical_index_code`, `derived_flags`
