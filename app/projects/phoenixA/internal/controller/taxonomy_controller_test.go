@@ -204,3 +204,64 @@ func TestTaxonomyCategoryJSONDeserialization(t *testing.T) {
 		t.Errorf("level-3 parent_code should be '4208', got %s", *list[2].ParentCode)
 	}
 }
+
+func TestTaxonomySecurityMapWithDetailJSONSerialization(t *testing.T) {
+	payload := &model.TaxonomySecurityMapWithDetail{
+		ID:                    1,
+		Source:                "amazing_data",
+		Taxonomy:              "sw_l1",
+		CategoryCode:          "801010",
+		CategoryName:          "银行",
+		Level:                 1,
+		ParentCode:            "",
+		IndexCode:             "801010.SI",
+		CanonicalSource:       "sw",
+		CanonicalTaxonomy:     "sw",
+		CanonicalLevel:        1,
+		CanonicalCategoryCode: "801010",
+		CanonicalCategoryName: "银行",
+		CanonicalParentCode:   "",
+		CanonicalIndexCode:    "801010.SI",
+		DerivedFlags:          map[string]bool{"financial_sector": true},
+		Symbol:                "000001",
+		AssetType:             "stock",
+		Market:                "zh_a",
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(b, &data); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+
+	for _, field := range []string{
+		"index_code",
+		"canonical_source",
+		"canonical_taxonomy",
+		"canonical_level",
+		"canonical_category_code",
+		"canonical_category_name",
+		"canonical_parent_code",
+		"canonical_index_code",
+		"derived_flags",
+	} {
+		if _, ok := data[field]; !ok {
+			t.Fatalf("expected field %q to be present in JSON", field)
+		}
+	}
+
+	if got := data["canonical_source"]; got != "sw" {
+		t.Fatalf("canonical_source = %v, want sw", got)
+	}
+	flags, ok := data["derived_flags"].(map[string]any)
+	if !ok {
+		t.Fatalf("derived_flags = %T, want object", data["derived_flags"])
+	}
+	if got := flags["financial_sector"]; got != true {
+		t.Fatalf("derived_flags.financial_sector = %v, want true", got)
+	}
+}
