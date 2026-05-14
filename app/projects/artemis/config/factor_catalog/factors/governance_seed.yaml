@@ -147,12 +147,53 @@ factors:
 
   - name: roic
     description: 非金融行业使用 NOPAT/投入资本；对银行/保险/券商暂不输出，等待专用定义落地。
+    latex_formula: "\\mathrm{ROIC}=\\frac{\\mathrm{NOPAT}}{\\mathrm{Invested\\_Capital}}"
     management_tags: [financial_policy, profitability, governance_critical]
     financial_policy:
       mode: financial_variant_pending
       action: exclude_for_banks_insurers_brokers
       reason: 金融行业的有息负债属于经营性负债，标准 ROIC 定义失真。
       future_variant: 银行/保险/证券分别设计监管资本或风险资本口径后再补齐。
+
+  - name: peg
+    description: 市盈率相对增长倍数，衡量估值相对增长率的合理性。定义为 PE_TTM 除以净利润同比增长率。若增长率为负或 PE 为负，则 PEG 无意义。
+    latex_formula: "\\mathrm{PEG}=\\frac{\\mathrm{PE}_{TTM}}{\\mathrm{NI\\_Growth\\_YoY}}"
+    management_tags: [valuation, growth, governance_critical]
+    market_adjust_policy:
+      adjust: nf
+      rationale: PEG 中的 PE 部分沿用统一现价口径。
+    source_fields:
+      - bars.stock.zh_a.daily.close
+      - financial.balance_sheet.data_json.TOT_SHARE
+      - financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC
+    phoenix_queries:
+      - endpoint: /api/v2/bars/{asset_type}/{market}
+        asset_type: stock
+        market: zh_a
+        params: [symbol, start_date, end_date, period=daily]
+        fields: [trade_date, close]
+      - endpoint: /api/v2/financial/{source}/balance_sheet
+        source: amazing_data
+        params: [symbol, ann_date_before, page_size]
+        fields: [reporting_period, ann_date, data_json.TOT_SHARE]
+      - endpoint: /api/v2/financial/{source}/income
+        source: amazing_data
+        params: [symbol, ann_date_before, page_size]
+        fields: [reporting_period, ann_date, data_json.NET_PRO_EXCL_MIN_INT_INC]
+    governance:
+      growth_definition: 采用净利润单季度同比增长率 (NI_Growth_YoY)，计算公式为 (当前单季度 - 去年同期单季度) / 去年同期单季度。
+      validity_condition: PEG 仅在增长率 > 0 且 PE_TTM > 0 时有效，否则设为 NaN。
+      interpretation: PEG < 1 表示低估，PEG ≈ 1 表示合理，PEG > 1 表示高估。
+      quarter_alignment: 增长率计算基于单季度值而非 TTM，以反映当期真实增长动量。
+      corner_cases:
+        - 去年同期为负，当前为正（扭亏为盈）：使用 (当前 - 去年) / abs(去年)
+        - 去年同期为正，当前为负（盈转亏）：增长率仍按标准公式计算，PEG 无意义
+        - 去年同期为 0：增长率无法计算，PEG 设为 NaN
+      alternatives:
+        - 营收增长率 PEG：使用 OPERA_REV_Growth_YoY
+        - EPS 增长率 PEG：使用 BASIC_EPS_Growth_YoY
+        - 分析师预期 PEG：使用预测盈利增长率
+      current_scope: 本实现仅涵盖净利润增长率 PEG，未来可扩展多种增长口径。
 
   - name: current_ratio
     description: 流动比率仅对非金融行业输出；金融行业短长债结构与流动性管理逻辑不同。
