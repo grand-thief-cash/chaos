@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -59,11 +61,15 @@ func (d *TaxonomyDao) BatchUpsertCategories(ctx context.Context, source, taxonom
 			c.Market = market
 		}
 	}
-	return d.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
+	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "source"}, {Name: "taxonomy"}, {Name: "market"}, {Name: "code"}},
 			DoUpdates: clause.AssignmentColumns([]string{"name", "parent_code", "index_code", "level", "is_leaf", "attrs_json", "updated_at"}),
-		}).CreateInBatches(list, 500).Error
+		}).CreateInBatches(list, 500).Error; err != nil {
+			return err
+		}
+		return d.upsertDerivedFlagsForCategories(ctx, tx, list)
+	})
 }
 
 // ListCategories queries taxonomy categories with optional filters.
@@ -293,12 +299,40 @@ func (d *TaxonomyDao) ListMappingsByCategory(ctx context.Context, source, taxono
 	return list, err
 }
 
+type taxonomyCategoryLookupKey struct {
+	Source   string
+	Taxonomy string
+	Market   string
+	Code     string
+}
+
+type taxonomyCategoryQuery struct {
+	ID         uint64
+	Source     string
+	Taxonomy   string
+	Market     string
+	Code       string
+	Name       string
+	Level      uint8
+	ParentCode *string
+	IndexCode  *string
+	AttrsJSON  *string
+}
+
+type taxonomyCategoryDerivedFlagsQuery struct {
+	Source       string
+	Taxonomy     string
+	Market       string
+	Code         string
+	DerivedFlags *string
+}
+
 // ListMappingsBySymbol returns all taxonomy mappings for a given symbol.
-// Performs two queries: first fetches mappings, then fetches category details.
+// Loads matching taxonomy categories by full composite key and enriches the response
+// with canonical hierarchy fields for downstream consumers.
 func (d *TaxonomyDao) ListMappingsBySymbol(ctx context.Context, symbol string) ([]*model.TaxonomySecurityMapWithDetail, error) {
 	var list []*model.TaxonomySecurityMapWithDetail
 
-	// Query 1: Fetch all mappings for symbol
 	type MappingQuery struct {
 		Source       string
 		Taxonomy     string
@@ -306,10 +340,13 @@ func (d *TaxonomyDao) ListMappingsBySymbol(ctx context.Context, symbol string) (
 		Symbol       string
 		AssetType    string
 		Market       string
+		CreatedAt    time.Time
+		UpdatedAt    time.Time
 	}
 	var mappings []MappingQuery
 	err := d.db.WithContext(ctx).
 		Table("taxonomy_security_map").
+		Select("source, taxonomy, category_code, symbol, asset_type, market, created_at, updated_at").
 		Where("symbol = ?", symbol).
 		Find(&mappings).Error
 	if err != nil {
@@ -319,61 +356,421 @@ func (d *TaxonomyDao) ListMappingsBySymbol(ctx context.Context, symbol string) (
 		return list, nil
 	}
 
-	// Collect unique category codes
-	categoryCodes := make([]string, 0, len(mappings))
-	seen := make(map[string]bool)
+	categoryKeys := make([]taxonomyCategoryLookupKey, 0, len(mappings))
+	seen := make(map[taxonomyCategoryLookupKey]bool)
 	for _, m := range mappings {
-		if !seen[m.CategoryCode] {
-			categoryCodes = append(categoryCodes, m.CategoryCode)
-			seen[m.CategoryCode] = true
+		key := taxonomyCategoryLookupKey{
+			Source:   m.Source,
+			Taxonomy: m.Taxonomy,
+			Market:   m.Market,
+			Code:     m.CategoryCode,
+		}
+		if !seen[key] {
+			categoryKeys = append(categoryKeys, key)
+			seen[key] = true
 		}
 	}
 
-	// Query 2: Fetch category details in batch
-	type CategoryQuery struct {
-		ID         uint64
-		Code       string
-		Name       string
-		Level      uint8
-		ParentCode string
+	categoryMap, err := d.loadCategoryTree(ctx, categoryKeys)
+	if err != nil {
+		return nil, err
 	}
-	var categories []CategoryQuery
-	err = d.db.WithContext(ctx).
-		Table("taxonomy_category").
-		Select("id, code, name, level, parent_code").
-		Where("code IN ?", categoryCodes).
-		Find(&categories).Error
+	derivedFlagsMap, err := d.loadDerivedFlags(ctx, categoryKeys)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build category lookup map
-	categoryMap := make(map[string]*CategoryQuery)
-	for i := range categories {
-		categoryMap[categories[i].Code] = &categories[i]
-	}
-
-	// Merge results
 	for _, m := range mappings {
-		cat, ok := categoryMap[m.CategoryCode]
+		key := taxonomyCategoryLookupKey{
+			Source:   m.Source,
+			Taxonomy: m.Taxonomy,
+			Market:   m.Market,
+			Code:     m.CategoryCode,
+		}
+		cat, ok := categoryMap[key]
+		canonicalSource, canonicalTaxonomy, canonicalLevel := canonicalTaxonomyInfo(m.Source, m.Taxonomy, 0)
 		detail := &model.TaxonomySecurityMapWithDetail{
-			Source:       m.Source,
-			Taxonomy:     m.Taxonomy,
-			CategoryCode: m.CategoryCode,
-			Symbol:       m.Symbol,
-			AssetType:    m.AssetType,
-			Market:       m.Market,
+			Source:                m.Source,
+			Taxonomy:              m.Taxonomy,
+			CategoryCode:          m.CategoryCode,
+			CanonicalSource:       canonicalSource,
+			CanonicalTaxonomy:     canonicalTaxonomy,
+			CanonicalLevel:        canonicalLevel,
+			CanonicalCategoryCode: m.CategoryCode,
+			DerivedFlags:          map[string]bool{},
+			Symbol:                m.Symbol,
+			AssetType:             m.AssetType,
+			Market:                m.Market,
+			CreatedAt:             m.CreatedAt,
+			UpdatedAt:             m.UpdatedAt,
 		}
 		if ok {
 			detail.ID = cat.ID
 			detail.CategoryName = cat.Name
 			detail.Level = cat.Level
-			detail.ParentCode = cat.ParentCode
+			detail.CanonicalSource, detail.CanonicalTaxonomy, detail.CanonicalLevel = canonicalTaxonomyInfo(m.Source, m.Taxonomy, cat.Level)
+			detail.CanonicalCategoryCode = cat.Code
+			detail.CanonicalCategoryName = cat.Name
+			detail.DerivedFlags = deriveCategoryFlags(cat, categoryMap, derivedFlagsMap[key], detail.CanonicalTaxonomy)
+			if cat.ParentCode != nil {
+				detail.ParentCode = *cat.ParentCode
+				detail.CanonicalParentCode = *cat.ParentCode
+			}
+			if cat.IndexCode != nil {
+				detail.IndexCode = *cat.IndexCode
+				detail.CanonicalIndexCode = *cat.IndexCode
+			}
 		}
 		list = append(list, detail)
 	}
 
 	return list, nil
+}
+
+func (d *TaxonomyDao) upsertDerivedFlagsForCategories(ctx context.Context, tx *gorm.DB, categories []*model.TaxonomyCategory) error {
+	keys := make([]taxonomyCategoryLookupKey, 0, len(categories))
+	for _, cat := range categories {
+		keys = append(keys, taxonomyCategoryLookupKey{
+			Source:   cat.Source,
+			Taxonomy: cat.Taxonomy,
+			Market:   cat.Market,
+			Code:     cat.Code,
+		})
+	}
+	keys = dedupeCategoryLookupKeys(keys)
+	if len(keys) == 0 {
+		return nil
+	}
+
+	categoryMap, err := d.loadCategoryTreeWithDB(ctx, tx, keys)
+	if err != nil {
+		return err
+	}
+	existingFlags, err := d.loadDerivedFlagsWithDB(ctx, tx, keys)
+	if err != nil {
+		return err
+	}
+
+	records := make([]*model.TaxonomyCategoryDerivedFlags, 0, len(keys))
+	for _, key := range keys {
+		cat := categoryMap[key]
+		if cat == nil {
+			continue
+		}
+		_, canonicalTaxonomy, _ := canonicalTaxonomyInfo(cat.Source, cat.Taxonomy, cat.Level)
+		flags := deriveCategoryFlags(cat, categoryMap, existingFlags[key], canonicalTaxonomy)
+		if len(flags) == 0 {
+			continue
+		}
+		payloadBytes, err := json.Marshal(flags)
+		if err != nil {
+			return err
+		}
+		payload := string(payloadBytes)
+		records = append(records, &model.TaxonomyCategoryDerivedFlags{
+			Source:       key.Source,
+			Taxonomy:     key.Taxonomy,
+			Market:       key.Market,
+			Code:         key.Code,
+			DerivedFlags: &payload,
+		})
+	}
+	if len(records) == 0 {
+		return nil
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "source"}, {Name: "taxonomy"}, {Name: "market"}, {Name: "code"}},
+		DoUpdates: clause.AssignmentColumns([]string{"derived_flags", "updated_at"}),
+	}).CreateInBatches(records, 500).Error
+}
+
+func (d *TaxonomyDao) loadCategoryTree(ctx context.Context, initialKeys []taxonomyCategoryLookupKey) (map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery, error) {
+	return d.loadCategoryTreeWithDB(ctx, d.db, initialKeys)
+}
+
+func (d *TaxonomyDao) loadCategoryTreeWithDB(ctx context.Context, db *gorm.DB, initialKeys []taxonomyCategoryLookupKey) (map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery, error) {
+	categoryMap := make(map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery)
+	pending := dedupeCategoryLookupKeys(initialKeys)
+
+	for len(pending) > 0 {
+		sources := make([]string, 0, len(pending))
+		taxonomies := make([]string, 0, len(pending))
+		markets := make([]string, 0, len(pending))
+		codes := make([]string, 0, len(pending))
+		sourceSeen := make(map[string]bool)
+		taxonomySeen := make(map[string]bool)
+		marketSeen := make(map[string]bool)
+		codeSeen := make(map[string]bool)
+		for _, key := range pending {
+			if key.Source != "" && !sourceSeen[key.Source] {
+				sources = append(sources, key.Source)
+				sourceSeen[key.Source] = true
+			}
+			if key.Taxonomy != "" && !taxonomySeen[key.Taxonomy] {
+				taxonomies = append(taxonomies, key.Taxonomy)
+				taxonomySeen[key.Taxonomy] = true
+			}
+			if key.Market != "" && !marketSeen[key.Market] {
+				markets = append(markets, key.Market)
+				marketSeen[key.Market] = true
+			}
+			if key.Code != "" && !codeSeen[key.Code] {
+				codes = append(codes, key.Code)
+				codeSeen[key.Code] = true
+			}
+		}
+
+		if len(sources) == 0 || len(taxonomies) == 0 || len(markets) == 0 || len(codes) == 0 {
+			break
+		}
+
+		var categories []taxonomyCategoryQuery
+		err := db.WithContext(ctx).
+			Table("taxonomy_category").
+			Select("id, source, taxonomy, market, code, name, level, parent_code, index_code, attrs_json").
+			Where("source IN ? AND taxonomy IN ? AND market IN ? AND code IN ?", sources, taxonomies, markets, codes).
+			Find(&categories).Error
+		if err != nil {
+			return nil, err
+		}
+
+		nextPending := make([]taxonomyCategoryLookupKey, 0)
+		nextSeen := make(map[taxonomyCategoryLookupKey]bool)
+		for i := range categories {
+			cat := &categories[i]
+			key := taxonomyCategoryLookupKey{Source: cat.Source, Taxonomy: cat.Taxonomy, Market: cat.Market, Code: cat.Code}
+			categoryMap[key] = cat
+			if cat.ParentCode != nil && *cat.ParentCode != "" {
+				parentKey := taxonomyCategoryLookupKey{Source: cat.Source, Taxonomy: cat.Taxonomy, Market: cat.Market, Code: *cat.ParentCode}
+				if _, ok := categoryMap[parentKey]; !ok && !nextSeen[parentKey] {
+					nextPending = append(nextPending, parentKey)
+					nextSeen[parentKey] = true
+				}
+			}
+		}
+		pending = nextPending
+	}
+
+	return categoryMap, nil
+}
+
+func (d *TaxonomyDao) loadDerivedFlags(ctx context.Context, keys []taxonomyCategoryLookupKey) (map[taxonomyCategoryLookupKey]map[string]bool, error) {
+	return d.loadDerivedFlagsWithDB(ctx, d.db, keys)
+}
+
+func (d *TaxonomyDao) loadDerivedFlagsWithDB(ctx context.Context, db *gorm.DB, keys []taxonomyCategoryLookupKey) (map[taxonomyCategoryLookupKey]map[string]bool, error) {
+	result := make(map[taxonomyCategoryLookupKey]map[string]bool)
+	keys = dedupeCategoryLookupKeys(keys)
+	if len(keys) == 0 {
+		return result, nil
+	}
+
+	sources := make([]string, 0)
+	taxonomies := make([]string, 0)
+	markets := make([]string, 0)
+	codes := make([]string, 0)
+	sourceSeen := make(map[string]bool)
+	taxonomySeen := make(map[string]bool)
+	marketSeen := make(map[string]bool)
+	codeSeen := make(map[string]bool)
+	for _, key := range keys {
+		if key.Source != "" && !sourceSeen[key.Source] {
+			sources = append(sources, key.Source)
+			sourceSeen[key.Source] = true
+		}
+		if key.Taxonomy != "" && !taxonomySeen[key.Taxonomy] {
+			taxonomies = append(taxonomies, key.Taxonomy)
+			taxonomySeen[key.Taxonomy] = true
+		}
+		if key.Market != "" && !marketSeen[key.Market] {
+			markets = append(markets, key.Market)
+			marketSeen[key.Market] = true
+		}
+		if key.Code != "" && !codeSeen[key.Code] {
+			codes = append(codes, key.Code)
+			codeSeen[key.Code] = true
+		}
+	}
+
+	var rows []taxonomyCategoryDerivedFlagsQuery
+	if err := db.WithContext(ctx).
+		Table("taxonomy_category_derived_flags").
+		Select("source, taxonomy, market, code, derived_flags").
+		Where("source IN ? AND taxonomy IN ? AND market IN ? AND code IN ?", sources, taxonomies, markets, codes).
+		Find(&rows).Error; err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "does not exist") || strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return result, nil
+		}
+		return nil, err
+	}
+
+	for _, row := range rows {
+		flags := parseBoolMapJSON(row.DerivedFlags)
+		if len(flags) == 0 {
+			continue
+		}
+		result[taxonomyCategoryLookupKey{Source: row.Source, Taxonomy: row.Taxonomy, Market: row.Market, Code: row.Code}] = flags
+	}
+	return result, nil
+}
+
+func dedupeCategoryLookupKeys(keys []taxonomyCategoryLookupKey) []taxonomyCategoryLookupKey {
+	result := make([]taxonomyCategoryLookupKey, 0, len(keys))
+	seen := make(map[taxonomyCategoryLookupKey]bool)
+	for _, key := range keys {
+		if key.Source == "" || key.Taxonomy == "" || key.Market == "" || key.Code == "" {
+			continue
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, key)
+	}
+	return result
+}
+
+func canonicalTaxonomyInfo(source, taxonomy string, level uint8) (string, string, uint8) {
+	canonicalFamily := canonicalTaxonomyFamily(taxonomy, source)
+	canonicalLevel := level
+	if canonicalLevel == 0 {
+		canonicalLevel = parseTaxonomyLevel(taxonomy)
+	}
+	return canonicalFamily, canonicalFamily, canonicalLevel
+}
+
+func canonicalTaxonomyFamily(values ...string) string {
+	for _, value := range values {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		switch {
+		case normalized == "swhy", strings.HasPrefix(normalized, "sw"):
+			return "sw"
+		case strings.HasPrefix(normalized, "citics"), strings.HasPrefix(normalized, "citic"):
+			return "citics"
+		}
+	}
+	return ""
+}
+
+func parseTaxonomyLevel(taxonomy string) uint8 {
+	normalized := strings.ToLower(strings.TrimSpace(taxonomy))
+	idx := strings.LastIndex(normalized, "_l")
+	if idx < 0 || idx+2 >= len(normalized) {
+		return 0
+	}
+	level, err := strconv.Atoi(normalized[idx+2:])
+	if err != nil || level <= 0 || level > 255 {
+		return 0
+	}
+	return uint8(level)
+}
+
+func deriveCategoryFlags(cat *taxonomyCategoryQuery, categoryMap map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery, persistedFlags map[string]bool, canonicalTaxonomy string) map[string]bool {
+	flags := cloneBoolMap(persistedFlags)
+	if len(flags) == 0 {
+		flags = parseDerivedFlags(cat)
+	}
+	if flags == nil {
+		flags = make(map[string]bool)
+	}
+	if _, ok := flags["financial_sector"]; !ok {
+		flags["financial_sector"] = isFinancialSectorCategory(cat, categoryMap, canonicalTaxonomy)
+	}
+	return flags
+}
+
+func parseDerivedFlags(cat *taxonomyCategoryQuery) map[string]bool {
+	if cat == nil || cat.AttrsJSON == nil || strings.TrimSpace(*cat.AttrsJSON) == "" {
+		return nil
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(*cat.AttrsJSON), &payload); err != nil {
+		return nil
+	}
+
+	flags := make(map[string]bool)
+	mergeBoolMap(flags, payload["derived_flags"])
+	if value, ok := payload["is_financial_sector"].(bool); ok {
+		flags["financial_sector"] = value
+	}
+	if len(flags) == 0 {
+		return nil
+	}
+	return flags
+}
+
+func parseBoolMapJSON(raw *string) map[string]bool {
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return nil
+	}
+	var payload any
+	if err := json.Unmarshal([]byte(*raw), &payload); err != nil {
+		return nil
+	}
+	flags := make(map[string]bool)
+	mergeBoolMap(flags, payload)
+	if len(flags) == 0 {
+		return nil
+	}
+	return flags
+}
+
+func mergeBoolMap(dst map[string]bool, raw any) {
+	nested, ok := raw.(map[string]any)
+	if !ok {
+		return
+	}
+	for key, value := range nested {
+		if boolVal, ok := value.(bool); ok {
+			dst[key] = boolVal
+		}
+	}
+}
+
+func cloneBoolMap(src map[string]bool) map[string]bool {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]bool, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
+func isFinancialSectorCategory(cat *taxonomyCategoryQuery, categoryMap map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery, canonicalTaxonomy string) bool {
+	current := cat
+	visited := make(map[taxonomyCategoryLookupKey]bool)
+	for current != nil {
+		if categoryLooksFinancial(current, canonicalTaxonomy) {
+			return true
+		}
+		if current.ParentCode == nil || *current.ParentCode == "" {
+			break
+		}
+		parentKey := taxonomyCategoryLookupKey{Source: current.Source, Taxonomy: current.Taxonomy, Market: current.Market, Code: *current.ParentCode}
+		if visited[parentKey] {
+			break
+		}
+		visited[parentKey] = true
+		current = categoryMap[parentKey]
+	}
+	return false
+}
+
+func categoryLooksFinancial(cat *taxonomyCategoryQuery, canonicalTaxonomy string) bool {
+	name := strings.TrimSpace(cat.Name)
+	for _, keyword := range []string{"银行", "保险", "证券", "多元金融", "非银金融", "综合金融", "金融"} {
+		if name != "" && strings.Contains(name, keyword) {
+			return true
+		}
+	}
+	if canonicalTaxonomy != "sw" {
+		return false
+	}
+	code := strings.TrimSpace(cat.Code)
+	return code == "801010" || code == "801780" || strings.HasPrefix(code, "80101") || strings.HasPrefix(code, "80178")
 }
 
 // DeleteMapping deletes a single mapping.

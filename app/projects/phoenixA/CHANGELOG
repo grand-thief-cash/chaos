@@ -1,7 +1,15 @@
 # VERSION
-v1.17.0
+v1.18.0
 
 # Changelog
+- 1.18.0
+    - **Taxonomy canonical hierarchy fields** — `GET /api/v2/taxonomy/by_security/{symbol}` now returns a stable standardized industry view
+        - Added response fields: `index_code`, `canonical_source`, `canonical_taxonomy`, `canonical_level`, `canonical_category_code`, `canonical_category_name`, `canonical_parent_code`, `canonical_index_code`, `derived_flags`
+        - Canonical normalization now unifies `sw_*`, legacy `swhy`, `citics_*`, and `source=sw/citics + taxonomy=industry` style records into a single downstream-facing hierarchy contract
+        - `ListMappingsBySymbol` now resolves taxonomy categories by full `(source, taxonomy, market, code)` composite key instead of `code` alone, avoiding cross-taxonomy collisions
+        - Parent-category chain is now loaded when enriching `by_security` responses so PhoenixA can classify `derived_flags.financial_sector` at subtree level without pushing those semantics back into the raw ODS taxonomy table
+        - Added `taxonomy_category_derived_flags` as a dedicated PhoenixA-derived persistence layer for taxonomy semantic flags; `taxonomy_category.attrs_json` is now only treated as a backward-compatible read fallback
+        - Updated docs and API validation scripts to reflect the canonical field contract
 - 1.17.0
     - **API Field Filtering** — selective field retrieval for financial and corporate action APIs
         - New parameter: `fields` on `GET /api/v2/financial/{source}/{statement_type}` and `GET /api/v2/corporate-action/{source}/{action_type}` — specify which fields to return
