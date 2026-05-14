@@ -98,17 +98,14 @@
 
 ## data_json 字段说明
 
+**注意**: `MARKET_CODE`, `SECURITY_NAME`, `STATEMENT_TYPE`, `REPORT_TYPE`, `REPORTING_PERIOD`, `ANN_DATE`, `ACTUAL_ANN_DATE`, `COMP_TYPE_CODE` 等元数据字段存储为顶层字段，不包含在 `data_json` 中。
+
+以下字段存储在 `data_json` 中（SDK 原始字段名，大写格式）：
+
 ### balance_sheet（资产负债表）
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| MARKET_CODE | string | 证券代码 |
-| SECURITY_NAME | string | 证券简称 |
-| STATEMENT_TYPE | string | 报表类型 |
-| REPORT_TYPE | string | 报告期名称 |
-| REPORTING_PERIOD | string | 报告期 |
-| ANN_DATE | string | 公告日期 |
-| ACTUAL_ANN_DATE | string | 实际公告日期 |
 | ACC_PAYABLE | float64 | 应付票据及应付账款（元） |
 | ACC_RECEIVABLE | float64 | 应收票据及应收账款（元） |
 | ACC_RECEIVABLES | float64 | 应收款项（元） |
@@ -286,13 +283,6 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| MARKET_CODE | string | 证券代码 |
-| SECURITY_NAME | string | 证券简称 |
-| STATEMENT_TYPE | string | 报表类型 |
-| REPORT_TYPE | string | 报告期名称 |
-| REPORTING_PERIOD | string | 报告期 |
-| ANN_DATE | string | 公告日期 |
-| ACTUAL_ANN_DATE | string | 实际公告日期 |
 | ABSORB_CASH_RECP_INV | float64 | 吸收投资收到的现金（元） |
 | AMORT_INTAN_ASSETS | float64 | 无形资产摊销（元） |
 | AMORT_LT_DEFERRED_EXP | float64 | 长期待摊费用摊销（元） |
@@ -410,13 +400,6 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| MARKET_CODE | string | 证券代码 |
-| SECURITY_NAME | string | 证券简称 |
-| STATEMENT_TYPE | string | 报表类型 |
-| REPORT_TYPE | string | 报告期名称 |
-| REPORTING_PERIOD | string | 报告期 |
-| ANN_DATE | string | 公告日期 |
-| ACTUAL_ANN_DATE | string | 实际公告日期 |
 | AMORT_COST_FIN_ASSETS_EAR | float64 | 以摊余成本计量的金融资产终止确认收益（元） |
 | BASIC_EPS | float64 | 基本每股收益（元/股） |
 | BEG_UNDISTRIBUTED_PRO | float64 | 年初未分配利润（元） |
@@ -525,10 +508,6 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| MARKET_CODE | string | 证券代码 |
-| REPORTING_PERIOD | string | 报告期 |
-| ANN_DATE | string | 公告日期 |
-| ACTUAL_ANN_DATE | string | 实际公告日期 |
 | TOTAL_ASSETS | float64 | 总资产（元） |
 | NET_PRO_EXCL_MIN_INT_INC | float64 | 净利润（元） |
 | TOT_OPERA_REV | float64 | 营业总收入（元） |
@@ -563,12 +542,7 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| MARKET_CODE | string | 证券代码 |
-| SECURITY_NAME | string | 证券简称 |
 | P_TYPECODE | string | 业绩预告类型代码（1:不确定, 2:略减, 3:略增, 4:扭亏, 5:其他, 6:首亏, 7:续亏, 8:续盈, 9:预减, 10:预增, 11:持平） |
-| REPORTING_PERIOD | string | 报告期 |
-| ANN_DATE | string | 公告日期 |
-| REPORT_TYPE | string | 报告期名称 |
 | P_CHANGE_MAX | float64 | 预告净利润变动幅度上限（%） |
 | P_CHANGE_MIN | float64 | 预告净利润变动幅度下限（%） |
 | NET_PROFIT_MAX | float64 | 预告净利润上限（万元） |
@@ -602,8 +576,6 @@
       "actual_ann_date": "2024-03-28",
       "comp_type_code": 2,
       "data_json": {
-        "MARKET_CODE": "000001",
-        "SECURITY_NAME": "平安银行",
         "TOT_OPERA_REV": 1650000000000,
         "TOT_OPERA_COST": 1270000000000,
         "OPERA_PROFIT": 380000000000,
@@ -615,8 +587,7 @@
         "INCOME_TAX": 20000000000,
         "INTEREST_INC": 1200000000000,
         "EBIT": 420000000000,
-        "EBITDA": 480000000000,
-        "COMP_TYPE_CODE": 2
+        "EBITDA": 480000000000
       },
       "created_at": "2024-03-29T00:00:00Z",
       "updated_at": "2024-03-29T00:00:00Z"
@@ -636,9 +607,11 @@
     {
       "symbol": "000001",
       "reporting_period": "2023-12-31",
-      "data_json->'TOT_OPERA_REV'": "data_json.TOT_OPERA_REV",
-      "data_json->'NET_PRO_EXCL_MIN_INT_INC'": "data_json.NET_PRO_EXCL_MIN_INT_INC",
-      "data_json->'EBITDA'": "data_json.EBITDA"
+      "data_json": {
+        "TOT_OPERA_REV": 12345678900.0,
+        "NET_PRO_EXCL_MIN_INT_INC": 98765432100.0,
+        "EBITDA": 1234567890.0
+      }
     }
   ],
   "total": 1
