@@ -12,7 +12,7 @@ _METAS: List[FactorMeta] = [
     FactorMeta("bps", "每股净资产", FactorCategory.PER_SHARE, "Equity/Shares", ("balance_sheet",), requires_market_data=True),
     FactorMeta("cfps", "每股经营现金流", FactorCategory.PER_SHARE, "OCF_TTM/Shares", ("cashflow",), ttm_required=True, requires_market_data=True),
     FactorMeta("fcf_per_share", "每股自由现金流", FactorCategory.PER_SHARE, "FCF_TTM/Shares", ("cashflow",), ttm_required=True, requires_market_data=True),
-    FactorMeta("dps", "每股股利", FactorCategory.PER_SHARE, "Total Dividends/Shares", ("balance_sheet",)),
+    FactorMeta("dps", "每股股利", FactorCategory.PER_SHARE, "Cash Dividend Per Share", ("corporate_action",)),
 ]
 for _m in _METAS:
     register_factor(_m)
@@ -36,12 +36,16 @@ class PerShareFactors(BaseFactor):
         cashflow = financial_data.get("cashflow")
         p = current_period or ""
         shares = _total_shares(market_data)
+        if shares is None and balance is not None:
+            shares = _val(balance, p, "TOT_SHARE")
 
         ni_ttm = compute_ttm(income, "NET_PRO_EXCL_MIN_INT_INC", p) if income is not None else None
-        ocf_ttm = compute_ttm(cashflow, "NET_CASH_FLOWS_OPER_ACT", p) if cashflow is not None else None
+        ocf_ttm = compute_ttm(cashflow, "NET_CASH_FLOW_OPERA_ACT", p) if cashflow is not None else None
         capex_ttm = compute_ttm(cashflow, "CASH_PAID_PUR_CONST_FIOLTA", p) if cashflow is not None else None
         equity = _val(balance, p, "TOT_SHARE_EQUITY_EXCL_MIN_INT") if balance is not None else None
-        dps_val = _val(balance, p, "DPS") if balance is not None else None
+        dps_val = None
+        if market_data is not None and not market_data.empty and "dps" in market_data.columns:
+            dps_val = float(market_data["dps"].iloc[-1])
 
         fcf_ttm = (ocf_ttm - capex_ttm) if (ocf_ttm is not None and capex_ttm is not None) else None
 

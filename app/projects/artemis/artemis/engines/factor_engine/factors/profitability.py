@@ -87,8 +87,8 @@ class ProfitabilityFactors(BaseFactor):
         # effective tax rate from latest annual report
         year = int(period[:4]) if len(period) >= 4 else 0
         annual_period = f"{year - 1}1231" if period[4:] != "1231" else period
-        tax = _val(income, annual_period, "INC_TAX")
-        pretax = _val(income, annual_period, "TOT_PROFIT")
+        tax = _val(income, annual_period, "INCOME_TAX")
+        pretax = _val(income, annual_period, "TOTAL_PROFIT")
         if tax is None or pretax is None or abs(pretax) < 1e-8:
             tax_rate = 0.25  # fallback
         else:

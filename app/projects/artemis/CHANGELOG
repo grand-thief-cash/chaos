@@ -1,7 +1,48 @@
 # VERSION
-- v0.32.0
+- v0.33.0
 
 # Changelog
+- v0.33.0
+    - **Factor Engine × PhoenixA contract review and fixes**
+        - Normalized factor-engine `as_of_date`, `ann_date`, and `reporting_period` handling across `YYYYMMDD` and `YYYY-MM-DD`
+        - Factor formulas are now aligned directly to PhoenixA canonical field names (`INCOME_TAX`, `TOTAL_PROFIT`, `NET_CASH_FLOW_OPERA_ACT`) instead of relying on Artemis-side aliases
+        - Fixed PhoenixA bars integration bug: factor provider now requests raw `trade_date`/`symbol` fields (`normalize_for_cache=False`)
+        - Fixed valuation/per-share sourcing: `market_cap` now computed from `close × TOT_SHARE`, `dps`/`dividend_yield` now use `corporate-action/dividend`
+        - Implemented `PEG` calculation in `valuation.py` (using current net-profit YoY growth definition)
+        - `EV/EBITDA` now prefers PhoenixA `EBITDA` field when available
+        - `exclude_financial=True` factor policies now actually suppress unsupported factors for banks/insurers/brokers
+        - Factor ranking now honors `higher_is_better` metadata instead of always sorting descending
+        - Taxonomy matching is now future-compatible with planned PhoenixA `canonical_*` industry hierarchy fields
+    - **Factor registry metadata enrichment**
+        - `registry.py` now exposes `data_sources`, `ttm_required`, and `min_history_quarters`
+        - Added `get_factor_meta()` for policy-aware service logic
+        - Added YAML-backed factor catalog seed under `config/factor_catalog/` for governance-critical factors
+        - `/factors/meta` now exposes management description, LaTeX formula, PhoenixA lineage, dividend/market-cap governance, and financial policy metadata
+        - Expanded factor catalog coverage to all 39 registered factors via `config/factor_catalog/factors/fundamental_core.yaml`
+        - Added static `availability.expected` / `availability.requirements` metadata so factor management can distinguish ready vs conditional factors before runtime computation
+        - Added factor-level `required_fields`, `required_data_sources`, and structured `provenance` so the catalog can describe exact PhoenixA fields and query lineage per factor
+    - **Snapshot runtime management metadata**
+        - Full and incremental factor snapshots now persist `reporting_period`, `latest_ann_date`, `freshness`, `company_kind`, and per-factor `missing_reasons`
+        - Missing reasons currently classify common failure modes such as financial-sector exclusion, missing market data, missing statement sources, and insufficient history quarters
+        - Missing-reason classification is now more granular, including required-source gaps, required-field gaps, market-data frame gaps, and missing dividend enrichment
+    - **PhoenixA client enhancements for factor engine**
+        - `query_corporate_actions()` now supports `symbols`, `report_period`, `ann_date_before`, `progress_code`, and `fields`
+        - `query_financial_statements()` now mirrors the controller contract more completely (`symbols`, `market`, `reporting_period`, `fields`, `page`, `page_size`)
+        - Added `get_catalog_capabilities()` to consume PhoenixA `/api/v2/catalog/capabilities` for factor availability analysis
+    - **Availability endpoint**
+        - New `/factors/availability` API combines factor catalog metadata with PhoenixA catalog capabilities
+        - Returns factor-level provenance, required fields, required data sources, source availability, and per-factor availability status (`available` / `partial` / `missing` / `unknown`)
+    - **Tests**
+        - Expanded `test_factor_engine.py` with canonical-field and factor-catalog governance coverage
+        - Expanded `test_phoenixa_factor_provider.py` with standardized taxonomy hierarchy compatibility coverage
+        - Added regression coverage for snapshot freshness / missing-reason metadata and store persistence
+        - Added dedicated availability service/route coverage (`test_factor_availability.py`)
+        - Verified factor-engine/provider/availability suite passes after this round of updates: 103 tests
+    - **Review & design docs**
+        - New doc: `docs/2026-05-14 [REVIEW] FACTOR_ENGINE_PHOENIXA_INTEGRATION_AND_FACTOR_MANAGEMENT.md`
+        - Documents PhoenixA contract audit, factor computability matrix, canonical field naming policy, standardized taxonomy recommendation, hybrid factor-catalog design, and Cthulhu presentation proposal
+        - Updated `docs/2026-05-08 [IMPLEMENTING] FEATURE_FUNDAMENTAL_FACTOR_ENGINE.md` with factor catalog / dividend / market-cap governance addendum
+        - Updated PhoenixA API docs and internal catalog metadata to match the actual financial controller contract
 - v0.32.0
     - **Fixed Baostock parent tasks parameter validation error**
         - Removed `parameter_check()` from `STOCK_ZH_A_BS_DIVIDEND_PARENT` and `STOCK_ZH_A_BS_BALANCE_PARENT`
