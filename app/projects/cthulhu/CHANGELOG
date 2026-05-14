@@ -1,7 +1,23 @@
 # VERSION
-v0.12.3
+v0.13.0
 
-# Changelog
+# Changelog、
+- v0.13.0
+      - **Cthulhu workbench alignment**
+          - Updated factor metadata TypeScript model to accept enriched Artemis registry payload
+          - Corrected factor category color mapping to match Artemis categories
+          - Factor Registry tab now surfaces management policy and PhoenixA lineage from the factor catalog seed
+          - Factor Registry now shows static availability hints; Snapshot tab now shows runtime freshness and missing reasons
+          - Added a dedicated Availability tab in the factor-engine page, wired to `/factors/availability`
+          - Availability tab now shows platform summary, source readiness, factor-level live status, missing sources, required field count, and provenance preview
+          - Availability tab now supports search, category filter, and missing-source filter
+          - Availability table now renders full factor-level `required_fields` and full `provenance` details instead of preview-only snippets
+          - Availability table now supports expandable troubleshooting detail rows with longer notes, source-status details, and time-range display
+          - Added Availability sorting controls (`availability_status`, `required_field_count`, `category`, `name`)
+          - Added Availability jump actions to Registry, Ranking, and Snapshot for same-factor troubleshooting flow
+          - Added Source Readiness → Factor Availability linked filtering for source-centric troubleshooting
+          - Added Availability `Expand All` / `Collapse All` actions for faster multi-factor inspection
+          - Snapshot jump now highlights and auto-scrolls to the focused factor when matching rows are present
 - v0.12.3
     - New: Logo added to top navigation bar (cthulhu.png)
     - Fix: CronJob task.yaml editor now only shows/edits the specific task's config section, not the entire YAML file
