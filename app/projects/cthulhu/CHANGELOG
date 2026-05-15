@@ -1,7 +1,19 @@
 # VERSION
-v0.13.0
+v0.14.0
 
-# Changelog、
+# Changelog
+- v0.14.0
+      - **Factor Engine follow-up usability fixes**
+          - Availability tab now shows hoverable `?` help on `Live`, `Expected`, `Source Readiness`, `Capability source`, `Selected source`, `Required Sources`, `Missing Sources`, `Required Fields`, and `Provenance`
+          - Added inline explanation that `Expected` is catalog design-time readiness while `Live` is current PhoenixA runtime proof
+          - Extracted Factor Engine help/legend copy into reusable shared constants under `workbench/ui/factor-engine.copy.ts`, so later pages can reuse the same status semantics and tooltip wording
+          - Factor Engine page now includes its own source selector, wired to the shared Workbench source store
+          - When Workbench source changes, Factor Engine now auto-refreshes Availability and clears stale Compute / Snapshot / Ranking results to avoid cross-environment confusion
+          - Availability header now shows source-aware labels using the currently selected Workbench source instead of an implicit default-only view
+          - Compute / Snapshot / Ranking tabs now explicitly show the currently selected source, reducing cross-environment misreads when operators jump between tabs
+          - Registry wording is less ambiguous: `H↑` / `Mkt Data` have been clarified into full labels with shared tooltip explanations
+          - Availability now shows inline live-status legends, capability-source trust hints, source coverage summaries, and direct `missing_fields` / `unknown_fields` previews before opening detail rows
+          - Refreshing Availability now clears stale table content first, so a failed reload no longer leaves users looking at old source/runtime evidence as if it were fresh
 - v0.13.0
       - **Cthulhu workbench alignment**
           - Updated factor metadata TypeScript model to accept enriched Artemis registry payload
