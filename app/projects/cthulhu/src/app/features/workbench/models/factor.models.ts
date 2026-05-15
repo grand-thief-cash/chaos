@@ -46,9 +46,13 @@ export interface FactorSnapshotMeta {
 
 export interface FactorAvailabilitySourceDetail {
   available: boolean;
+  status?: string;
   sources?: Record<string, number>;
   time_range?: Record<string, string> | null;
   fields_known?: string[];
+  data_types?: string[];
+  row_count?: number;
+  notes?: string[];
 }
 
 export interface FactorAvailabilityProvenance {
@@ -68,6 +72,9 @@ export interface FactorAvailabilityItem {
   required_field_count: number;
   available_sources: string[];
   missing_sources: string[];
+  unknown_sources?: string[];
+  missing_fields?: string[];
+  unknown_fields?: string[];
   source_status: Record<string, FactorAvailabilitySourceDetail>;
   provenance?: FactorAvailabilityProvenance;
   notes?: string[];
@@ -82,6 +89,9 @@ export interface FactorAvailabilitySummary {
 
 export interface FactorAvailabilityResponse {
   capability_source: string;
+  capability_error?: string;
+  capability_http_status?: number;
+  selected_source?: string;
   source_status: Record<string, FactorAvailabilitySourceDetail>;
   summary: FactorAvailabilitySummary;
   factors: FactorAvailabilityItem[];
