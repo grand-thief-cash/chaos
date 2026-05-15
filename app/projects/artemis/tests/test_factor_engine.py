@@ -641,6 +641,19 @@ class TestMarketAdjustPolicy:
         with pytest.raises(ValueError, match="mixed market_adjust_policy"):
             pipeline.run_full("20250501", "zh_a")
 
+    def test_incremental_pipeline_completes_without_skipped_symbol_name_error(self):
+        provider = _AdjustAwareProvider()
+        store = FactorStore()
+        store.save_industry_stats("20250501", "zh_a", {})
+        pipeline = FactorPipeline(provider, store)
+        pipeline.factor_groups = []
+
+        pipeline.run_incremental(["000001"], "20250501", "zh_a")
+
+        snap = store.get_factor_snapshot("000001", "20250501", "zh_a")
+        assert snap is not None
+        assert snap["meta"]["incremental"] is True
+
 
 
 # ===================================================================

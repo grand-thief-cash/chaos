@@ -9,7 +9,7 @@ from __future__ import annotations
 import concurrent.futures
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
 
@@ -101,7 +101,12 @@ class PhoenixADataProvider:
                 market=market,
                 limit=10000,
             )
-            symbols = list(securities.keys())
+            normalized_as_of = normalize_date(as_of_date)
+            symbols = [
+                symbol
+                for symbol, info in securities.items()
+                if self._security_active_as_of(info, normalized_as_of)
+            ]
             self._cache[cache_key] = CacheEntry(
                 value=symbols,
                 timestamp=time.time(),
@@ -145,25 +150,26 @@ class PhoenixADataProvider:
         Returns:
             Dict mapping symbol -> industry_code
         """
-        cache_key = ("industry_map", taxonomy, market)
-        entry = self._cache.get(cache_key)
-        if entry is not None:
-            if entry.is_expired():
-                del self._cache[cache_key]
-                context_key = ("industry_context", taxonomy, market)
-                if context_key in self._cache:
-                    del self._cache[context_key]
-                logger.info({"event": "cache_expired", "key": cache_key})
+        full_map_entry = self._cache.get(self._industry_map_cache_key(taxonomy, market))
+        if full_map_entry is not None:
+            if full_map_entry.is_expired():
+                self._drop_industry_full_cache(taxonomy, market)
             else:
                 if symbols is None:
-                    return entry.value
-                return {k: v for k, v in entry.value.items() if k in symbols}
+                    return full_map_entry.value
+                return {k: v for k, v in full_map_entry.value.items() if k in symbols}
+
+        if symbols is not None:
+            cached_subset = self._get_cached_industry_subset(taxonomy, market, symbols)
+            if cached_subset is not None:
+                return cached_subset
 
         try:
             if use_batch:
                 return self.get_industry_map_batch(taxonomy, market, symbols)
             else:
-                symbols = self._get_active_symbols_for_market(market)
+                is_full_request = symbols is None
+                symbols = symbols or self._get_active_symbols_for_market(market)
 
                 # Build industry map by querying each symbol (legacy, slower)
                 industry_map: Dict[str, str] = {}
@@ -187,15 +193,12 @@ class PhoenixADataProvider:
                             "error": str(e),
                         })
 
-                self._cache[cache_key] = CacheEntry(
-                    value=industry_map,
-                    timestamp=time.time(),
-                    ttl_seconds=self.TTL_INDUSTRY_MAP,
-                )
-                self._cache[("industry_context", taxonomy, market)] = CacheEntry(
-                    value=industry_context_map,
-                    timestamp=time.time(),
-                    ttl_seconds=self.TTL_INDUSTRY_MAP,
+                self._cache_industry_results(
+                    taxonomy,
+                    market,
+                    industry_map,
+                    industry_context_map,
+                    complete=is_full_request,
                 )
                 logger.info({
                     "event": "phoenixa_get_industry_map",
@@ -400,13 +403,31 @@ class PhoenixADataProvider:
         self._cache.clear()
 
     def get_industry_context(self, symbol: str, taxonomy: str, market: str) -> Dict[str, Any]:
-        cache_key = ("industry_context", taxonomy, market)
-        if cache_key not in self._cache:
-            self.get_industry_map(taxonomy, market)
-        entry = self._cache.get(cache_key)
-        contexts = entry.value if entry else {}
-        value = contexts.get(symbol) or {}
-        return dict(value)
+        symbol_key = self._industry_symbol_context_cache_key(taxonomy, market, symbol)
+        entry = self._cache.get(symbol_key)
+        if entry is not None:
+            if entry.is_expired():
+                del self._cache[symbol_key]
+            else:
+                return dict(entry.value or {})
+
+        context_map_entry = self._cache.get(self._industry_context_map_cache_key(taxonomy, market))
+        if context_map_entry is not None:
+            if context_map_entry.is_expired():
+                self._drop_industry_full_cache(taxonomy, market)
+            else:
+                value = (context_map_entry.value or {}).get(symbol) or {}
+                if value:
+                    self._cache[symbol_key] = CacheEntry(
+                        value=dict(value),
+                        timestamp=time.time(),
+                        ttl_seconds=self.TTL_INDUSTRY_MAP,
+                    )
+                return dict(value)
+
+        self.get_industry_map(taxonomy, market, symbols=[symbol])
+        entry = self._cache.get(symbol_key)
+        return dict(entry.value or {}) if entry and not entry.is_expired() else {}
 
     def _get_active_symbols_for_market(self, market: str) -> List[str]:
         for key, entry in self._cache.items():
@@ -477,6 +498,103 @@ class PhoenixADataProvider:
         if len(normalized) == 8:
             return f"{normalized[:4]}-{normalized[4:6]}-{normalized[6:8]}"
         return value
+
+    @staticmethod
+    def _security_active_as_of(info: Dict[str, Any], as_of_date: str) -> bool:
+        if not as_of_date:
+            return True
+        list_date = normalize_date(info.get("list_date"))
+        delist_date = normalize_date(info.get("delist_date"))
+        if list_date and list_date > as_of_date:
+            return False
+        if delist_date and delist_date < as_of_date:
+            return False
+        return True
+
+    @staticmethod
+    def _industry_map_cache_key(taxonomy: str, market: str) -> tuple:
+        return ("industry_map", taxonomy, market, "__all__")
+
+    @staticmethod
+    def _industry_context_map_cache_key(taxonomy: str, market: str) -> tuple:
+        return ("industry_context_map", taxonomy, market, "__all__")
+
+    @staticmethod
+    def _industry_symbol_context_cache_key(taxonomy: str, market: str, symbol: str) -> tuple:
+        return ("industry_context", taxonomy, market, symbol)
+
+    def _drop_industry_full_cache(self, taxonomy: str, market: str) -> None:
+        for key in [
+            self._industry_map_cache_key(taxonomy, market),
+            self._industry_context_map_cache_key(taxonomy, market),
+        ]:
+            if key in self._cache:
+                del self._cache[key]
+
+    def _get_cached_industry_subset(
+        self,
+        taxonomy: str,
+        market: str,
+        symbols: Iterable[str],
+    ) -> Optional[Dict[str, str]]:
+        subset, _, missing_symbols = self._split_cached_industry_subset(taxonomy, market, symbols)
+        if missing_symbols:
+            return None
+        return subset
+
+    def _split_cached_industry_subset(
+        self,
+        taxonomy: str,
+        market: str,
+        symbols: Iterable[str],
+    ) -> tuple[Dict[str, str], Dict[str, Dict[str, Any]], List[str]]:
+        subset: Dict[str, str] = {}
+        context_map: Dict[str, Dict[str, Any]] = {}
+        missing_symbols: List[str] = []
+        for symbol in symbols:
+            cache_key = self._industry_symbol_context_cache_key(taxonomy, market, symbol)
+            ctx_entry = self._cache.get(cache_key)
+            if ctx_entry is None:
+                missing_symbols.append(symbol)
+                continue
+            if ctx_entry.is_expired():
+                del self._cache[cache_key]
+                missing_symbols.append(symbol)
+                continue
+            context = dict(ctx_entry.value or {})
+            industry_code = str(context.get("industry_code") or "")
+            if industry_code:
+                subset[symbol] = industry_code
+            context_map[symbol] = context
+        return subset, context_map, missing_symbols
+
+    def _cache_industry_results(
+        self,
+        taxonomy: str,
+        market: str,
+        industry_map: Dict[str, str],
+        industry_context_map: Dict[str, Dict[str, Any]],
+        *,
+        complete: bool,
+    ) -> None:
+        timestamp = time.time()
+        for symbol, context in industry_context_map.items():
+            self._cache[self._industry_symbol_context_cache_key(taxonomy, market, symbol)] = CacheEntry(
+                value=dict(context),
+                timestamp=timestamp,
+                ttl_seconds=self.TTL_INDUSTRY_MAP,
+            )
+        if complete:
+            self._cache[self._industry_map_cache_key(taxonomy, market)] = CacheEntry(
+                value=dict(industry_map),
+                timestamp=timestamp,
+                ttl_seconds=self.TTL_INDUSTRY_MAP,
+            )
+            self._cache[self._industry_context_map_cache_key(taxonomy, market)] = CacheEntry(
+                value={symbol: dict(context) for symbol, context in industry_context_map.items()},
+                timestamp=timestamp,
+                ttl_seconds=self.TTL_INDUSTRY_MAP,
+            )
 
     @staticmethod
     def _match_industry_mapping(mapping: Dict, taxonomy_lower: str) -> Dict[str, Any]:
@@ -587,28 +705,26 @@ class PhoenixADataProvider:
         Returns:
             Dict mapping symbol -> industry_code
         """
-        cache_key = ("industry_map", taxonomy, market)
-        entry = self._cache.get(cache_key)
+        full_map_key = self._industry_map_cache_key(taxonomy, market)
+        entry = self._cache.get(full_map_key)
         if entry is not None:
             if entry.is_expired():
-                del self._cache[cache_key]
-                context_key = ("industry_context", taxonomy, market)
-                if context_key in self._cache:
-                    del self._cache[context_key]
-                logger.info({"event": "cache_expired", "key": cache_key})
+                self._drop_industry_full_cache(taxonomy, market)
+                logger.info({"event": "cache_expired", "key": full_map_key})
             else:
                 if symbols is None:
                     return entry.value
-                # Filter to only requested symbols
                 return {k: v for k, v in entry.value.items() if k in symbols}
 
-        # Fetch symbols if not provided
-        if symbols is None:
-            symbols = self._get_active_symbols_for_market(market)
+        full_request = symbols is None
+        requested_symbols = list(symbols or self._get_active_symbols_for_market(market))
 
         taxonomy_lower = taxonomy.lower()
-        industry_map: Dict[str, str] = {}
-        industry_context_map: Dict[str, Dict[str, Any]] = {}
+        industry_map, industry_context_map, missing_symbols = self._split_cached_industry_subset(
+            taxonomy,
+            market,
+            requested_symbols,
+        )
 
         # Use ThreadPoolExecutor for concurrent queries
         def fetch_industry_for_symbol(symbol: str) -> tuple:
@@ -630,8 +746,8 @@ class PhoenixADataProvider:
 
         # Process symbols in batches
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            for i in range(0, len(symbols), BATCH_SIZE):
-                batch = symbols[i:i + BATCH_SIZE]
+            for i in range(0, len(missing_symbols), BATCH_SIZE):
+                batch = missing_symbols[i:i + BATCH_SIZE]
                 futures = [executor.submit(fetch_industry_for_symbol, sym) for sym in batch]
                 for future in concurrent.futures.as_completed(futures):
                     symbol, industry_code, industry_context = future.result()
@@ -639,22 +755,20 @@ class PhoenixADataProvider:
                         industry_map[symbol] = industry_code
                         industry_context_map[symbol] = industry_context
 
-        self._cache[cache_key] = CacheEntry(
-            value=industry_map,
-            timestamp=time.time(),
-            ttl_seconds=self.TTL_INDUSTRY_MAP,
-        )
-        self._cache[("industry_context", taxonomy, market)] = CacheEntry(
-            value=industry_context_map,
-            timestamp=time.time(),
-            ttl_seconds=self.TTL_INDUSTRY_MAP,
+        self._cache_industry_results(
+            taxonomy,
+            market,
+            industry_map,
+            industry_context_map,
+            complete=full_request,
         )
 
         logger.info({
             "event": "phoenixa_get_industry_map_batch",
             "taxonomy": taxonomy,
             "market": market,
-            "requested_count": len(symbols) if symbols else "all",
+            "requested_count": len(requested_symbols) if requested_symbols else "all",
+            "cache_hits": len(requested_symbols) - len(missing_symbols),
             "mapped_count": len(industry_map),
         })
         return industry_map
