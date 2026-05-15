@@ -1,7 +1,18 @@
 # VERSION
-- v0.35.0
+- v0.36.0
 
 # Changelog
+- v0.36.0
+    - **Factor Engine × PhoenixA follow-up review fixes**
+        - Fixed industry-map cache pollution: subset `get_industry_map(..., symbols=[...])` requests no longer poison the full-market cache; full-map cache and per-symbol industry-context cache are now separated
+        - Fixed `run_incremental()` tail logging crash caused by stale `skipped_symbols` reference; completion logs now keep only meaningful `failed_symbols` diagnostics
+        - Fixed `get_active_symbols(as_of_date)` survivorship issue: PhoenixA provider now preserves `list_date` / `delist_date` from `security_registry` and applies as-of filtering during historical rebuilds
+        - Improved `/factors/availability` runtime semantics: capabilities-unreachable / empty / untrusted states now surface as `unknown` instead of being flattened into `missing`
+        - Availability analysis now validates both required sources and required fields; source-present but field-incomplete factors are downgraded to `partial` / `missing` instead of false `available`
+        - Added source-scoped factor-engine runtime isolation across `/factors/availability`, `/factors/compute/*`, `/factors/snapshot`, and `/factors/rank`, so different Workbench sources no longer share in-memory provider/store/pipeline state
+        - PhoenixA taxonomy `derived_flags.financial_sector` is now used as the fallback signal for financial-sector exclusion when statement-level `comp_type_code` is unavailable
+    - **Regression coverage refresh**
+        - Added focused tests for unreachable capabilities → `unknown`, missing required-field detection, as-of active-symbol filtering, and industry subset/full cache separation
 - v0.35.0
     - **Factor Engine Cache & Performance Improvements**
         - Added TTL-based cache expiration with `CacheEntry` dataclass (`timestamp`, `ttl_seconds`, `is_expired()`)

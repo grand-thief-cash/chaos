@@ -63,6 +63,17 @@ class TestGetActiveSymbols:
         call_args = mock_phoenixa_client.get_securities.call_args
         assert call_args[1]["market"] == "zh_a"
 
+    def test_filters_symbols_by_list_and_delist_dates(self, provider, mock_phoenixa_client):
+        mock_phoenixa_client.get_securities.return_value = {
+            "000001": {"symbol": "000001", "list_date": "1991-04-03", "status": "active"},
+            "300001": {"symbol": "300001", "list_date": "2025-06-01", "status": "active"},
+            "600001": {"symbol": "600001", "list_date": "2000-01-01", "delist_date": "2024-12-31", "status": "delisted"},
+        }
+
+        result = provider.get_active_symbols("zh_a", "2025-05-01")
+
+        assert result == ["000001"]
+
 
 class TestGetIndustryMap:
     """Test get_industry_map method."""
@@ -227,6 +238,31 @@ class TestGetIndustryMap:
         result = provider.get_industry_map("sw_l1", "zh_a")
 
         assert result == {}
+
+    def test_subset_industry_cache_does_not_poison_following_full_request(self, provider, mock_phoenixa_client):
+        mock_phoenixa_client.get_taxonomy_by_security.side_effect = [
+            [{
+                "canonical_source": "sw",
+                "canonical_taxonomy": "sw",
+                "canonical_level": 1,
+                "canonical_category_code": "801010",
+                "derived_flags": {"financial_sector": True},
+            }],
+            [{
+                "canonical_source": "sw",
+                "canonical_taxonomy": "sw",
+                "canonical_level": 1,
+                "canonical_category_code": "801020",
+                "derived_flags": {"financial_sector": False},
+            }],
+        ]
+
+        subset = provider.get_industry_map("sw_l1", "zh_a", symbols=["000001"])
+        full = provider.get_industry_map("sw_l1", "zh_a")
+
+        assert subset == {"000001": "801010"}
+        assert full == {"000001": "801010", "600000": "801020"}
+        assert mock_phoenixa_client.get_taxonomy_by_security.call_count == 2
 
 
 class TestGetFinancialData:

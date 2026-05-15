@@ -31,7 +31,13 @@ class FactorDataProvider(Protocol):
 
     def get_active_symbols(self, market: str, as_of_date: str) -> List[str]: ...
 
-    def get_industry_map(self, taxonomy: str, market: str) -> Dict[str, str]: ...
+    def get_industry_map(
+        self,
+        taxonomy: str,
+        market: str,
+        use_batch: bool = True,
+        symbols: Optional[List[str]] = None,
+    ) -> Dict[str, str]: ...
 
     def get_industry_context(self, symbol: str, taxonomy: str, market: str) -> Dict[str, Any]: ...
 
@@ -94,7 +100,7 @@ class FactorPipeline:
         # 2. 行业映射 - 使用批量查询优化性能
         taxonomy = "sw_l1"
         try:
-            industry_map = self.provider.get_industry_map(taxonomy, market, use_batch=True)
+            industry_map = self.provider.get_industry_map(taxonomy, market, True, None)
         except Exception as e:
             logger.error({"event": "factor_pipeline_industry_map_failed", "error": str(e)})
             return pd.DataFrame()
@@ -208,7 +214,7 @@ class FactorPipeline:
 
         taxonomy = "sw_l1"
         try:
-            industry_map = self.provider.get_industry_map(taxonomy, market, symbols=symbols)
+            industry_map = self.provider.get_industry_map(taxonomy, market, True, symbols)
         except Exception as e:
             logger.error({
                 "event": "factor_pipeline_industry_map_batch_failed",
@@ -269,7 +275,6 @@ class FactorPipeline:
             "as_of_date": as_of_date,
             "market": market,
             "total_symbols": len(symbols),
-            "skipped_count": len(skipped_symbols),
             "failed_count": len(failed_symbols),
             "batch_industry_map_used": True,
         })

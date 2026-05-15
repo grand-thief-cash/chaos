@@ -74,6 +74,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         asset_type: str = "stock",
         market: str = "zh_a",
         exchanges: Optional[List[str]] = None,
+        status: Optional[str] = None,
         limit: int = 20000,
     ) -> Dict[str, Dict[str, Any]]:
         """Query securities from v2 API."""
@@ -87,6 +88,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
             params["symbol_list"] = ",".join([str(s) for s in symbols if str(s).strip()])
         if exchanges:
             params["exchange"] = ",".join([str(e).strip().upper() for e in exchanges if str(e).strip()])
+        if status:
+            params["status"] = status
 
         result: Dict[str, Dict[str, Any]] = {}
         try:
@@ -100,9 +103,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
                         result[sym] = {
                             "symbol": sym,
                             "name": str(item.get("name", "")),
+                            "full_name": str(item.get("full_name", "")) if item.get("full_name") is not None else "",
                             "exchange": str(item.get("exchange", "")).upper(),
                             "asset_type": str(item.get("asset_type", asset_type)),
                             "market": str(item.get("market", market)),
+                            "status": str(item.get("status", "")),
+                            "list_date": str(item.get("list_date", "")) if item.get("list_date") is not None else "",
+                            "delist_date": str(item.get("delist_date", "")) if item.get("delist_date") is not None else "",
                         }
             return result
         except Exception as e:
@@ -889,13 +896,14 @@ class PhoenixAClient(HTTPDeptServiceClient):
             if 200 <= resp.status_code < 300:
                 data = resp.json()
                 if isinstance(data, dict):
+                    data.setdefault("_reachable", True)
                     return data
-            return {"capabilities": []}
+            return {"capabilities": [], "_reachable": False, "_status_code": resp.status_code}
         except Exception as e:
             if self.logger:
                 self.logger.error({
                     'event': 'phoenixA_get_catalog_capabilities_failed',
                     'error': str(e),
                 })
-            return {"capabilities": []}
+            return {"capabilities": [], "_reachable": False, "_error": str(e)}
 
