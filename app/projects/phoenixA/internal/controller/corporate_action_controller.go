@@ -6,12 +6,13 @@ import (
 	"net/http"
 	"strconv"
 
+	"strings"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/service"
-	"strings"
 )
 
 type CorporateActionController struct {
@@ -78,11 +79,11 @@ func (c *CorporateActionController) Query(w http.ResponseWriter, r *http.Request
 	if v := q.Get("fields"); v != "" {
 		f.Fields = strings.Split(v, ",")
 	}
-
-	list, count, err := c.Svc.Query(r.Context(), source, f, page, pageSize)
 	if v := q.Get("symbols"); v != "" {
 		f.Symbols = strings.Split(v, ",")
 	}
+
+	list, count, err := c.Svc.Query(r.Context(), source, f, page, pageSize)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return

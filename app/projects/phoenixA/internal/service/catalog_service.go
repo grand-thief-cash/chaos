@@ -79,6 +79,15 @@ var tableMetaRegistry = map[string]tableMeta{
 			RefreshSchedule: "每日全量替换",
 		},
 	},
+	"taxonomy_category_derived_flags": {
+		Domain:      "taxonomy",
+		Description: "分类语义派生标记（PhoenixA 维护）",
+		Lineage: &model.DataLineage{
+			SourceSystem:    "phoenixA",
+			IngestionMethod: "DAO derive + upsert",
+			RefreshSchedule: "随 taxonomy 更新增量刷新",
+		},
+	},
 	"industry_constituent": {
 		Domain:      "taxonomy",
 		Description: "行业成分股",
@@ -241,6 +250,7 @@ var columnDescRegistry = map[string]string{
 	"*.preclose":         "昨收价",
 	"*.pct_chg":          "涨跌幅(%)",
 	"*.data_json":        "业务数据（JSONB 灵活字段）",
+	"*.derived_flags":    "PhoenixA 派生语义标记（JSONB）",
 	"*.statement_type":   "报表类型（balance_sheet/income/cashflow/profit_express/profit_notice）",
 	"*.reporting_period": "报告期（YYYYMMDD）",
 	"*.action_type":      "公司行为类型（dividend/right_issue）",
@@ -1442,4 +1452,3 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		Capabilities: capabilities,
 	}, nil
 }
-
