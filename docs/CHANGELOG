@@ -1,7 +1,10 @@
 # VERSION
-v0.2.1
+v0.3.0
 
 # Changelog
+- v0.3.0
+    - Changed doc structure.
+    - Added study plan for learning finance.
 - v0.2.0
     - Added 2026-05-11 BACKLOG_DATA_DERIVED_STORAGE.md
 - v0.1.1
