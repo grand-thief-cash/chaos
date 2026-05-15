@@ -16,13 +16,15 @@
 |--------|------|------|------|
 | symbol | string | 否 | 证券代码 |
 | symbols | string | 否 | 证券代码列表（逗号分隔） |
-| start_date | string | 否 | 起始公告日期（格式 YYYY-MM-DD） |
-| end_date | string | 否 | 截止公告日期（格式 YYYY-MM-DD） |
+| market | string | 否 | 市场标识（如 `zh_a`） |
+| period_start | string | 否 | 起始公告日期（格式 YYYY-MM-DD） |
+| period_end | string | 否 | 截止公告日期（格式 YYYY-MM-DD） |
 | report_period | string | 否 | 按报告期过滤 |
+| ann_date_before | string | 否 | 公告日期前过滤（Point-in-Time 查询） |
 | progress_code | string | 否 | 按进度代码过滤 |
 | **fields** | **string** | **否** | **返回字段列表（逗号分隔），支持常规字段和 JSONB 嵌套字段（见下文说明）** |
-| limit | integer | 否 | 返回数量限制 |
-| offset | integer | 否 | 分页偏移量 |
+| page | integer | 否 | 页码（默认 1） |
+| page_size | integer | 否 | 每页数量 |
 
 ### fields 参数说明
 

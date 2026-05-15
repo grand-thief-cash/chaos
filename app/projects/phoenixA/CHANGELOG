@@ -1,7 +1,14 @@
 # VERSION
-v1.19.0
+v1.20.0
 
 # Changelog
+- 1.20.0
+    - **Taxonomy derived-flags discoverability**
+        - Added catalog/data-dictionary metadata for `taxonomy_category_derived_flags`, so the PhoenixA-owned semantic flag table is visible in table listings and downstream troubleshooting flows
+        - Added explicit column description for `derived_flags` JSONB payloads, clarifying that these are PhoenixA-derived semantic annotations rather than raw ODS attrs
+        - Extended catalog metadata tests to cover the derived-flags taxonomy table registration
+    - **Factor Engine follow-up support notes**
+        - Documented that Artemis availability/runtime troubleshooting now relies on PhoenixA capability trust levels (`phoenixA_catalog`, `phoenixA_catalog_empty`, `unavailable`) instead of collapsing all failures into a generic missing state
 - 1.19.0
     - **API Documentation Fix** — corrected `data_json` field description and response examples
         - Removed `MARKET_CODE`, `SECURITY_NAME`, `STATEMENT_TYPE`, `REPORT_TYPE`, `reporting_period`, `ANN_DATE`, `ACTUAL_ANN_DATE`, `COMP_TYPE_CODE` from `data_json` sections
