@@ -2,8 +2,6 @@ module github.com/grand-thief-cash/chaos/app/projects/cronjob
 
 go 1.24.0
 
-toolchain go1.24.7
-
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -67,6 +65,8 @@ require (
 )
 
 require (
-	github.com/grand-thief-cash/chaos/app/infra/go/application v0.16.2
+	github.com/grand-thief-cash/chaos/app/infra/go/application v0.18.3
 	github.com/grand-thief-cash/chaos/app/infra/go/common v1.0.0
 )
+
+require github.com/neo4j/neo4j-go-driver/v5 v5.28.0 // indirect
