@@ -1,7 +1,14 @@
 # VERSION
-- v0.36.0
+- v0.36.1
 
 # Changelog
+- v0.36.1
+    - **Factor catalog merge logic fix**
+        - Fixed factor catalog loading to merge definitions from multiple YAML files instead of overriding
+        - `governance_seed.yaml` now supplements (not replaces) `fundamental_core.yaml` definitions
+        - Resolved issue where `asset_turnover`, `roic`, and other factors showed "0 field(s)" Required Fields and "No provenance yet"
+        - All factors now correctly retain `source_fields`, `availability`, and `provenance` information from core definitions
+        - `deploy_artemis.py` included supporting upload factor_catalog config.
 - v0.36.0
     - **Factor Engine × PhoenixA follow-up review fixes**
         - Fixed industry-map cache pollution: subset `get_industry_map(..., symbols=[...])` requests no longer poison the full-market cache; full-map cache and per-symbol industry-context cache are now separated
