@@ -48,7 +48,21 @@ def _load_factor_catalog() -> tuple[str, Dict[str, dict], Dict[str, dict]]:
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
-            catalog[name] = dict(item)
+            # Merge with existing definition instead of override.
+            # This allows governance_seed.yaml to supplement (not replace) core definitions.
+            if name in catalog:
+                existing = catalog[name]
+                merged = dict(existing)
+                # Only update with keys that are present in the item
+                for key, value in item.items():
+                    # For list/dict values, prefer the more detailed (non-empty) one
+                    if isinstance(value, (list, dict)) and not value:
+                        # Skip empty lists/dicts from governance layer
+                        continue
+                    merged[key] = value
+                catalog[name] = merged
+            else:
+                catalog[name] = dict(item)
 
     return version, defaults, catalog
 
