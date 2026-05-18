@@ -1,7 +1,10 @@
 # VERSION
-v0.3.0
+v0.4.0
 
 # Changelog
+- v0.4.0
+    - Added study materials.
+    - Restructured docs folder.
 - v0.3.0
     - Changed doc structure.
     - Added study plan for learning finance.
