@@ -1,7 +1,16 @@
 # VERSION
-v1.20.0
+v1.21.0
 
 # Changelog
+- 1.21.0
+    - **Bars Storage Migration** — migrated bars tables from MySQL to PostgreSQL with TimescaleDB support
+        - Updated `BarsDao` to use `postgres_gorm` component instead of `mysql_gorm`
+        - Bars tables (`bars_stock_zh_a_daily_nf`, `bars_stock_zh_a_daily_hfq`, `bars_index_zh_a_daily_nf`) now stored on `warm_storage` tablespace (SATA SSD) for optimal performance
+        - Bars extension table (`bars_ext_baostock_stock_zh_a_daily`) also migrated to PostgreSQL
+        - Tables are ready for TimescaleDB hypertable conversion (see comments in migration files)
+        - Maintained full API compatibility with no functional changes
+        - All bars API endpoints (`/api/v2/bars/{asset_type}/{market}`, `/api/v2/bars/{asset_type}/{market}/last_update`) continue to work as expected
+        - Updated phoenixA changelog.
 - 1.20.0
     - **Taxonomy derived-flags discoverability**
         - Added catalog/data-dictionary metadata for `taxonomy_category_derived_flags`, so the PhoenixA-owned semantic flag table is visible in table listings and downstream troubleshooting flows
