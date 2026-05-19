@@ -1,8 +1,23 @@
 # VERSION
-v1.21.0
+v1.21.1
 
 # Changelog
-- 1.21.0
+- v1.21.1
+    - **BI statement_code documentation**
+        - Documented that `statement_code` uses numeric codes, not text values
+        - See `internal/consts/financial.go` for mapping:
+            - `"1"` = 合并报表
+            - `"2"` = 合并报表(单季度)
+            - `"6"` = 母公司报表
+            - `"7"` = 母公司报表(单季度)
+        - Artemis BI service should use numeric codes when filtering
+    - **BI financial data filtering fix**
+        - Added `statement_code` parameter support to `/api/v2/financial/{source}/{statement_type}` endpoint
+        - Added `StatementCode` field to `FinancialStatementFilters` model
+        - Added `statement_code` filter to DAO query logic (both Query and Count functions)
+        - Updated controller to accept and parse `statement_code` query parameter
+        - This prevents mixing data from different statement types (e.g., "合并报表" vs "母公司报表")
+- v1.21.0
     - **Bars Storage Migration** — migrated bars tables from MySQL to PostgreSQL with TimescaleDB support
         - Updated `BarsDao` to use `postgres_gorm` component instead of `mysql_gorm`
         - Bars tables (`bars_stock_zh_a_daily_nf`, `bars_stock_zh_a_daily_hfq`, `bars_index_zh_a_daily_nf`) now stored on `warm_storage` tablespace (SATA SSD) for optimal performance

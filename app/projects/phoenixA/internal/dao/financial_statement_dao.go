@@ -100,6 +100,9 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 		if f.StatementType != "" {
 			q = q.Where("statement_type = ?", f.StatementType)
 		}
+		if f.StatementCode != "" {
+			q = q.Where("statement_code = ?", f.StatementCode)
+		}
 		if f.ReportingPeriod != "" {
 			q = q.Where("reporting_period = ?", f.ReportingPeriod)
 		}
@@ -161,6 +164,9 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 		}
 		if f.StatementType != "" {
 			q = q.Where("statement_type = ?", f.StatementType)
+		}
+		if f.StatementCode != "" {
+			q = q.Where("statement_code = ?", f.StatementCode)
 		}
 		if f.ReportingPeriod != "" {
 			q = q.Where("reporting_period = ?", f.ReportingPeriod)
