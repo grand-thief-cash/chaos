@@ -9,7 +9,8 @@ export class TopNavService {
     { key: 'artemis', label: 'Artemis', icon: 'bars', path: '/artemis' },
     { key: 'workbench', label: 'Workbench', icon: 'line-chart', path: '/workbench' },
     { key: 'atlas', label: 'Atlas', icon: 'deployment-unit', path: '/atlas' },
-    { key: 'phoenixa', label: 'PhoenixA', icon: 'database', path: '/phoenixa' }
+    { key: 'phoenixa', label: 'PhoenixA', icon: 'database', path: '/phoenixa' },
+    { key: 'bi', label: 'BI', icon: 'line-chart', path: '/bi' }
   ];
   getItems(): ReadonlyArray<TopNavItem> { return this.items; }
 }

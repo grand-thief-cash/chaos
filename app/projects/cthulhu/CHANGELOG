@@ -1,7 +1,27 @@
 # VERSION
-v0.14.0
+v0.15.0
 
 # Changelog
+- v0.15.0
+      - **BI MVP frontend module**
+          - Added new top-level `BI` feature route group under `/bi`
+          - Added BI top-nav entry so the module is discoverable from the main product navigation
+          - Added BI pages:
+              - `BI Overview`
+              - `Company Financial Entry`
+              - `Company Financial Overview`
+              - `Dupont Analysis`
+              - `Financial Quality`
+              - `Metric Dictionary`
+          - Added BI API client wired to Artemis `/bi/*` endpoints
+          - Added company context header component for shared BI company metadata display
+          - Current scope is BI-only and intentionally excludes Atlas / narrative integration
+      - **Frontend validation & tests**
+          - Added `bi-api.service.spec.ts` for Artemis BI HTTP contract coverage
+          - Added `company-context-bar.component.spec.ts` for BI company header rendering coverage
+          - Updated outdated base tests (`AppComponent`, `AppLayoutComponent`) so the Angular suite matches the current app shell / icon runtime behavior
+          - Verified Cthulhu frontend tests pass: `12 SUCCESS`
+          - Verified Angular build succeeds with BI lazy route chunk generation
 - v0.14.0
       - **Factor Engine follow-up usability fixes**
           - Availability tab now shows hoverable `?` help on `Live`, `Expected`, `Source Readiness`, `Capability source`, `Selected source`, `Required Sources`, `Missing Sources`, `Required Fields`, and `Provenance`
