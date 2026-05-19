@@ -1,7 +1,29 @@
 # VERSION
-- v0.36.1
+- v0.36.0
 
 # Changelog
+- v0.36.0
+    - **BI MVP backend foundation**
+        - Added new `/bi` route group in Artemis for structured financial BI read models
+        - New endpoints:
+            - `GET /bi/financial/company/{symbol}/dashboard`
+            - `GET /bi/financial/company/{symbol}/dupont`
+            - `GET /bi/financial/company/{symbol}/quality`
+            - `GET /bi/meta/metrics`
+        - Added BI Pydantic models under `artemis/models/bi.py`
+        - Added BI service layer under `artemis/services/bi_service.py`
+        - Added BI metric contract definitions under `artemis/engines/bi_engine/contracts/metric_definitions.py`
+        - Implemented PhoenixA-backed Phase 1 financial metric computation for dashboard / dupont / quality panels
+        - Scope explicitly kept BI-only: no Atlas / narrative / LLM integration in this MVP implementation
+    - **BI documentation refinement**
+        - Updated `docs/2026-05-19 BI_SERVICE_POSITIONING_AND_FINANCIAL_DASHBOARD_DESIGN.md`
+        - Added MVP metric matrix table (`page -> module -> metric -> PhoenixA field -> phase`)
+        - Added detailed BI read-model schemas for Artemis API responses
+        - Added detailed Cthulhu route/page inventory and explicit BI-only scope statement
+    - **Tests**
+        - Added `tests/test_bi_service.py` for BI metric calculation / dupont / quality contract coverage
+        - Added `tests/test_bi_routes.py` for BI route smoke coverage
+        - Verified BI backend tests pass: `3 passed`
 - v0.36.1
     - **Factor catalog merge logic fix**
         - Fixed factor catalog loading to merge definitions from multiple YAML files instead of overriding
