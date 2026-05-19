@@ -69,6 +69,7 @@ func (c *FinancialStatementController) Query(w http.ResponseWriter, r *http.Requ
 
 	f := &model.FinancialStatementFilters{
 		StatementType: stmtType,
+		StatementCode: q.Get("statement_code"),
 		Symbol:        q.Get("symbol"),
 		Market:        q.Get("market"),
 		PeriodStart:   q.Get("period_start"),
