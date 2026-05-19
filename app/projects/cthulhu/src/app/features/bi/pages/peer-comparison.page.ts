@@ -8,13 +8,14 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
+import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { BiApiService } from '../services/bi-api.service';
 import { BIPeerComparisonResponse } from '../models/bi.models';
 
 @Component({
   selector: 'app-peer-comparison-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, NzCardModule, NzInputModule, NzButtonModule, NzTagModule, NzTableModule, NzSelectModule, NzSpinModule],
+  imports: [CommonModule, FormsModule, NzCardModule, NzInputModule, NzButtonModule, NzTagModule, NzTableModule, NzSelectModule, NzSpinModule, NzAlertModule],
   template: `
     <div style="display: flex; flex-direction: column; gap: 16px;">
       <nz-card nzTitle="同行对比" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
@@ -45,6 +46,8 @@ import { BIPeerComparisonResponse } from '../models/bi.models';
 
       @if (loading) {
         <nz-spin nzTip="Loading peer comparison..."></nz-spin>
+      } @else if (errorMessage) {
+        <nz-alert nzType="error" [nzMessage]="'对比失败'" [nzDescription]="errorMessage" nzShowIcon></nz-alert>
       } @else if (data) {
         <nz-card [nzTitle]="'结果：' + (data.industry_code || 'custom symbols')" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
           <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -85,6 +88,7 @@ export class PeerComparisonPageComponent {
   private readonly api = inject(BiApiService);
   loading = false;
   data: BIPeerComparisonResponse | null = null;
+  errorMessage: string | null = null;
 
   symbolsInput = '000001,600519,000858';
   industryCode = '';
@@ -107,8 +111,9 @@ export class PeerComparisonPageComponent {
         this.data = resp;
         this.loading = false;
       },
-      error: () => {
+      error: (err) => {
         this.loading = false;
+        this.errorMessage = err?.error?.detail || err?.message || '加载失败，请检查输入后重试';
       },
     });
   }

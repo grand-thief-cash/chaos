@@ -1,10 +1,12 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
+import { first } from 'rxjs';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
+import { NzButtonModule } from 'ng-zorro-antd/button';
 import { CompanyContextBarComponent } from '../ui/company-context-bar.component';
 import { BiApiService } from '../services/bi-api.service';
 import { BIInsightResponse } from '../models/bi.models';
@@ -12,11 +14,14 @@ import { BIInsightResponse } from '../models/bi.models';
 @Component({
   selector: 'app-financial-insight-page',
   standalone: true,
-  imports: [CommonModule, NzCardModule, NzAlertModule, NzSpinModule, NzEmptyModule, CompanyContextBarComponent],
+  imports: [CommonModule, NzCardModule, NzAlertModule, NzSpinModule, NzEmptyModule, NzButtonModule, CompanyContextBarComponent],
   template: `
     <div style="display: flex; flex-direction: column; gap: 16px;">
       @if (loading) {
         <nz-spin nzTip="Loading insight..."></nz-spin>
+      } @else if (errorMessage) {
+        <nz-alert nzType="error" [nzMessage]="'加载失败'" [nzDescription]="errorMessage" nzShowIcon></nz-alert>
+        <button nz-button (click)="goBack()">返回</button>
       } @else if (data) {
         <app-company-context-bar [company]="data.company" [asOfDate]="data.as_of_date" [latestPeriod]="data.latest_period"></app-company-context-bar>
 
@@ -59,23 +64,39 @@ import { BIInsightResponse } from '../models/bi.models';
 })
 export class FinancialInsightPageComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly api = inject(BiApiService);
   loading = false;
   data: BIInsightResponse | null = null;
+  errorMessage: string | null = null;
 
   ngOnInit(): void {
-    const symbol = this.route.snapshot.paramMap.get('symbol') ?? '';
-    const asOfDate = this.route.snapshot.queryParamMap.get('as_of_date') ?? new Date().toISOString().slice(0, 10);
-    this.loading = true;
-    this.api.getCompanyInsight(symbol, asOfDate).subscribe({
-      next: (resp) => {
-        this.data = resp;
-        this.loading = false;
-      },
-      error: () => {
-        this.loading = false;
-      },
+    // Get symbol from parent route (the :symbol parameter in /bi/financial/company/:symbol)
+    this.route.parent?.paramMap.pipe(first()).subscribe((params) => {
+      const symbol = params?.get('symbol') ?? this.route.snapshot.paramMap.get('symbol');
+
+      if (!symbol) {
+        this.router.navigate(['/bi/financial']);
+        return;
+      }
+
+      const asOfDate = this.route.snapshot.queryParamMap.get('as_of_date') ?? new Date().toISOString().slice(0, 10);
+      this.loading = true;
+      this.api.getCompanyInsight(symbol, asOfDate).subscribe({
+        next: (resp) => {
+          this.data = resp;
+          this.loading = false;
+        },
+        error: (err) => {
+          this.loading = false;
+          this.errorMessage = err?.error?.detail || err?.message || '加载数据失败，请稍后重试';
+        },
+      });
     });
+  }
+
+  goBack(): void {
+    this.router.navigate(['/bi/financial']);
   }
 }
 

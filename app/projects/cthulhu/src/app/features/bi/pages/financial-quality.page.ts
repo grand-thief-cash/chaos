@@ -1,11 +1,13 @@
 import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
+import { first } from 'rxjs';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
+import { NzButtonModule } from 'ng-zorro-antd/button';
 import { CompanyContextBarComponent } from '../ui/company-context-bar.component';
 import { TrendChartComponent } from '../ui/trend-chart.component';
 import { BiApiService } from '../services/bi-api.service';
@@ -14,11 +16,14 @@ import { BIQualityResponse } from '../models/bi.models';
 @Component({
   selector: 'app-financial-quality-page',
   standalone: true,
-  imports: [CommonModule, NzCardModule, NzTagModule, NzSpinModule, NzEmptyModule, NzAlertModule, CompanyContextBarComponent, TrendChartComponent],
+  imports: [CommonModule, NzCardModule, NzTagModule, NzSpinModule, NzEmptyModule, NzAlertModule, NzButtonModule, CompanyContextBarComponent, TrendChartComponent],
   template: `
     <div style="display: flex; flex-direction: column; gap: 16px;">
       @if (loading) {
         <nz-spin nzTip="Loading quality panels..."></nz-spin>
+      } @else if (errorMessage) {
+        <nz-alert nzType="error" [nzMessage]="'加载失败'" [nzDescription]="errorMessage" nzShowIcon></nz-alert>
+        <button nz-button (click)="goBack()">返回</button>
       } @else if (data) {
         <app-company-context-bar [company]="data.company" [asOfDate]="data.as_of_date" [latestPeriod]="data.latest_period"></app-company-context-bar>
 
@@ -93,28 +98,44 @@ import { BIQualityResponse } from '../models/bi.models';
 })
 export class FinancialQualityPageComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly api = inject(BiApiService);
   loading = false;
   data: BIQualityResponse | null = null;
+  errorMessage: string | null = null;
 
   ngOnInit(): void {
-    const symbol = this.route.snapshot.paramMap.get('symbol') ?? '';
-    const asOfDate = this.route.snapshot.queryParamMap.get('as_of_date') ?? new Date().toISOString().slice(0, 10);
-    this.loading = true;
-    this.api.getCompanyQuality(symbol, asOfDate).subscribe({
-      next: (resp) => {
-        this.data = resp;
-        this.loading = false;
-      },
-      error: () => {
-        this.loading = false;
-      },
+    // Get symbol from parent route (the :symbol parameter in /bi/financial/company/:symbol)
+    this.route.parent?.paramMap.pipe(first()).subscribe((params) => {
+      const symbol = params?.get('symbol') ?? this.route.snapshot.paramMap.get('symbol');
+
+      if (!symbol) {
+        this.router.navigate(['/bi/financial']);
+        return;
+      }
+
+      const asOfDate = this.route.snapshot.queryParamMap.get('as_of_date') ?? new Date().toISOString().slice(0, 10);
+      this.loading = true;
+      this.api.getCompanyQuality(symbol, asOfDate).subscribe({
+        next: (resp) => {
+          this.data = resp;
+          this.loading = false;
+        },
+        error: (err) => {
+          this.loading = false;
+          this.errorMessage = err?.error?.detail || err?.message || '加载数据失败，请稍后重试';
+        },
+      });
     });
   }
 
   display(value: number | null | undefined, unit: string): string {
     if (value === null || value === undefined) return '-';
     return `${value.toFixed(2)} ${unit === 'ratio' ? '' : unit}`.trim();
+  }
+
+  goBack(): void {
+    this.router.navigate(['/bi/financial']);
   }
 }
 
