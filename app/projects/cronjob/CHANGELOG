@@ -1,7 +1,9 @@
 # VERSION
-v0.14.4
+v0.15.0
 
 # Changelog
+- v0.15.0
+    - Migrated cronjob to postgresql.
 - v0.14.4
     - Migrated bars sql.
     - Upgraded cronjob to v0.18.3.

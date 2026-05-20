@@ -16,20 +16,21 @@ logging:
     cleanup_enabled: true
     rotate_interval: 24h  # 24h >= 一天 -> 采用 <app_name>.log.YYYYMMDD 格式
 
-mysql_gorm:
+postgres_gorm:
   enabled: true
   data_sources:
     cronjob:
-      host: 127.0.0.1
-      port: 13306
-      user: root
+      host: 192.168.31.35
+      port: 5432
+      user: chaos_app_dev
       password: 123456
       database: cronjob_dev
+      schema: cronjob_dev
       max_open_conns: 3
       max_idle_conns: 5
       ping_on_start: true
       migrate_enabled: true
-      migrate_dir: ./migrations
+      migrate_base: ./migrations
 
 http_server:
   enabled: true
