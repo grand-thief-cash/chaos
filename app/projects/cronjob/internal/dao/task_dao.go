@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
@@ -31,7 +31,7 @@ type TaskDao interface {
 
 type TaskDaoImpl struct {
 	*core.BaseComponent
-	GormComp *mg.GormComponent `infra:"dep:mysql_gorm"`
+	GormComp *mg.PostgresGormComponent `infra:"dep:postgres_gorm"`
 	db       *gorm.DB
 	dsName   string // 数据源名称（示例用 "main"）
 }
