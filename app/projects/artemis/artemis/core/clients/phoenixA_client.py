@@ -595,6 +595,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         reporting_period: str = "",
         reporting_periods: Optional[List[str]] = None,
         report_type: str = "",
+        statement_code: str = "",
         comp_type_code: Optional[int] = None,
         fields: Optional[List[str]] = None,
         page: int = 1,
@@ -604,7 +605,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
 
         Mirrors PhoenixA controller query params:
         `symbol`, `symbols`, `market`, `period_start`, `period_end`, `ann_date_before`,
-        `reporting_period`, `reporting_periods`, `report_type`, `comp_type_code`,
+        `reporting_period`, `reporting_periods`, `report_type`, `statement_code`, `comp_type_code`,
         `fields`, `page`, and `page_size`.
         """
         path = f"/api/v2/financial/{source}/{statement_type}"
@@ -627,6 +628,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
             params["reporting_periods"] = ",".join(reporting_periods)
         if report_type:
             params["report_type"] = report_type
+        if statement_code:
+            params["statement_code"] = statement_code
         if comp_type_code is not None:
             params["comp_type_code"] = str(comp_type_code)
         if fields:

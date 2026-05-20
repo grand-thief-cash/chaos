@@ -1,14 +1,14 @@
 """TTM (Trailing Twelve Months) 与单季度推导。
 
-中国上市公司利润表/现金流量表报告的是年初至期末的 **累计值**：
-  Q1 = Jan–Mar 累计
-  Q2 = Jan–Jun 累计（半年报）
-  Q3 = Jan–Sep 累计（三季报）
-  Q4 = Jan–Dec 累计（年报）
+	中国上市公司利润表/现金流量表报告的是年初至期末的 **累计值**：
+	  Q1 = Jan–Mar 累计
+	  Q2 = Jan–Jun 累计（半年报）
+	  Q3 = Jan–Sep 累计（三季报）
+	  Q4 = Jan–Dec 累计（年报）
 
-TTM 公式：
-  TTM = 当期累计 + 上年年报 − 上年同期累计
-"""
+	TTM 公式：
+	  TTM = 当期累计 + 上年年报 − 上年同期累计
+	"""
 
 from __future__ import annotations
 
@@ -22,11 +22,23 @@ def normalize_period(value: Optional[str]) -> str:
     """Normalize period/date strings to ``YYYYMMDD`` when possible."""
     if value is None:
         return ""
-    digits = "".join(ch for ch in str(value).strip() if ch.isdigit())
-    if len(digits) >= 8:
-        return digits[:8]
-    if len(digits) == 4:
-        return digits
+
+    value = str(value).strip()
+
+    # Handle YYYY-MM-DD format and convert to YYYYMMDD
+    if len(value) == 10 and value[4] == '-' and value[7] == '-':
+        # Already in YYYY-MM-DD format, just remove hyphens
+        return value.replace('-', '')
+
+    # Handle YYYY-MM format (no day) and convert to YYYYMM01
+    if len(value) == 7 and value[4] == '-':
+        # Convert 2026-05 to 20260501
+        return value.replace('-', '') + '01'
+
+    # Handle YYYYMMDD format (return as-is)
+    if len(value) == 8 and value.isdigit():
+        return value
+
     return ""
 
 
@@ -50,7 +62,6 @@ def get_quarter(reporting_period: str) -> int:
         return 0
     return {3: 1, 6: 2, 9: 3, 12: 4}.get(month, 0)
 
-
 def get_year(reporting_period: str) -> int:
     reporting_period = normalize_period(reporting_period)
     if not reporting_period or len(reporting_period) < 4:
@@ -60,7 +71,6 @@ def get_year(reporting_period: str) -> int:
     except ValueError:
         return 0
 
-
 def get_prev_quarter_period(year: int, quarter: int) -> Optional[str]:
     """当前期的前一期 (Q3→Q2, Q1→上年Q4)。"""
     if quarter == 1:
@@ -68,22 +78,20 @@ def get_prev_quarter_period(year: int, quarter: int) -> Optional[str]:
     month_map = {2: "0331", 3: "0630", 4: "0930"}
     return f"{year}{month_map[quarter]}"
 
-
 def make_period(year: int, quarter: int) -> str:
     month_map = {1: "0331", 2: "0630", 3: "0930", 4: "1231"}
     return f"{year}{month_map[quarter]}"
-
 
 # ---------------------------------------------------------------------------
 # Core computation
 # ---------------------------------------------------------------------------
 
 def _val(df: Optional[pd.DataFrame], period: str, field: str) -> Optional[float]:
-    """Extract a single value from *df* for the given *period* and *field*.
+    """Extract a single value from *df* for a given *period* and *field*.
 
-    Returns ``None`` if the DataFrame is empty, the field/period is missing, or
-    the value is NaN.
-    """
+	Returns ``None`` if the DataFrame is empty, the field/period is missing, or
+	the value is NaN.
+	"""
     period = normalize_period(period)
     if df is None or df.empty or not period:
         return None
@@ -92,8 +100,8 @@ def _val(df: Optional[pd.DataFrame], period: str, field: str) -> Optional[float]
 
     if "reporting_period" in df.columns:
         rp = df["reporting_period"].map(normalize_period)
-    elif "report_period" in df.columns:
-        rp = df["report_period"].map(normalize_period)
+    elif "reporting_period" in df.columns:
+        rp = df["reporting_period"].map(normalize_period)
     else:
         rp = pd.Series(df.index, index=df.index).map(normalize_period)
 
@@ -106,7 +114,6 @@ def _val(df: Optional[pd.DataFrame], period: str, field: str) -> Optional[float]
         return None
     return float(v)
 
-
 def compute_ttm(
     reports: pd.DataFrame,
     field: str,
@@ -114,14 +121,14 @@ def compute_ttm(
 ) -> Optional[float]:
     """计算 TTM 值。
 
-    Args:
-        reports: 含 ``reporting_period`` 列和目标 ``field`` 列的 DataFrame
-        field: 要计算 TTM 的字段名
-        current_period: 当前最新报告期, e.g. ``"20250930"``
+	Args:
+		reports: 含 ``reporting_period`` 列和目标 ``field`` 列的 DataFrame
+		field: 要计算 TTM 的字段名
+		current_period: 当前最新报告期, e.g. ``"20250930"``
 
-    Returns:
-        TTM 值, 数据不足时返回 ``None``
-    """
+	Returns:
+		TTM 值，数据不足时返回 ``None``
+	"""
     current_period = normalize_period(current_period)
     quarter = get_quarter(current_period)
     year = get_year(current_period)
@@ -142,25 +149,24 @@ def compute_ttm(
 
     return cur_cum + prev_annual - prev_same
 
-
 def compute_single_quarter(
     reports: pd.DataFrame,
     field: str,
-    report_period: str,
+    reporting_period: str,
 ) -> Optional[float]:
     """从累计值推导单季度值。
 
-    Q1 = Q1累计值
-    Qn = Qn累计 − Q(n−1)累计  (n=2,3,4)
-    """
-    report_period = normalize_period(report_period)
-    quarter = get_quarter(report_period)
-    year = get_year(report_period)
+	Q1 = Q1累计值
+	Qn = Qn累计 − Q(n−1)累计 (n=2,3,4)
+	"""
+    reporting_period = normalize_period(reporting_period)
+    quarter = get_quarter(reporting_period)
+    year = get_year(reporting_period)
 
     if quarter == 0:
         return None
 
-    cur_cum = _val(reports, report_period, field)
+    cur_cum = _val(reports, reporting_period, field)
     if cur_cum is None:
         return None
 
@@ -176,4 +182,3 @@ def compute_single_quarter(
         return None
 
     return cur_cum - prev_cum
-
