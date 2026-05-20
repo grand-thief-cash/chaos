@@ -63,6 +63,8 @@ class FakePhoenixClient:
                         "reporting_period": "2025-12-31",
                         "ann_date": "2026-03-20",
                         "comp_type_code": 1,
+                        "statement_code": "合并报表",
+                        "report_type": "年报",
                         "data_json": {
                             "TOT_OPERA_REV": 12_000_000_000 * multiplier,
                             "OPERA_PROFIT": 1_500_000_000 * multiplier,

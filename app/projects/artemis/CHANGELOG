@@ -1,7 +1,11 @@
 # VERSION
-- v0.36.0
+- v0.36.1
 
 # Changelog
+- v0.36.1
+    - Fixed bi_service.py for missing symbols.
+    - Filtered for merged financial statements only PhoenixA statement_code uses numeric codes: "1".
+    - PhonexA_client added `statement_code` in query_financial_statements parameters.
 - v0.36.0
     - **BI MVP backend foundation**
         - Added new `/bi` route group in Artemis for structured financial BI read models

@@ -159,6 +159,15 @@ class FinancialBundle:
 
 
 class BIService:
+    def _validate_symbol(self, symbol: str) -> str:
+        """Validate and normalize symbol parameter."""
+        if not symbol or not isinstance(symbol, str):
+            raise ValueError("Symbol is required and must be a non-empty string")
+        normalized = symbol.strip()
+        if not normalized:
+            raise ValueError("Symbol cannot be empty or whitespace only")
+        return normalized
+
     def get_metric_definitions(self) -> BIMetricsMetaResponse:
         metrics = [
             BIMetricDefinition(**item)
@@ -206,6 +215,9 @@ class BIService:
         return BISecuritySearchResponse(query=normalized_query, market=market, total=len(items), items=items)
 
     def get_peer_comparison(self, req: BIPeerComparisonRequest) -> BIPeerComparisonResponse:
+        if req.symbols:
+            validated_symbols = [self._validate_symbol(s) for s in req.symbols if s]
+            req.symbols = validated_symbols
         symbols = self._resolve_peer_symbols(req)
         if not symbols:
             raise ValueError("No peer symbols available for comparison")
@@ -253,6 +265,7 @@ class BIService:
         market: str = "zh_a",
         source: str = "amazing_data",
     ) -> BIInsightResponse:
+        symbol = self._validate_symbol(symbol)
         bundle = self._load_bundle(symbol=symbol, as_of_date=as_of_date, market=market, source=source)
         company = self._build_company_meta(bundle, symbol=symbol, market=market)
         latest_period = bundle.latest_period
@@ -294,6 +307,7 @@ class BIService:
         market: str = "zh_a",
         source: str = "amazing_data",
     ) -> BIDashboardResponse:
+        symbol = self._validate_symbol(symbol)
         bundle = self._load_bundle(symbol=symbol, as_of_date=as_of_date, market=market, source=source)
         company = self._build_company_meta(bundle, symbol=symbol, market=market)
         latest_period = bundle.latest_period
@@ -395,6 +409,7 @@ class BIService:
         market: str = "zh_a",
         source: str = "amazing_data",
     ) -> BIDupontResponse:
+        symbol = self._validate_symbol(symbol)
         bundle = self._load_bundle(symbol=symbol, as_of_date=as_of_date, market=market, source=source)
         company = self._build_company_meta(bundle, symbol=symbol, market=market)
         latest_period = bundle.latest_period
@@ -458,6 +473,7 @@ class BIService:
         market: str = "zh_a",
         source: str = "amazing_data",
     ) -> BIQualityResponse:
+        symbol = self._validate_symbol(symbol)
         bundle = self._load_bundle(symbol=symbol, as_of_date=as_of_date, market=market, source=source)
         company = self._build_company_meta(bundle, symbol=symbol, market=market)
         latest_period = bundle.latest_period
@@ -596,12 +612,19 @@ class BIService:
         data_fields: Iterable[str],
         as_of_date: str,
     ) -> List[Dict[str, Any]]:
-        fields = COMMON_TOP_LEVEL_FIELDS + [f"data_json.{field}" for field in data_fields]
+        # Filter for merged financial statements only
+        # PhoenixA statement_code uses numeric codes: "1" = 合并报表
+        # See: app/projects/phoenixA/internal/consts/financial.go
+        # This avoids mixing data from different statement types (e.g., parent-only vs consolidated)
+        statement_code = "1"  # 合并报表
+
+        fields = COMMON_TOP_LEVEL_FIELDS + ["data_json", "statement_code", "report_type"]
         response = client.query_financial_statements(
             source=source,
             statement_type=statement_type,
             symbol=symbol,
             market=market,
+            statement_code=statement_code,
             ann_date_before=self._to_api_date(as_of_date),
             fields=fields,
             page=1,
@@ -609,15 +632,62 @@ class BIService:
         )
         rows = response.get("data", []) if isinstance(response, dict) else []
         normalized_rows: List[Dict[str, Any]] = []
+
         for item in rows:
             if not isinstance(item, dict):
                 continue
+
             row = {k: v for k, v in item.items() if k != "data_json"}
-            data_json = item.get("data_json") or {}
+            data_json = item.get("data_json") or "{}"
+            # Parse JSON string to dict
+            if isinstance(data_json, str):
+                try:
+                    import json
+                    data_json = json.loads(data_json)
+                except (json.JSONDecodeError, TypeError):
+                    data_json = {}
             if isinstance(data_json, dict):
                 row.update(data_json)
-            row["_period_norm"] = normalize_period(row.get("reporting_period"))
+
+            # Normalize and validate reporting_period
+            period_norm = normalize_period(row.get("reporting_period"))
+            if not period_norm:
+                logger.warning({
+                    "event": "bi_invalid_reporting_period",
+                    "symbol": symbol,
+                    "statement_type": statement_type,
+                    "reporting_period": row.get("reporting_period"),
+                    "ann_date": row.get("ann_date"),
+                })
+                continue
+
+            # Validate that the normalized period is reasonable (not a future date or malformed)
+            # Extract year from YYYYMMDD format
+            try:
+                period_year = int(period_norm[:4])
+                as_of_year = int(self._to_api_date(as_of_date)[:4])
+                # Reject if reporting period year is in the future relative to as_of_date
+                if period_year > as_of_year:
+                    logger.warning({
+                        "event": "bi_future_reporting_period",
+                        "symbol": symbol,
+                        "statement_type": statement_type,
+                        "reporting_period": row.get("reporting_period"),
+                        "as_of_date": as_of_date,
+                    })
+                    continue
+            except (ValueError, IndexError):
+                logger.warning({
+                    "event": "bi_malformed_reporting_period",
+                    "symbol": symbol,
+                    "statement_type": statement_type,
+                    "reporting_period": row.get("reporting_period"),
+                })
+                continue
+
+            row["_period_norm"] = period_norm
             normalized_rows.append(row)
+
         normalized_rows.sort(key=lambda item: item.get("_period_norm", ""), reverse=True)
         return normalized_rows
 
