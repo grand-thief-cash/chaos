@@ -12,13 +12,14 @@ import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { CompanyContextBarComponent } from '../ui/company-context-bar.component';
 import { TrendChartComponent } from '../ui/trend-chart.component';
+import { TrendControlsComponent } from '../ui/trend-controls.component';
 import { BiApiService } from '../services/bi-api.service';
 import { BIDashboardResponse } from '../models/bi.models';
 
 @Component({
   selector: 'app-financial-dashboard-page',
   standalone: true,
-  imports: [CommonModule, NzCardModule, NzButtonModule, NzGridModule, NzStatisticModule, NzTagModule, NzSpinModule, NzEmptyModule, NzAlertModule, CompanyContextBarComponent, TrendChartComponent],
+  imports: [CommonModule, NzCardModule, NzButtonModule, NzGridModule, NzStatisticModule, NzTagModule, NzSpinModule, NzEmptyModule, NzAlertModule, CompanyContextBarComponent, TrendChartComponent, TrendControlsComponent],
   template: `
     <div style="display: flex; flex-direction: column; gap: 16px;">
       @if (loading) {
@@ -54,10 +55,21 @@ import { BIDashboardResponse } from '../models/bi.models';
           <div nz-col [nzXs]="24" [nzLg]="16">
             <nz-card nzTitle="趋势概览" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
               <div style="display: flex; flex-direction: column; gap: 16px;">
+                <app-bi-trend-controls
+                  [periodLimit]="trendPeriodLimit"
+                  [viewMode]="trendViewMode"
+                  (periodLimitChange)="onTrendPeriodLimitChange($event)"
+                  (viewModeChange)="onTrendViewModeChange($event)">
+                </app-bi-trend-controls>
                 @for (section of data.trend_sections; track section.code) {
                   <div style="border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px;">
                     <div style="font-weight: 600; margin-bottom: 8px;">{{ section.title }}</div>
-                    <app-bi-trend-chart [section]="section" [height]="320"></app-bi-trend-chart>
+                    <app-bi-trend-chart
+                      [section]="section"
+                      [height]="320"
+                      [periodLimit]="trendPeriodLimit"
+                      [viewMode]="trendViewMode">
+                    </app-bi-trend-chart>
                   </div>
                 }
               </div>
@@ -129,8 +141,11 @@ export class FinancialDashboardPageComponent implements OnInit {
   data: BIDashboardResponse | null = null;
   errorMessage: string | null = null;
   currentSymbol: string | null = null;
+  trendPeriodLimit: 12 | 16 | 20 = 12;
+  trendViewMode: 'quarterly' | 'annual' = 'quarterly';
 
   ngOnInit(): void {
+    this.loadTrendSettings();
     // Get symbol from parent route (the :symbol parameter in /bi/financial/company/:symbol)
     this.route.parent?.paramMap.pipe(first()).subscribe((params) => {
       const symbol = params?.get('symbol') ?? this.route.snapshot.paramMap.get('symbol');
@@ -187,10 +202,48 @@ export class FinancialDashboardPageComponent implements OnInit {
     this.router.navigate(['/bi/financial']);
   }
 
+  onTrendPeriodLimitChange(limit: 12 | 16 | 20): void {
+    this.trendPeriodLimit = limit;
+    this.saveTrendSettings();
+  }
+
+  onTrendViewModeChange(mode: 'quarterly' | 'annual'): void {
+    this.trendViewMode = mode;
+    this.saveTrendSettings();
+  }
+
   private remember(symbol: string): void {
     try {
       const current = JSON.parse(localStorage.getItem('bi-recent-symbols') || '[]') as string[];
       localStorage.setItem('bi-recent-symbols', JSON.stringify([symbol, ...current.filter(item => item !== symbol)].slice(0, 8)));
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  private loadTrendSettings(): void {
+    try {
+      const raw = JSON.parse(localStorage.getItem('bi-trend-settings') || '{}') as {
+        periodLimit?: 12 | 16 | 20;
+        viewMode?: 'quarterly' | 'annual';
+      };
+      if (raw.periodLimit === 12 || raw.periodLimit === 16 || raw.periodLimit === 20) {
+        this.trendPeriodLimit = raw.periodLimit;
+      }
+      if (raw.viewMode === 'quarterly' || raw.viewMode === 'annual') {
+        this.trendViewMode = raw.viewMode;
+      }
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  private saveTrendSettings(): void {
+    try {
+      localStorage.setItem('bi-trend-settings', JSON.stringify({
+        periodLimit: this.trendPeriodLimit,
+        viewMode: this.trendViewMode,
+      }));
     } catch {
       // ignore storage failures
     }

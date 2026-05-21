@@ -17,6 +17,8 @@ import { BITrendSection } from '../models/bi.models';
 export class TrendChartComponent implements OnChanges {
   @Input({ required: true }) section!: BITrendSection;
   @Input() height = 320;
+  @Input() periodLimit: 12 | 16 | 20 = 12;
+  @Input() viewMode: 'quarterly' | 'annual' = 'quarterly';
 
   options: EChartsOption | null = null;
 
@@ -30,11 +32,18 @@ export class TrendChartComponent implements OnChanges {
     }
 
     // Defensive reorder: guarantee chronological plotting even if backend returns newest-first.
-    const orderedIndices = this.section.periods
+    const ordered = this.section.periods
       .map((period, index) => ({ period, index }))
       .sort((a, b) => a.period.localeCompare(b.period))
-      .map((item) => item.index);
-    const orderedPeriods = orderedIndices.map((index) => this.section.periods[index]);
+      .filter((item) => this.viewMode === 'quarterly' || this.isAnnualPeriod(item.period));
+
+    const tail = ordered.slice(Math.max(0, ordered.length - this.periodLimit));
+    if (tail.length === 0) {
+      return null;
+    }
+
+    const orderedIndices = tail.map((item) => item.index);
+    const orderedPeriods = tail.map((item) => item.period);
 
     const palette = ['#1677ff', '#52c41a', '#fa8c16', '#722ed1', '#13c2c2', '#eb2f96'];
     return {
@@ -65,6 +74,10 @@ export class TrendChartComponent implements OnChanges {
         data: orderedIndices.map((i) => series.values[i]),
       })),
     } satisfies EChartsOption;
+  }
+
+  private isAnnualPeriod(period: string): boolean {
+    return /-12-31$/.test(period);
   }
 }
 
