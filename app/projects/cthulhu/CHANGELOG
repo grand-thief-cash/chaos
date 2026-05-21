@@ -1,7 +1,16 @@
 # VERSION
-v0.15.2
+v0.15.3
 
 # Changelog
+- v0.15.3
+    - **BI second/third iteration: trend interaction upgrade**
+        - Added reusable trend control component `ui/trend-controls.component.ts` for `季度/年度` view switch + `12/16/20` period selector.
+        - Updated `financial-dashboard.page.ts` to support trend controls and pass selected view options to all trend charts.
+        - Updated `financial-quality.page.ts` to support the same controls and align table rows with selected annual/quarterly mode + period window.
+        - Added local persistence for trend preferences via `localStorage` key `bi-trend-settings` for cross-page consistency.
+    - **BI chart behavior improvements**
+        - Enhanced `trend-chart.component.ts` to apply annual filtering and period tail slicing while preserving chronological rendering.
+        - Added test coverage `trend-chart.component.spec.ts` for chronological ordering, annual filtering, and period window behavior.
 - v0.15.2
     - Updated Cthulhu BI charting:
         - Trend chart now defensively reorders to chronological periods.

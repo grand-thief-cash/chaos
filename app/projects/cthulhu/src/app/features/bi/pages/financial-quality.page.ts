@@ -10,13 +10,14 @@ import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { CompanyContextBarComponent } from '../ui/company-context-bar.component';
 import { TrendChartComponent } from '../ui/trend-chart.component';
+import { TrendControlsComponent } from '../ui/trend-controls.component';
 import { BiApiService } from '../services/bi-api.service';
-import { BIQualityResponse } from '../models/bi.models';
+import { BIQualityPanel, BIQualityResponse, BIQualityTableRow } from '../models/bi.models';
 
 @Component({
   selector: 'app-financial-quality-page',
   standalone: true,
-  imports: [CommonModule, NzCardModule, NzTagModule, NzSpinModule, NzEmptyModule, NzAlertModule, NzButtonModule, CompanyContextBarComponent, TrendChartComponent],
+  imports: [CommonModule, NzCardModule, NzTagModule, NzSpinModule, NzEmptyModule, NzAlertModule, NzButtonModule, CompanyContextBarComponent, TrendChartComponent, TrendControlsComponent],
   template: `
     <div style="display: flex; flex-direction: column; gap: 16px;">
       @if (loading) {
@@ -26,6 +27,15 @@ import { BIQualityResponse } from '../models/bi.models';
         <button nz-button (click)="goBack()">返回</button>
       } @else if (data) {
         <app-company-context-bar [company]="data.company" [asOfDate]="data.as_of_date" [latestPeriod]="data.latest_period"></app-company-context-bar>
+
+        <nz-card nzTitle="趋势设置" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+          <app-bi-trend-controls
+            [periodLimit]="trendPeriodLimit"
+            [viewMode]="trendViewMode"
+            (periodLimitChange)="onTrendPeriodLimitChange($event)"
+            (viewModeChange)="onTrendViewModeChange($event)">
+          </app-bi-trend-controls>
+        </nz-card>
 
         @for (panel of data.panels; track panel.code) {
           <nz-card [nzTitle]="panel.title" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
@@ -57,13 +67,18 @@ import { BIQualityResponse } from '../models/bi.models';
                   @for (section of panel.trend_sections; track section.code) {
                     <div style="border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px; background: #fff;">
                       <div style="font-weight: 600; margin-bottom: 8px;">{{ section.title }}</div>
-                      <app-bi-trend-chart [section]="section" [height]="280"></app-bi-trend-chart>
+                      <app-bi-trend-chart
+                        [section]="section"
+                        [height]="280"
+                        [periodLimit]="trendPeriodLimit"
+                        [viewMode]="trendViewMode">
+                      </app-bi-trend-chart>
                     </div>
                   }
                 </div>
               }
 
-              @if (panel.table_rows.length > 0) {
+              @if (filteredTableRows(panel).length > 0) {
                 <div style="overflow-x: auto;">
                   <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
                     <thead>
@@ -75,7 +90,7 @@ import { BIQualityResponse } from '../models/bi.models';
                       </tr>
                     </thead>
                     <tbody>
-                      @for (row of panel.table_rows; track row.period) {
+                      @for (row of filteredTableRows(panel); track row.period) {
                         <tr>
                           <td style="padding: 6px; border-bottom: 1px solid #fafafa;">{{ row.period }}</td>
                           @for (metric of panel.metrics; track metric.code) {
@@ -103,8 +118,11 @@ export class FinancialQualityPageComponent implements OnInit {
   loading = false;
   data: BIQualityResponse | null = null;
   errorMessage: string | null = null;
+  trendPeriodLimit: 12 | 16 | 20 = 12;
+  trendViewMode: 'quarterly' | 'annual' = 'quarterly';
 
   ngOnInit(): void {
+    this.loadTrendSettings();
     // Get symbol from parent route (the :symbol parameter in /bi/financial/company/:symbol)
     this.route.parent?.paramMap.pipe(first()).subscribe((params) => {
       const symbol = params?.get('symbol') ?? this.route.snapshot.paramMap.get('symbol');
@@ -136,6 +154,53 @@ export class FinancialQualityPageComponent implements OnInit {
 
   goBack(): void {
     this.router.navigate(['/bi/financial']);
+  }
+
+  onTrendPeriodLimitChange(limit: 12 | 16 | 20): void {
+    this.trendPeriodLimit = limit;
+    this.saveTrendSettings();
+  }
+
+  onTrendViewModeChange(mode: 'quarterly' | 'annual'): void {
+    this.trendViewMode = mode;
+    this.saveTrendSettings();
+  }
+
+  filteredTableRows(panel: BIQualityPanel): BIQualityTableRow[] {
+    const filtered = panel.table_rows.filter((row) => this.trendViewMode === 'quarterly' || this.isAnnualPeriod(row.period));
+    return filtered.slice(Math.max(0, filtered.length - this.trendPeriodLimit));
+  }
+
+  private isAnnualPeriod(period: string): boolean {
+    return /-12-31$/.test(period);
+  }
+
+  private loadTrendSettings(): void {
+    try {
+      const raw = JSON.parse(localStorage.getItem('bi-trend-settings') || '{}') as {
+        periodLimit?: 12 | 16 | 20;
+        viewMode?: 'quarterly' | 'annual';
+      };
+      if (raw.periodLimit === 12 || raw.periodLimit === 16 || raw.periodLimit === 20) {
+        this.trendPeriodLimit = raw.periodLimit;
+      }
+      if (raw.viewMode === 'quarterly' || raw.viewMode === 'annual') {
+        this.trendViewMode = raw.viewMode;
+      }
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  private saveTrendSettings(): void {
+    try {
+      localStorage.setItem('bi-trend-settings', JSON.stringify({
+        periodLimit: this.trendPeriodLimit,
+        viewMode: this.trendViewMode,
+      }));
+    } catch {
+      // ignore storage failures
+    }
   }
 }
 
