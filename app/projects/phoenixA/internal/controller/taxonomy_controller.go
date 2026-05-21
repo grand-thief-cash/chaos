@@ -235,11 +235,11 @@ func (c *TaxonomyController) BatchUpsertConstituents(w http.ResponseWriter, r *h
 
 // GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{indexCode}
 func (c *TaxonomyController) ListConstituentsByIndex(w http.ResponseWriter, r *http.Request) {
-	source, taxonomy, _ := taxonomyParams(r)
+	source, taxonomy, market := taxonomyParams(r)
 	indexCode := chi.URLParam(r, "indexCode")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
-	list, err := c.Svc.ListConstituentsByIndex(r.Context(), source, taxonomy, indexCode, page, pageSize)
+	list, err := c.Svc.ListConstituentsByIndex(r.Context(), source, taxonomy, market, indexCode, page, pageSize)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -249,9 +249,9 @@ func (c *TaxonomyController) ListConstituentsByIndex(w http.ResponseWriter, r *h
 
 // GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_stock/{symbol}
 func (c *TaxonomyController) ListConstituentsBySymbol(w http.ResponseWriter, r *http.Request) {
-	source, taxonomy, _ := taxonomyParams(r)
+	source, taxonomy, market := taxonomyParams(r)
 	symbol := chi.URLParam(r, "symbol")
-	list, err := c.Svc.ListConstituentsBySymbol(r.Context(), source, taxonomy, symbol)
+	list, err := c.Svc.ListConstituentsBySymbol(r.Context(), source, taxonomy, market, symbol)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -293,14 +293,14 @@ func (c *TaxonomyController) BatchUpsertWeights(w http.ResponseWriter, r *http.R
 
 // GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{indexCode}
 func (c *TaxonomyController) ListWeightsByIndexAndDate(w http.ResponseWriter, r *http.Request) {
-	source, taxonomy, _ := taxonomyParams(r)
+	source, taxonomy, market := taxonomyParams(r)
 	indexCode := chi.URLParam(r, "indexCode")
 	tradeDate := r.URL.Query().Get("trade_date")
 	if tradeDate == "" {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "trade_date query param is required"})
 		return
 	}
-	list, err := c.Svc.ListWeightsByIndexAndDate(r.Context(), source, taxonomy, indexCode, tradeDate)
+	list, err := c.Svc.ListWeightsByIndexAndDate(r.Context(), source, taxonomy, market, indexCode, tradeDate)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -341,7 +341,7 @@ func (c *TaxonomyController) BatchUpsertIndustryDaily(w http.ResponseWriter, r *
 
 // GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily
 func (c *TaxonomyController) QueryIndustryDaily(w http.ResponseWriter, r *http.Request) {
-	source, taxonomy, _ := taxonomyParams(r)
+	source, taxonomy, market := taxonomyParams(r)
 	q := r.URL.Query()
 	indexCode := q.Get("index_code")
 	if indexCode == "" {
@@ -352,7 +352,7 @@ func (c *TaxonomyController) QueryIndustryDaily(w http.ResponseWriter, r *http.R
 	endDate := q.Get("end_date")
 	limit, _ := strconv.Atoi(q.Get("limit"))
 
-	list, err := c.Svc.QueryIndustryDaily(r.Context(), source, taxonomy, indexCode, startDate, endDate, limit)
+	list, err := c.Svc.QueryIndustryDaily(r.Context(), source, taxonomy, market, indexCode, startDate, endDate, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return

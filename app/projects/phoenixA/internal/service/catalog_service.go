@@ -767,6 +767,10 @@ func (s *CatalogService) ListTables(ctx context.Context, domain string, refresh 
 
 // GetTableDetail returns detailed metadata for a specific table.
 func (s *CatalogService) GetTableDetail(ctx context.Context, schema, table string, refresh bool) (*model.TableDetail, error) {
+	schemaCtx := ctx
+	if refresh {
+		schemaCtx = dao.WithSchemaCacheBypass(ctx)
+	}
 	tables, _, err := s.getTables(ctx, refresh)
 	if err != nil {
 		return nil, err
@@ -800,7 +804,7 @@ func (s *CatalogService) GetTableDetail(ctx context.Context, schema, table strin
 	// Get JSONB keys for JSONB columns (check column type, not HasJSONB flag)
 	for i, col := range cols {
 		if strings.Contains(col.Type, "jsonb") {
-			jsonbKeys := s.discoverJSONBKeys(ctx, schema, table, col.Name)
+			jsonbKeys := s.discoverJSONBKeys(schemaCtx, schema, table, col.Name)
 			if jsonbKeys != nil {
 				cols[i].JSONBKeys = jsonbKeys
 			}
@@ -1149,6 +1153,10 @@ func (s *CatalogService) GetGraphCatalog(ctx context.Context) (*model.GraphCatal
 // Suitable for UI display and LLM function calling.
 // Results are cached for dictTTL duration (default 10 minutes).
 func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*model.DataDictionary, error) {
+	schemaCtx := ctx
+	if refresh {
+		schemaCtx = dao.WithSchemaCacheBypass(ctx)
+	}
 	// Check dict cache first
 	if !refresh {
 		s.dictMu.RLock()
@@ -1194,7 +1202,7 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 			}
 			// JSONB key discovery
 			if t.HasJSONB && strings.Contains(col.Type, "jsonb") && s.SchemaDao != nil {
-				keys, err := s.SchemaDao.DiscoverJSONBKeysGeneric(ctx, t.Schema, t.TableName, col.Name, 100)
+				keys, err := s.SchemaDao.DiscoverJSONBKeysGeneric(schemaCtx, t.Schema, t.TableName, col.Name, 100)
 				if err == nil && len(keys) > 0 {
 					cd.JSONBKeys = make([]model.JSONBKeyRef, 0, len(keys))
 					for _, k := range keys {

@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
+	infraRedis "github.com/grand-thief-cash/chaos/app/infra/go/application/components/redis"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
+	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/cache"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
+	redislib "github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -16,6 +20,8 @@ type domainSpec struct {
 	Table      string
 	TypeColumn string
 }
+
+type schemaCacheBypassContextKey struct{}
 
 // allowed domains — prevents arbitrary table access.
 var domainAllowList = map[string]domainSpec{
@@ -26,9 +32,10 @@ var domainAllowList = map[string]domainSpec{
 // SchemaDao discovers fields stored in JSONB columns.
 type SchemaDao struct {
 	*core.BaseComponent
-	GormComp *pg.PostgresGormComponent `infra:"dep:postgres_gorm"`
-	db       *gorm.DB
-	dsName   string
+	GormComp  *pg.PostgresGormComponent  `infra:"dep:postgres_gorm"`
+	RedisComp *infraRedis.RedisComponent `infra:"dep:redis?"`
+	db        *gorm.DB
+	dsName    string
 }
 
 func NewSchemaDao(dsName string) *SchemaDao {
@@ -52,6 +59,28 @@ func (d *SchemaDao) Start(ctx context.Context) error {
 
 func (d *SchemaDao) Stop(ctx context.Context) error { return d.BaseComponent.Stop(ctx) }
 
+func (d *SchemaDao) redisClient() redislib.UniversalClient {
+	if d.RedisComp == nil {
+		return nil
+	}
+	return d.RedisComp.Client()
+}
+
+func WithSchemaCacheBypass(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, schemaCacheBypassContextKey{}, true)
+}
+
+func shouldBypassSchemaCache(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	bypass, _ := ctx.Value(schemaCacheBypassContextKey{}).(bool)
+	return bypass
+}
+
 // FieldsResult holds the result of a field discovery query.
 type FieldsResult struct {
 	Domain      string   `json:"domain"`
@@ -70,6 +99,13 @@ func (d *SchemaDao) DiscoverFields(ctx context.Context, domain, dataType string,
 
 	if sampleSize <= 0 {
 		sampleSize = 500
+	}
+
+	cacheKey := bizConsts.BuildSchemaFieldsCacheKey(domain, dataType, sampleSize)
+	if !shouldBypassSchemaCache(ctx) {
+		if cached, hit, err := cache.GetJSON[FieldsResult](ctx, d.redisClient(), cacheKey); err == nil && hit {
+			return &cached, nil
+		}
 	}
 
 	// Count total rows for this type
@@ -112,12 +148,14 @@ func (d *SchemaDao) DiscoverFields(ctx context.Context, domain, dataType string,
 	if int64(sampleSize) < totalCount {
 		actualSampled = int64(sampleSize)
 	}
-	return &FieldsResult{
+	result := &FieldsResult{
 		Domain:      domain,
 		DataType:    dataType,
 		Fields:      fields,
 		SampleCount: actualSampled,
-	}, nil
+	}
+	_ = cache.SetJSON(ctx, d.redisClient(), cacheKey, time.Duration(bizConsts.RedisCacheTTLSecondsSchemaFields)*time.Second, result)
+	return result, nil
 }
 
 // ListTypes returns distinct type values for a domain.
@@ -213,6 +251,13 @@ func (d *SchemaDao) DiscoverJSONBKeysGeneric(ctx context.Context, schema, table,
 		sampleSize = 200
 	}
 
+	cacheKey := bizConsts.BuildJSONBKeysCacheKey(schema, table, column, sampleSize)
+	if !shouldBypassSchemaCache(ctx) {
+		if cached, hit, err := cache.GetJSON[[]JSONBKeyInfo](ctx, d.redisClient(), cacheKey); err == nil && hit {
+			return cached, nil
+		}
+	}
+
 	fullTable := table
 	if schema != "" && schema != "public" {
 		fullTable = schema + "." + table
@@ -295,5 +340,6 @@ func (d *SchemaDao) DiscoverJSONBKeysGeneric(ctx context.Context, schema, table,
 
 		result = append(result, info)
 	}
+	_ = cache.SetJSON(ctx, d.redisClient(), cacheKey, time.Duration(bizConsts.RedisCacheTTLSecondsJSONBKeys)*time.Second, result)
 	return result, nil
 }

@@ -802,9 +802,12 @@ func (d *TaxonomyDao) BatchUpsertConstituents(ctx context.Context, source, taxon
 }
 
 // ListConstituentsByIndex returns all constituents for a given source + taxonomy + index_code.
-func (d *TaxonomyDao) ListConstituentsByIndex(ctx context.Context, source, taxonomy, indexCode string, limit, offset int) ([]*model.IndustryConstituent, error) {
+func (d *TaxonomyDao) ListConstituentsByIndex(ctx context.Context, source, taxonomy, market, indexCode string, limit, offset int) ([]*model.IndustryConstituent, error) {
 	var list []*model.IndustryConstituent
 	q := d.db.WithContext(ctx).Where("source = ? AND taxonomy = ? AND index_code = ?", source, taxonomy, indexCode).Order("symbol ASC")
+	if market != "" {
+		q = q.Where("market = ?", market)
+	}
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -816,9 +819,13 @@ func (d *TaxonomyDao) ListConstituentsByIndex(ctx context.Context, source, taxon
 }
 
 // ListConstituentsBySymbol returns all index memberships for a given constituent stock.
-func (d *TaxonomyDao) ListConstituentsBySymbol(ctx context.Context, source, taxonomy, symbol string) ([]*model.IndustryConstituent, error) {
+func (d *TaxonomyDao) ListConstituentsBySymbol(ctx context.Context, source, taxonomy, market, symbol string) ([]*model.IndustryConstituent, error) {
 	var list []*model.IndustryConstituent
-	err := d.db.WithContext(ctx).Where("source = ? AND taxonomy = ? AND symbol = ?", source, taxonomy, symbol).Find(&list).Error
+	q := d.db.WithContext(ctx).Where("source = ? AND taxonomy = ? AND symbol = ?", source, taxonomy, symbol)
+	if market != "" {
+		q = q.Where("market = ?", market)
+	}
+	err := q.Find(&list).Error
 	return list, err
 }
 
@@ -844,10 +851,14 @@ func (d *TaxonomyDao) BatchUpsertWeights(ctx context.Context, source, taxonomy, 
 }
 
 // ListWeightsByIndexAndDate returns weights for a given index on a given trade_date.
-func (d *TaxonomyDao) ListWeightsByIndexAndDate(ctx context.Context, source, taxonomy, indexCode, tradeDate string) ([]*model.IndustryWeight, error) {
+func (d *TaxonomyDao) ListWeightsByIndexAndDate(ctx context.Context, source, taxonomy, market, indexCode, tradeDate string) ([]*model.IndustryWeight, error) {
 	var list []*model.IndustryWeight
-	err := d.db.WithContext(ctx).
-		Where("source = ? AND taxonomy = ? AND index_code = ? AND trade_date = ?", source, taxonomy, indexCode, tradeDate).
+	q := d.db.WithContext(ctx).
+		Where("source = ? AND taxonomy = ? AND index_code = ? AND trade_date = ?", source, taxonomy, indexCode, tradeDate)
+	if market != "" {
+		q = q.Where("market = ?", market)
+	}
+	err := q.
 		Order("symbol ASC").
 		Find(&list).Error
 	return list, err
@@ -878,11 +889,14 @@ func (d *TaxonomyDao) BatchUpsertIndustryDaily(ctx context.Context, source, taxo
 }
 
 // QueryIndustryDaily queries industry daily bars.
-func (d *TaxonomyDao) QueryIndustryDaily(ctx context.Context, source, taxonomy, indexCode, startDate, endDate string, limit int) ([]*model.IndustryDaily, error) {
+func (d *TaxonomyDao) QueryIndustryDaily(ctx context.Context, source, taxonomy, market, indexCode, startDate, endDate string, limit int) ([]*model.IndustryDaily, error) {
 	var list []*model.IndustryDaily
 	q := d.db.WithContext(ctx).
 		Where("source = ? AND taxonomy = ? AND index_code = ?", source, taxonomy, indexCode).
 		Order("trade_date ASC")
+	if market != "" {
+		q = q.Where("market = ?", market)
+	}
 	if startDate != "" {
 		q = q.Where("trade_date >= ?", startDate)
 	}
