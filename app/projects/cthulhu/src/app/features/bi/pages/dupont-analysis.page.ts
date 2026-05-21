@@ -11,7 +11,7 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { CompanyContextBarComponent } from '../ui/company-context-bar.component';
 import { TrendChartComponent } from '../ui/trend-chart.component';
 import { BiApiService } from '../services/bi-api.service';
-import { BIDupontResponse } from '../models/bi.models';
+import { BIDupontNode, BIDupontResponse } from '../models/bi.models';
 
 @Component({
   selector: 'app-dupont-analysis-page',
@@ -29,23 +29,39 @@ import { BIDupontResponse } from '../models/bi.models';
 
         <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px;">
           <nz-card nzTitle="三层杜邦拆解" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-              <div style="padding: 12px; border-radius: 8px; background: #f6ffed; border: 1px solid #b7eb8f;">
-                <div style="font-size: 18px; font-weight: 700;">{{ data.dupont_tree.label }}</div>
-                <div style="margin-top: 6px; font-size: 24px; font-weight: 600;">{{ displayMetric(data.dupont_tree.metric.value) }}</div>
-                <div style="font-size: 12px; color: #595959;">去年同期：{{ displayMetric(data.dupont_tree.metric.same_period_last_year) }} · 同比变动：{{ displayMetric(data.dupont_tree.metric.yoy_delta) }}</div>
-              </div>
-              <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;">
-                @for (child of data.dupont_tree.children; track child.code) {
-                  <div style="padding: 12px; border: 1px solid #f0f0f0; border-radius: 8px; background: #fafafa;">
-                    <div style="font-weight: 600;">{{ child.label }}</div>
-                    <div style="font-size: 20px; margin-top: 8px; font-weight: 600;">{{ displayMetric(child.metric.value) }}</div>
-                    <div style="font-size: 12px; color: #8c8c8c; margin-top: 6px;">去年同期：{{ displayMetric(child.metric.same_period_last_year) }}</div>
-                    <div style="font-size: 12px; color: #8c8c8c;">同比变动：{{ displayMetric(child.metric.yoy_delta) }}</div>
+            <ng-template
+              [ngTemplateOutlet]="dupontNodeTpl"
+              [ngTemplateOutletContext]="{ $implicit: data.dupont_tree, level: 0 }">
+            </ng-template>
+
+            <ng-template #dupontNodeTpl let-dupNode let-level="level">
+              <div [style.margin-left.px]="level * 18" style="margin-top: 10px;">
+                <div
+                  [style.background]="level === 0 ? '#f6ffed' : '#fafafa'"
+                  [style.border]="level === 0 ? '1px solid #b7eb8f' : '1px solid #f0f0f0'"
+                  style="padding: 12px; border-radius: 8px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <div style="font-size: 14px; font-weight: 700;">{{ dupNode.label }}</div>
+                    <span style="font-size: 11px; color: #8c8c8c;">{{ dupNode.metric.code }}</span>
+                  </div>
+                  <div style="margin-top: 4px; font-size: 20px; font-weight: 600;">{{ displayMetric(dupNode.metric.value) }}</div>
+                  <div style="font-size: 12px; color: #595959; margin-top: 4px;">
+                    去年同期：{{ displayMetric(dupNode.metric.same_period_last_year) }} · 同比变动：{{ displayMetric(dupNode.metric.yoy_delta) }}
+                  </div>
+                </div>
+
+                @if (childNodes(dupNode).length) {
+                  <div style="border-left: 2px dashed #d9d9d9; margin-left: 12px; padding-left: 10px; margin-top: 8px; display: flex; flex-direction: column; gap: 8px;">
+                    @for (child of childNodes(dupNode); track child.code) {
+                      <ng-template
+                        [ngTemplateOutlet]="dupontNodeTpl"
+                        [ngTemplateOutletContext]="{ $implicit: child, level: level + 1 }">
+                      </ng-template>
+                    }
                   </div>
                 }
               </div>
-            </div>
+            </ng-template>
           </nz-card>
 
           <nz-card nzTitle="驱动解释" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
@@ -155,6 +171,10 @@ export class DupontAnalysisPageComponent implements OnInit {
 
   goBack(): void {
     this.router.navigate(['/bi/financial']);
+  }
+
+  childNodes(node: BIDupontNode): BIDupontNode[] {
+    return node?.children ?? [];
   }
 }
 

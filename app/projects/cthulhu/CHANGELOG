@@ -1,7 +1,12 @@
 # VERSION
-v0.15.1
+v0.15.2
 
 # Changelog
+- v0.15.2
+    - Updated Cthulhu BI charting:
+        - Trend chart now defensively reorders to chronological periods.
+        - Added chart zoom controls for long-horizon series.
+        - DuPont page now renders recursive tree-style decomposition instead of flat cards.
 - v0.15.1
     - **Fix BI navigation parameter issue**
         - Fixed issue where navigating from Company Financial Entry page to BI detail pages would redirect back to entry page

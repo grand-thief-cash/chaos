@@ -29,6 +29,13 @@ export class TrendChartComponent implements OnChanges {
       return null;
     }
 
+    // Defensive reorder: guarantee chronological plotting even if backend returns newest-first.
+    const orderedIndices = this.section.periods
+      .map((period, index) => ({ period, index }))
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .map((item) => item.index);
+    const orderedPeriods = orderedIndices.map((index) => this.section.periods[index]);
+
     const palette = ['#1677ff', '#52c41a', '#fa8c16', '#722ed1', '#13c2c2', '#eb2f96'];
     return {
       color: palette,
@@ -37,13 +44,17 @@ export class TrendChartComponent implements OnChanges {
       grid: { left: 56, right: 18, top: 40, bottom: 36 },
       xAxis: {
         type: 'category',
-        data: this.section.periods,
+        data: orderedPeriods,
         axisLabel: { rotate: 30 },
       },
       yAxis: {
         type: 'value',
         scale: true,
       },
+      dataZoom: [
+        { type: 'inside', start: 0, end: 100 },
+        { type: 'slider', start: 0, end: 100, bottom: 8 },
+      ],
       series: this.section.series.map((series, index) => ({
         name: series.label,
         type: index === 0 ? 'bar' : 'line',
@@ -51,7 +62,7 @@ export class TrendChartComponent implements OnChanges {
         symbol: index === 0 ? 'none' : 'circle',
         symbolSize: 6,
         emphasis: { focus: 'series' },
-        data: series.values,
+        data: orderedIndices.map((i) => series.values[i]),
       })),
     } satisfies EChartsOption;
   }
