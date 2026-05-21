@@ -361,10 +361,10 @@ artemis/
 | ROA | `NET_PRO_EXCL_MIN_INT_INC / AVG(TOTAL_ASSETS)` | 展示当前值、去年同期值、同比变动（百分点） |
 
 #### C. 趋势图区
-首期建议 3 张图，按 4~8 个报告期展示：
+首期建议 3 张图，按 12 期（默认）展示，支持切换到更长窗口（16~20 期）：
 1. **收入 / 营业利润 / 归母净利润多期趋势**
    - 用多折线或柱线组合
-   - 默认按报告期排序
+   - 默认按报告期**时间递增**（旧 -> 新）排序
 2. **经营现金流 vs 归母净利润对比图**
    - 用双柱对比现金与利润
    - 强化“利润现金含量”观察
@@ -438,6 +438,8 @@ ROE = 净利率 × 总资产周转率 × 权益乘数
 2. `净利率` 多期趋势
 3. `总资产周转率` 多期趋势
 4. `权益乘数` 多期趋势
+
+> 时间轴要求：`trend_sections.periods` 必须按时间递增输出；列表/表格可继续使用最新优先展示。
 
 #### E. 对比表区
 表格字段建议：
@@ -1042,9 +1044,33 @@ GET /bi/financial/company/{symbol}/insight
     "label": "ROE",
     "metric": {},
     "children": [
-      {"code": "net_margin", "label": "净利率", "metric": {}},
-      {"code": "asset_turnover", "label": "总资产周转率", "metric": {}},
-      {"code": "equity_multiplier", "label": "权益乘数", "metric": {}}
+      {
+        "code": "net_margin",
+        "label": "净利率",
+        "metric": {},
+        "children": [
+          {"code": "net_margin_net_profit_parent", "label": "归母净利润", "metric": {}},
+          {"code": "net_margin_revenue_total", "label": "营业总收入", "metric": {}}
+        ]
+      },
+      {
+        "code": "asset_turnover",
+        "label": "总资产周转率",
+        "metric": {},
+        "children": [
+          {"code": "asset_turnover_revenue_total", "label": "营业总收入", "metric": {}},
+          {"code": "asset_turnover_avg_assets", "label": "平均总资产", "metric": {}}
+        ]
+      },
+      {
+        "code": "equity_multiplier",
+        "label": "权益乘数",
+        "metric": {},
+        "children": [
+          {"code": "equity_multiplier_avg_assets", "label": "平均总资产", "metric": {}},
+          {"code": "equity_multiplier_avg_equity", "label": "平均归母权益", "metric": {}}
+        ]
+      }
     ]
   },
   "trend_sections": [
@@ -1247,6 +1273,21 @@ src/app/features/bi/
 - 上：ROE 总卡 + 三层拆解
 - 中：4 张小趋势图
 - 下：驱动解释表 + 历史对比表
+
+---
+## 13. Review 后修订决议（2026-05-21）
+1. **时间序列统一规则**
+   - 趋势图：按报告期时间递增展示（旧 -> 新）。
+   - 卡片/列表：保持最新优先。
+2. **趋势窗口长度**
+   - 默认 12 期；允许扩展到 16~20 期。
+   - 前端必须支持 dataZoom（inside + slider）。
+3. **杜邦树展示层级**
+   - 保留三层杜邦公式。
+   - 页面展示升级为树状层级：`ROE -> 三驱动 -> 关键分子/分母`。
+4. **前后端契约补充**
+   - `trend_sections.periods` 为强约束字段：必须时间递增。
+   - `dupont_tree.children[].children` 允许继续扩展，前端按递归节点渲染。
 
 ### E. 质量页布局
 - 采用四段式自上而下布局：

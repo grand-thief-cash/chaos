@@ -1,7 +1,14 @@
 # VERSION
-- v0.36.1
+- v0.36.2
 
 # Changelog
+- v0.36.2
+    - **BI review iteration (time axis + DuPont tree + trend horizon)**
+        - `bi_service.py` trend sections now output periods in chronological order (oldest -> newest) for chart rendering.
+        - Increased BI statement query window (`page_size`) and default trend horizon to support longer-term views (default 12 periods).
+        - Expanded DuPont response tree from shallow 1-level drivers to recursive nodes including formula operands (net profit/revenue/avg assets/avg equity).
+        - Updated BI design doc `docs/2026-05-19 BI_SERVICE_POSITIONING_AND_FINANCIAL_DASHBOARD_DESIGN.md` with review decisions and contract constraints.
+        - Refreshed BI service tests to validate chronological periods and deeper DuPont decomposition nodes.
 - v0.36.1
     - Fixed bi_service.py for missing symbols.
     - Filtered for merged financial statements only PhoenixA statement_code uses numeric codes: "1".

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+import json as json_lib
+from typing import Any, Dict, Iterable, List, Literal, Optional
 
 from artemis.core import cfg_mgr
 from artemis.core.clients.phoenixA_client import PhoenixAClient
@@ -146,6 +147,9 @@ DEFAULT_INSIGHT_METRIC_CODES = [
     "asset_turnover",
     "ocf_to_profit",
 ]
+
+TREND_PERIOD_LIMIT = 12
+STATEMENT_QUERY_PAGE_SIZE = 24
 
 
 @dataclass
@@ -360,21 +364,21 @@ class BIService:
             self._build_trend_section(
                 code="revenue_profit_trend",
                 title="收入 / 利润趋势",
-                periods=self._recent_periods(bundle.income, limit=6),
+                periods=self._recent_periods(bundle.income, limit=TREND_PERIOD_LIMIT),
                 bundle=bundle,
                 metric_codes=["revenue_total", "operating_profit", "net_profit_parent"],
             ),
             self._build_trend_section(
                 code="cashflow_vs_profit_trend",
                 title="经营现金流 vs 归母净利润",
-                periods=self._recent_common_periods(bundle.income, bundle.cashflow, limit=6),
+                periods=self._recent_common_periods(bundle.income, bundle.cashflow, limit=TREND_PERIOD_LIMIT),
                 bundle=bundle,
                 metric_codes=["operating_cashflow", "net_profit_parent"],
             ),
             self._build_trend_section(
                 code="balance_structure_trend",
                 title="总资产 / 总负债 / 归母权益结构",
-                periods=self._recent_periods(bundle.balance_sheet, limit=6),
+                periods=self._recent_periods(bundle.balance_sheet, limit=TREND_PERIOD_LIMIT),
                 bundle=bundle,
                 metric_codes=["total_assets", "total_liab", "equity_parent"],
             ),
@@ -428,13 +432,91 @@ class BIService:
             label="ROE",
             metric=headline_metrics["roe"],
             children=[
-                BIDupontNode(code="net_margin", label="净利率", metric=headline_metrics["net_margin"]),
-                BIDupontNode(code="asset_turnover", label="总资产周转率", metric=headline_metrics["asset_turnover"]),
-                BIDupontNode(code="equity_multiplier", label="权益乘数", metric=headline_metrics["equity_multiplier"]),
+                BIDupontNode(
+                    code="net_margin",
+                    label="净利率",
+                    metric=headline_metrics["net_margin"],
+                    children=[
+                        BIDupontNode(
+                            code="net_margin_net_profit_parent",
+                            label="归母净利润",
+                            metric=self._build_formula_operand_metric(
+                                code="net_profit_parent",
+                                latest_metrics=latest_metrics,
+                                same_period_metrics=same_period_metrics,
+                                data_period=latest_period,
+                            ),
+                        ),
+                        BIDupontNode(
+                            code="net_margin_revenue_total",
+                            label="营业总收入",
+                            metric=self._build_formula_operand_metric(
+                                code="revenue_total",
+                                latest_metrics=latest_metrics,
+                                same_period_metrics=same_period_metrics,
+                                data_period=latest_period,
+                            ),
+                        ),
+                    ],
+                ),
+                BIDupontNode(
+                    code="asset_turnover",
+                    label="总资产周转率",
+                    metric=headline_metrics["asset_turnover"],
+                    children=[
+                        BIDupontNode(
+                            code="asset_turnover_revenue_total",
+                            label="营业总收入",
+                            metric=self._build_formula_operand_metric(
+                                code="revenue_total",
+                                latest_metrics=latest_metrics,
+                                same_period_metrics=same_period_metrics,
+                                data_period=latest_period,
+                            ),
+                        ),
+                        BIDupontNode(
+                            code="asset_turnover_avg_assets",
+                            label="平均总资产",
+                            metric=self._build_formula_operand_metric(
+                                code="avg_assets",
+                                latest_metrics=latest_metrics,
+                                same_period_metrics=same_period_metrics,
+                                data_period=latest_period,
+                            ),
+                        ),
+                    ],
+                ),
+                BIDupontNode(
+                    code="equity_multiplier",
+                    label="权益乘数",
+                    metric=headline_metrics["equity_multiplier"],
+                    children=[
+                        BIDupontNode(
+                            code="equity_multiplier_avg_assets",
+                            label="平均总资产",
+                            metric=self._build_formula_operand_metric(
+                                code="avg_assets",
+                                latest_metrics=latest_metrics,
+                                same_period_metrics=same_period_metrics,
+                                data_period=latest_period,
+                            ),
+                        ),
+                        BIDupontNode(
+                            code="equity_multiplier_avg_equity",
+                            label="平均归母权益",
+                            metric=self._build_formula_operand_metric(
+                                code="avg_equity",
+                                latest_metrics=latest_metrics,
+                                same_period_metrics=same_period_metrics,
+                                data_period=latest_period,
+                            ),
+                        ),
+                    ],
+                ),
             ],
         )
 
-        periods = self._recent_common_periods(bundle.income, bundle.balance_sheet, limit=6)
+        periods = self._recent_common_periods(bundle.income, bundle.balance_sheet, limit=TREND_PERIOD_LIMIT)
         trend_sections = [
             self._build_trend_section("roe_trend", "ROE 多期趋势", periods, bundle, ["roe"]),
             self._build_trend_section("net_margin_trend", "净利率多期趋势", periods, bundle, ["net_margin"]),
@@ -482,8 +564,8 @@ class BIService:
 
         latest_metrics = self._compute_snapshot_metrics(bundle, latest_period)
         same_period_metrics = self._compute_snapshot_metrics(bundle, self._same_period_last_year(latest_period))
-        periods = self._recent_common_periods(bundle.income, bundle.balance_sheet, limit=6)
-        cashflow_periods = self._recent_common_periods(bundle.income, bundle.cashflow, limit=6)
+        periods = self._recent_common_periods(bundle.income, bundle.balance_sheet, limit=TREND_PERIOD_LIMIT)
+        cashflow_periods = self._recent_common_periods(bundle.income, bundle.cashflow, limit=TREND_PERIOD_LIMIT)
 
         panels = [
             BIQualityPanel(
@@ -628,7 +710,7 @@ class BIService:
             ann_date_before=self._to_api_date(as_of_date),
             fields=fields,
             page=1,
-            page_size=12,
+            page_size=STATEMENT_QUERY_PAGE_SIZE,
         )
         rows = response.get("data", []) if isinstance(response, dict) else []
         normalized_rows: List[Dict[str, Any]] = []
@@ -642,9 +724,8 @@ class BIService:
             # Parse JSON string to dict
             if isinstance(data_json, str):
                 try:
-                    import json
-                    data_json = json.loads(data_json)
-                except (json.JSONDecodeError, TypeError):
+                    data_json = json_lib.loads(data_json)
+                except (json_lib.JSONDecodeError, TypeError):
                     data_json = {}
             if isinstance(data_json, dict):
                 row.update(data_json)
@@ -804,8 +885,57 @@ class BIService:
             "period_expense_ratio": self._safe_div(self._sum_values(less_selling_exp, less_admin_exp, less_fin_exp), revenue_total),
             "rd_expense_ratio": self._safe_div(rd_exp, revenue_total),
             "equity_multiplier": self._safe_div(avg_assets, avg_equity),
+            "avg_assets": avg_assets,
+            "avg_equity": avg_equity,
         }
         return metrics
+
+    def _build_formula_operand_metric(
+        self,
+        *,
+        code: str,
+        latest_metrics: Dict[str, Optional[float]],
+        same_period_metrics: Dict[str, Optional[float]],
+        data_period: str,
+    ) -> BIMetricValue:
+        synthetic_meta = {
+            "avg_assets": {
+                "label": "平均总资产",
+                "unit": "亿元",
+                "display_kind": "amount",
+                "source_fields": ["balance_sheet.TOTAL_ASSETS"],
+            },
+            "avg_equity": {
+                "label": "平均归母权益",
+                "unit": "亿元",
+                "display_kind": "amount",
+                "source_fields": ["balance_sheet.TOT_SHARE_EQUITY_EXCL_MIN_INT"],
+            },
+        }
+        if code in METRIC_DEFINITION_MAP:
+            return self._make_metric_value(code, latest_metrics, same_period_metrics, data_period)
+
+        meta = synthetic_meta[code]
+        display_kind: Literal["amount", "ratio", "pct_point", "count"] = "amount"
+        if meta["display_kind"] in {"amount", "ratio", "pct_point", "count"}:
+            display_kind = meta["display_kind"]  # type: ignore[assignment]
+        current_raw = latest_metrics.get(code)
+        last_year_raw = same_period_metrics.get(code)
+        return BIMetricValue(
+            code=code,
+            label=meta["label"],
+            unit=meta["unit"],
+            display_kind=display_kind,
+            value=self._display_value(code, current_raw),
+            same_period_last_year=self._display_value(code, last_year_raw),
+            yoy_delta=self._display_delta(code, current_raw, last_year_raw),
+            yoy_growth=self._display_growth(code, current_raw, last_year_raw),
+            data_period=data_period,
+            source_fields=list(meta.get("source_fields") or []),
+            available=current_raw is not None,
+            degraded=current_raw is None,
+            notes=[] if current_raw is not None else ["metric_unavailable_for_current_period"],
+        )
 
     def _make_metric_value(
         self,
@@ -849,7 +979,7 @@ class BIService:
     def _display_value(self, code: str, value: Optional[float]) -> Optional[float]:
         if value is None:
             return None
-        if code in AMOUNT_METRIC_CODES:
+        if code in AMOUNT_METRIC_CODES or code in {"avg_assets", "avg_equity"}:
             return round(value / 1e8, 4)
         return round(value, 6)
 
@@ -861,7 +991,8 @@ class BIService:
     def _display_growth(self, code: str, current: Optional[float], last_year: Optional[float]) -> Optional[float]:
         if current is None or last_year in (None, 0):
             return None
-        if METRIC_DEFINITION_MAP[code]["display_kind"] in {"ratio", "pct_point"}:
+        display_kind = (METRIC_DEFINITION_MAP.get(code) or {}).get("display_kind")
+        if display_kind in {"ratio", "pct_point"}:
             return None
         return round((current - last_year) / abs(last_year), 6)
 
@@ -1139,12 +1270,13 @@ class BIService:
         return None
 
     def _recent_periods(self, rows: List[Dict[str, Any]], *, limit: int) -> List[str]:
-        return [str(row.get("reporting_period") or "") for row in rows[:limit]]
+        desc_periods = [str(row.get("reporting_period") or "") for row in rows[:limit]]
+        return list(reversed(desc_periods))
 
     def _recent_common_periods(self, first: List[Dict[str, Any]], second: List[Dict[str, Any]], *, limit: int) -> List[str]:
         second_periods = {row.get("_period_norm") for row in second}
-        periods = [str(row.get("reporting_period") or "") for row in first if row.get("_period_norm") in second_periods]
-        return periods[:limit]
+        desc_periods = [str(row.get("reporting_period") or "") for row in first if row.get("_period_norm") in second_periods]
+        return list(reversed(desc_periods[:limit]))
 
     def _same_period_last_year(self, period: str) -> str:
         normalized = normalize_period(period)

@@ -230,6 +230,13 @@ def test_bi_service_dupont_and_quality_have_phase1_structures(monkeypatch):
 
     assert dupont.dupont_tree.code == "roe"
     assert {child.code for child in dupont.dupont_tree.children} == {"net_margin", "asset_turnover", "equity_multiplier"}
+    net_margin_node = next(child for child in dupont.dupont_tree.children if child.code == "net_margin")
+    assert {child.code for child in net_margin_node.children} == {"net_margin_net_profit_parent", "net_margin_revenue_total"}
+    assert len(dupont.trend_sections) == 4
+    # Trend periods should be chronological (oldest -> newest) for chart rendering.
+    for section in dupont.trend_sections:
+        assert section.periods == sorted(section.periods)
+    assert [row.period for row in dupont.comparison_rows] == sorted(row.period for row in dupont.comparison_rows)
     assert len(dupont.driver_summary) >= 1
     assert [panel.code for panel in quality.panels] == ["operating_quality", "cashflow_quality", "turnover", "solvency"]
     metric_codes = {item.code for item in metrics_meta.metrics}
