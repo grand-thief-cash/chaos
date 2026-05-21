@@ -29,6 +29,7 @@ func (c *SchemaController) DiscoverFields(w http.ResponseWriter, r *http.Request
 	domain := q.Get("domain")
 	dataType := q.Get("type")
 	sampleSize, _ := strconv.Atoi(q.Get("sample_size"))
+	refresh := q.Get("refresh") == "true"
 
 	if domain == "" {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "domain is required (financial_statement | corporate_action)"})
@@ -39,7 +40,11 @@ func (c *SchemaController) DiscoverFields(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := c.SchemaDao.DiscoverFields(r.Context(), domain, dataType, sampleSize)
+	ctx := r.Context()
+	if refresh {
+		ctx = dao.WithSchemaCacheBypass(ctx)
+	}
+	result, err := c.SchemaDao.DiscoverFields(ctx, domain, dataType, sampleSize)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return

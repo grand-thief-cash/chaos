@@ -56,6 +56,23 @@ postgres_gorm:
       migrate_enabled: true
       migrate_base: ./migrations
 
+redis:
+  enabled: false
+  mode: single            # single | cluster | sentinel
+  addresses:
+    - 127.0.0.1:6379
+  username: ""
+  password: ""
+  db: 0
+  sentinel_master: ""
+  pool_size: 16
+  min_idle_conns: 4
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 10m
+  dial_timeout: 3s
+  read_timeout: 1s
+  write_timeout: 1s
+
 http_server:
   enabled: true
   address: ":18085"
