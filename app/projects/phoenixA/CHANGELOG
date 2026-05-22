@@ -1,7 +1,15 @@
 # VERSION
-v1.22.0
+v1.22.1
 
 # Changelog
+- v1.22.1
+    - **Standalone adjust factor dataset**
+        - Added a new standalone `adjust_factor` table for Baostock `query_adjust_factor()` output instead of reusing `corporate_action`.
+        - Added PhoenixA v2 endpoints:
+            - `GET /api/v2/adjust-factors/{source}`
+            - `POST /api/v2/adjust-factors/{source}/upsert`
+        - Registered the new table in catalog metadata, API maps, and capability discovery so downstream consumers can discover adjust factor availability.
+        - Added migration `0010_adjust_factor.sql` and updated API/table documentation.
 - v1.22.0
     - **Redis cache expansion — taxonomy second batch + operability docs**
         - Extended Redis cache usage from security/schema discovery into taxonomy read APIs with best-effort invalidation on writes

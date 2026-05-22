@@ -137,6 +137,17 @@ var tableMetaRegistry = map[string]tableMeta{
 			APIEndpoint:     "POST /api/v2/corporate-action/{source}/{action_type}/upsert",
 		},
 	},
+	"adjust_factor": {
+		Domain:      "bars",
+		Description: "复权因子（用于复权行情重建）",
+		TimeColumn:  "divid_operate_date",
+		Lineage: &model.DataLineage{
+			SourceSystem:    "artemis",
+			IngestionMethod: "REST API batch upsert",
+			RefreshSchedule: "每日增量",
+			APIEndpoint:     "POST /api/v2/adjust-factors/{source}/upsert",
+		},
+	},
 	// Strategy
 	"strategy_run_summary": {
 		Domain:      "strategy",
@@ -234,28 +245,32 @@ var tableMetaRegistry = map[string]tableMeta{
 
 // column description registry (table.column → description)
 var columnDescRegistry = map[string]string{
-	"*.id":               "自增主键",
-	"*.symbol":           "证券代码",
-	"*.market":           "市场（如 zh_a, hk, us）",
-	"*.source":           "数据来源",
-	"*.created_at":       "创建时间",
-	"*.updated_at":       "更新时间",
-	"*.trade_date":       "交易日期",
-	"*.open":             "开盘价",
-	"*.high":             "最高价",
-	"*.low":              "最低价",
-	"*.close":            "收盘价",
-	"*.volume":           "成交量",
-	"*.amount":           "成交额",
-	"*.preclose":         "昨收价",
-	"*.pct_chg":          "涨跌幅(%)",
-	"*.data_json":        "业务数据（JSONB 灵活字段）",
-	"*.derived_flags":    "PhoenixA 派生语义标记（JSONB）",
-	"*.statement_type":   "报表类型（balance_sheet/income/cashflow/profit_express/profit_notice）",
-	"*.reporting_period": "报告期（YYYYMMDD）",
-	"*.action_type":      "公司行为类型（dividend/right_issue）",
-	"*.ann_date":         "公告日期",
-	"*.security_name":    "证券名称",
+	"*.id":                 "自增主键",
+	"*.symbol":             "证券代码",
+	"*.market":             "市场（如 zh_a, hk, us）",
+	"*.source":             "数据来源",
+	"*.created_at":         "创建时间",
+	"*.updated_at":         "更新时间",
+	"*.trade_date":         "交易日期",
+	"*.open":               "开盘价",
+	"*.high":               "最高价",
+	"*.low":                "最低价",
+	"*.close":              "收盘价",
+	"*.volume":             "成交量",
+	"*.amount":             "成交额",
+	"*.preclose":           "昨收价",
+	"*.pct_chg":            "涨跌幅(%)",
+	"*.data_json":          "业务数据（JSONB 灵活字段）",
+	"*.derived_flags":      "PhoenixA 派生语义标记（JSONB）",
+	"*.statement_type":     "报表类型（balance_sheet/income/cashflow/profit_express/profit_notice）",
+	"*.reporting_period":   "报告期（YYYYMMDD）",
+	"*.action_type":        "公司行为类型（dividend/right_issue）",
+	"*.ann_date":           "公告日期",
+	"*.divid_operate_date": "除权除息日期",
+	"*.fore_adjust_factor": "向前复权因子",
+	"*.back_adjust_factor": "向后复权因子",
+	"*.adjust_factor":      "本次复权因子",
+	"*.security_name":      "证券名称",
 }
 
 // ─── Domain label map ───
@@ -344,6 +359,35 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		RefreshSchedule:     "每日增量",
 		CoverageDescription: "A股全量，2015至今（baostock除权除息）/ 历史全量（AmazingData分红配股）",
 	},
+	"adjust_factor": {
+		Provider:            "复权因子",
+		ProviderDescription: "A股复权因子数据，记录每次除权除息事件对应的前复权因子、后复权因子和本次复权因子，可用于基于本地不复权日线重建前复权/后复权价格序列。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "adjust_factor", Label: "复权因子", Description: "Baostock query_adjust_factor 输出的事件级复权因子", Source: "baostock"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
+			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "source", Type: "varchar(32)", Description: "数据来源（baostock）"},
+			{Name: "divid_operate_date", Type: "varchar(10)", Description: "除权除息日期（YYYY-MM-DD）"},
+			{Name: "fore_adjust_factor", Type: "numeric(20,8)", Description: "向前复权因子"},
+			{Name: "back_adjust_factor", Type: "numeric(20,8)", Description: "向后复权因子"},
+			{Name: "adjust_factor", Type: "numeric(20,8)", Description: "本次复权因子"},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"baostock"}},
+			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
+			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "start_date", Type: "string", Required: false, Description: "起始除权除息日期（YYYY-MM-DD）"},
+			{Name: "end_date", Type: "string", Required: false, Description: "截止除权除息日期（YYYY-MM-DD）"},
+			{Name: "fields", Type: "string", Required: false, Description: "返回字段列表（逗号分隔）"},
+			{Name: "page", Type: "int", Required: false, Description: "页码"},
+			{Name: "page_size", Type: "int", Required: false, Description: "每页条数"},
+		},
+		RefreshSchedule:     "每日增量",
+		CoverageDescription: "A股全量，2015至今（baostock query_adjust_factor）",
+	},
 	"bars_": {
 		Provider:            "K线行情",
 		ProviderDescription: "股票/指数/ETF的OHLCV行情数据，支持日/周/月/分钟级别，前复权/后复权/不复权。附带估值指标扩展数据（PE/PB/PS/PCF/换手率）。",
@@ -401,6 +445,10 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 		{Method: "GET", Path: "/api/v2/corporate-action/{source}/{action_type}", Description: "查询公司行为"},
 		{Method: "POST", Path: "/api/v2/corporate-action/{source}/{action_type}/upsert", Description: "写入公司行为"},
 	},
+	"adjust_factor": {
+		{Method: "GET", Path: "/api/v2/adjust-factors/{source}", Description: "查询复权因子"},
+		{Method: "POST", Path: "/api/v2/adjust-factors/{source}/upsert", Description: "写入复权因子"},
+	},
 	"taxonomy_category": {
 		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories", Description: "查询分类节点"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert", Description: "写入分类节点"},
@@ -444,10 +492,11 @@ var domainApiRegistry = map[string]struct {
 	CrossRefs    []model.CrossRef
 }{
 	"bars": {
-		Description: "K线行情数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织",
+		Description: "K线行情数据与复权支撑数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织",
 		ExampleCalls: []model.ExampleCall{
 			{Title: "查询A股日线行情", URL: "GET /api/v2/bars/stock/zh_a?symbol=000001&start_date=2026-01-01"},
 			{Title: "查询指数行情", URL: "GET /api/v2/bars/index/zh_a?symbol=000001&start_date=2026-01-01"},
+			{Title: "查询复权因子", URL: "GET /api/v2/adjust-factors/baostock?symbol=600000&start_date=2024-01-01"},
 		},
 		CrossRefs: []model.CrossRef{
 			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
@@ -517,12 +566,12 @@ func (s *CatalogService) resolveDomainMeta(domain string) (examples []model.Exam
 
 // resolveCapability finds the capability description for a table using exact/prefix matching.
 func (s *CatalogService) resolveCapability(table string) *model.DataCapability {
-	if cap, ok := tableCapabilityRegistry[table]; ok {
-		return cap
+	if capability, ok := tableCapabilityRegistry[table]; ok {
+		return capability
 	}
-	for prefix, cap := range tableCapabilityRegistry {
+	for prefix, capability := range tableCapabilityRegistry {
 		if strings.HasSuffix(prefix, "_") && strings.HasPrefix(table, prefix) {
-			return cap
+			return capability
 		}
 	}
 	return nil
@@ -1422,7 +1471,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		var tableCaps []model.TableCapability
 		for _, t := range ts {
 			meta := s.findMeta(t.Schema, t.TableName)
-			cap := s.resolveCapability(t.TableName)
+			capability := s.resolveCapability(t.TableName)
 			sources := s.queryDataSources(ctx, t.Schema, t.TableName, meta.TimeColumn)
 
 			tc := model.TableCapability{
@@ -1432,7 +1481,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 				RowCount:    t.RowCount,
 				TimeRange:   t.TimeRange,
 				DataSources: sources,
-				Capability:  cap,
+				Capability:  capability,
 			}
 
 			// Get time range if not already set

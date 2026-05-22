@@ -34,6 +34,10 @@ func init() {
 	})
 
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, dao.NewAdjustFactorDao("security"), nil
+	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, dao.NewSchemaDao("security"), nil
 	})
 

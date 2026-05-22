@@ -27,7 +27,11 @@
 - [industry_weight.md](industry_weight.md) - 行业指数成分股日权重表
 - [industry_daily.md](industry_daily.md) - 行业指数日行情表
 
+### 行情支撑数据
+
+- [adjust_factor.md](adjust_factor.md) - 复权因子数据表
+
 
 ---
 
-*索引最后更新: 2026-05-12*
+*索引最后更新: 2026-05-22*
