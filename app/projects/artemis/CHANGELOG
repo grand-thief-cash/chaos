@@ -1,7 +1,13 @@
 # VERSION
-- v0.36.2
+- v0.36.3
 
 # Changelog
+- v0.36.3
+    - **Baostock adjust factor download task**
+        - Added `STOCK_ZH_A_BS_ADJUST_FACTOR_PARENT` / `STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD` to download A-share adjust factor data via `baostock.query_adjust_factor()`.
+        - Implemented plan/child orchestration that loads the security universe from PhoenixA and expands one child task per symbol.
+        - Added PhoenixA client support for the new standalone adjust factor ingestion API.
+        - Added task config and a new CronJob task export file for scheduled imports.
 - v0.36.2
     - **BI review iteration (time axis + DuPont tree + trend horizon)**
         - `bi_service.py` trend sections now output periods in chronological order (oldest -> newest) for chart rendering.

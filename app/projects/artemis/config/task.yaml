@@ -186,6 +186,24 @@ tasks:
       - match: {}
         config: {}
 
+  # Baostock 复权因子
+  # SDK: baostock query_adjust_factor(code, start_date, end_date)
+  # 单 symbol 查询 → plan/child 模式
+  # start_date/end_date 直接传递给 child 的单证券查询
+  STOCK_ZH_A_BS_ADJUST_FACTOR_PARENT:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          exchange: "SH,SZ"
+          # symbol_list: "000001,600000"     # 逗号分隔，缺省则从 PhoenixA 拉取全量证券
+
+  STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD:
+    variants:
+      - match: {}
+        config: {}
+
   BACKTRADER_CAMPAIGN:
     variants:
       - match: { mode: "historical" }

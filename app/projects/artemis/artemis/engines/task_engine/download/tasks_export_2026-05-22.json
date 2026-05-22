@@ -1,0 +1,28 @@
+{
+  "exported_at": "2026-05-22T10:00:00Z",
+  "version": "1.0",
+  "description": "Baostock adjust factor download task (plan/child mode)",
+  "tasks": [
+    {
+      "name": "stock_zh_a_bs_adjust_factor",
+      "description": "Download A-share adjust factor data via baostock query_adjust_factor — parent expands one child per symbol",
+      "cron_expr": "0 0 21 ? * 1-5",
+      "timezone": "Asia/Shanghai",
+      "target_service": "artemis",
+      "target_path": "/tasks/run/STOCK_ZH_A_BS_ADJUST_FACTOR_PARENT",
+      "method": "POST",
+      "body_template": "{}",
+      "headers_json": "{}",
+      "exec_type": "ASYNC",
+      "callback_method": "POST",
+      "callback_timeout_sec": 3600,
+      "concurrency_policy": "SKIP",
+      "max_concurrency": 1,
+      "overlap_action": "SKIP",
+      "failure_action": "RUN_NEW",
+      "retry_policy_json": "{\"max_attempts\": 2, \"initial_backoff\": \"120s\"}",
+      "status": "ENABLED"
+    }
+  ]
+}
+
