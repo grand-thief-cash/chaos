@@ -122,6 +122,18 @@ func init() {
 			r.Get("/", corpActionCtrl.Query)
 		})
 
+		// ====== Adjust Factors ======
+		adjustFactorCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_ADJUST_FACTOR)
+		if err != nil {
+			return err
+		}
+		adjustFactorCtrl := adjustFactorCtrlComp.(*controller.AdjustFactorController)
+
+		r.Route("/api/v2/adjust-factors/{source}", func(r chi.Router) {
+			r.Post("/upsert", adjustFactorCtrl.BatchUpsert)
+			r.Get("/", adjustFactorCtrl.Query)
+		})
+
 		// ====== Schema Discovery ======
 		schemaCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_SCHEMA)
 		if err != nil {
