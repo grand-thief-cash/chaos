@@ -735,6 +735,81 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             return {"data": [], "total": 0}
 
+    # ──────────── Adjust Factors (v2) ────────────
+
+    def upsert_adjust_factors(
+        self,
+        factors: List[Dict[str, Any]],
+        data_source: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert adjust factor rows via v2 API."""
+        path = f"/api/v2/adjust-factors/{data_source}/upsert"
+        try:
+            resp = self.post(path, factors)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_adjust_factors_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(factors) if factors else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_adjust_factors_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
+
+    def query_adjust_factors(
+        self,
+        *,
+        source: str,
+        symbol: str = "",
+        symbols: Optional[List[str]] = None,
+        market: str = "",
+        start_date: str = "",
+        end_date: str = "",
+        fields: Optional[List[str]] = None,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query adjust factor rows via v2 API."""
+        path = f"/api/v2/adjust-factors/{source}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if symbol:
+            params["symbol"] = symbol
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        if market:
+            params["market"] = market
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if fields:
+            params["fields"] = ",".join([str(f) for f in fields if str(f).strip()])
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_adjust_factors_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+
     def query_industry_daily(
         self,
         *,

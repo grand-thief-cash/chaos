@@ -12,6 +12,7 @@ from artemis.engines.task_engine.download.zh import (
     StockZHAIndustryDailySWHY, StockZHAIndustryDailySWHYChild,
     StockZhABsBalanceParent, StockZhABsBalanceChild,
     StockZhABsDividendParent, StockZhABsDividendChild,
+    StockZhABsAdjustFactorParent, StockZhABsAdjustFactorChild,
 )
 from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 from artemis.engines.task_engine.download.zh.stock_zh_a_industry_constituent_swhy import StockZHAIndustryConstituentSWHY
@@ -149,6 +150,18 @@ registry.register(
     TaskCode.STOCK_ZH_A_BS_DIVIDEND_CHILD,
     module=StockZhABsDividendChild.__module__,
     class_name=StockZhABsDividendChild.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_BS_ADJUST_FACTOR_PARENT,
+    module=StockZhABsAdjustFactorParent.__module__,
+    class_name=StockZhABsAdjustFactorParent.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD,
+    module=StockZhABsAdjustFactorChild.__module__,
+    class_name=StockZhABsAdjustFactorChild.__name__,
 )
 
 registry.register(
