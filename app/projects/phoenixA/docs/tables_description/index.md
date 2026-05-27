@@ -31,7 +31,11 @@
 
 - [adjust_factor.md](adjust_factor.md) - 复权因子数据表
 
+### 交易异动数据
+
+- [long_hu_bang.md](long_hu_bang.md) - 龙虎榜营业部明细表
+
 
 ---
 
-*索引最后更新: 2026-05-22*
+*索引最后更新: 2026-05-27*

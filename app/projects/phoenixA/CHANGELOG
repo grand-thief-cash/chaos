@@ -1,7 +1,15 @@
 # VERSION
-v1.22.1
+v1.22.2
 
 # Changelog
+- v1.22.2
+    - **Standalone long_hu_bang dataset**
+        - Added a new standalone `long_hu_bang` table for AmazingData `get_long_hu_bang()` output instead of reusing existing financial/company-action tables.
+        - Added PhoenixA v2 endpoints:
+            - `GET /api/v2/long-hu-bang/{source}`
+            - `POST /api/v2/long-hu-bang/{source}/upsert`
+        - Registered the new table in catalog metadata, API maps, capability discovery, and documentation.
+        - Added migration `0011_long_hu_bang.sql` plus model / DAO / service / controller support.
 - v1.22.1
     - **Standalone adjust factor dataset**
         - Added a new standalone `adjust_factor` table for Baostock `query_adjust_factor()` output instead of reusing `corporate_action`.

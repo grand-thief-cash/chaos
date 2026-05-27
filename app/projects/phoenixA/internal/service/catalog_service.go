@@ -148,6 +148,17 @@ var tableMetaRegistry = map[string]tableMeta{
 			APIEndpoint:     "POST /api/v2/adjust-factors/{source}/upsert",
 		},
 	},
+	"long_hu_bang": {
+		Domain:      "regime",
+		Description: "龙虎榜营业部明细",
+		TimeColumn:  "trade_date",
+		Lineage: &model.DataLineage{
+			SourceSystem:    "artemis",
+			IngestionMethod: "REST API batch upsert",
+			RefreshSchedule: "每日增量",
+			APIEndpoint:     "POST /api/v2/long-hu-bang/{source}/upsert",
+		},
+	},
 	// Strategy
 	"strategy_run_summary": {
 		Domain:      "strategy",
@@ -271,6 +282,15 @@ var columnDescRegistry = map[string]string{
 	"*.back_adjust_factor": "向后复权因子",
 	"*.adjust_factor":      "本次复权因子",
 	"*.security_name":      "证券名称",
+	"*.reason_type":        "上榜原因类型代码",
+	"*.reason_type_name":   "上榜原因名称",
+	"*.trader_name":        "营业部名称",
+	"*.flow_mark":          "买卖方向（1买入/2卖出）",
+	"*.change_range":       "涨跌幅（%）",
+	"*.buy_amount":         "买入金额（元）",
+	"*.sell_amount":        "卖出金额（元）",
+	"*.total_amount":       "实际交易金额（元）",
+	"*.total_volume":       "实际交易量（万股）",
 }
 
 // ─── Domain label map ───
@@ -388,6 +408,46 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		RefreshSchedule:     "每日增量",
 		CoverageDescription: "A股全量，2015至今（baostock query_adjust_factor）",
 	},
+	"long_hu_bang": {
+		Provider:            "龙虎榜",
+		ProviderDescription: "A股龙虎榜营业部明细数据，字段数量少且结构稳定，直接以显式列存储证券、原因类型、席位名称以及金额/交易量指标，可用于异常交易和市场情绪分析。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "long_hu_bang", Label: "龙虎榜明细", Description: "AmazingData get_long_hu_bang 输出的营业部级龙虎榜数据", Source: "amazing_data"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
+			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data）"},
+			{Name: "trade_date", Type: "varchar(10)", Description: "交易日期（YYYY-MM-DD）"},
+			{Name: "security_name", Type: "varchar(128)", Description: "证券名称"},
+			{Name: "reason_type", Type: "varchar(32)", Description: "上榜原因类型代码"},
+			{Name: "reason_type_name", Type: "varchar(256)", Description: "上榜原因名称"},
+			{Name: "trader_name", Type: "varchar(256)", Description: "营业部名称"},
+			{Name: "flow_mark", Type: "smallint", Description: "买卖方向：1买入，2卖出"},
+			{Name: "change_range", Type: "numeric(20,6)", Description: "涨跌幅（%）"},
+			{Name: "buy_amount", Type: "numeric(24,4)", Description: "买入金额（元）"},
+			{Name: "sell_amount", Type: "numeric(24,4)", Description: "卖出金额（元）"},
+			{Name: "total_amount", Type: "numeric(24,4)", Description: "实际交易金额（元）"},
+			{Name: "total_volume", Type: "numeric(24,4)", Description: "实际交易量（万股）"},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data"}},
+			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
+			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "trade_date", Type: "string", Required: false, Description: "精确交易日期（YYYY-MM-DD）"},
+			{Name: "start_date", Type: "string", Required: false, Description: "起始交易日期（YYYY-MM-DD）"},
+			{Name: "end_date", Type: "string", Required: false, Description: "截止交易日期（YYYY-MM-DD）"},
+			{Name: "reason_type", Type: "string", Required: false, Description: "上榜原因类型代码"},
+			{Name: "trader_name", Type: "string", Required: false, Description: "营业部名称"},
+			{Name: "flow_mark", Type: "int", Required: false, Description: "买卖方向（1买入，2卖出）"},
+			{Name: "fields", Type: "string", Required: false, Description: "返回字段列表（逗号分隔）"},
+			{Name: "page", Type: "int", Required: false, Description: "页码"},
+			{Name: "page_size", Type: "int", Required: false, Description: "每页条数"},
+		},
+		RefreshSchedule:     "每日增量",
+		CoverageDescription: "A股全量，历史可回溯至 AmazingData 提供的交易异动覆盖范围",
+	},
 	"bars_": {
 		Provider:            "K线行情",
 		ProviderDescription: "股票/指数/ETF的OHLCV行情数据，支持日/周/月/分钟级别，前复权/后复权/不复权。附带估值指标扩展数据（PE/PB/PS/PCF/换手率）。",
@@ -448,6 +508,10 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 	"adjust_factor": {
 		{Method: "GET", Path: "/api/v2/adjust-factors/{source}", Description: "查询复权因子"},
 		{Method: "POST", Path: "/api/v2/adjust-factors/{source}/upsert", Description: "写入复权因子"},
+	},
+	"long_hu_bang": {
+		{Method: "GET", Path: "/api/v2/long-hu-bang/{source}", Description: "查询龙虎榜明细"},
+		{Method: "POST", Path: "/api/v2/long-hu-bang/{source}/upsert", Description: "写入龙虎榜明细"},
 	},
 	"taxonomy_category": {
 		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories", Description: "查询分类节点"},

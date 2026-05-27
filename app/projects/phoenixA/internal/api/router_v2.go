@@ -134,6 +134,18 @@ func init() {
 			r.Get("/", adjustFactorCtrl.Query)
 		})
 
+		// ====== Long Hu Bang ======
+		longHuBangCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_LONG_HU_BANG)
+		if err != nil {
+			return err
+		}
+		longHuBangCtrl := longHuBangCtrlComp.(*controller.LongHuBangController)
+
+		r.Route("/api/v2/long-hu-bang/{source}", func(r chi.Router) {
+			r.Post("/upsert", longHuBangCtrl.BatchUpsert)
+			r.Get("/", longHuBangCtrl.Query)
+		})
+
 		// ====== Schema Discovery ======
 		schemaCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_SCHEMA)
 		if err != nil {
