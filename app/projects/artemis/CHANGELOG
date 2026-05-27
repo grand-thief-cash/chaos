@@ -1,7 +1,12 @@
 # VERSION
-- v0.36.3
+- v0.36.4
 
 # Changelog
+- v0.36.4
+    - **AmazingData long_hu_bang download task**
+        - Added `STOCK_ZH_A_LONG_HU_BANG` to download A-share 龙虎榜 detail rows via `AmazingData.InfoData.get_long_hu_bang()`.
+        - Implemented Artemis worker logic with PhoenixA-backed symbol resolution, date normalization, deduplication, and batch sink support.
+        - Added task config, CronJob export, and focused unit tests for long_hu_bang post-processing.
 - v0.36.3
     - **Baostock adjust factor download task**
         - Added `STOCK_ZH_A_BS_ADJUST_FACTOR_PARENT` / `STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD` to download A-share adjust factor data via `baostock.query_adjust_factor()`.

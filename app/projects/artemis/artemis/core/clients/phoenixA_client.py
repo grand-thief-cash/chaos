@@ -810,6 +810,93 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             return {"data": [], "total": 0}
 
+    # ──────────── Long Hu Bang (v2) ────────────
+
+    def upsert_long_hu_bang(
+        self,
+        rows: List[Dict[str, Any]],
+        data_source: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert long hu bang rows via v2 API."""
+        path = f"/api/v2/long-hu-bang/{data_source}/upsert"
+        try:
+            resp = self.post(path, rows)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_long_hu_bang_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(rows) if rows else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_long_hu_bang_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
+
+    def query_long_hu_bang(
+        self,
+        *,
+        source: str,
+        symbol: str = "",
+        symbols: Optional[List[str]] = None,
+        market: str = "",
+        trade_date: str = "",
+        start_date: str = "",
+        end_date: str = "",
+        reason_type: str = "",
+        trader_name: str = "",
+        flow_mark: Optional[int] = None,
+        fields: Optional[List[str]] = None,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query long hu bang rows via v2 API."""
+        path = f"/api/v2/long-hu-bang/{source}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if symbol:
+            params["symbol"] = symbol
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        if market:
+            params["market"] = market
+        if trade_date:
+            params["trade_date"] = trade_date
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if reason_type:
+            params["reason_type"] = reason_type
+        if trader_name:
+            params["trader_name"] = trader_name
+        if flow_mark is not None:
+            params["flow_mark"] = str(flow_mark)
+        if fields:
+            params["fields"] = ",".join([str(f) for f in fields if str(f).strip()])
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_long_hu_bang_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+
     def query_industry_daily(
         self,
         *,

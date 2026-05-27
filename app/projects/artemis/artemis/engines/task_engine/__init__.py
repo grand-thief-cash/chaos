@@ -13,6 +13,7 @@ from artemis.engines.task_engine.download.zh import (
     StockZhABsBalanceParent, StockZhABsBalanceChild,
     StockZhABsDividendParent, StockZhABsDividendChild,
     StockZhABsAdjustFactorParent, StockZhABsAdjustFactorChild,
+    StockZHALongHuBang,
 )
 from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 from artemis.engines.task_engine.download.zh.stock_zh_a_industry_constituent_swhy import StockZHAIndustryConstituentSWHY
@@ -126,6 +127,12 @@ registry.register(
     TaskCode.STOCK_ZH_A_RIGHT_ISSUE,
     module=StockZHARightIssue.__module__,
     class_name=StockZHARightIssue.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_LONG_HU_BANG,
+    module=StockZHALongHuBang.__module__,
+    class_name=StockZHALongHuBang.__name__,
 )
 
 registry.register(
