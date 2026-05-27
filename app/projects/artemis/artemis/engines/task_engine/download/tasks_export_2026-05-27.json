@@ -1,0 +1,28 @@
+{
+  "exported_at": "2026-05-27T12:00:00Z",
+  "version": "1.0",
+  "description": "AmazingData long_hu_bang download task",
+  "tasks": [
+    {
+      "name": "stock_zh_a_long_hu_bang",
+      "description": "Download A-share long hu bang detail data via AmazingData get_long_hu_bang",
+      "cron_expr": "0 30 20 ? * 1-5",
+      "timezone": "Asia/Shanghai",
+      "target_service": "artemis",
+      "target_path": "/tasks/run/STOCK_ZH_A_LONG_HU_BANG",
+      "method": "POST",
+      "body_template": "{}",
+      "headers_json": "{}",
+      "exec_type": "SYNC",
+      "callback_method": "POST",
+      "callback_timeout_sec": 1800,
+      "concurrency_policy": "SKIP",
+      "max_concurrency": 1,
+      "overlap_action": "SKIP",
+      "failure_action": "RUN_NEW",
+      "retry_policy_json": "{\"max_attempts\": 2, \"initial_backoff\": \"120s\"}",
+      "status": "ENABLED"
+    }
+  ]
+}
+

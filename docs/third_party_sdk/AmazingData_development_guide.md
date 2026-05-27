@@ -2886,7 +2886,7 @@ CON_CODE string 成份股代码
 
 INDATE string 纳入日期
 
-OUTDATE string 剔除日期 未剔除时为 na n
+OUTDATE string 剔除日期 未剔除时为 nan
 
 INDEX_NAME string 指数名称
 
