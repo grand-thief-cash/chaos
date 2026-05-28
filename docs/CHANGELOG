@@ -1,7 +1,9 @@
 # VERSION
-v0.4.0
+v0.4.1
 
 # Changelog
+- v0.4.1
+    - Added limit_up.md
 - v0.4.0
     - Added study materials.
     - Restructured docs folder.
