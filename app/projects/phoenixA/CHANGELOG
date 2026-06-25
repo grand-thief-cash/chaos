@@ -1,7 +1,46 @@
 # VERSION
-v1.22.2
+v1.23.0
 
 # Changelog
+- v1.23.0
+    - **AmazingData field dictionary and discoverability contract**
+        - Added machine-readable AmazingData field dictionary source files under `config/field_dictionary/amazing_data/`.
+        - Bootstrapped and curated:
+            - `financial_statement.fields.jsonl`: 457 fields across `balance_sheet`, `cashflow`, `income`, `profit_express`, `profit_notice`
+            - `corporate_action.fields.jsonl`: 54 fields across AmazingData `dividend` and `right_issue`
+            - `equity_structure.fields.jsonl`: 54 fields from AmazingData `get_equity_structure`
+            - `enums.jsonl`: 54 enum values for `REPORT_TYPE`, `COMP_TYPE_CODE`, `DIV_PROGRESS`, `PROGRESS`, `P_TYPECODE`, and boolean flags
+            - `datasets.json`: dataset-level metadata for `financial_statement`, `corporate_action`, and `equity_structure`
+        - Added `storage_location`, `unit`, `scale`, `enum_ref`, `aliases`, `is_core`, and `source_doc` metadata so downstream services can discover fields and understand field meanings without reading Markdown docs manually.
+        - Corrected key AmazingData field semantics during dictionary generation:
+            - `financial_statement.balance_sheet.TOT_SHARE` is stored with unit `股`
+            - `equity_structure.TOT_SHARE` is stored with unit `万股` and `scale=10000`
+            - cashflow `NET_CASH_FLOW_*` fields carry aliases for SDK/PDF `NET_CASH_FLOWS_*` spelling
+            - metadata fields such as `MARKET_CODE`, `REPORTING_PERIOD`, `ANN_DATE`, `DIV_PROGRESS`, and `PROGRESS` are marked as `top_level`
+    - **Field dictionary migrations**
+        - Added PostgreSQL migration `0012_field_dictionary.sql`.
+        - Creates:
+            - `data_dataset_dictionary`
+            - `data_field_dictionary`
+            - `data_enum_dictionary`
+            - `v_data_field_dictionary_active`
+        - Stores dictionary metadata on `pg_default` tablespace because these are small schema/contract tables.
+        - Added full `COMMENT ON TABLE/COLUMN/VIEW` coverage so catalog/schema tooling can read database-native descriptions.
+        - Added generated seed migration `0013_seed_amazing_data_field_dictionary.sql` to load the AmazingData dictionary into the database.
+    - **Standalone equity_structure dataset**
+        - Added PostgreSQL migration `0014_equity_structure.sql` for AmazingData `get_equity_structure()` output.
+        - Stores business data on `warm_storage` tablespace, consistent with other large business datasets.
+        - Uses top-level query columns for `source`, `symbol`, `market`, `ann_date`, `change_date`, `current_sign`, and `is_valid`.
+        - Stores source detail fields in `data_json JSONB` with a `jsonb_typeof(data_json) = 'object'` constraint.
+        - Added table and column comments for database-native discoverability.
+    - **Cross-platform dictionary generation tooling**
+        - Added `scripts/generate_field_dictionary_from_docs.py` as the single source of generation logic.
+        - Added Linux/CI wrapper `scripts/generate_field_dictionary_from_docs.sh`.
+        - Replaced the Windows PowerShell generator with a thin wrapper `scripts/generate_field_dictionary_from_docs.ps1` that calls the same Python script.
+        - Documented generation, migration, verification, and tablespace usage in `config/field_dictionary/amazing_data/README.md`.
+    - **Design review documentation**
+        - Added `docs/2026-06-25 PHOENIXA_DESIGN_REVIEW.md` covering PhoenixA design review findings.
+        - Added `docs/2026-06-25 AMAZINGDATA_FIELD_DISCOVERY_AND_ACCESS_DESIGN.md` describing the AmazingData field dictionary, JSONB boundary, discovery API direction, and storage contract.
 - v1.22.2
     - **Standalone long_hu_bang dataset**
         - Added a new standalone `long_hu_bang` table for AmazingData `get_long_hu_bang()` output instead of reusing existing financial/company-action tables.
