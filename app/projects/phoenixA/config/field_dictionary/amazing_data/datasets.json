@@ -1,0 +1,46 @@
+[
+  {
+    "contract_version": "2026-06-25",
+    "source": "amazing_data",
+    "dataset": "financial_statement",
+    "label_zh": "财务报表",
+    "data_types": [
+      "balance_sheet",
+      "cashflow",
+      "income",
+      "profit_express",
+      "profit_notice"
+    ],
+    "storage_table": "financial_statement",
+    "storage_tablespace": "warm_storage",
+    "dictionary_tablespace": "pg_default",
+    "source_doc": "AmazingData 3.5.5"
+  },
+  {
+    "contract_version": "2026-06-25",
+    "source": "amazing_data",
+    "dataset": "corporate_action",
+    "label_zh": "公司行为",
+    "data_types": [
+      "dividend",
+      "right_issue"
+    ],
+    "storage_table": "corporate_action",
+    "storage_tablespace": "warm_storage",
+    "dictionary_tablespace": "pg_default",
+    "source_doc": "AmazingData 3.5.7"
+  },
+  {
+    "contract_version": "2026-06-25",
+    "source": "amazing_data",
+    "dataset": "equity_structure",
+    "label_zh": "股本结构",
+    "data_types": [
+      "equity_structure"
+    ],
+    "storage_table": "equity_structure",
+    "storage_tablespace": "warm_storage",
+    "dictionary_tablespace": "pg_default",
+    "source_doc": "AmazingData 3.5.6.3"
+  }
+]
