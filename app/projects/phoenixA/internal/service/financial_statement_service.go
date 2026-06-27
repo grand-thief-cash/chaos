@@ -209,6 +209,7 @@ func fieldMetasFromResolved(resolved []dao.ResolvedField) []model.FieldMeta {
 			ValueType:       r.ValueType,
 			Unit:            r.Unit,
 			Scale:           r.Scale,
+			EnumRef:         r.EnumRef,
 			StorageLocation: r.StorageLocation,
 			IsMetadata:      r.IsMetadata,
 			IsCore:          r.IsCore,

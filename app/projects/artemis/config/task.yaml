@@ -112,8 +112,8 @@ tasks:
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
-          # symbols: ["000001"]        # 纯代码格式，缺省则全量下载
-          # exchange: "SZ"             # 与 symbols 配合使用
+          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_PROFIT_NOTICE:
     variants:

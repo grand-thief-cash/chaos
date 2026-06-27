@@ -40,6 +40,7 @@ type FieldMeta struct {
 	ValueType       string   `json:"value_type,omitempty"`
 	Unit            string   `json:"unit,omitempty"`
 	Scale           *float64 `json:"scale,omitempty"`
+	EnumRef         string   `json:"enum_ref,omitempty"`
 	StorageLocation string   `json:"storage_location,omitempty"`
 	IsMetadata      bool     `json:"is_metadata,omitempty"`
 	IsCore          bool     `json:"is_core,omitempty"`
