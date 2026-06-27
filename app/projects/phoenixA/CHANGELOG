@@ -1,7 +1,12 @@
 # VERSION
-v1.25.0
+v1.25.1
 
 # Changelog
+- v1.25.1
+    - **FieldMeta carries enum_ref end-to-end**
+        - Added `EnumRef` field to `FieldMeta` in `internal/model/query_response.go` so flat query responses advertise which enum backs each field.
+        - Populated `EnumRef` in `fieldMetasFromResolved` (in `financial_statement_service.go`, shared by `corporate_action_service.go` and `equity_structure_service.go`) from the already-resolved `ResolvedField.EnumRef`.
+        - Lets BI clients (cthulhu via artemis) render enum code → label_zh without a separate field-discovery round-trip per cell.
 - v1.25.0
     - **AmazingData field dictionary comprehensive fixes**
         - **Added missing STATEMENT_TYPE enum** — added `STATEMENT_TYPE` enum with values 1=合并报表, 2=母公司报表
