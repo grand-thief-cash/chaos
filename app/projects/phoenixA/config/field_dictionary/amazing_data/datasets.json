@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "2026-06-25",
+    "contract_version": "2026-06-27",
     "source": "amazing_data",
     "dataset": "financial_statement",
     "label_zh": "财务报表",
@@ -17,7 +17,7 @@
     "source_doc": "AmazingData 3.5.5"
   },
   {
-    "contract_version": "2026-06-25",
+    "contract_version": "2026-06-27",
     "source": "amazing_data",
     "dataset": "corporate_action",
     "label_zh": "公司行为",
@@ -31,7 +31,7 @@
     "source_doc": "AmazingData 3.5.7"
   },
   {
-    "contract_version": "2026-06-25",
+    "contract_version": "2026-06-27",
     "source": "amazing_data",
     "dataset": "equity_structure",
     "label_zh": "股本结构",
