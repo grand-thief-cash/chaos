@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   BISecuritiesResponse,
@@ -16,6 +16,7 @@ const BASE_URL = environment.artemisApiBase;
 @Injectable({ providedIn: 'root' })
 export class ArtemisBiService {
   private readonly http = inject(HttpClient);
+  private readonly enumCache = new Map<string, Observable<BIEnumResponse>>();
 
   // ─── Securities ───
   getSecurities(
@@ -54,9 +55,14 @@ export class ArtemisBiService {
   }
 
   getEnum(enumName: string, source?: string): Observable<BIEnumResponse> {
+    const key = `${enumName}:${source ?? ''}`;
+    const cached = this.enumCache.get(key);
+    if (cached) return cached;
     let params = new HttpParams();
     if (source) params = params.set('source', source);
-    return this.http.get<BIEnumResponse>(`${BASE_URL}/bi/catalog/enums/${enumName}`, { params });
+    const obs = this.http.get<BIEnumResponse>(`${BASE_URL}/bi/catalog/enums/${enumName}`, { params });
+    this.enumCache.set(key, obs);
+    return obs;
   }
 
   // ─── Per-symbol coverage ───
