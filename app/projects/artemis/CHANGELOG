@@ -1,7 +1,14 @@
 # VERSION
-- v0.37.0
+- v0.37.1
 
 # Changelog
+- v0.37.1
+    - **Preserved BI metric dictionary**
+        - New `artemis/models/metric_definitions.py` holds the 26 metric definitions (revenue_total, operating_profit, net_profit_parent, roe, roa, …) previously living in the deleted `bi_engine/contracts/metric_definitions.py`.
+        - New endpoint `GET /bi/meta/metrics` in `bi_simple_routes.py` exposes them so the dictionary isn't lost after the BI redesign.
+    - **Fixed profit_express / profit_notice date normalization on write side**
+        - `stock_zh_a_profit_express.py` and `stock_zh_a_profit_notice.py` now run `ann_date` / `actual_ann_date` through `normalize_date_yyyymmdd` so values are stored as `YYYY-MM-DD` instead of raw `YYYYMMDD`.
+        - Existing rows still carry the old format and need a re-download to be normalized.
 - v0.37.0
     - **BI module redesign: light layer over phoenixA**
         - **Removed legacy BI code**:

@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from artemis.log.logger import get_logger
+from artemis.models.metric_definitions import METRIC_DEFINITIONS
 from artemis.services.bi_simple_service import BISimpleService
 
 logger = get_logger("bi_simple.routes")
@@ -160,4 +161,17 @@ async def query_equity_structure(
         )
     except Exception as exc:
         logger.error({"event": "bi_query_equity_failed", "error": str(exc)}, exc_info=True)
+        raise HTTPException(status_code=500, detail="internal error")
+
+
+@router.get("/meta/metrics")
+async def get_metric_definitions():
+    """Get BI metric definitions (preserved from old bi_engine)."""
+    try:
+        return {
+            "version": "1.0.0",
+            "metrics": METRIC_DEFINITIONS,
+        }
+    except Exception as exc:
+        logger.error({"event": "bi_get_metrics_failed", "error": str(exc)}, exc_info=True)
         raise HTTPException(status_code=500, detail="internal error")
