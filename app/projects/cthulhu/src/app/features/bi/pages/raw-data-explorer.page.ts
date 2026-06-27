@@ -2,7 +2,7 @@ import { Component, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { Observable, Subscription } from 'rxjs';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzTableModule } from 'ng-zorro-antd/table';
@@ -12,6 +12,7 @@ import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { ArtemisBiService } from '../services/artemis-bi.service';
 import {
   BIFieldDiscoveryEntry,
+  BIFieldMeta,
   BIRawQueryResponse,
 } from '../models/bi-simple.models';
 
@@ -41,31 +42,45 @@ import {
 
         <div style="display: flex; flex-direction: column; gap: 14px;">
           <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: end;">
-            <div>
-              <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">报告类型</label>
-              <select [(ngModel)]="reportType" (ngModelChange)="onFilterChange()" class="rde-native-select" style="width: 140px;">
-                <option [ngValue]="null">全部</option>
-                <option *ngFor="let opt of reportTypeOptions" [ngValue]="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
+            @if (isFinancialStatement) {
+              <div>
+                <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">报告类型</label>
+                <select [(ngModel)]="reportType" (ngModelChange)="onFilterChange()" class="rde-native-select" style="width: 140px;">
+                  <option [ngValue]="null">全部</option>
+                  <option *ngFor="let opt of reportTypeOptions" [ngValue]="opt.value">{{ opt.label }}</option>
+                </select>
+              </div>
 
-            <div>
-              <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">报表类型</label>
-              <select [(ngModel)]="statementCode" (ngModelChange)="onFilterChange()" class="rde-native-select" style="width: 160px;">
-                <option [ngValue]="null">全部</option>
-                <option *ngFor="let opt of statementCodeOptions" [ngValue]="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
+              <div>
+                <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">报表类型</label>
+                <select [(ngModel)]="statementCode" (ngModelChange)="onFilterChange()" class="rde-native-select" style="width: 160px;">
+                  <option [ngValue]="null">全部</option>
+                  <option *ngFor="let opt of statementCodeOptions" [ngValue]="opt.value">{{ opt.label }}</option>
+                </select>
+              </div>
+            }
 
-            <div>
-              <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">报告期 起</label>
-              <input type="date" [(ngModel)]="periodStart" (ngModelChange)="onFilterChange()" class="rde-native-input" style="width: 160px;" />
-            </div>
+            @if (isEquityStructure) {
+              <div>
+                <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">变动日 起</label>
+                <input type="date" [(ngModel)]="periodStart" (ngModelChange)="onFilterChange()" class="rde-native-input" style="width: 160px;" />
+              </div>
 
-            <div>
-              <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">报告期 止</label>
-              <input type="date" [(ngModel)]="periodEnd" (ngModelChange)="onFilterChange()" class="rde-native-input" style="width: 160px;" />
-            </div>
+              <div>
+                <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">变动日 止</label>
+                <input type="date" [(ngModel)]="periodEnd" (ngModelChange)="onFilterChange()" class="rde-native-input" style="width: 160px;" />
+              </div>
+            } @else {
+              <div>
+                <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">报告期 起</label>
+                <input type="date" [(ngModel)]="periodStart" (ngModelChange)="onFilterChange()" class="rde-native-input" style="width: 160px;" />
+              </div>
+
+              <div>
+                <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">报告期 止</label>
+                <input type="date" [(ngModel)]="periodEnd" (ngModelChange)="onFilterChange()" class="rde-native-input" style="width: 160px;" />
+              </div>
+            }
 
             <div>
               <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">每页</label>
@@ -135,7 +150,7 @@ import {
               @for (row of tbl.data; track $index) {
                 <tr>
                   @for (f of response.fields; track f.name) {
-                    <td style="white-space: nowrap;">{{ formatCell(row[f.name]) }}</td>
+                    <td style="white-space: nowrap;">{{ formatCell(row[f.name], f) }}</td>
                   }
                 </tr>
               }
@@ -183,7 +198,7 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
   response: BIRawQueryResponse | null = null;
 
   reportType: string | null = null;
-  statementCode: string | null = '1';
+  statementCode: string | null = null;
   periodStart = '';
   periodEnd = '';
   pageIndex = 1;
@@ -227,6 +242,14 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
     return `${Math.max(800, totalCols * 140)}px`;
   }
 
+  get isFinancialStatement(): boolean {
+    return this.dataset === 'financial_statement';
+  }
+
+  get isEquityStructure(): boolean {
+    return this.dataset === 'equity_structure';
+  }
+
   ngOnInit(): void {
     this.paramsSub = this.route.paramMap.subscribe((params) => {
       this.symbol = params.get('symbol') || '';
@@ -248,11 +271,37 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
     this.api.getDatasetFields(this.dataset, { type: this.dataType, include: 'all' }).subscribe({
       next: (resp) => {
         this.fieldOptions = resp.fields || [];
+        this.loadEnumMaps();
       },
       error: () => {
         this.fieldOptions = [];
       },
     });
+  }
+
+  /**
+   * Pre-fetch enum values for every enum_ref on the field list, so the table
+   * can render code -> label_zh without an extra round-trip per cell.
+   */
+  private enumMaps: Record<string, Record<string, string>> = {};
+  private loadEnumMaps(): void {
+    const enumRefs = new Set<string>();
+    for (const f of this.fieldOptions) {
+      if (f.enum_ref) enumRefs.add(f.enum_ref);
+    }
+    for (const ref of enumRefs) {
+      if (this.enumMaps[ref]) continue;
+      this.api.getEnum(ref).subscribe({
+        next: (resp) => {
+          const map: Record<string, string> = {};
+          for (const v of resp.values) map[v.code] = v.label_zh;
+          this.enumMaps[ref] = map;
+        },
+        error: () => {
+          this.enumMaps[ref] = {};
+        },
+      });
+    }
   }
 
   toggleField(queryName: string): void {
@@ -278,7 +327,7 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
 
   onResetFilters(): void {
     this.reportType = null;
-    this.statementCode = '1';
+    this.statementCode = null;
     this.periodStart = '';
     this.periodEnd = '';
     this.pageIndex = 1;
@@ -298,21 +347,9 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
   onFilterChange(): void {
     this.loading = true;
     const fields = this.selectedFields.length > 0 ? this.selectedFields.join(',') : undefined;
+    const obs = this.buildQuery(fields);
 
-    this.api.queryFinancial({
-      source: 'amazing_data',
-      statement_type: this.dataType,
-      symbol: this.symbol,
-      market: this.market,
-      fields,
-      format: 'flat',
-      period_start: this.periodStart || undefined,
-      period_end: this.periodEnd || undefined,
-      report_type: this.reportType || undefined,
-      statement_code: this.statementCode || undefined,
-      page: this.pageIndex,
-      page_size: this.pageSize,
-    }).subscribe({
+    obs.subscribe({
       next: (resp) => {
         this.response = resp;
         this.loading = false;
@@ -324,12 +361,54 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
     });
   }
 
+  private buildQuery(fields: string | undefined): Observable<BIRawQueryResponse> {
+    const common = {
+      source: 'amazing_data',
+      symbol: this.symbol,
+      market: this.market,
+      fields,
+      format: 'flat' as const,
+      page: this.pageIndex,
+      page_size: this.pageSize,
+    };
+
+    if (this.isEquityStructure) {
+      return this.api.queryEquityStructure({
+        ...common,
+        change_start: this.periodStart || undefined,
+        change_end: this.periodEnd || undefined,
+      });
+    }
+
+    if (this.dataset === 'corporate_action') {
+      return this.api.queryCorporateAction({
+        ...common,
+        action_type: this.dataType,
+        period_start: this.periodStart || undefined,
+        period_end: this.periodEnd || undefined,
+      });
+    }
+
+    return this.api.queryFinancial({
+      ...common,
+      statement_type: this.dataType,
+      period_start: this.periodStart || undefined,
+      period_end: this.periodEnd || undefined,
+      report_type: this.reportType || undefined,
+      statement_code: this.statementCode || undefined,
+    });
+  }
+
   goBack(): void {
     this.router.navigate(['/bi/company', this.symbol], { queryParams: { market: this.market } });
   }
 
-  formatCell(v: unknown): string {
+  formatCell(v: unknown, field?: BIFieldMeta): string {
     if (v === null || v === undefined || v === '') return '-';
+    if (field?.enum_ref) {
+      const map = this.enumMaps[field.enum_ref];
+      if (map && map[String(v)] !== undefined) return map[String(v)];
+    }
     if (typeof v === 'number') {
       return Number.isInteger(v) ? String(v) : v.toFixed(4);
     }

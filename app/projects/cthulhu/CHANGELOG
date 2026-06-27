@@ -1,7 +1,15 @@
 # VERSION
-v0.16.0
+v0.16.1
 
 # Changelog
+- v0.16.1
+    - **Raw data explorer: enum rendering + routing fixes**
+        - **Enum code → label_zh rendering**: `formatCell(v, field?)` now consults a per-dataset `enumMaps` cache (pre-fetched once per field list via `ArtemisBiService.getEnum`) and renders the enum label instead of the raw code. Added `enum_ref?` to `BIFieldMeta`.
+        - **Enum cache in `ArtemisBiService`**: `getEnum()` now caches by `enumName:source` so repeat dataset views don't re-fetch.
+        - **Routing fix in `raw-data-explorer.page.ts`**: added `buildQuery()` dispatcher so corporate_action hits `/bi/corporate-action/...` and equity_structure hits `/bi/equity-structure/...` instead of always calling `queryFinancial()`.
+        - **Conditional filters**: report_type/statement_code selectors only show for `financial_statement`; equity_structure shows 变动日 date range labels.
+        - **Default `statement_code` = null** (was `'1'`) so profit_express/profit_notice rows with empty `statement_code` aren't filtered out.
+        - **Removed `progress_code` auto-preselect** for corporate_action per user feedback — fields start unselected.
 - v0.16.0
     - **BI module redesign: 3-layer UI over artemis/phoenixA**
         - **Removed legacy BI code**:

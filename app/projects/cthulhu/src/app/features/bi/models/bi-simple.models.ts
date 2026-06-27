@@ -111,6 +111,7 @@ export interface BIFieldMeta {
   value_type: string;
   unit: string;
   scale: number | null;
+  enum_ref?: string;
   storage_location: string;
   is_metadata: boolean;
   is_core: boolean;
