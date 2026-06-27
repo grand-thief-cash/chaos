@@ -202,6 +202,7 @@ func init() {
 			r.Get("/data-dictionary", catalogCtrl.DataDictionary)
 			r.Get("/business-overview", catalogCtrl.BusinessOverview)
 			r.Get("/capabilities", catalogCtrl.Capabilities)
+			r.Get("/securities/{symbol}/datasets/summary", catalogCtrl.GetSymbolCoverage)
 
 			// Field dictionary discovery APIs (Phase 2 of AmazingData field
 			// discovery design). Backed by data_dataset_dictionary /

@@ -125,6 +125,32 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
 
+  # ─── Discovery: per-symbol data coverage ───
+  /api/v2/catalog/securities/{symbol}/datasets/summary:
+    get:
+      tags: [Discovery]
+      summary: Per-symbol data coverage summary
+      description: |
+        Returns row counts and time ranges for each dataset/data_type that
+        exists for a given symbol. Covers financial_statement (by
+        statement_type × report_type), corporate_action (by action_type),
+        and equity_structure. Generic discovery API — not BI-specific.
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema: { type: string }
+          description: Security code (e.g. "000001").
+        - in: query
+          name: market
+          schema: { type: string, default: zh_a }
+      responses:
+        '200':
+          description: Coverage summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SymbolCoverageResponse' }
+
   # ─── Discovery: field coverage ───
   /api/v2/catalog/field-coverage/scan:
     post:
@@ -483,6 +509,51 @@ components:
       properties:
         status: { type: string, example: ok }
         count: { type: integer }
+
+    SymbolCoverageResponse:
+      type: object
+      description: |
+        Per-symbol data coverage. Lists each dataset that has rows for this
+        symbol, broken down by data_type. For financial_statement, each
+        data_type further breaks down by report_type (1=Q1, 2=H1, 3=Q3, 4=FY).
+      properties:
+        generated_at: { type: string, format: date-time }
+        symbol: { type: string }
+        market: { type: string }
+        datasets:
+          type: array
+          items: { $ref: '#/components/schemas/SymbolCoverageDataset' }
+
+    SymbolCoverageDataset:
+      type: object
+      properties:
+        dataset: { type: string }
+        source: { type: string }
+        data_types:
+          type: array
+          items: { $ref: '#/components/schemas/SymbolCoverageDataType' }
+
+    SymbolCoverageDataType:
+      type: object
+      properties:
+        data_type: { type: string }
+        total_rows: { type: integer }
+        earliest_period: { type: string, description: 'YYYY-MM-DD or empty' }
+        latest_period: { type: string, description: 'YYYY-MM-DD or empty' }
+        latest_ann_date: { type: string, description: 'YYYY-MM-DD or empty' }
+        by_report_type:
+          type: array
+          description: Only for financial_statement; empty otherwise.
+          items: { $ref: '#/components/schemas/SymbolCoverageReportTypeBucket' }
+
+    SymbolCoverageReportTypeBucket:
+      type: object
+      properties:
+        report_type: { type: string }
+        row_count: { type: integer }
+        earliest_period: { type: string }
+        latest_period: { type: string }
+        latest_ann_date: { type: string }
 
     DatasetListResponse:
       type: object

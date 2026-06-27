@@ -1,7 +1,25 @@
 # VERSION
-v1.24.0
+v1.25.0
 
 # Changelog
+- v1.25.0
+    - **AmazingData field dictionary comprehensive fixes**
+        - **Added missing STATEMENT_TYPE enum** — added `STATEMENT_TYPE` enum with values 1=合并报表, 2=母公司报表
+        - **Fixed comp_type_scope field classification** — reclassified all 457 financial fields from uniform `all` to proper categories:
+            - 399 fields = `all` (适用于所有公司类型)
+            - 9 fields = `bank` (银行专用字段，如 CONT_LIABILITIES, CASH_CENTRAL_BANK_DEPOSITS)
+            - 11 fields = `insurance` (保险专用字段)
+            - 33 fields = `non_bank` (非银行专用字段)
+            - 5 fields = `securities` (券商专用字段)
+        - **Fixed TOT_SHARE_EQUITY_EXCL_MIN_INT field** — corrected unit from 股 to 元, cleaned up label_zh
+        - **Cleaned up redundant label suffixes** — removed redundant "(元)" etc suffixes from field labels since unit is already stored separately
+        - **Updated contract_version** — all dictionary entries updated from 2026-06-25 to 2026-06-27
+        - **Regenerated seed migration 0013** — idempotent migration deletes old entries by source + contract_version before inserting new ones
+        - **Added helper scripts** in `config/field_dictionary/amazing_data/`:
+            - `fix_dictionary.py` — fixes financial_statement.fields.jsonl
+            - `fix_all_dictionaries.py` — fixes all dictionaries (financial, corporate_action, equity_structure)
+            - `regenerate_seed_sql.py` — regenerates 0013 from JSONL source files
+            - `update_version.py` — bulk updates contract_version in all dictionary files
 - v1.24.0
     - **Phase 2: AmazingData field discovery APIs**
         - Added `GET /api/v2/catalog/datasets` to list governed datasets with their storage table, data_types, and query/discovery API path templates.
