@@ -19,8 +19,6 @@
 
 存储：复用 corporate_action 表，action_type = "bs_dividend"
 """
-import json
-
 import baostock as bs
 import pandas as pd
 
@@ -131,7 +129,7 @@ class StockZhABsDividendChild(WorkerUnit):
                 'report_period': report_period,
                 'ann_date': ann_date,
                 'progress_code': progress_code,
-                'data_json': json.dumps(data_fields, ensure_ascii=False),
+                'data_json': data_fields,
             }
             processed.append(record)
 

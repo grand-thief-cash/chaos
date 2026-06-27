@@ -1,7 +1,24 @@
 # VERSION
-- v0.36.4
+- v0.37.0
 
 # Changelog
+- v0.37.0
+    - **BI module redesign: light layer over phoenixA**
+        - **Removed legacy BI code**:
+            - Deleted `artemis/api/http_gateway/bi_routes.py`
+            - Deleted `artemis/services/bi_service.py`
+            - Deleted `artemis/models/bi.py`
+            - Deleted entire `artemis/engines/bi_engine/` directory
+        - **Added new light BI layer**:
+            - New `artemis/models/bi_simple.py`: light request/response models
+            - New `artemis/services/bi_simple_service.py`: thin layer passing through to phoenixA
+            - New `artemis/api/http_gateway/bi_simple_routes.py`: `/bi/*` route definitions
+            - No YoY/QoQ computation in artemis — only raw data pass-through
+        - **Updated main routes**:
+            - Modified `artemis/api/http_gateway/routes.py` to use new bi_simple_routes
+    - **Fixed data_json ingestion bug in corporate action**:
+        - Fixed `base_corporate_action.py`: `data_json` should be object, not JSON string
+        - Same fix pattern as financial statement tasks (no json.dumps)
 - v0.36.4
     - **AmazingData long_hu_bang download task**
         - Added `STOCK_ZH_A_LONG_HU_BANG` to download A-share 龙虎榜 detail rows via `AmazingData.InfoData.get_long_hu_bang()`.
