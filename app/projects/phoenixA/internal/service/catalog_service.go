@@ -763,9 +763,10 @@ var tablespaceTiers = map[string]struct {
 
 type CatalogService struct {
 	*core.BaseComponent
-	Dao       *dao.CatalogDao `infra:"dep:dao_catalog"`
-	SchemaDao *dao.SchemaDao  `infra:"dep:dao_schema"`
-	GraphDao  *dao.GraphDao   `infra:"dep_optional:dao_graph"`
+	Dao          *dao.CatalogDao         `infra:"dep:dao_catalog"`
+	SchemaDao    *dao.SchemaDao          `infra:"dep:dao_schema"`
+	GraphDao     *dao.GraphDao           `infra:"dep_optional:dao_graph"`
+	FieldDictDao *dao.FieldDictionaryDao `infra:"dep:dao_field_dictionary"`
 
 	cacheMu      sync.RWMutex
 	cachedTables []model.TableCatalogEntry
@@ -776,6 +777,14 @@ type CatalogService struct {
 	cachedDict *model.DataDictionary
 	dictTime   time.Time
 	dictTTL    time.Duration
+
+	// fieldDictCache caches the per-storage-table field dictionary view used
+	// to aggregate dictionary + observed stats in GetDataDictionary. Keyed by
+	// storage_table name (e.g. "financial_statement").
+	fieldDictMu    sync.RWMutex
+	fieldDictCache map[string]*tableFieldDict
+	fieldDictTime  time.Time
+	fieldDictTTL   time.Duration
 }
 
 func NewCatalogService() *CatalogService {
@@ -783,6 +792,7 @@ func NewCatalogService() *CatalogService {
 		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_CATALOG),
 		cacheTTL:      5 * time.Minute,
 		dictTTL:       10 * time.Minute,
+		fieldDictTTL:  10 * time.Minute,
 	}
 }
 
@@ -1286,6 +1296,16 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 		return nil, err
 	}
 
+	// Load the field dictionary view (storage_table -> dict) once. Used to
+	// attach the aggregated dictionary + ungoverned-key diff to governed
+	// tables. When FieldDictDao is not registered, this returns nil and the
+	// data-dictionary falls back to observed-only behavior.
+	fieldDictMap, dictErr := s.loadFieldDictionary(ctx, refresh)
+	if dictErr != nil {
+		logging.Warnf(ctx, "data-dict: load field dictionary failed: %v", dictErr)
+		fieldDictMap = nil
+	}
+
 	entries := make([]model.TableDictionaryEntry, 0, len(tables))
 	for _, t := range tables {
 		entry := model.TableDictionaryEntry{
@@ -1305,6 +1325,9 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 			logging.Errorf(ctx, "data-dict: get columns for %s.%s failed: %v", t.Schema, t.TableName, err)
 		}
 		colDicts := make([]model.ColumnDictionary, 0, len(cols))
+		// observedDataJSONKeys captures the JSONB keys discovered for the
+		// data_json column so we can diff against the dictionary below.
+		var observedDataJSONKeys []model.JSONBKeyRef
 		for _, col := range cols {
 			cd := model.ColumnDictionary{
 				Name:         col.Name,
@@ -1324,6 +1347,11 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 							ValueType:  k.ValueType,
 							SampleVals: k.SampleVals,
 						})
+					}
+					// The field dictionary applies to the data_json column.
+					// Remember observed keys for ungoverned-key diffing.
+					if col.Name == "data_json" {
+						observedDataJSONKeys = cd.JSONBKeys
 					}
 				}
 			}
@@ -1362,6 +1390,21 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 			tr, trErr := s.Dao.GetTimeRange(ctx, t.Schema, t.TableName, meta.TimeColumn)
 			if trErr == nil && tr != nil {
 				entry.TimeRange = tr
+			}
+		}
+
+		// Phase 2: attach aggregated field dictionary view for governed tables.
+		// Combines the authoritative dictionary contract with observed JSONB
+		// key stats and flags ungoverned keys (observed but not registered).
+		if fieldDictMap != nil {
+			if fd, ok := fieldDictMap[t.TableName]; ok {
+				entry.FieldDictionary = &model.TableFieldDictionary{
+					Dataset:         fd.Dataset,
+					Source:          fd.Source,
+					ContractVersion: fd.ContractVersion,
+					Groups:          fd.Groups,
+					UngovernedKeys:  computeUngovernedKeys(observedDataJSONKeys, fd.DataJSONRawField),
+				}
 			}
 		}
 
@@ -1572,4 +1615,141 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		GeneratedAt:  time.Now(),
 		Capabilities: capabilities,
 	}, nil
+}
+
+// ─── Phase 2: field dictionary aggregation ───
+
+// tableFieldDict is the cached per-table field-dictionary view used by
+// GetDataDictionary to aggregate the authoritative field contract with
+// observed JSONB key stats.
+type tableFieldDict struct {
+	Dataset          string
+	Source           string
+	ContractVersion  string
+	Groups           []model.DictionaryFieldGroup
+	DataJSONRawField map[string]bool // raw_field names with storage_location=data_json
+}
+
+// loadFieldDictionary returns a map keyed by storage_table name. It reads
+// data_dataset_dictionary (for the storage_table -> dataset mapping) and
+// data_field_dictionary (for the full field list per dataset). Results are
+// cached for fieldDictTTL.
+//
+// When FieldDictDao is nil (component not registered), returns nil without
+// error so the catalog falls back to observed-only behavior.
+func (s *CatalogService) loadFieldDictionary(ctx context.Context, refresh bool) (map[string]*tableFieldDict, error) {
+	if s.FieldDictDao == nil {
+		return nil, nil
+	}
+	s.fieldDictMu.RLock()
+	if !refresh && s.fieldDictCache != nil && time.Since(s.fieldDictTime) < s.fieldDictTTL {
+		result := s.fieldDictCache
+		s.fieldDictMu.RUnlock()
+		return result, nil
+	}
+	s.fieldDictMu.RUnlock()
+
+	datasets, err := s.FieldDictDao.ListDatasets(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("list dataset dictionary: %w", err)
+	}
+
+	cache := make(map[string]*tableFieldDict, len(datasets))
+	for _, d := range datasets {
+		if d.StorageTable == "" {
+			continue
+		}
+		rows, err := s.FieldDictDao.DiscoverFields(ctx, dao.FieldQueryParams{
+			Dataset:           d.Dataset,
+			Source:            d.Source,
+			Include:           "all",
+			IncludeDeprecated: false,
+		})
+		if err != nil {
+			logging.Warnf(ctx, "catalog: load field dictionary for %s failed: %v", d.Dataset, err)
+			continue
+		}
+
+		// Group fields by data_type, preserving alphabetical order for stable
+		// output. Within a group, DiscoverFields already orders rows.
+		groupsMap := make(map[string][]model.FieldDiscoveryEntry)
+		groupLabel := make(map[string]string)
+		rawFieldSet := make(map[string]bool)
+		var contractVersion string
+		for _, r := range rows {
+			if contractVersion == "" {
+				contractVersion = r.ContractVersion
+			}
+			entry := model.FieldDiscoveryEntry{
+				RawField:        r.RawField,
+				CanonicalField:  r.CanonicalField,
+				LabelZh:         r.LabelZh,
+				Description:     r.Description,
+				ValueType:       r.ValueType,
+				Unit:            r.Unit,
+				Scale:           r.Scale,
+				EnumRef:         r.EnumRef,
+				StorageLocation: r.StorageLocation,
+				QueryName:       queryNameFor(r),
+				IsMetadata:      r.IsMetadata,
+				IsCore:          r.IsCore,
+				CompTypeScope:   r.CompTypeScope,
+				Aliases:         r.Aliases,
+				SourceDoc:       r.SourceDoc,
+				Deprecated:      r.Deprecated,
+			}
+			groupsMap[r.DataType] = append(groupsMap[r.DataType], entry)
+			if r.DataTypeLabelZh != "" {
+				groupLabel[r.DataType] = r.DataTypeLabelZh
+			}
+			if r.StorageLocation == "data_json" {
+				rawFieldSet[r.RawField] = true
+			}
+		}
+
+		dataTypeOrder := make([]string, 0, len(groupsMap))
+		for dt := range groupsMap {
+			dataTypeOrder = append(dataTypeOrder, dt)
+		}
+		sort.Strings(dataTypeOrder)
+
+		groups := make([]model.DictionaryFieldGroup, 0, len(dataTypeOrder))
+		for _, dt := range dataTypeOrder {
+			groups = append(groups, model.DictionaryFieldGroup{
+				DataType: dt,
+				LabelZh:  groupLabel[dt],
+				Fields:   groupsMap[dt],
+			})
+		}
+
+		cache[d.StorageTable] = &tableFieldDict{
+			Dataset:          d.Dataset,
+			Source:           d.Source,
+			ContractVersion:  contractVersion,
+			Groups:           groups,
+			DataJSONRawField: rawFieldSet,
+		}
+	}
+
+	s.fieldDictMu.Lock()
+	s.fieldDictCache = cache
+	s.fieldDictTime = time.Now()
+	s.fieldDictMu.Unlock()
+	return cache, nil
+}
+
+// computeUngovernedKeys returns observed JSONB keys that are not registered in
+// the field dictionary. These are SDK-added fields the dictionary has not
+// caught up with — candidates for backfill.
+func computeUngovernedKeys(observed []model.JSONBKeyRef, governed map[string]bool) []string {
+	if len(governed) == 0 {
+		return nil
+	}
+	var out []string
+	for _, k := range observed {
+		if !governed[k.Name] {
+			out = append(out, k.Name)
+		}
+	}
+	return out
 }

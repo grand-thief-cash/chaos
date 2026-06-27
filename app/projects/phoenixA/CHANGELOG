@@ -1,7 +1,35 @@
 # VERSION
-v1.23.0
+v1.24.0
 
 # Changelog
+- v1.24.0
+    - **Phase 2: AmazingData field discovery APIs**
+        - Added `GET /api/v2/catalog/datasets` to list governed datasets with their storage table, data_types, and query/discovery API path templates.
+        - Added `GET /api/v2/catalog/datasets/{dataset}/fields` to discover field dictionary rows by data_type, search keyword, and importance filter (`include=all|core|metadata`). Each row carries raw_field, canonical_field, label_zh, unit, scale, value_type, storage_location, is_core, enum_ref, and aliases.
+        - Added `GET /api/v2/catalog/enums/{enum_name}` to resolve enum code/label pairs.
+        - Extended `GET /api/v2/catalog/data-dictionary` to aggregate the field dictionary with observed JSONB key stats. Governed tables now carry `field_dictionary.groups` (fields grouped by data_type) and `field_dictionary.ungoverned_keys` (observed SDK keys the dictionary hasn't caught up with).
+        - Added `FieldDictionaryDao`, `FieldDictionaryService`, `FieldDictionaryController`, and component consts `dao_field_dictionary` / `svc_field_dictionary` / `ctrl_field_dictionary`.
+    - **Phase 3: Dictionary-resolved query APIs**
+        - Refactored `GET /api/v2/financial/{source}/{statement_type}` to resolve `fields=` through the field dictionary. Unknown fields return 400 with up to 5 dictionary-suggested alternatives. Added `format=flat|nested` (nested default). Flat responses include per-field metadata sourced from the dictionary.
+        - Refactored `GET /api/v2/corporate-action/{source}/{action_type}` with the same dictionary-resolved field projection and flat/nested format.
+        - Added `GET /api/v2/equity-structure/{source}` and `POST /api/v2/equity-structure/{source}/upsert` for AmazingData `get_equity_structure()` output. The equity_structure dataset was previously discovery-only (table + migration + dictionary existed but no query API was exposed); this completes the stack with model / DAO / service / controller / routes.
+        - Added shared query helpers `BuildFlatSelect`, `SplitResolved`, `BuildFilteredDataJSON` in `internal/dao/query_helpers.go` so all three datasets share the same projection logic.
+        - Added `FieldResolutionError` model implementing the `error` interface so service-layer unknown-field errors bubble to the controller and map to HTTP 400 with the structured payload.
+        - Updated `queryPathForDataset` in `FieldDictionaryService` so `/api/v2/catalog/datasets` now advertises the equity-structure query path.
+    - **Phase 4 #3: Field coverage observation**
+        - Added migration `0015_field_coverage_observation.sql` creating `data_field_coverage_observation` (dataset, source, storage_table, observed_key, status, sample_count, first_seen_at, last_seen_at). Stores on `pg_default` tablespace. Implements design doc §11.5 — SDK-added fields are now exposed as governance candidates instead of being silently written.
+        - Added `POST /api/v2/catalog/field-coverage/scan?dataset=&source=&sample_limit=` to scan `data_json` keys across governed datasets, classify each as `governed` / `ungoverned`, and upsert observations. Returns per-dataset summaries including the list of ungoverned keys. Default sampling caps per-dataset work at 10000 most-recent rows; pass `sample_limit=0` for full scan.
+        - Added `GET /api/v2/catalog/field-coverage?dataset=&source=&status=` to list observations, filtered by status. Ungoverned entries are returned first.
+        - Scan SQL filters to `jsonb_typeof(data_json) = 'object'` so rows predating the object CHECK constraint don't break the scan.
+        - Per-dataset scan errors surface in the response (`error` field on the per-dataset result) rather than aborting the whole batch — callers see partial results plus the failure reason.
+        - Added `FieldCoverageDao`, `FieldCoverageService`, `FieldCoverageController`, and component consts `dao_field_coverage` / `svc_field_coverage` / `ctrl_field_coverage`.
+    - **Phase 4 #2b: OpenAPI spec + route consistency check**
+        - Replaced the stale v1 `docs/openapi.yaml` with a v2 spec covering the AmazingData dataset APIs: discovery (datasets / fields / enums), field coverage (scan / list), query (financial / corporate-action / equity-structure), and writes (upsert). Spec is served at `GET /openapi.yaml` (file relocated to repo root `openapi.yaml`).
+        - The spec follows the two-contract model from the design doc: it describes API shape (paths, parameters, response envelopes, error codes) but does NOT describe individual field meanings — those are exposed dynamically via the discovery API. Field-level docs in Markdown are deprecated; the field dictionary is now the single source of truth.
+        - Added `scripts/verify_openapi_routes.py` as a CI check that the in-scope paths declared in `openapi.yaml` match those registered in `internal/api/router_v2.go`. Catches drift in either direction (route added without doc, or doc referencing a removed route). Scope is limited to AmazingData dataset APIs; other route groups (bars, taxonomy, KG, graph, legacy v1) are intentionally out of scope.
+    - **Out of scope (deliberately not done)**
+        - Phase 4 #1 (core field views) was deferred — no business need since all consumers go through PhoenixA HTTP APIs rather than connecting to PostgreSQL directly. Views can be added later if BI / ad-hoc analytics users appear.
+        - Phase 4 #2a (Markdown field docs generated from dictionary) was deprecated rather than built — the dictionary is now the single source of truth and Markdown duplicates would drift.
 - v1.23.0
     - **AmazingData field dictionary and discoverability contract**
         - Added machine-readable AmazingData field dictionary source files under `config/field_dictionary/amazing_data/`.
