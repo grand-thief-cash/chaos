@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS financial_statement (
     data_json        JSONB          NOT NULL DEFAULT '{}',
     created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_fin_stmt UNIQUE (source, symbol, market, statement_type, reporting_period, report_type, statement_code)
+    CONSTRAINT uk_fin_stmt UNIQUE (source, symbol, market, statement_type, reporting_period, report_type, statement_code),
+    CONSTRAINT chk_financial_statement_data_json_object CHECK (jsonb_typeof(data_json) = 'object')
 ) TABLESPACE warm_storage;
 
 -- B-tree indexes for common query patterns
@@ -64,7 +65,8 @@ CREATE TABLE IF NOT EXISTS corporate_action (
     data_json        JSONB          NOT NULL DEFAULT '{}',
     created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_corp_action UNIQUE (source, symbol, market, action_type, report_period, ann_date)
+    CONSTRAINT uk_corp_action UNIQUE (source, symbol, market, action_type, report_period, ann_date),
+    CONSTRAINT chk_corporate_action_data_json_object CHECK (jsonb_typeof(data_json) = 'object')
 ) TABLESPACE warm_storage;
 
 -- B-tree indexes

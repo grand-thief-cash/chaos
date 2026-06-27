@@ -1753,3 +1753,16 @@ func computeUngovernedKeys(observed []model.JSONBKeyRef, governed map[string]boo
 	}
 	return out
 }
+
+// GetSymbolCoverage returns per-dataset/data_type row counts and time ranges
+// for a given symbol+market. This is a generic discovery API — callers (e.g.,
+// artemis BI layer) use it to show what data exists for a company.
+func (s *CatalogService) GetSymbolCoverage(ctx context.Context, symbol, market string) (*model.CatalogSymbolCoverage, error) {
+	rows, err := s.Dao.GetSymbolCoverage(ctx, symbol, market)
+	if err != nil {
+		return nil, err
+	}
+	coverage := dao.AggregateCoverage(rows, symbol, market)
+	coverage.GeneratedAt = time.Now().UTC()
+	return coverage, nil
+}
