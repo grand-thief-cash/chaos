@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 )
 
 type apiError struct {
@@ -20,6 +22,18 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeQueryError maps service-layer errors to HTTP responses. A
+// *model.FieldResolutionError becomes 400 with the structured unknown-field
+// payload (so callers can correct the request from suggestions); anything
+// else is a 500.
+func writeQueryError(w http.ResponseWriter, err error) {
+	if fre, ok := err.(*model.FieldResolutionError); ok {
+		writeJSON(w, http.StatusBadRequest, fre)
+		return
+	}
+	writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 }
 
 func parseLimitOffset(r *http.Request) (limit, offset int) {

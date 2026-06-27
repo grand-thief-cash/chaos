@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
@@ -40,6 +41,8 @@ func (s *CorporateActionService) BatchUpsert(ctx context.Context, list []*model.
 	return s.Dao.BatchUpsert(ctx, list)
 }
 
+// Query is the legacy full-struct query path. New callers should use
+// QueryFlat / QueryNested which go through the field dictionary.
 func (s *CorporateActionService) Query(ctx context.Context, source string, f *model.CorporateActionFilters, page, pageSize int) ([]*model.CorporateAction, int64, error) {
 	if page < 1 {
 		page = 1
@@ -60,4 +63,109 @@ func (s *CorporateActionService) Query(ctx context.Context, source string, f *mo
 		return nil, 0, err
 	}
 	return list, count, nil
+}
+
+// QueryFlat runs a dictionary-resolved flat query against corporate_action.
+func (s *CorporateActionService) QueryFlat(ctx context.Context, source string, f *model.CorporateActionFilters, requestedFields []string, page, pageSize int) (*model.FlatQueryResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 100
+	}
+	if pageSize > 1000 {
+		pageSize = 1000
+	}
+	offset := (page - 1) * pageSize
+
+	dataType := ""
+	if f != nil {
+		dataType = f.ActionType
+	}
+	resolved, unknown, err := s.Dao.ResolveQueryFields(ctx, source, dataType, requestedFields)
+	if err != nil {
+		return nil, err
+	}
+	if len(unknown) > 0 {
+		return nil, &model.FieldResolutionError{
+			Code:     "unknown_field",
+			Dataset:  "corporate_action",
+			DataType: dataType,
+			Source:   source,
+			Unknown:  unknown,
+		}
+	}
+
+	rows, err := s.Dao.QueryFlat(ctx, source, f, resolved, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	count, err := s.Dao.Count(ctx, source, f)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.FlatQueryResponse{
+		GeneratedAt: time.Now(),
+		Dataset:     "corporate_action",
+		Source:      source,
+		DataType:    dataType,
+		Rows:        flatRowsFromMaps(rows),
+		Fields:      fieldMetasFromResolved(resolved),
+		Total:       count,
+		Page:        page,
+		PageSize:    pageSize,
+	}, nil
+}
+
+// QueryNested runs a dictionary-resolved nested query against corporate_action.
+func (s *CorporateActionService) QueryNested(ctx context.Context, source string, f *model.CorporateActionFilters, requestedFields []string, page, pageSize int) (*model.NestedQueryResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 100
+	}
+	if pageSize > 1000 {
+		pageSize = 1000
+	}
+	offset := (page - 1) * pageSize
+
+	dataType := ""
+	if f != nil {
+		dataType = f.ActionType
+	}
+	resolved, unknown, err := s.Dao.ResolveQueryFields(ctx, source, dataType, requestedFields)
+	if err != nil {
+		return nil, err
+	}
+	if len(unknown) > 0 {
+		return nil, &model.FieldResolutionError{
+			Code:     "unknown_field",
+			Dataset:  "corporate_action",
+			DataType: dataType,
+			Source:   source,
+			Unknown:  unknown,
+		}
+	}
+
+	rows, err := s.Dao.QueryNested(ctx, source, f, resolved, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	count, err := s.Dao.Count(ctx, source, f)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.NestedQueryResponse{
+		GeneratedAt: time.Now(),
+		Dataset:     "corporate_action",
+		Source:      source,
+		DataType:    dataType,
+		Rows:        rows,
+		Total:       count,
+		Page:        page,
+		PageSize:    pageSize,
+	}, nil
 }
