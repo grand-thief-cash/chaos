@@ -1,7 +1,22 @@
 # VERSION
-v0.15.3
+v0.16.0
 
 # Changelog
+- v0.16.0
+    - **BI module redesign: 3-layer UI over artemis/phoenixA**
+        - **Removed legacy BI code**:
+            - Deleted old BI pages except `bi-overview.page.ts` and `bi-shell.component.ts`
+            - Deleted `features/bi/services/bi-api.service.ts`
+            - Deleted `features/bi/models/bi.models.ts`
+        - **Added new BI layer**:
+            - New `features/bi/services/artemis-bi.service.ts`: API client for artemis `/bi/*`
+            - New `features/bi/pages/stock-list.page.ts`: paginated stock list (layer 1)
+            - New `features/bi/pages/company-overview.page.ts`: company overview with datasets (layer 2)
+            - New `features/bi/pages/raw-data-explorer.page.ts`: raw data explorer with native HTML controls (layer 3)
+            - Updated `features/bi/bi.routes.ts`: new route structure
+            - No YoY/QoQ computation in frontend — only raw data display
+        - **Fixed company overview labels**:
+            - Corrected display text for dataset availability
 - v0.15.3
     - **BI second/third iteration: trend interaction upgrade**
         - Added reusable trend control component `ui/trend-controls.component.ts` for `季度/年度` view switch + `12/16/20` period selector.
