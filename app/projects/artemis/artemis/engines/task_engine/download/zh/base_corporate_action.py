@@ -19,7 +19,6 @@ SDK parameter support (per AmazingData_development_guide.md V1.0.24):
 
 PhoenixA upserts are idempotent (ON CONFLICT UPDATE), safe for repeated calls.
 """
-import json
 import os
 from abc import abstractmethod
 from typing import Any, Dict, List, Iterable
@@ -172,7 +171,7 @@ class BaseCorporateActionTask(WorkerUnit):
                     'report_period': report_period,
                     'ann_date': ann_date,
                     'progress_code': progress_code,
-                    'data_json': json.dumps(data_fields, ensure_ascii=False),
+                    'data_json': data_fields,
                 })
 
         # Deduplicate by unique key (last occurrence wins).

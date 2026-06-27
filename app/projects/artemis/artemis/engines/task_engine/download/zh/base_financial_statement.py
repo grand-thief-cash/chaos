@@ -21,7 +21,6 @@ SDK parameter support (per AmazingData_development_guide.md V1.0.24):
 
 PhoenixA upserts are idempotent (ON CONFLICT UPDATE), safe for repeated calls.
 """
-import json
 import os
 from abc import abstractmethod
 from typing import Any, Dict, List, Iterable
@@ -186,7 +185,7 @@ class BaseFinancialStatementTask(WorkerUnit):
                     'market': market,
                     'statement_type': self.STATEMENT_TYPE,
                     'reporting_period': reporting_period,
-                    'data_json': json.dumps(data_fields, ensure_ascii=False),
+                    'data_json': data_fields,
                 }
                 record.update(self._get_metadata_overrides(row))
                 processed.append(record)
