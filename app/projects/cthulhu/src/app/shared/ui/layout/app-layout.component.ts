@@ -7,7 +7,7 @@ import {CommonModule} from '@angular/common';
 import {Router, RouterLink, RouterLinkActive, RouterModule, RouterOutlet} from '@angular/router';
 import {Observable} from 'rxjs';
 import {TopNavItem, TopNavService} from "../../../core/services/top-nav.service";
-import {SideMenuGroup, SideMenuService} from "../../../core/services/side-menu.service";
+import {SideMenuGroup, SideMenuItem, SideMenuService} from "../../../core/services/side-menu.service";
 import {BreadcrumbItem, BreadcrumbService} from "../../../core/services/breadcrumb.service";
 import {NzButtonModule} from 'ng-zorro-antd/button';
 import {ErrorBannerComponent} from '../errors/error-banner.component';
@@ -58,6 +58,16 @@ export class AppLayoutComponent {
   toggleSider() {
     this.isCollapsed = !this.isCollapsed; }
     get siderToggleIcon(): string { return this.isCollapsed ? 'menu-unfold' : 'menu-fold';
+  }
+
+  isMenuItemSelected(item: SideMenuItem): boolean {
+    if (!item.route) return false;
+    const url = this.router.url.split('?')[0];
+    return item.selectedMatchExact === false ? url.startsWith(item.route) : url === item.route;
+  }
+
+  isSubMenuOpen(item: SideMenuItem): boolean {
+    return !!item.children?.some(child => this.isMenuItemSelected(child) || this.isSubMenuOpen(child));
   }
 
   private updateSideMenu() {
