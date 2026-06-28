@@ -1,7 +1,17 @@
 # VERSION
-- v0.37.1
+- v0.38.0
 
 # Changelog
+- v0.38.0
+    - **DuPont analysis backend (artemis-owned computation)**
+        - New `BISimpleService.get_dupont_analysis` fetches all-period income + balance_sheet from phoenixA in one pass and computes the DuPont decomposition tree, headline drivers, relationship equations, and breakdown stacks in artemis — artemis is the BI backend and owns business computation when needed (not limited to passthrough).
+        - New endpoint `GET /bi/dupont/{symbol}` supports four period kinds via `period_kind`: `ttm` (rolling 12 months, default), `annual`, `single_quarter`, `ytd` (year-to-date cumulative, not annualized).
+        - New optional `target_reporting_period` to pin the report period (defaults to the latest available; annual falls back to the latest 年报).
+        - New optional `extrapolate_q4=true` for `ytd` + Q3 (三季报): linearly extrapolates the full year as Q3 YTD × 4/3, returning it in `extrapolated_full_year`.
+        - DuPont identity (net margin × asset turnover × equity multiplier = ROE) holds for all kinds. Balance-sheet items use period-start/end averages; income items use the kind-appropriate value (TTM = current YTD + prior full year − prior YTD; single quarter = current YTD − prior-quarter YTD).
+        - Prior-period (`prev_value` / `delta` / `direction`) computed per kind: annual & YTD use 同比 (prior year same period); single_quarter & TTM use 环比 (immediately preceding reporting period).
+        - New Pydantic models in `bi_simple.py`: `BIDupontMetricNode`, `BIDupontTreeNode`, `BIDriverItem`, `BIDetailEquation`, `BIDetailStack`, `BIDupontResponse`.
+        - Verified end-to-end against raw data for 深科技 000021: all four kinds + Q3 extrapolation match manual calculation and the identity holds.
 - v0.37.1
     - **Preserved BI metric dictionary**
         - New `artemis/models/metric_definitions.py` holds the 26 metric definitions (revenue_total, operating_profit, net_profit_parent, roe, roa, …) previously living in the deleted `bi_engine/contracts/metric_definitions.py`.

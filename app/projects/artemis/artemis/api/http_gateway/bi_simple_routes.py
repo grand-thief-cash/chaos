@@ -9,6 +9,7 @@ Architecture: cthulhu → artemis /bi/* → phoenixA /api/v2/*
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
+from typing import Literal
 
 from artemis.log.logger import get_logger
 from artemis.models.metric_definitions import METRIC_DEFINITIONS
@@ -174,4 +175,33 @@ async def get_metric_definitions():
         }
     except Exception as exc:
         logger.error({"event": "bi_get_metrics_failed", "error": str(exc)}, exc_info=True)
+        raise HTTPException(status_code=500, detail="internal error")
+
+
+@router.get("/dupont/{symbol}")
+async def get_dupont_analysis(
+    symbol: str,
+    source: str = Query("amazing_data"),
+    market: str = Query("zh_a"),
+    report_type: str | None = Query(None, description="4=年报, 1=一季报, 2=半年报, 3=三季报"),
+    statement_code: str = Query("1", description="1=合并, 6=母公司"),
+    period_end: str | None = Query(None, description="报告期上限 YYYY-MM-DD；省略取最新"),
+    period_kind: Literal["annual", "single_quarter", "ytd", "ttm"] = Query("ttm", description="年度/单季度/年初至今/滚动12个月(默认)"),
+    target_reporting_period: str | None = Query(None, description="指定目标报告期YYYY-MM-DD，省略取最新可用"),
+    extrapolate_q4: bool = Query(False, description="仅当period_kind=ytd且target_period是Q3时生效，按Q3YTD×4/3外推全年预测"),
+):
+    """DuPont decomposition: ttm(默认)/annual/single_quarter/ytd; Q3YTD可外推全年."""
+    try:
+        return service.get_dupont_analysis(
+            symbol=symbol, source=source, market=market,
+            report_type=report_type, statement_code=statement_code,
+            period_end=period_end, period_kind=period_kind,
+            target_reporting_period=target_reporting_period,
+            extrapolate_q4=extrapolate_q4,
+        )
+    except ValueError as exc:
+        logger.warning({"event": "bi_dupont_no_data", "symbol": symbol, "error": str(exc)})
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error({"event": "bi_dupont_failed", "symbol": symbol, "error": str(exc)}, exc_info=True)
         raise HTTPException(status_code=500, detail="internal error")
