@@ -128,3 +128,81 @@ export interface BIRawQueryResponse {
   page: number;
   page_size: number;
 }
+
+// ─── DuPont analysis ───
+//
+// Structured DuPont decomposition computed by artemis. Amounts are in yuan,
+// ratios are 0-1 floats; the page formats them to 亿元 / %.
+
+export type DupontDirection = 'up' | 'down' | 'flat';
+
+export interface BIDupontMetricNode {
+  code: string;
+  label: string;
+  value: number | null;
+  prev_value: number | null;
+  delta: number | null;
+  direction: DupontDirection | null;
+  unit: 'ratio' | 'amount_yuan';
+  available: boolean;
+  note: string | null;
+}
+
+export interface BIDupontTreeNode extends BIDupontMetricNode {
+  children: BIDupontTreeNode[];
+}
+
+export interface BIDriverItem {
+  label: string;
+  value: number | null;
+  prev_value: number | null;
+  note: string;
+  direction: DupontDirection | null;
+  unit: 'ratio' | 'amount_yuan';
+}
+
+export interface BIDetailEquation {
+  result_label: string;
+  result_value: number | null;
+  expression: string;
+  note: string;
+  unit: 'ratio' | 'amount_yuan';
+}
+
+export interface BIDetailStackRow {
+  label: string;
+  raw_field: string;
+  value: number | null;
+  prev_value: number | null;
+}
+
+export interface BIDetailStack {
+  title: string;
+  total: number | null;
+  prev_total: number | null;
+  accent: string;
+  rows: BIDetailStackRow[];
+}
+
+export type DupontPeriodKind = 'annual' | 'single_quarter' | 'ytd' | 'ttm';
+
+export interface BIDupontResponse {
+  generated_at: string;
+  symbol: string;
+  source: string;
+  market: string;
+  report_type: string;
+  statement_code: string;
+  period: string;
+  prev_period: string | null;
+  security_name: string | null;
+  period_kind: DupontPeriodKind;
+  target_reporting_period: string;
+  extrapolated_full_year: BIDupontResponse | null;
+  headline_drivers: BIDriverItem[];
+  tree: BIDupontTreeNode;
+  nodes: Record<string, BIDupontMetricNode>;
+  detail_equations: BIDetailEquation[];
+  detail_stacks: BIDetailStack[];
+  notes: string[];
+}

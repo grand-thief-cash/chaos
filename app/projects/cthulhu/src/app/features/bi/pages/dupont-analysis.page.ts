@@ -1,6 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+
+import { ArtemisBiService } from '../services/artemis-bi.service';
+import { BIDupontResponse, BIDupontMetricNode, DupontPeriodKind } from '../models/bi-simple.models';
 
 type TrendDirection = 'up' | 'down' | 'flat';
 type NodeTone = 'navy' | 'blue' | 'sky' | 'pale' | 'slate';
@@ -8,6 +11,7 @@ type NodeTone = 'navy' | 'blue' | 'sky' | 'pale' | 'slate';
 interface DupontMetricNode {
   label: string;
   current: string;
+  prev?: string;
   delta?: string;
   direction?: TrendDirection;
   tone: NodeTone;
@@ -29,6 +33,7 @@ interface DetailEquation {
 interface DriverItem {
   label: string;
   value: string;
+  prev: string;
   note: string;
   direction: TrendDirection;
 }
@@ -59,6 +64,15 @@ interface CanvasOperator {
   dark?: boolean;
 }
 
+interface NodeLayout {
+  id: string;
+  tone: NodeTone;
+  x: number;
+  y: number;
+  width?: number;
+  compact?: boolean;
+}
+
 @Component({
   selector: 'app-bi-dupont-analysis-page',
   standalone: true,
@@ -68,34 +82,52 @@ interface CanvasOperator {
       <header class="dashboard-header">
         <div class="title-block">
           <h1>杜邦分析</h1>
-          <span class="update-date">更新日期：2024年4月8日</span>
+          <span class="update-date">{{ securityName ? securityName + ' · ' : '' }}{{ updateDate }}</span>
         </div>
         <div class="filter-row" aria-label="杜邦分析筛选条件">
           <label>
-            <span>组织</span>
-            <select [(ngModel)]="selectedOrg">
-              @for (org of organizations; track org) {
-                <option [value]="org">{{ org }}</option>
+            <span>口径</span>
+            <select [(ngModel)]="selectedPeriodKind" (ngModelChange)="onPeriodKindChange()">
+              @for (k of periodKindOptions; track k.value) {
+                <option [value]="k.value">{{ k.label }}</option>
               }
             </select>
           </label>
           <label>
-            <span>年月</span>
-            <input type="month" [(ngModel)]="startMonth" />
+            <span>报告期</span>
+            <select [(ngModel)]="selectedReportingPeriod" (ngModelChange)="onReportingPeriodChange()">
+              <option value="">最新</option>
+              @for (p of availablePeriodOptions; track p) {
+                <option [value]="p">{{ p }}</option>
+              }
+            </select>
           </label>
-          <span class="range-separator">-</span>
-          <label class="month-only">
-            <span>结束年月</span>
-            <input type="month" [(ngModel)]="endMonth" />
-          </label>
+          @if (canExtrapolate) {
+            <label class="extrapolate-toggle">
+              <input type="checkbox" [(ngModel)]="extrapolateQ4" (ngModelChange)="onExtrapolateToggle()" />
+              <span>Q3 外推全年</span>
+            </label>
+          }
+          @if (hasExtrapolated) {
+            <button type="button" class="view-toggle" (click)="toggleView()">
+              切换：{{ viewLabel }}
+            </button>
+          }
         </div>
       </header>
+
+      @if (loadError) {
+        <div class="load-error">{{ loadError }}</div>
+      }
 
       <div class="summary-strip">
         @for (item of headlineDrivers; track item.label) {
           <article class="summary-item" [class]="trendClass(item.direction)">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
+            @if (item.prev && item.prev !== '--') {
+              <small class="prev-line">上期 {{ item.prev }}</small>
+            }
             <small>{{ item.note }}</small>
           </article>
         }
@@ -178,6 +210,54 @@ interface CanvasOperator {
           </article>
         }
       </section>
+
+      <section class="calc-notes" aria-label="ROE 取数与计算说明">
+        <header>
+          <h2>ROE 取数与计算说明</h2>
+          <span>当前口径：{{ periodKindLabel }}</span>
+        </header>
+        <div class="calc-grid">
+          <article>
+            <h3>TTM（滚动12个月，默认）</h3>
+            <p>分子：当前累计净利润 + 上年全年净利润 − 上年同期累计净利润（=近4个单季之和）。</p>
+            <p>分母：平均资产/权益 = (本期末 + 上年末) / 2。</p>
+            <p class="muted">跨期可比，最稳健，适合看当前盈利能力与趋势。</p>
+          </article>
+          <article>
+            <h3>年度</h3>
+            <p>分子：年报全年累计净利润。</p>
+            <p>分母：平均资产/权益 = (本年末 + 上年末) / 2。</p>
+            <p class="muted">仅年报口径可比；季度传入时回退到最新年报。</p>
+          </article>
+          <article>
+            <h3>单季度</h3>
+            <p>分子：本期累计净利润 − 同年上一报告期累计（Q1 直接用累计，无上期）。</p>
+            <p>分母：平均资产/权益 = (本期末 + 上季度末) / 2。</p>
+            <p class="muted">看单季环比、经营拐点。</p>
+          </article>
+          <article>
+            <h3>YTD（年初至今累计）</h3>
+            <p>分子：年初至今累计净利润（不年化）。</p>
+            <p>分母：平均资产/权益 = (本期末 + 上年末) / 2。</p>
+            <p class="muted">看今年已赚多少；越往后累计越大，跨期不可比。</p>
+          </article>
+        </div>
+        <div class="calc-extra">
+          <strong>Q3 外推全年：</strong>
+          当口径为 YTD 且报告期为三季报（Q3）时可勾选，按 Q3 YTD × 4/3 线性外推全年净利润/收入，资产/权益沿用 YTD 期初期末平均，估算全年 ROE。
+          <span class="muted">（线性外推假设 Q4 与前三季均速一致，仅作预测参考。）</span>
+        </div>
+        <div class="calc-extra">
+          <strong>杜邦恒等式：</strong> ROE = 销售净利率 × 总资产周转率 × 权益乘数；权益乘数 = 1 / (1 − 资产负债率)。所有口径下恒等式均成立。
+        </div>
+        @if (currentResp?.notes?.length) {
+          <ul class="calc-source-notes">
+            @for (note of currentResp!.notes; track note) {
+              <li>{{ note }}</li>
+            }
+          </ul>
+        }
+      </section>
     </section>
 
   `,
@@ -238,6 +318,112 @@ interface CanvasOperator {
       flex-wrap: wrap;
     }
 
+    .extrapolate-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #fff;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .extrapolate-toggle input {
+      width: 16px;
+      height: 16px;
+      min-width: 16px;
+      accent-color: #0f55a5;
+    }
+
+    .view-toggle {
+      height: 34px;
+      padding: 0 14px;
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+      font-weight: 680;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .view-toggle:hover {
+      background: rgba(255, 255, 255, 0.35);
+    }
+
+    .calc-notes {
+      background: #fff;
+      border: 1px solid #e4ebf3;
+      padding: 16px 20px;
+    }
+
+    .calc-notes header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+
+    .calc-notes h2 {
+      margin: 0;
+      font-size: 18px;
+      color: #17233c;
+    }
+
+    .calc-notes header span {
+      color: #1d5fae;
+      font-weight: 680;
+      font-size: 13px;
+    }
+
+    .calc-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .calc-grid article {
+      padding: 12px 14px;
+      background: #f8fbff;
+      border: 1px solid #e6edf6;
+      border-left: 3px solid #1684f5;
+    }
+
+    .calc-grid h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      color: #152033;
+    }
+
+    .calc-grid p {
+      margin: 3px 0;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #2c3a4d;
+    }
+
+    .calc-grid p.muted,
+    .muted {
+      color: #637186;
+    }
+
+    .calc-extra {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #f5f8fc;
+      border: 1px dashed #cfdcec;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #2c3a4d;
+    }
+
+    .calc-source-notes {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: #637186;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
     .filter-row label {
       display: flex;
       align-items: center;
@@ -275,6 +461,14 @@ interface CanvasOperator {
       gap: 12px;
     }
 
+    .load-error {
+      padding: 12px 16px;
+      background: #fff1f0;
+      border: 1px solid #ffccc7;
+      color: #cf1322;
+      font-weight: 650;
+    }
+
     .summary-item {
       min-height: 86px;
       padding: 14px 16px;
@@ -289,6 +483,11 @@ interface CanvasOperator {
       color: #637186;
       font-size: 12px;
       line-height: 1.5;
+    }
+
+    .prev-line {
+      color: #1d5fae;
+      font-weight: 680;
     }
 
     .summary-item strong {
@@ -579,62 +778,90 @@ interface CanvasOperator {
     }
   `],
 })
-export class DupontAnalysisPageComponent {
-  organizations = ['XXX集团', '华东事业群', '上市公司合并口径'];
+export class DupontAnalysisPageComponent implements OnInit {
+  private readonly bi = inject(ArtemisBiService);
+
+  // Hard-coded for the first integration: only 000021 (深科技) has full
+  // financial data from 2015. Parameters will be wired to the filter row later.
+  private readonly symbol = '000021';
+  private readonly source = 'amazing_data';
+
+  organizations = ['上市公司合并口径'];
   selectedOrg = this.organizations[0];
   startMonth = '2024-01';
   endMonth = '2024-02';
 
-  nodes = {
-    roe: {
-      label: '净资产收益率',
-      current: '116.13%',
-      delta: '-35.55pct',
-      direction: 'down',
-      tone: 'navy',
-    },
-    assetProfit: {
-      label: '总资产利润率',
-      current: '67.10%',
-      delta: '-25.70pct',
-      direction: 'down',
-      tone: 'blue',
-    },
-    equityMultiplier: {
-      label: '权益乘数',
-      current: '1.73',
-      delta: '+0.35',
-      direction: 'up',
-      tone: 'blue',
-    },
-    salesMargin: {
-      label: '销售净利率',
-      current: '419.80%',
-      delta: '-78.30pct',
-      direction: 'down',
-      tone: 'sky',
-    },
-    assetTurnover: {
-      label: '总资产周转率',
-      current: '15.98%',
-      delta: '-16.84pct',
-      direction: 'down',
-      tone: 'sky',
-    },
-    debtRatio: {
-      label: '资产负债率',
-      current: '42.22%',
-      delta: '+14.52pct',
-      direction: 'up',
-      tone: 'sky',
-    },
-    netProfit: { label: '净利润', current: '3.52亿', tone: 'pale' },
-    revenue: { label: '营业收入', current: '4.90亿', tone: 'pale' },
-    turnoverRevenue: { label: '营业收入', current: '4.90亿', tone: 'pale' },
-    totalAssets: { label: '资产总额', current: '19.68亿', tone: 'pale' },
-    totalLiabilities: { label: '负债总额', current: '6.79亿', tone: 'pale' },
-    totalAssetsRight: { label: '资产总额', current: '19.68亿', tone: 'pale' },
-  } satisfies Record<string, DupontMetricNode>;
+  // Period-kind selector (默认 TTM). Each kind's calculation is documented
+  // in the calc-notes panel at the bottom of the page.
+  periodKindOptions: Array<{ value: DupontPeriodKind; label: string }> = [
+    { value: 'ttm', label: 'TTM（滚动12个月）' },
+    { value: 'annual', label: '年度' },
+    { value: 'single_quarter', label: '单季度' },
+    { value: 'ytd', label: 'YTD（年初至今累计）' },
+  ];
+  selectedPeriodKind: DupontPeriodKind = 'ttm';
+
+  // Available reporting periods for 深科技 (2015–2026, 年报 + 季报).
+  // Static for this first integration; later derived from coverage API.
+  // annual口径只能用年报(12-31)；其余口径可用任意报告期。availablePeriodOptions
+  // getter 按当前口径过滤，避免选了不可算的报告期。
+  private allPeriodOptions: string[] = [
+    '2026-03-31', '2025-12-31', '2025-09-30', '2025-06-30', '2025-03-31',
+    '2024-12-31', '2024-09-30', '2024-06-30', '2024-03-31',
+    '2023-12-31', '2023-09-30', '2023-06-30', '2023-03-31',
+    '2022-12-31', '2021-12-31', '2020-12-31', '2019-12-31',
+    '2018-12-31', '2017-12-31', '2016-12-31', '2015-12-31',
+  ];
+  selectedReportingPeriod = '';
+
+  get availablePeriodOptions(): string[] {
+    if (this.selectedPeriodKind === 'annual') {
+      return this.allPeriodOptions.filter((p) => p.endsWith('-12-31'));
+    }
+    return this.allPeriodOptions;
+  }
+
+  // Q4 extrapolation only applies to YTD + Q3.
+  extrapolateQ4 = false;
+  // When extrapolated_full_year is present, toggle between actual YTD view
+  // and predicted full-year view.
+  hasExtrapolated = false;
+  showExtrapolated = false;
+  // Current response (kept so the toggle can swap views without re-fetching).
+  currentResp: BIDupontResponse | null = null;
+
+  // Update-date + period label reflect the latest loaded period.
+  updateDate = '加载中…';
+  securityName = '';
+
+  // Canvas geometry (unchanged from the mockup). Node ids map to artemis
+  // node codes: roe / roa / equity_multiplier / net_margin / asset_turnover /
+  // debt_ratio / net_profit / revenue / turnover_revenue / total_assets /
+  // total_liabilities / total_assets_right.
+  private readonly nodeLayout: NodeLayout[] = [
+    { id: 'roe', tone: 'navy', x: 650, y: 0, width: 220 },
+    { id: 'roa', tone: 'blue', x: 350, y: 190, width: 220 },
+    { id: 'equity_multiplier', tone: 'blue', x: 1010, y: 190, width: 220 },
+    { id: 'net_margin', tone: 'sky', x: 150, y: 362, width: 220 },
+    { id: 'asset_turnover', tone: 'sky', x: 560, y: 362, width: 220 },
+    { id: 'debt_ratio', tone: 'sky', x: 1010, y: 362, width: 220 },
+    { id: 'net_profit', tone: 'pale', x: 75, y: 518, width: 160, compact: true },
+    { id: 'revenue', tone: 'pale', x: 325, y: 518, width: 160, compact: true },
+    { id: 'turnover_revenue', tone: 'pale', x: 495, y: 518, width: 160, compact: true },
+    { id: 'total_assets', tone: 'pale', x: 765, y: 518, width: 160, compact: true },
+    { id: 'total_liabilities', tone: 'pale', x: 930, y: 518, width: 160, compact: true },
+    { id: 'total_assets_right', tone: 'pale', x: 1280, y: 518, width: 160, compact: true },
+  ];
+
+  // Label overrides for nodes whose artemis label needs a canvas-specific name.
+  private readonly nodeLabels: Record<string, string> = {
+    turnover_revenue: '营业收入',
+    total_assets: '资产总额',
+    total_liabilities: '负债总额',
+    total_assets_right: '资产总额',
+  };
+
+  nodes: Record<string, DupontMetricNode> = {};
 
   connectors: CanvasConnector[] = [
     { id: 'roe-down', direction: 'vertical', x: 747, y: 78, length: 58 },
@@ -669,123 +896,162 @@ export class DupontAnalysisPageComponent {
     { id: 'equity-close', text: ')', x: 1252, y: 384, size: 34, dark: true },
   ];
 
-  positionedNodes: PositionedNode[] = [
-    { id: 'roe', node: this.nodes.roe, x: 650, y: 0, width: 220 },
-    { id: 'asset-profit', node: this.nodes.assetProfit, x: 350, y: 190, width: 220 },
-    { id: 'equity-multiplier', node: this.nodes.equityMultiplier, x: 1010, y: 190, width: 220 },
-    { id: 'sales-margin', node: this.nodes.salesMargin, x: 150, y: 362, width: 220 },
-    { id: 'asset-turnover', node: this.nodes.assetTurnover, x: 560, y: 362, width: 220 },
-    { id: 'debt-ratio', node: this.nodes.debtRatio, x: 1010, y: 362, width: 220 },
-    { id: 'net-profit', node: this.nodes.netProfit, x: 75, y: 518, width: 160, compact: true },
-    { id: 'revenue', node: this.nodes.revenue, x: 325, y: 518, width: 160, compact: true },
-    { id: 'turnover-revenue', node: this.nodes.turnoverRevenue, x: 495, y: 518, width: 160, compact: true },
-    { id: 'total-assets', node: this.nodes.totalAssets, x: 765, y: 518, width: 160, compact: true },
-    { id: 'total-liabilities', node: this.nodes.totalLiabilities, x: 930, y: 518, width: 160, compact: true },
-    { id: 'total-assets-right', node: this.nodes.totalAssetsRight, x: 1280, y: 518, width: 160, compact: true },
-  ];
+  headlineDrivers: DriverItem[] = [];
+  detailEquations: DetailEquation[] = [];
+  detailStacks: DetailStack[] = [];
+  loadError: string | null = null;
 
-  headlineDrivers: DriverItem[] = [
-    { label: 'ROE', value: '116.13%', note: '较上期提升 151.68pct', direction: 'up' },
-    { label: '销售净利率', value: '419.80%', note: '投资收益拉动利润端', direction: 'up' },
-    { label: '总资产周转率', value: '15.98%', note: '资产扩张快于收入', direction: 'down' },
-    { label: '资产负债率', value: '42.22%', note: '杠杆贡献保持温和', direction: 'flat' },
-  ];
+  ngOnInit(): void {
+    this.load();
+  }
 
-  detailEquations: DetailEquation[] = [
-    {
-      result: '净利润 3.52亿',
-      expression: '收入总额 25.28亿 - 成本总额 21.76亿',
-      note: '销售净利率的利润端来源',
-    },
-    {
-      result: '成本总额 21.76亿',
-      expression: '主营成本 + 期间费用 + 税费及其他损益',
-      note: '用于解释净利润被哪些成本项消耗',
-    },
-    {
-      result: '资产总额 19.68亿',
-      expression: '流动资产 5.63亿 + 非流动资产 14.05亿',
-      note: '总资产周转率与资产负债率共用的分母',
-    },
-    {
-      result: '资产负债率 42.22%',
-      expression: '负债总额 6.79亿 / 资产总额 19.68亿',
-      note: '权益乘数由 1 / (1 - 资产负债率) 推导',
-    },
-  ];
+  private load(): void {
+    this.loadError = null;
+    this.updateDate = '加载中…';
+    const opts: Parameters<ArtemisBiService['getDupont']>[1] = {
+      source: this.source,
+      period_kind: this.selectedPeriodKind,
+    };
+    if (this.selectedReportingPeriod) opts.target_reporting_period = this.selectedReportingPeriod;
+    if (this.extrapolateQ4 && this.canExtrapolate) opts.extrapolate_q4 = true;
+    this.bi.getDupont(this.symbol, opts).subscribe({
+      next: (resp) => {
+        this.currentResp = resp;
+        this.hasExtrapolated = !!resp.extrapolated_full_year;
+        this.showExtrapolated = this.hasExtrapolated && this.showExtrapolated;
+        this.applyResponse(this.showExtrapolated && resp.extrapolated_full_year ? resp.extrapolated_full_year : resp);
+      },
+      error: (err) => {
+        this.loadError = '杜邦数据加载失败';
+        this.updateDate = '加载失败';
+        console.error('dupont load failed', err);
+      },
+    });
+  }
 
-  detailStacks: DetailStack[] = [
-    {
-      title: '收入总额',
-      total: '25.28亿',
-      accent: '#1684f5',
-      rows: [
-        { label: '主营业务收入', value: '4.90亿' },
-        { label: '其他业务收入', value: '2.94亿' },
-        { label: '投资收益', value: '4.70亿' },
-        { label: '公允价值变动收益', value: '6.13亿' },
-        { label: '资产处置收益', value: '6.60亿' },
-      ],
-    },
-    {
-      title: '成本总额',
-      total: '21.76亿',
-      accent: '#e05260',
-      rows: [
-        { label: '主营业务成本', value: '2.27亿' },
-        { label: '其他业务成本', value: '1.70亿' },
-        { label: '税金及附加', value: '2.09亿' },
-        { label: '期间费用', value: '2.15亿' },
-        { label: '资产减值损失', value: '1.54亿' },
-      ],
-    },
-    {
-      title: '期间费用',
-      total: '7.58亿',
-      accent: '#f0a532',
-      rows: [
-        { label: '销售费用', value: '1.64亿' },
-        { label: '管理费用', value: '1.90亿' },
-        { label: '研发费用', value: '1.83亿' },
-        { label: '财务费用', value: '2.23亿' },
-      ],
-    },
-    {
-      title: '流动资产',
-      total: '5.63亿',
-      accent: '#16a765',
-      rows: [
-        { label: '货币资金', value: '1.84亿' },
-        { label: '应收账款', value: '1.12亿' },
-        { label: '预付账款', value: '1.39亿' },
-        { label: '存货', value: '1.27亿' },
-      ],
-    },
-    {
-      title: '非流动资产',
-      total: '14.05亿',
-      accent: '#7c5cc4',
-      rows: [
-        { label: '长期股权投资', value: '0.03亿' },
-        { label: '固定资产', value: '3.18亿' },
-        { label: '无形资产', value: '0.99亿' },
-        { label: '商誉', value: '1.44亿' },
-        { label: '递延所得税资产', value: '2.07亿' },
-      ],
-    },
-    {
-      title: '负债构成',
-      total: '6.79亿',
-      accent: '#5b6f86',
-      rows: [
-        { label: '短期借款', value: '1.99亿' },
-        { label: '应付账款', value: '1.32亿' },
-        { label: '预收账款', value: '1.39亿' },
-        { label: '长期借款', value: '1.24亿' },
-        { label: '租赁负债', value: '1.67亿' },
-      ],
-    },
-  ];
+  /** Whether the Q4 extrapolation checkbox is applicable: YTD + a Q3 period. */
+  get canExtrapolate(): boolean {
+    if (this.selectedPeriodKind !== 'ytd') return false;
+    if (!this.selectedReportingPeriod) return false;
+    return this.selectedReportingPeriod.endsWith('-09-30');
+  }
+
+  onPeriodKindChange(): void {
+    // annual 口径只能用年报(12-31)；若当前选的是季报，回退到"最新"。
+    if (this.selectedPeriodKind === 'annual'
+        && this.selectedReportingPeriod
+        && !this.selectedReportingPeriod.endsWith('-12-31')) {
+      this.selectedReportingPeriod = '';
+    }
+    // Reset extrapolation when leaving the YTD+Q3 case.
+    if (!this.canExtrapolate) {
+      this.extrapolateQ4 = false;
+      this.showExtrapolated = false;
+    }
+    this.load();
+  }
+
+  onReportingPeriodChange(): void {
+    if (!this.canExtrapolate) {
+      this.extrapolateQ4 = false;
+      this.showExtrapolated = false;
+    }
+    this.load();
+  }
+
+  onExtrapolateToggle(): void {
+    this.showExtrapolated = this.extrapolateQ4;
+    this.load();
+  }
+
+  toggleView(): void {
+    if (!this.currentResp?.extrapolated_full_year) return;
+    this.showExtrapolated = !this.showExtrapolated;
+    this.applyResponse(this.showExtrapolated ? this.currentResp.extrapolated_full_year! : this.currentResp);
+  }
+
+  get viewLabel(): string {
+    return this.showExtrapolated ? '预测全年（Q3 YTD × 4/3）' : '实际';
+  }
+
+  get periodKindLabel(): string {
+    return this.periodKindOptions.find((k) => k.value === this.selectedPeriodKind)?.label ?? this.selectedPeriodKind;
+  }
+
+  private applyResponse(resp: BIDupontResponse): void {
+    this.securityName = resp.security_name ?? '';
+    this.updateDate = resp.period ? `报告期：${resp.period}` : '';
+    this.nodes = this.buildNodes(resp.nodes);
+    this.headlineDrivers = (resp.headline_drivers ?? []).map((d) => ({
+      label: d.label,
+      value: this.formatValue(d.value, d.unit),
+      prev: this.formatValue(d.prev_value, d.unit),
+      note: d.note,
+      direction: (d.direction ?? 'flat') as TrendDirection,
+    }));
+    this.detailEquations = (resp.detail_equations ?? []).map((e) => ({
+      result: `${e.result_label} ${this.formatValue(e.result_value, e.unit)}`,
+      expression: e.expression,
+      note: e.note,
+    }));
+    this.detailStacks = (resp.detail_stacks ?? []).map((s) => ({
+      title: s.title,
+      total: this.formatAmount(s.total),
+      accent: s.accent,
+      rows: (s.rows ?? []).map((r) => ({ label: r.label, value: this.formatAmount(r.value) })),
+    }));
+  }
+
+  private buildNodes(src: Record<string, BIDupontMetricNode>): Record<string, DupontMetricNode> {
+    const out: Record<string, DupontMetricNode> = {};
+    for (const layout of this.nodeLayout) {
+      const raw = src[layout.id];
+      out[layout.id] = {
+        label: this.nodeLabels[layout.id] ?? raw?.label ?? layout.id,
+        current: raw ? this.formatValue(raw.value, raw.unit) : '--',
+        prev: raw && raw.prev_value != null ? this.formatValue(raw.prev_value, raw.unit) : undefined,
+        delta: raw ? this.formatDelta(raw.delta, raw.unit) : undefined,
+        direction: (raw?.direction ?? undefined) as TrendDirection | undefined,
+        tone: layout.tone,
+      };
+    }
+    return out;
+  }
+
+  get positionedNodes(): PositionedNode[] {
+    return this.nodeLayout.map((layout) => ({
+      id: layout.id,
+      node: this.nodes[layout.id] ?? { label: layout.id, current: '--', tone: layout.tone },
+      x: layout.x,
+      y: layout.y,
+      width: layout.width,
+      compact: layout.compact,
+    }));
+  }
+
+  // ─── Formatting: artemis returns yuan + 0-1 ratios; the page renders 亿 / % ───
+
+  private formatValue(v: number | null, unit: string): string {
+    if (v == null) return '--';
+    return unit === 'amount_yuan' ? this.formatAmount(v) : this.formatRatio(v);
+  }
+
+  private formatAmount(v: number | null): string {
+    if (v == null) return '--';
+    return `${(v / 1e8).toFixed(2)}亿`;
+  }
+
+  private formatRatio(v: number | null): string {
+    if (v == null) return '--';
+    return `${(v * 100).toFixed(2)}%`;
+  }
+
+  private formatDelta(d: number | null, unit: string): string {
+    if (d == null) return '';
+    const scaled = unit === 'amount_yuan' ? d / 1e8 : d * 100;
+    const sign = scaled > 0 ? '+' : '';
+    return `${sign}${scaled.toFixed(2)}${unit === 'amount_yuan' ? '亿' : 'pct'}`;
+  }
 
   nodeTrendDirection(node: DupontMetricNode): TrendDirection | null {
     return node.direction || null;

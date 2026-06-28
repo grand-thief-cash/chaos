@@ -1,7 +1,15 @@
 # VERSION
-v0.16.2
+v0.17.0
 
 # Changelog
+- v0.17.0
+    - **DuPont analysis page wired to artemis backend**
+        - Replaced the hard-coded mock data in `dupont-analysis.page.ts` with live data from `ArtemisBiService.getDupont()` → artemis `GET /bi/dupont/{symbol}`. First BI analysis page to consume a real artemis computation endpoint. Canvas layout, connectors, operators, and styles are unchanged.
+        - Added a period-kind selector (default TTM), a reporting-period selector, and a Q3 extrapolation checkbox (only shown for YTD + 三季报). A view toggle switches between actual YTD and predicted full-year (Q3 YTD × 4/3) when extrapolation is enabled.
+        - Reporting-period options filter by kind: annual only lists 年报 (12-31); other kinds list all periods. Selecting an incompatible period auto-falls back to "最新" to avoid 404s.
+        - Headline driver cards now show the prior-period value alongside the delta/direction; tree nodes show the delta. Prior period renders only when available.
+        - Added a "ROE 取数与计算说明" panel at the bottom documenting each period kind's numerator/denominator, the Q3 extrapolation rule, and the DuPont identity.
+        - Extended `ArtemisBiService.getDupont()` and `bi-simple.models.ts` with `period_kind`, `target_reporting_period`, `extrapolate_q4`, and `extrapolated_full_year`. Symbol is hard-coded to 000021 (深科技) for this first integration.
 - v0.16.2
     - **BI static financial analysis dashboards**
         - Added a static DuPont analysis page with hard-coded mock data, tree-style decomposition, trend indicators, and balance-sheet linkage.

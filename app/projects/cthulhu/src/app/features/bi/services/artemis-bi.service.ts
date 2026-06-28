@@ -9,6 +9,8 @@ import {
   BIEnumResponse,
   BISymbolCoverageResponse,
   BIRawQueryResponse,
+  BIDupontResponse,
+  DupontPeriodKind,
 } from '../models/bi-simple.models';
 
 const BASE_URL = environment.artemisApiBase;
@@ -151,5 +153,31 @@ export class ArtemisBiService {
     if (opts.current_only !== undefined) params = params.set('current_only', opts.current_only ? '1' : '0');
     if (opts.valid_only !== undefined) params = params.set('valid_only', opts.valid_only ? '1' : '0');
     return this.http.get<BIRawQueryResponse>(`${BASE_URL}/bi/equity-structure/${opts.source}`, { params });
+  }
+
+  // ─── DuPont analysis (artemis-owned computation) ───
+  getDupont(
+    symbol: string,
+    opts: {
+      source?: string;
+      market?: string;
+      report_type?: string;
+      statement_code?: string;
+      period_end?: string;
+      period_kind?: DupontPeriodKind;
+      target_reporting_period?: string;
+      extrapolate_q4?: boolean;
+    } = {},
+  ): Observable<BIDupontResponse> {
+    let params = new HttpParams();
+    if (opts.source) params = params.set('source', opts.source);
+    if (opts.market) params = params.set('market', opts.market);
+    if (opts.report_type) params = params.set('report_type', opts.report_type);
+    if (opts.statement_code) params = params.set('statement_code', opts.statement_code);
+    if (opts.period_end) params = params.set('period_end', opts.period_end);
+    if (opts.period_kind) params = params.set('period_kind', opts.period_kind);
+    if (opts.target_reporting_period) params = params.set('target_reporting_period', opts.target_reporting_period);
+    if (opts.extrapolate_q4) params = params.set('extrapolate_q4', 'true');
+    return this.http.get<BIDupontResponse>(`${BASE_URL}/bi/dupont/${symbol}`, { params });
   }
 }
