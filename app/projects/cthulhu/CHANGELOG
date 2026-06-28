@@ -1,7 +1,20 @@
 # VERSION
-v0.16.1
+v0.16.2
 
 # Changelog
+- v0.16.2
+    - **BI static financial analysis dashboards**
+        - Added a static DuPont analysis page with hard-coded mock data, tree-style decomposition, trend indicators, and balance-sheet linkage.
+        - Added a static financial summary page with KPI cards, period comparison values, a metric selector, metric value comparison, trend comparison, cash-flow, balance-structure, expense, and tax sections.
+        - Added a financial ability analysis menu group with nested entries for profitability, growth, operating, and solvency analysis.
+        - Added the first financial ability dashboard: profitability analysis, including KPI cards, benchmark values, radar-style peer comparison, a trend selector, and a detail table.
+        - Added placeholder pages for the remaining financial ability subpages so the new nested navigation has stable routes.
+    - **BI navigation and layout updates**
+        - Extended the side-menu model and application layout to support nested menu items while preserving existing flat menu behavior.
+        - Registered missing Ant Design icons used by the top navigation to avoid runtime icon errors.
+        - Increased the Angular component style budget for Cthulhu so richer static BI dashboard styling can build without changing page structure.
+    - **BI dashboard readability**
+        - Increased small auxiliary text sizes across the financial summary and profitability dashboards, including comparison deltas, period labels, legends, chart labels, panel notes, and tables.
 - v0.16.1
     - **Raw data explorer: enum rendering + routing fixes**
         - **Enum code → label_zh rendering**: `formatCell(v, field?)` now consults a per-dataset `enumMaps` cache (pre-fetched once per field list via `ArtemisBiService.getEnum`) and renders the enum label instead of the raw code. Added `enum_ref?` to `BIFieldMeta`.
