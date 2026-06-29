@@ -14,7 +14,7 @@ import {
   BIFieldDiscoveryEntry,
   BIFieldMeta,
   BIRawQueryResponse,
-} from '../models/bi-simple.models';
+} from '../models/bi.models';
 
 @Component({
   selector: 'app-bi-raw-data-explorer-page',

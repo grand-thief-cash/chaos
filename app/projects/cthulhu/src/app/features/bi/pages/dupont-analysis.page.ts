@@ -3,7 +3,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { ArtemisBiService } from '../services/artemis-bi.service';
-import { BIDupontResponse, BIDupontMetricNode, DupontPeriodKind } from '../models/bi-simple.models';
+import { BIDupontResponse, BIDupontMetricNode, DupontPeriodKind } from '../models/bi.models';
 
 type TrendDirection = 'up' | 'down' | 'flat';
 type NodeTone = 'navy' | 'blue' | 'sky' | 'pale' | 'slate';

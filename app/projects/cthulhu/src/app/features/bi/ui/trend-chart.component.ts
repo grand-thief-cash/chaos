@@ -2,7 +2,7 @@ import { Component, Input, OnChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NgxEchartsModule } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
-import { BITrendSection } from '../models/bi.models';
+import { BITrendSection } from '../models/bi-legacy.models';
 
 @Component({
   selector: 'app-bi-trend-chart',

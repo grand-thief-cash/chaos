@@ -7,7 +7,7 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { ArtemisBiService } from '../services/artemis-bi.service';
-import { BISymbolCoverageResponse, BIDatasetEntry, BICoverageDataset } from '../models/bi-simple.models';
+import { BISymbolCoverageResponse, BIDatasetEntry, BICoverageDataset } from '../models/bi.models';
 
 @Component({
   selector: 'app-bi-company-overview-page',

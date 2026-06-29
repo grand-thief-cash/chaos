@@ -5,7 +5,7 @@ import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { BiApiService } from '../services/bi-api.service';
-import { BIMetricDefinition } from '../models/bi.models';
+import { BIMetricDefinition } from '../models/bi-legacy.models';
 
 @Component({
   selector: 'app-metric-dictionary-page',

@@ -2,7 +2,7 @@ import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzTagModule } from 'ng-zorro-antd/tag';
-import { BICompanyMeta } from '../models/bi.models';
+import { BICompanyMeta } from '../models/bi-legacy.models';
 
 @Component({
   selector: 'app-company-context-bar',

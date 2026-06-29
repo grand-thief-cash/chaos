@@ -1,7 +1,13 @@
 # VERSION
-v0.17.1
+v0.17.2
 
 # Changelog
+- v0.17.2
+    - **BI: removed dead `BiApiService` methods**
+        - Deleted 6 zero-caller methods from `bi-api.service.ts`: `getCompanyDashboard`, `getCompanyDupont`, `getCompanyQuality`, `getCompanyInsight`, `searchSecurities`, `getPeerComparison` — all targeted the long-deleted artemis old-BI endpoints (`/bi/financial/company/{symbol}/{dashboard,dupont,quality,insight}`, `/bi/search/securities`, `/bi/financial/peer-comparison`) and had no remaining caller in the codebase. The live `getMetricDefinitions` (used by the `metric-dictionary` page) is kept. Pruned the now-unused `HttpParams` import and 7 now-unused response-type imports from the service line; the type definitions remain in `bi-legacy.models.ts`.
+    - **BI models: dropped the `simple` qualifier, matching artemis v0.38.2**
+        - `bi-simple.models.ts` → `bi.models.ts` (the active redesigned-BI-layer models); all 5 importers updated (`company-overview`, `dupont-analysis`, `raw-data-explorer`, `stock-list` pages + `artemis-bi.service`).
+        - The pre-existing legacy `bi.models.ts` (old BI layer: dashboard/quality/insight/peer/metrics, still used by `metric-dictionary` page, `bi-api.service`, `company-context-bar`, `trend-chart`) → `bi-legacy.models.ts` to free the canonical `bi.models` name; its 5 importers updated.
 - v0.17.1
     - **DuPont analysis page: caliber/UX fixes matching artemis v0.38.1**
         - **Extrapolated view labels forecast correctly**: the "预测全年" view previously showed `报告期：2025-09-30` (the Q3 date) even though the numbers are a full-year forecast, which read as an actual report. `updateDate` now renders `预测全年（基于报告期 2025-09-30 × 4/3）` in the extrapolated view and `报告期：…` in the actual view.
