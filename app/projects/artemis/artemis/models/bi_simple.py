@@ -94,13 +94,11 @@ class BIDetailStackRow(BaseModel):
     label: str
     raw_field: str
     value: Optional[float] = None
-    prev_value: Optional[float] = None
 
 
 class BIDetailStack(BaseModel):
     title: str
     total: Optional[float] = None
-    prev_total: Optional[float] = None
     accent: str
     rows: List[BIDetailStackRow]
 

@@ -281,15 +281,26 @@ class BISimpleService:
         "LT_EQUITY_INV",
     ]
 
+    # Income flow fields that are recomputed when synthesizing a transformed
+    # income row (TTM sum, single-quarter subtraction, Q3 extrapolation scale).
+    # Shared so the detail stacks/equations stay on the same caliber as the
+    # computed ratios.
+    _INCOME_FLOW_FIELDS: List[str] = [
+        "TOT_OPERA_REV", "NET_PRO_EXCL_MIN_INT_INC",
+        "LESS_OPERA_COST", "LESS_BUS_TAX_SURCHARGE",
+        "LESS_SELLING_EXP", "LESS_ADMIN_EXP", "LESS_FIN_EXP", "RD_EXP",
+        "LESS_ASSETS_IMPAIR_LOSS",
+        "PLUS_NET_INV_INC", "PLUS_NET_GAIN_CHG_FV", "GAIN_DISPOSAL_ASSETS",
+        "OTH_INCOME",
+    ]
+
     def get_dupont_analysis(
         self,
         *,
         symbol: str,
         source: str = "amazing_data",
         market: str = "zh_a",
-        report_type: Optional[str] = None,
         statement_code: str = "1",
-        period_end: Optional[str] = None,
         period_kind: Literal["annual", "single_quarter", "ytd", "ttm"] = "ttm",
         target_reporting_period: Optional[str] = None,
         extrapolate_q4: bool = False,
@@ -332,16 +343,18 @@ class BISimpleService:
             raise ValueError(f"no available period for symbol {symbol}")
 
         # Step 4: compute core DuPont
-        result = self._compute_dupont_by_kind(
+        result, ctx = self._compute_dupont_by_kind(
             period_kind=period_kind, symbol=symbol, source=source, market=market,
+            statement_code=statement_code,
             target_period=target_reporting_period, inc_map=inc_map, bal_map=bal_map,
         )
 
         # Step 5: Q3 extrapolation if requested
         if period_kind == "ytd" and extrapolate_q4 and self._is_q3(result["report_type"]):
             # Extrapolate: YTD × 4/3, keep same balance avg
-            extrapolated = self._extrapolate_q3_full_year(result)
-            result["extrapolated_full_year"] = extrapolated
+            result["extrapolated_full_year"] = self._extrapolate_q3_full_year(
+                result, ctx, inc_map=inc_map, bal_map=bal_map,
+            )
 
         return result
 
@@ -357,15 +370,34 @@ class BISimpleService:
         statement_code: str,
         fields: List[str],
     ) -> List[Dict[str, Any]]:
-        """Fetch all report_type periods, sorted newest first."""
-        resp = self.query_financial(
-            source=source, statement_type=statement_type, symbol=symbol,
-            market=market, fields=",".join(fields), format="flat",
-            period_start=None, period_end=None,
-            report_type=None, statement_code=statement_code,
-            page=1, page_size=150,
-        )
-        rows = resp.get("rows") if isinstance(resp, dict) else None
+        """Fetch all report_type periods, sorted newest first.
+
+        Paginates through every available period so a symbol with >150 periods
+        is not silently truncated. A single symbol's annual + quarterly history
+        is well under one page in practice, but we page defensively.
+        """
+        rows: List[Dict[str, Any]] = []
+        page, page_size = 1, 200
+        while True:
+            resp = self.query_financial(
+                source=source, statement_type=statement_type, symbol=symbol,
+                market=market, fields=",".join(fields), format="flat",
+                period_start=None, period_end=None,
+                report_type=None, statement_code=statement_code,
+                page=page, page_size=page_size,
+            )
+            page_rows = resp.get("rows") if isinstance(resp, dict) else None
+            if not page_rows:
+                break
+            rows.extend(page_rows)
+            # Stop once we've consumed the full result set.
+            total = resp.get("total") if isinstance(resp, dict) else None
+            if (total is not None and len(rows) >= total) or len(page_rows) < page_size:
+                break
+            page += 1
+            if page > 200:  # hard backstop against runaway paging
+                logger.warning({"event": "dupont_fetch_paging_backstop", "symbol": symbol, "pages": page})
+                break
         if not rows:
             return []
         return sorted(rows, key=lambda r: r.get("reporting_period") or "", reverse=True)
@@ -425,10 +457,11 @@ class BISimpleService:
         symbol: str,
         source: str,
         market: str,
+        statement_code: str,
         target_period: str,
         inc_map: Dict[Tuple[int, str], Dict[str, Any]],
         bal_map: Dict[Tuple[int, str], Dict[str, Any]],
-    ) -> Dict[str, Any]:
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         # Parse target period's year and report_type
         target_year, _ = self._year_and_month(target_period)
         target_rt = self._find_rt_by_period(inc_map, target_period)
@@ -460,12 +493,20 @@ class BISimpleService:
             prev = prev_ratios
 
         # Build response
-        return self._build_dupont_response(
+        result = self._build_dupont_response(
             period_kind=period_kind, target_reporting_period=target_period,
             symbol=symbol, source=source, market=market,
-            report_type=target_rt, statement_code="1",
+            report_type=target_rt, statement_code=statement_code,
             inc_cur=inc_cur, bal_cur=bal_cur, cur=cur, prev=prev,
+            prev_period=prev_period,
         )
+        # Carry the intermediate rows/ratios for Q3 extrapolation (not exposed
+        # in the HTTP response — see _build_dupont_response).
+        ctx = {
+            "inc_cur": inc_cur, "bal_cur": bal_cur, "cur": cur, "prev": prev,
+            "prev_period": prev_period,
+        }
+        return result, ctx
 
     def _ratios_for(
         self,
@@ -528,7 +569,15 @@ class BISimpleService:
             inc_cur=inc_cur, inc_prev_period=inc_prev_period,
             bal_cur=bal_cur, bal_prev_denom=bal_prev_denom,
         )
-        return ratios, inc_cur, bal_cur
+        # Detail stacks/equations need an income row on the SAME caliber as
+        # `ratios`. For single_quarter the ratios use a single-quarter value
+        # (YTD − prior YTD) while `inc_cur` is still the YTD row — synthesize a
+        # single-quarter row so the breakdown stacks stay consistent. Other
+        # kinds already use `inc_cur` at the right caliber.
+        detail_inc = inc_cur
+        if period_kind == "single_quarter":
+            detail_inc = self._synthesize_single_quarter_income(inc_cur, inc_prev_period)
+        return ratios, detail_inc, bal_cur
 
     @staticmethod
     def _prior_period_for_delta(
@@ -564,14 +613,7 @@ class BISimpleService:
             return None
         # Clone a dict and compute synthetic fields:
         synth = dict(inc_cur)
-        for field in [
-            "TOT_OPERA_REV", "NET_PRO_EXCL_MIN_INT_INC",
-            "LESS_OPERA_COST", "LESS_BUS_TAX_SURCHARGE",
-            "LESS_SELLING_EXP", "LESS_ADMIN_EXP", "LESS_FIN_EXP", "RD_EXP",
-            "LESS_ASSETS_IMPAIR_LOSS",
-            "PLUS_NET_INV_INC", "PLUS_NET_GAIN_CHG_FV", "GAIN_DISPOSAL_ASSETS",
-            "OTH_INCOME",
-        ]:
+        for field in self._INCOME_FLOW_FIELDS:
             cv = self._to_float(inc_cur.get(field))
             pfv = self._to_float(inc_prev_year_full.get(field))
             pyv = self._to_float(inc_prev_ytd.get(field))
@@ -579,6 +621,47 @@ class BISimpleService:
             if cv is not None and pfv is not None and pyv is not None:
                 synv = cv + pfv - pyv
             synth[field] = str(synv) if synv is not None else ""
+        return synth
+
+    def _synthesize_single_quarter_income(
+        self,
+        inc_ytd: Optional[Dict[str, Any]],
+        inc_prev_ytd: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Synthesize a single-quarter income row: YTD − prior-period YTD.
+
+        For Q1 (no in-year prior period) the single quarter equals Q1 YTD, so
+        the row is returned unchanged. Used so detail stacks/equations share the
+        same single-quarter caliber as the computed ratios.
+        """
+        if not inc_ytd:
+            return None
+        if not inc_prev_ytd:
+            return dict(inc_ytd)
+        synth = dict(inc_ytd)
+        for field in self._INCOME_FLOW_FIELDS:
+            cv = self._to_float(inc_ytd.get(field))
+            pv = self._to_float(inc_prev_ytd.get(field))
+            if cv is not None and pv is not None:
+                synth[field] = str(cv - pv)
+            elif cv is not None:
+                synth[field] = str(cv)
+            else:
+                synth[field] = ""
+        return synth
+
+    def _scale_income_row(
+        self,
+        inc_row: Optional[Dict[str, Any]],
+        factor: float,
+    ) -> Optional[Dict[str, Any]]:
+        """Clone inc_row with every income flow field scaled by `factor`."""
+        if not inc_row:
+            return None
+        synth = dict(inc_row)
+        for field in self._INCOME_FLOW_FIELDS:
+            v = self._to_float(inc_row.get(field))
+            synth[field] = str(v * factor) if v is not None else ""
         return synth
 
     def _compute_period_ratios(
@@ -667,25 +750,37 @@ class BISimpleService:
     def _extrapolate_q3_full_year(
         self,
         base: Dict[str, Any],
+        ctx: Dict[str, Any],
+        *,
+        inc_map: Dict[Tuple[int, str], Dict[str, Any]],
+        bal_map: Dict[Tuple[int, str], Dict[str, Any]],
     ) -> Optional[Dict[str, Any]]:
-        """Extrapolate Q3 YTD to full year: YTD × 4/3 for profit/revenue; keep same balance sheet avg."""
-        # Build synthetic cur dict:
-        # Clone base cur, multiply profit/revenue by 4/3
-        # Then recompute ratios with same bal_cur/bal_prev_denom
-        # Wait: easier: build a synthetic cur dict directly from the ratio data:
-        scaled_cur = dict(base["_cur"])  # stored internally, need to keep it
+        """Extrapolate Q3 YTD to full year: profit/revenue × 4/3; balance avg unchanged.
+
+        `base` is the already-built YTD response (carries meta like symbol/
+        source/report_type). `ctx` carries the intermediate rows/ratios
+        (inc_cur/bal_cur/cur/prev) that are NOT part of the HTTP response.
+
+        The extrapolated view is a full-year FORECAST, so its prior-period
+        baseline must also be a full year — the prior year's annual (年报)
+        actuals — NOT the prior-year Q3 YTD that the underlying YTD response
+        uses. Comparing a forecast full year to a prior Q3 YTD would
+        systematically inflate every delta/direction. If the prior year annual
+        is unavailable, prev is left None rather than emitting a false trend.
+        """
+        scaled_cur = dict(ctx["cur"])
         # Scale profit and revenue:
         if scaled_cur.get("net_profit") is not None:
-            scaled_cur["net_profit"] = scaled_cur["net_profit"] * 4/3
+            scaled_cur["net_profit"] = scaled_cur["net_profit"] * 4 / 3
         if scaled_cur.get("revenue") is not None:
-            scaled_cur["revenue"] = scaled_cur["revenue"] * 4/3
+            scaled_cur["revenue"] = scaled_cur["revenue"] * 4 / 3
         # Recompute ratios:
-        net_profit = scaled_cur["net_profit"]
-        revenue = scaled_cur["revenue"]
-        avg_assets = scaled_cur["avg_assets"]
-        avg_equity = scaled_cur["avg_equity"]
-        total_assets = scaled_cur["total_assets"]
-        total_liab = scaled_cur["total_liab"]
+        net_profit = scaled_cur.get("net_profit")
+        revenue = scaled_cur.get("revenue")
+        avg_assets = scaled_cur.get("avg_assets")
+        avg_equity = scaled_cur.get("avg_equity")
+        total_assets = scaled_cur.get("total_assets")
+        total_liab = scaled_cur.get("total_liab")
         scaled_cur["net_margin"] = self._ratio(net_profit, revenue)
         scaled_cur["asset_turnover"] = self._ratio(revenue, avg_assets)
         scaled_cur["equity_multiplier"] = self._ratio(avg_assets, avg_equity)
@@ -693,14 +788,30 @@ class BISimpleService:
         scaled_cur["roa"] = self._ratio(net_profit, avg_assets)
         scaled_cur["roe"] = self._ratio(net_profit, avg_equity)
 
-        # Rebuild response with scaled cur
-        # For simplicity, reuse base inc_cur/bal_cur, override ratio dict:
+        # Scale the income row to the same 4/3 caliber so the detail stacks /
+        # equations stay consistent with the scaled ratios.
+        scaled_inc = self._scale_income_row(ctx.get("inc_cur"), 4 / 3)
+
+        # Prior-period baseline = prior year ANNUAL (full-year actual), so the
+        # forecast-vs-actual comparison is full-year vs full-year. Falls back to
+        # None when prior-year annual data is missing (no false trend).
+        target_year, _ = self._year_and_month(base["target_reporting_period"])
+        prior_annual_period = f"{target_year - 1}-12-31"
+        ext_prev, _, _ = self._ratios_for(
+            period_kind="annual", target_period=prior_annual_period,
+            inc_map=inc_map, bal_map=bal_map,
+        )
+        ext_prev_period = prior_annual_period if ext_prev else None
+
+        # Rebuild response with scaled cur + scaled income row; balance sheet
+        # average is unchanged.
         return self._build_dupont_response(
             period_kind="ytd", target_reporting_period=base["target_reporting_period"],
             symbol=base["symbol"], source=base["source"], market=base["market"],
             report_type=base["report_type"], statement_code=base["statement_code"],
-            inc_cur=base.get("_inc_cur"), bal_cur=base.get("_bal_cur"),
-            cur=scaled_cur, prev=base.get("_prev"),
+            inc_cur=scaled_inc, bal_cur=ctx.get("bal_cur"),
+            cur=scaled_cur, prev=ext_prev,
+            prev_period=ext_prev_period,
             is_extrapolated=True,
         )
 
@@ -718,23 +829,24 @@ class BISimpleService:
         bal_cur: Optional[Dict[str, Any]],
         cur: Dict[str, Optional[float]],
         prev: Optional[Dict[str, Optional[float]]] = None,
+        prev_period: Optional[str] = None,
         is_extrapolated: bool = False,
     ) -> Dict[str, Any]:
-        # Store internal vars for extrapolation use later
-        internal = {
-            "_inc_cur": inc_cur, "_bal_cur": bal_cur, "_cur": cur, "_prev": prev,
-        }
-
         period = bal_cur.get("reporting_period") if bal_cur else inc_cur.get("reporting_period") if inc_cur else target_reporting_period
-        prev_period = None
         security_name = (bal_cur.get("security_name") if bal_cur else inc_cur.get("security_name")) if (inc_cur or bal_cur) else None
 
-        # Period-specific notes
+        # Period-specific notes (also surfaced in the frontend calc-notes panel).
+        # The balance-sheet denominator endpoints differ by kind:
+        #   annual / ytd / ttm → (本期末, 上年末 12-31) 平均
+        #   single_quarter     → (本期末, 同年上一报告期季末) 平均
+        # Note: TTM asset average uses last year-end rather than the prior-year
+        # same-period snapshot — a simplified denominator that keeps the DuPont
+        # identity exact (avg_assets / avg_equity share the same pair).
         kind_notes = {
-            "annual": "年度口径：净利润取全年累计；资产负债用期初期末平均",
-            "single_quarter": "单季度口径：净利润取当季累计减上季累计；资产负债用当季末上季末平均",
-            "ytd": "年初至今累计口径：净利润取年初至今累计；资产负债用期初期末平均",
-            "ttm": "滚动12个月(TTM)口径：净利润取当前累计加上年全年减上年同期累计；资产负债用期初期末平均",
+            "annual": "年度口径：净利润取全年累计；资产/权益用(本期末, 上年末)平均",
+            "single_quarter": "单季度口径：净利润取当季累计减上季累计；资产/权益用(本期末, 同年上一季末)平均",
+            "ytd": "年初至今累计口径：净利润取年初至今累计；资产/权益用(本期末, 上年末)平均",
+            "ttm": "滚动12个月(TTM)口径：净利润取当前累计加上年全年减上年同期累计；资产/权益用(本期末, 上年末)平均(简化口径)",
         }
 
         # Decomposition tree
@@ -899,7 +1011,7 @@ class BISimpleService:
         detail_stacks = []
         if inc_source:
             detail_stacks.append(self._build_stack(
-                title="收入总额", accent="#1684f5", row=inc_source, prev_row=None,
+                title="收入总额", accent="#1684f5", row=inc_source,
                 items=[
                     ("营业总收入", "TOT_OPERA_REV"),
                     ("投资收益", "PLUS_NET_INV_INC"),
@@ -910,7 +1022,7 @@ class BISimpleService:
                 total=cur.get("revenue"),
             ))
             detail_stacks.append(self._build_stack(
-                title="成本总额", accent="#e05260", row=inc_source, prev_row=None,
+                title="成本总额", accent="#e05260", row=inc_source,
                 items=[
                     ("营业成本", "LESS_OPERA_COST"),
                     ("税金及附加", "LESS_BUS_TAX_SURCHARGE"),
@@ -921,7 +1033,7 @@ class BISimpleService:
                 overrides={"__period_expense__": period_expense},
             ))
             detail_stacks.append(self._build_stack(
-                title="期间费用", accent="#f0a532", row=inc_source, prev_row=None,
+                title="期间费用", accent="#f0a532", row=inc_source,
                 items=[
                     ("销售费用", "LESS_SELLING_EXP"),
                     ("管理费用", "LESS_ADMIN_EXP"),
@@ -932,7 +1044,7 @@ class BISimpleService:
             ))
         if bal_source:
             detail_stacks.append(self._build_stack(
-                title="流动资产", accent="#16a765", row=bal_source, prev_row=None,
+                title="流动资产", accent="#16a765", row=bal_source,
                 items=[
                     ("货币资金", "CURRENCY_CAP"),
                     ("应收账款", "ACCT_RECEIVABLE"),
@@ -942,7 +1054,7 @@ class BISimpleService:
                 total=cur_assets,
             ))
             detail_stacks.append(self._build_stack(
-                title="非流动资产", accent="#7c5cc4", row=bal_source, prev_row=None,
+                title="非流动资产", accent="#7c5cc4", row=bal_source,
                 items=[
                     ("长期股权投资", "LT_EQUITY_INV"),
                     ("固定资产", "FIXED_ASSETS"),
@@ -953,7 +1065,7 @@ class BISimpleService:
                 total=noncur_assets,
             ))
             detail_stacks.append(self._build_stack(
-                title="负债构成", accent="#5b6f86", row=bal_source, prev_row=None,
+                title="负债构成", accent="#5b6f86", row=bal_source,
                 items=[
                     ("短期借款", "ST_BORROWING"),
                     ("应付账款", "ACCT_PAYABLE"),
@@ -967,7 +1079,7 @@ class BISimpleService:
         notes: List[str] = []
         notes.append(kind_notes.get(period_kind, ""))
         if is_extrapolated:
-            notes.append("Q3外推：按Q3YTD×4/3线性外推全年预测")
+            notes.append("Q3外推：按Q3YTD×4/3线性外推全年预测；趋势对比基准为上年年报全年实际（非上年三季报累计）")
         notes.append("资产负债表项目按期初期末平均计算；利润表项目取本期值")
 
         result = BIDupontResponse(
@@ -981,7 +1093,6 @@ class BISimpleService:
             detail_equations=detail_equations, detail_stacks=detail_stacks,
             notes=notes,
         ).model_dump()
-        result.update(internal)
         return result
 
     @staticmethod
@@ -1072,7 +1183,6 @@ class BISimpleService:
         title: str,
         accent: str,
         row: Dict[str, Any],
-        prev_row: Optional[Dict[str, Any]],
         items: List[Tuple[str, str]],
         total: Optional[float],
         overrides: Optional[Dict[str, float]] = None,
@@ -1080,18 +1190,6 @@ class BISimpleService:
         overrides = overrides or {}
         rows: List[BIDetailStackRow] = []
         for label, field in items:
-            if field in overrides:
-                value = overrides[field]
-                prev_value = None
-            else:
-                value = cls._amount(row, field)
-                prev_value = cls._amount(prev_row, field) if prev_row else None
-            rows.append(BIDetailStackRow(
-                label=label, raw_field=field, value=value, prev_value=prev_value,
-            ))
-        prev_total = None
-        # prev_total left None per-stack; frontend derives if needed
-        return BIDetailStack(
-            title=title, total=total, prev_total=prev_total,
-            accent=accent, rows=rows,
-        )
+            value = overrides[field] if field in overrides else cls._amount(row, field)
+            rows.append(BIDetailStackRow(label=label, raw_field=field, value=value))
+        return BIDetailStack(title=title, total=total, accent=accent, rows=rows)
