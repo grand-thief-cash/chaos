@@ -173,13 +173,11 @@ export interface BIDetailStackRow {
   label: string;
   raw_field: string;
   value: number | null;
-  prev_value: number | null;
 }
 
 export interface BIDetailStack {
   title: string;
   total: number | null;
-  prev_total: number | null;
   accent: string;
   rows: BIDetailStackRow[];
 }

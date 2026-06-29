@@ -161,9 +161,7 @@ export class ArtemisBiService {
     opts: {
       source?: string;
       market?: string;
-      report_type?: string;
       statement_code?: string;
-      period_end?: string;
       period_kind?: DupontPeriodKind;
       target_reporting_period?: string;
       extrapolate_q4?: boolean;
@@ -172,9 +170,7 @@ export class ArtemisBiService {
     let params = new HttpParams();
     if (opts.source) params = params.set('source', opts.source);
     if (opts.market) params = params.set('market', opts.market);
-    if (opts.report_type) params = params.set('report_type', opts.report_type);
     if (opts.statement_code) params = params.set('statement_code', opts.statement_code);
-    if (opts.period_end) params = params.set('period_end', opts.period_end);
     if (opts.period_kind) params = params.set('period_kind', opts.period_kind);
     if (opts.target_reporting_period) params = params.set('target_reporting_period', opts.target_reporting_period);
     if (opts.extrapolate_q4) params = params.set('extrapolate_q4', 'true');
