@@ -1,218 +1,206 @@
-export type DisplayKind = 'amount' | 'ratio' | 'pct_point' | 'count';
-export type WarningSeverity = 'low' | 'medium' | 'high';
+// Lightweight BI models for the redesigned BI layer.
+// cthulhu → artemis /bi/* → phoenixA /api/v2/*
 
-export interface BIIndustryMeta {
-  taxonomy: string;
-  level: number;
-  code: string;
-  name: string;
-  index_code: string;
-}
-
-export interface BICompanyMeta {
+export interface BISecurityItem {
   symbol: string;
-  name: string;
-  market: string;
-  exchange: string;
-  industry: BIIndustryMeta;
-  comp_type_code: number;
-  financial_sector: boolean;
-}
-
-export interface BISecuritySearchItem {
-  symbol: string;
-  name: string;
-  exchange: string;
-  market: string;
   asset_type: string;
-  status: string;
-}
-
-export interface BISecuritySearchResponse {
-  query: string;
   market: string;
+  exchange: string;
+  name: string;
+  full_name?: string | null;
+  status: string;
+  list_date?: string | null;
+  delist_date?: string | null;
+}
+
+export interface BISecuritiesResponse {
+  items: BISecurityItem[];
   total: number;
-  items: BISecuritySearchItem[];
+  limit: number;
+  offset: number;
 }
 
-export interface BIMetricValue {
-  code: string;
-  label: string;
+export interface BIDatasetEntry {
+  source: string;
+  dataset: string;
+  label_zh: string;
+  data_types: string[];
+  storage_table: string;
+  source_doc: string;
+  field_discovery: string;
+  query: string;
+}
+
+export interface BIDatasetsResponse {
+  generated_at: string;
+  contract_version: string;
+  datasets: BIDatasetEntry[];
+}
+
+export interface BIFieldDiscoveryEntry {
+  raw_field: string;
+  canonical_field: string;
+  label_zh: string;
+  description: string;
+  value_type: string;
   unit: string;
-  display_kind: DisplayKind;
-  value: number | null;
-  same_period_last_year: number | null;
-  yoy_delta: number | null;
-  yoy_growth?: number | null;
-  data_period: string;
-  source_fields: string[];
-  available: boolean;
-  degraded: boolean;
-  notes: string[];
+  scale: number | null;
+  enum_ref: string;
+  storage_location: 'top_level' | 'data_json';
+  query_name: string;
+  is_metadata: boolean;
+  is_core: boolean;
+  aliases: string[];
+  source_doc: string;
 }
 
-export interface BITrendSeries {
-  code: string;
-  label: string;
-  values: Array<number | null>;
+export interface BIFieldDiscoveryResponse {
+  generated_at: string;
+  dataset: string;
+  source: string;
+  data_type: string;
+  contract_version: string;
+  fields: BIFieldDiscoveryEntry[];
 }
 
-export interface BITrendSection {
-  code: string;
-  title: string;
-  periods: string[];
-  series: BITrendSeries[];
+export interface BIEnumResponse {
+  generated_at: string;
+  enum_name: string;
+  values: { code: string; label_zh: string }[];
 }
 
-export interface BISummaryCard {
-  code: string;
-  title: string;
-  items: BIMetricValue[];
-}
+// ─── Per-symbol coverage ───
 
-export interface BIWarning {
-  code: string;
-  severity: WarningSeverity;
-  title: string;
-  message: string;
-  evidence_metric_codes: string[];
-}
-
-export interface BISourceNote {
-  section: string;
-  statement_types: string[];
-  pit_rule: string;
-  metric_version: string;
-}
-
-export interface BIDashboardResponse {
-  symbol: string;
-  as_of_date: string;
+export interface BICoverageReportTypeBucket {
+  report_type: string;
+  row_count: number;
+  earliest_period: string;
   latest_period: string;
-  company: BICompanyMeta;
-  kpis: BIMetricValue[];
-  trend_sections: BITrendSection[];
-  summary_cards: BISummaryCard[];
-  warnings: BIWarning[];
-  source_notes: BISourceNote[];
+  latest_ann_date: string;
 }
 
-export interface BIDupontNode {
+export interface BICoverageDataType {
+  data_type: string;
+  total_rows: number;
+  earliest_period: string;
+  latest_period: string;
+  latest_ann_date: string;
+  by_report_type?: BICoverageReportTypeBucket[];
+}
+
+export interface BICoverageDataset {
+  dataset: string;
+  source: string;
+  data_types: BICoverageDataType[];
+}
+
+export interface BISymbolCoverageResponse {
+  generated_at: string;
+  symbol: string;
+  market: string;
+  datasets: BICoverageDataset[];
+}
+
+// ─── Raw query ───
+
+export interface BIFieldMeta {
+  name: string;
+  raw_field: string;
+  canonical_field: string;
+  label_zh: string;
+  value_type: string;
+  unit: string;
+  scale: number | null;
+  enum_ref?: string;
+  storage_location: string;
+  is_metadata: boolean;
+  is_core: boolean;
+}
+
+export interface BIRawQueryResponse {
+  generated_at: string;
+  dataset: string;
+  source: string;
+  data_type: string;
+  rows: Record<string, string | number | null>[];
+  fields: BIFieldMeta[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+// ─── DuPont analysis ───
+//
+// Structured DuPont decomposition computed by artemis. Amounts are in yuan,
+// ratios are 0-1 floats; the page formats them to 亿元 / %.
+
+export type DupontDirection = 'up' | 'down' | 'flat';
+
+export interface BIDupontMetricNode {
   code: string;
   label: string;
-  metric: BIMetricValue;
-  children: BIDupontNode[];
+  value: number | null;
+  prev_value: number | null;
+  delta: number | null;
+  direction: DupontDirection | null;
+  unit: 'ratio' | 'amount_yuan';
+  available: boolean;
+  note: string | null;
 }
 
-export interface BIDriverSummaryItem {
-  driver: string;
-  direction: 'up' | 'down' | 'flat';
-  message: string;
+export interface BIDupontTreeNode extends BIDupontMetricNode {
+  children: BIDupontTreeNode[];
 }
 
-export interface BIDupontComparisonRow {
-  period: string;
-  roe: number | null;
-  net_margin: number | null;
-  asset_turnover: number | null;
-  equity_multiplier: number | null;
+export interface BIDriverItem {
+  label: string;
+  value: number | null;
+  prev_value: number | null;
+  note: string;
+  direction: DupontDirection | null;
+  unit: 'ratio' | 'amount_yuan';
 }
+
+export interface BIDetailEquation {
+  result_label: string;
+  result_value: number | null;
+  expression: string;
+  note: string;
+  unit: 'ratio' | 'amount_yuan';
+}
+
+export interface BIDetailStackRow {
+  label: string;
+  raw_field: string;
+  value: number | null;
+}
+
+export interface BIDetailStack {
+  title: string;
+  total: number | null;
+  accent: string;
+  rows: BIDetailStackRow[];
+}
+
+export type DupontPeriodKind = 'annual' | 'single_quarter' | 'ytd' | 'ttm';
 
 export interface BIDupontResponse {
+  generated_at: string;
   symbol: string;
-  as_of_date: string;
-  latest_period: string;
-  company: BICompanyMeta;
-  headline_metrics: Record<string, BIMetricValue>;
-  dupont_tree: BIDupontNode;
-  trend_sections: BITrendSection[];
-  driver_summary: BIDriverSummaryItem[];
-  comparison_rows: BIDupontComparisonRow[];
-}
-
-export interface BIQualityTableRow {
-  period: string;
-  values: Record<string, number | null>;
-}
-
-export interface BIQualityPanel {
-  code: string;
-  title: string;
-  metrics: BIMetricValue[];
-  trend_sections: BITrendSection[];
-  table_rows: BIQualityTableRow[];
-  warnings: BIWarning[];
-}
-
-export interface BIQualityResponse {
-  symbol: string;
-  as_of_date: string;
-  latest_period: string;
-  company: BICompanyMeta;
-  panels: BIQualityPanel[];
-  source_notes: BISourceNote[];
-}
-
-export interface BIPeerComparisonRequest {
-  symbols?: string[];
-  industry_code?: string;
-  as_of_date: string;
-  market?: string;
-  source?: string;
-  metrics?: string[];
-  limit?: number;
-}
-
-export interface BIPeerComparisonRow {
-  symbol: string;
-  company_name: string;
-  industry_name: string;
-  metrics: Record<string, BIMetricValue>;
-}
-
-export interface BIPeerComparisonResponse {
-  as_of_date: string;
+  source: string;
   market: string;
-  industry_code: string;
-  requested_metrics: string[];
-  rows: BIPeerComparisonRow[];
+  report_type: string;
+  statement_code: string;
+  period: string;
+  prev_period: string | null;
+  security_name: string | null;
+  period_kind: DupontPeriodKind;
+  target_reporting_period: string;
+  extrapolated_full_year: BIDupontResponse | null;
+  headline_drivers: BIDriverItem[];
+  tree: BIDupontTreeNode;
+  nodes: Record<string, BIDupontMetricNode>;
+  detail_equations: BIDetailEquation[];
+  detail_stacks: BIDetailStack[];
+  notes: string[];
 }
-
-export interface BIInsightHighlight {
-  code: string;
-  title: string;
-  message: string;
-  related_metrics: string[];
-}
-
-export interface BIInsightResponse {
-  symbol: string;
-  as_of_date: string;
-  latest_period: string;
-  company: BICompanyMeta;
-  headline: string;
-  structured_highlights: BIInsightHighlight[];
-  anomalies: BIWarning[];
-  trend_summary: string[];
-  source_notes: BISourceNote[];
-}
-
-export interface BIMetricDefinition {
-  code: string;
-  label: string;
-  category: string;
-  display_kind: DisplayKind;
-  unit: string;
-  formula: string;
-  source_fields: string[];
-  applicable_comp_types: number[];
-  phase: string;
-  available: boolean;
-}
-
-export interface BIMetricsMetaResponse {
-  version: string;
-  metrics: BIMetricDefinition[];
-}
-
-

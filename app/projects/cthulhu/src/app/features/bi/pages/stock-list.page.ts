@@ -9,7 +9,7 @@ import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { ArtemisBiService } from '../services/artemis-bi.service';
-import { BISecurityItem } from '../models/bi-simple.models';
+import { BISecurityItem } from '../models/bi.models';
 
 @Component({
   selector: 'app-bi-stock-list-page',

@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TrendChartComponent } from './trend-chart.component';
-import { BITrendSection } from '../models/bi.models';
+import { BITrendSection } from '../models/bi-legacy.models';
 
 describe('TrendChartComponent', () => {
   let fixture: ComponentFixture<TrendChartComponent>;

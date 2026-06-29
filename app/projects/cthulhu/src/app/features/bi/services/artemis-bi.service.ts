@@ -11,7 +11,7 @@ import {
   BIRawQueryResponse,
   BIDupontResponse,
   DupontPeriodKind,
-} from '../models/bi-simple.models';
+} from '../models/bi.models';
 
 const BASE_URL = environment.artemisApiBase;
 
