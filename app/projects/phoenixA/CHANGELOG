@@ -1,7 +1,21 @@
 # VERSION
-v1.25.1
+v1.26.0
 
 # Changelog
+- v1.26.0
+    - **Datawarehouse layering refactor: single datasource + multi-schema search_path** — split the ODS landing tables, derived/processed tables, and PhoenixA-owned governance tables that were previously mixed in a single `security_dev` schema into separate PostgreSQL schemas by warehouse layer (ods / dwd / govern), accessed uniformly through a single datasource's comma-separated `search_path`. No datasource split, no DAO registration changes. Design doc: `docs/2026-06-29 DATAWAREHOUSE_LAYERING_AND_SCHEMA_REFACTOR.md`.
+    - **Depends on infra v0.18.4**: `go.mod` enables `replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application` and re-runs `go mod vendor` to consume its multi-schema fixes (CREATE SCHEMA comma-split + hoisted before migrations, SET search_path inside the migration transaction, `_migrations` tracking table qualified with the first schema).
+    - **config/config.yaml**: `postgres_gorm.data_sources.security.schema` changed from `security_dev` to `ods,dwd,govern,kg,public`. The datasource name stays `security` (`GetDB("security")` is an exact map-key lookup, so no `NewXxxDao("security")` registration needs to change).
+    - **migrations/postgresql/security/**: the original 15 bare-name migrations (0001~0015, all landing in `security_dev` via implicit search_path) are rewritten into 4 schema-qualified layered migrations:
+        - `0001_ods.sql` (14 tables): taxonomy_category / taxonomy_security_map / industry_constituent / industry_weight / industry_daily / financial_statement / corporate_action / bars_stock_zh_a_daily_{nf,hfq} / bars_index_zh_a_daily_nf / bars_ext_baostock_stock_zh_a_daily / adjust_factor / long_hu_bang / equity_structure. Each file runs `CREATE SCHEMA IF NOT EXISTS ods` + `CREATE TABLE IF NOT EXISTS ods.xxx`.
+        - `0002_dwd.sql` (1 table): taxonomy_category_derived_flags.
+        - `0003_govern.sql` (7 tables + 1 view): security_registry / strategy_run_summary / strategy_run_artifact / data_dataset_dictionary / data_field_dictionary / data_enum_dictionary / data_field_coverage_observation + govern.v_data_field_dictionary_active.
+        - `0004_govern_seed.sql`: the former 0013 256KB AmazingData field-dictionary seed data, with table names schema-qualified to `govern.*`; uses `DELETE WHERE source=... AND contract_version=...` + `INSERT` for re-entrancy.
+        - All 59 `CREATE INDEX` statements now carry `IF NOT EXISTS` (including 13 that the former 0012/0014 omitted); migrations are fully idempotent.
+        - The former 0003 `trade_date` DATE type change is folded directly into CREATE TABLE (fresh reload needs no ALTER); the former 0004 storage backfill is dropped (on fresh reload tables are created directly on the correct tablespace, so backfill is redundant).
+        - **Prerequisite**: with the former 0004 removed there is no backfill fallback — before reload, a superuser must pre-create `CREATE TABLESPACE warm_storage LOCATION '...'`, otherwise every `TABLESPACE warm_storage` clause fails.
+    - **model / DAO table-name mapping**: all `TableName()` methods now return schema-qualified names (ODS→`ods.`, DWD→`dwd.`, Govern→`govern.`, kg unchanged at `kg.`); `dao/table_resolver.go` `BarsTableName` / `BarsExtTableName` gain an `ods.` prefix; bare-name SQL in `field_dictionary_dao.go` / `catalog_coverage_dao.go` / `field_coverage_dao.go` / `taxonomy_dao.go` (three-table JOIN) / `schema_dao.go` (domainAllowList) / `corporate_action_dao.go` / `financial_statement_dao.go` / `equity_structure_dao.go` is all schema-qualified. The schema enumeration in `catalog_dao.go` and `catalog_service.go` changed from `["public","kg","security_dev","security"]` to `["public","kg","ods","dwd","govern"]`.
+    - **Tests**: updated assertions in `model_test.go` / `catalog_dao_test.go` / `write_buffer_test.go` to the qualified names (strict `!=`, not weakened). `go build ./...`, `go vet ./...`, `go test ./...` all green. End-to-end DB validation (throwaway database): all 4 migrations run twice cleanly (idempotency confirmed); tables land as ods 14 / dwd 1 / govern 7 + view; seed data does not double on re-run (dataset=3 / field=565 / enum=56).
 - v1.25.1
     - **FieldMeta carries enum_ref end-to-end**
         - Added `EnumRef` field to `FieldMeta` in `internal/model/query_response.go` so flat query responses advertise which enum backs each field.

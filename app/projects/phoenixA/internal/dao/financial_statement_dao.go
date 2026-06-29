@@ -273,7 +273,7 @@ func (d *FinancialStatementDao) ResolveQueryFields(ctx context.Context, source, 
 // empty resolved list and use format=nested instead).
 func (d *FinancialStatementDao) QueryFlat(ctx context.Context, source string, f *model.FinancialStatementFilters, resolved []ResolvedField, limit, offset int) ([]map[string]any, error) {
 	selectClause, _ := BuildFlatSelect(resolved)
-	q := d.db.WithContext(ctx).Table("financial_statement").Where("source = ?", source)
+	q := d.db.WithContext(ctx).Table("ods.financial_statement").Where("source = ?", source)
 	applyFinStmtFilters(q, f)
 	q = q.Order("symbol ASC, reporting_period DESC")
 	if selectClause != "" {

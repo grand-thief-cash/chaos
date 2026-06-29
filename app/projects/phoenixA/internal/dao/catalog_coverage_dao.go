@@ -45,7 +45,7 @@ func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market strin
 			COALESCE(MIN(reporting_period), '') AS earliest_period,
 			COALESCE(MAX(reporting_period), '') AS latest_period,
 			COALESCE(MAX(ann_date), '') AS latest_ann_date
-		FROM financial_statement
+		FROM ods.financial_statement
 		WHERE symbol = $1 AND market = $2
 		GROUP BY source, statement_type, report_type
 		ORDER BY source, statement_type, report_type
@@ -67,7 +67,7 @@ func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market strin
 			COALESCE(MIN(report_period), '') AS earliest_period,
 			COALESCE(MAX(report_period), '') AS latest_period,
 			COALESCE(MAX(ann_date), '') AS latest_ann_date
-		FROM corporate_action
+		FROM ods.corporate_action
 		WHERE symbol = $1 AND market = $2
 		GROUP BY source, action_type
 		ORDER BY source, action_type
@@ -89,7 +89,7 @@ func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market strin
 			COALESCE(MIN(change_date), '') AS earliest_period,
 			COALESCE(MAX(change_date), '') AS latest_period,
 			COALESCE(MAX(ann_date), '') AS latest_ann_date
-		FROM equity_structure
+		FROM ods.equity_structure
 		WHERE symbol = $1 AND market = $2
 		GROUP BY source
 		ORDER BY source

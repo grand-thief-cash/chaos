@@ -179,10 +179,10 @@ func (d *TaxonomyDao) DeleteCategory(ctx context.Context, source, taxonomy, mark
 // and inserts into taxonomy_security_map.
 func (d *TaxonomyDao) SyncMappingsFromConstituents(ctx context.Context, source, taxonomy, market string) (int64, error) {
 	sql := `
-		INSERT INTO taxonomy_security_map (source, taxonomy, category_code, symbol, asset_type, market)
+		INSERT INTO ods.taxonomy_security_map (source, taxonomy, category_code, symbol, asset_type, market)
 		SELECT DISTINCT ic.source, ic.taxonomy, tc.code, ic.symbol, 'stock', ic.market
-		FROM industry_constituent ic
-		JOIN taxonomy_category tc
+		FROM ods.industry_constituent ic
+		JOIN ods.taxonomy_category tc
 		  ON tc.index_code = ic.index_code
 		 AND tc.source = ic.source
 		 AND tc.taxonomy = ic.taxonomy

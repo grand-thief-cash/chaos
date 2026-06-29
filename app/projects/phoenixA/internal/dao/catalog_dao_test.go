@@ -63,7 +63,7 @@ func TestSafeIdentifierRe(t *testing.T) {
 
 func TestBarsTableName(t *testing.T) {
 	got := BarsTableName("stock", "zh_a", "daily", "nf")
-	want := "bars_stock_zh_a_daily_nf"
+	want := "ods.bars_stock_zh_a_daily_nf"
 	if got != want {
 		t.Errorf("BarsTableName: got %q, want %q", got, want)
 	}
@@ -71,7 +71,7 @@ func TestBarsTableName(t *testing.T) {
 
 func TestBarsExtTableName(t *testing.T) {
 	got := BarsExtTableName("baostock", "stock", "zh_a", "daily")
-	want := "bars_ext_baostock_stock_zh_a_daily"
+	want := "ods.bars_ext_baostock_stock_zh_a_daily"
 	if got != want {
 		t.Errorf("BarsExtTableName: got %q, want %q", got, want)
 	}

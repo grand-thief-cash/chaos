@@ -111,7 +111,7 @@ func applyEquityFilters(q *gorm.DB, f *model.EquityStructureFilters) {
 // Count returns the number of rows matching the filters.
 func (d *EquityStructureDao) Count(ctx context.Context, source string, f *model.EquityStructureFilters) (int64, error) {
 	var cnt int64
-	q := d.db.WithContext(ctx).Table("equity_structure").Where("source = ?", source)
+	q := d.db.WithContext(ctx).Table("ods.equity_structure").Where("source = ?", source)
 	applyEquityFilters(q, f)
 	if err := q.Count(&cnt).Error; err != nil {
 		return 0, err
@@ -130,7 +130,7 @@ func (d *EquityStructureDao) ResolveQueryFields(ctx context.Context, source, dat
 // FinancialStatementDao.QueryFlat for semantics.
 func (d *EquityStructureDao) QueryFlat(ctx context.Context, source string, f *model.EquityStructureFilters, resolved []ResolvedField, limit, offset int) ([]map[string]any, error) {
 	selectClause, _ := BuildFlatSelect(resolved)
-	q := d.db.WithContext(ctx).Table("equity_structure").Where("source = ?", source)
+	q := d.db.WithContext(ctx).Table("ods.equity_structure").Where("source = ?", source)
 	applyEquityFilters(q, f)
 	q = q.Order("symbol ASC, change_date DESC")
 	if selectClause != "" {

@@ -25,8 +25,8 @@ type schemaCacheBypassContextKey struct{}
 
 // allowed domains — prevents arbitrary table access.
 var domainAllowList = map[string]domainSpec{
-	"financial_statement": {Table: "financial_statement", TypeColumn: "statement_type"},
-	"corporate_action":    {Table: "corporate_action", TypeColumn: "action_type"},
+	"financial_statement": {Table: "ods.financial_statement", TypeColumn: "statement_type"},
+	"corporate_action":    {Table: "ods.corporate_action", TypeColumn: "action_type"},
 }
 
 // SchemaDao discovers fields stored in JSONB columns.

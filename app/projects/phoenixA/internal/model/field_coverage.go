@@ -16,7 +16,7 @@ type FieldCoverageObservation struct {
 	LastSeenAt   time.Time `gorm:"column:last_seen_at" json:"last_seen_at"`
 }
 
-func (FieldCoverageObservation) TableName() string { return "data_field_coverage_observation" }
+func (FieldCoverageObservation) TableName() string { return "govern.data_field_coverage_observation" }
 
 // FieldCoverageScanResult summarizes a single dataset scan.
 type FieldCoverageScanResult struct {

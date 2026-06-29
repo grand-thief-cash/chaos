@@ -60,7 +60,7 @@ func TestWriteBufferManager_SubmitAndFlushOnInterval(t *testing.T) {
 	if stats[0].SubmittedRows != 5 {
 		t.Errorf("expected 5 submitted rows, got %d", stats[0].SubmittedRows)
 	}
-	if stats[0].Key != "bars_bars_stock_zh_a_daily_nf" {
+	if stats[0].Key != "bars_ods.bars_stock_zh_a_daily_nf" {
 		t.Errorf("unexpected key: %s", stats[0].Key)
 	}
 	if stats[0].Category != "bars" {

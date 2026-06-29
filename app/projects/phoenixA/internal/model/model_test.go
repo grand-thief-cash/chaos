@@ -7,15 +7,15 @@ import (
 
 func TestFinancialStatementTableName(t *testing.T) {
 	m := FinancialStatement{}
-	if m.TableName() != "financial_statement" {
-		t.Errorf("expected table name 'financial_statement', got %q", m.TableName())
+	if m.TableName() != "ods.financial_statement" {
+		t.Errorf("expected table name 'ods.financial_statement', got %q", m.TableName())
 	}
 }
 
 func TestCorporateActionTableName(t *testing.T) {
 	m := CorporateAction{}
-	if m.TableName() != "corporate_action" {
-		t.Errorf("expected table name 'corporate_action', got %q", m.TableName())
+	if m.TableName() != "ods.corporate_action" {
+		t.Errorf("expected table name 'ods.corporate_action', got %q", m.TableName())
 	}
 }
 

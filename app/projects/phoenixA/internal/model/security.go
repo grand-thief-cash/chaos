@@ -18,7 +18,7 @@ type SecurityRegistry struct {
 	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (SecurityRegistry) TableName() string { return "security_registry" }
+func (SecurityRegistry) TableName() string { return "ods.security_registry" }
 
 // SecurityFilters for querying the security registry.
 type SecurityFilters struct {

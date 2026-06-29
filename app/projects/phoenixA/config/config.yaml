@@ -47,7 +47,7 @@ postgres_gorm:
       user: postgres
       password: 123456
       database: security
-      schema: security_dev
+      schema: ods,dwd,govern,kg,public
       max_open_conns: 10
       max_idle_conns: 5
       conn_max_life: 60m

@@ -240,7 +240,7 @@ func (d *CorporateActionDao) ResolveQueryFields(ctx context.Context, source, dat
 // FinancialStatementDao.QueryFlat for semantics.
 func (d *CorporateActionDao) QueryFlat(ctx context.Context, source string, f *model.CorporateActionFilters, resolved []ResolvedField, limit, offset int) ([]map[string]any, error) {
 	selectClause, _ := BuildFlatSelect(resolved)
-	q := d.db.WithContext(ctx).Table("corporate_action").Where("source = ?", source)
+	q := d.db.WithContext(ctx).Table("ods.corporate_action").Where("source = ?", source)
 	applyCorpActionFilters(q, f)
 	q = q.Order("symbol ASC, report_period DESC, ann_date DESC")
 	if selectClause != "" {
