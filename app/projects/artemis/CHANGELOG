@@ -1,7 +1,11 @@
 # VERSION
-- v0.38.1
+- v0.38.2
 
 # Changelog
+- v0.38.2
+    - **BI service: split into `bi/` package and renamed off the `bi_simple` name**
+        - Split the single-file `artemis/services/bi_simple_service.py` (~1195 lines) into an `artemis/services/bi/` package organized by business area: `base.py` (phoenixA client + numeric helpers as `BIServiceBase`), `securities.py`, `discovery.py`, `raw_queries.py` (raw-passthrough mixins), and `dupont.py` (DuPont analytical-computation mixin), combined in `service.py` as `BIService`. Behavior-preserving: all 38 method bodies and field-constant lists are byte-identical to the original (verified via AST equivalence + `tests/test_bi_dupont_service.py`).
+        - Renamed `bi_simple` → `bi` everywhere to match the `/bi` route prefix and the cthulhu `ArtemisBiService` / `features/bi/` naming: `BISimpleService` → `BIService`, models `bi_simple.py` → `bi.py`, routes `bi_simple_routes.py` → `bi_routes.py`, logger names `bi_simple_service` / `bi_simple.routes` → `bi_service` / `bi.routes`. Callers (`bi_routes.py`, `routes.py`, `tests/test_bi_dupont_service.py`) updated.
 - v0.38.1
     - **DuPont analysis: caliber-consistency and metadata fixes**
         - **single_quarter detail caliber** (`bi_simple_service.py`): detail stacks/equations previously read from the raw YTD income row while the ratios used a single-quarter value (YTD − prior YTD), so breakdown totals didn't match their rows. Now synthesizes a single-quarter income row (`_synthesize_single_quarter_income`) and passes it as the detail row; tree nodes, ratios, and breakdown stacks are all on the single-quarter caliber.

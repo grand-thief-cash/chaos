@@ -13,11 +13,11 @@ from typing import Literal
 
 from artemis.log.logger import get_logger
 from artemis.models.metric_definitions import METRIC_DEFINITIONS
-from artemis.services.bi_simple_service import BISimpleService
+from artemis.services.bi import BIService
 
-logger = get_logger("bi_simple.routes")
+logger = get_logger("bi.routes")
 router = APIRouter(prefix="/bi", tags=["bi"])
-service = BISimpleService()
+service = BIService()
 
 
 @router.get("/securities")

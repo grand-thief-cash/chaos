@@ -1,4 +1,4 @@
-"""Tests for BISimpleService.get_dupont_analysis (new BI layer).
+"""Tests for BIService.get_dupont_analysis (new BI layer).
 
 Covers the caliber-consistency fixes:
 - single_quarter: detail stacks/equations must use a single-quarter income
@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-from artemis.services.bi_simple_service import BISimpleService
+from artemis.services.bi import BIService
 
 
 # Synthetic cumulative-YTD income rows (yuan) for 000021, 2024 + 2025.
@@ -57,8 +57,8 @@ BALANCE_ROWS: List[Dict[str, Any]] = [
 ]
 
 
-def _make_service() -> BISimpleService:
-    svc = BISimpleService()
+def _make_service() -> BIService:
+    svc = BIService()
 
     def fake_query_financial(self, *, source, statement_type, **kwargs):
         rows = INCOME_ROWS if statement_type == "income" else BALANCE_ROWS
@@ -66,7 +66,7 @@ def _make_service() -> BISimpleService:
 
     # monkeypatch the instance method (and the class-level lookup used by
     # _fetch_all_dupont_rows, which calls self.query_financial).
-    svc.query_financial = fake_query_financial.__get__(svc, BISimpleService)  # type: ignore[method-assign]
+    svc.query_financial = fake_query_financial.__get__(svc, BIService)  # type: ignore[method-assign]
     return svc
 
 
