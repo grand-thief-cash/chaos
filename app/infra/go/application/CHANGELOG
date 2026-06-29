@@ -1,7 +1,12 @@
 # VERSION
-v0.18.3
+v0.18.4
 
 # Changelog
+- v0.18.4
+    - **postgresgorm / migration: multi-schema support fixes** — correct support for a comma-separated `schema` config (e.g. `ods,dwd,govern,kg,public`) so a single datasource can span multiple PostgreSQL schemas.
+        - **postgresgorm/component.go**: `CREATE SCHEMA IF NOT EXISTS` now splits the comma-separated `schema` string and creates each schema individually (previously emitted invalid SQL `CREATE SCHEMA IF NOT EXISTS public,kg`). The schema-creation block was moved to run **before** `migration.Run()` so schema-qualified and bare-name DDL in migration files resolve correctly on a fresh database. Removed the redundant session-level `SET search_path` (it only affected one pooled connection; `search_path` is already injected into the DSN via `buildDSN`, which applies to every pooled connection).
+        - **migration/migration.go**: `executeMigrationFile` no longer discards the `schema` parameter (was `_ string`). For PostgreSQL, when `schema` is non-empty it now executes `SET search_path TO <schema>` **inside the migration transaction** (same connection as the statements), so bare-name DDL resolves to the configured schema(s). The non-transaction fallback intentionally skips `SET search_path` to avoid the connection-pool pitfall (PostgreSQL always supports transactions, so this branch is effectively unreachable for PG). The `schema` string may be comma-separated; `SET search_path` accepts a comma-separated list.
+        - **migration/migration.go**: the `_migrations` tracking table is now qualified with only the **first** schema of a comma-separated list (new `firstSchema()` / `trackingTableName()` helpers used by `ensureTrackingTable`, `listApplied`, `recordApplied`). Previously it concatenated the full string, producing invalid SQL like `CREATE TABLE ods,dwd,govern,kg,public._migrations` that made `Run()` fail immediately on a fresh database. `Run()` docstring corrected to match implementation.
 - v0.18.3
     - Telemetry Component fixed unavailable none export.
 - v0.18.2
