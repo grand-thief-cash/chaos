@@ -1,7 +1,13 @@
 # VERSION
-v0.17.0
+v0.17.1
 
 # Changelog
+- v0.17.1
+    - **DuPont analysis page: caliber/UX fixes matching artemis v0.38.1**
+        - **Extrapolated view labels forecast correctly**: the "预测全年" view previously showed `报告期：2025-09-30` (the Q3 date) even though the numbers are a full-year forecast, which read as an actual report. `updateDate` now renders `预测全年（基于报告期 2025-09-30 × 4/3）` in the extrapolated view and `报告期：…` in the actual view.
+        - **Q3 extrapolation checkbox available for "最新"**: `canExtrapolate` only enabled the checkbox when an explicit 三季报 period was selected, so choosing "最新" hid it even when the latest period resolved to a Q3 report. Now also enables it when "最新" is selected and the loaded response's `report_type === '3'`.
+        - **Dropped dead `report_type` / `period_end` from `getDupont`**: `ArtemisBiService.getDupont` no longer accepts/sends `report_type` or `period_end` (removed from the artemis `/bi/dupont/{symbol}` endpoint — they were unused server-side). The page never sent them.
+        - **Dropped dead stack fields**: `BIDetailStackRow.prev_value` and `BIDetailStack.prev_total` removed from `bi-simple.models.ts` to match the artemis models (they were always `null` and never rendered).
 - v0.17.0
     - **DuPont analysis page wired to artemis backend**
         - Replaced the hard-coded mock data in `dupont-analysis.page.ts` with live data from `ArtemisBiService.getDupont()` → artemis `GET /bi/dupont/{symbol}`. First BI analysis page to consume a real artemis computation endpoint. Canvas layout, connectors, operators, and styles are unchanged.

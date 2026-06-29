@@ -929,11 +929,19 @@ export class DupontAnalysisPageComponent implements OnInit {
     });
   }
 
-  /** Whether the Q4 extrapolation checkbox is applicable: YTD + a Q3 period. */
+  /**
+   * Whether the Q4 extrapolation checkbox is applicable: YTD + a Q3 period.
+   * A Q3 period is either an explicitly selected 三季报 (reporting period ends
+   * -09-30) or, when "最新" is selected, the latest loaded period resolving to
+   * report_type 3 (三季报).
+   */
   get canExtrapolate(): boolean {
     if (this.selectedPeriodKind !== 'ytd') return false;
-    if (!this.selectedReportingPeriod) return false;
-    return this.selectedReportingPeriod.endsWith('-09-30');
+    if (this.selectedReportingPeriod) {
+      return this.selectedReportingPeriod.endsWith('-09-30');
+    }
+    // "最新": allow when the latest loaded period is itself a Q3 report.
+    return this.currentResp?.report_type === '3';
   }
 
   onPeriodKindChange(): void {
@@ -980,7 +988,15 @@ export class DupontAnalysisPageComponent implements OnInit {
 
   private applyResponse(resp: BIDupontResponse): void {
     this.securityName = resp.security_name ?? '';
-    this.updateDate = resp.period ? `报告期：${resp.period}` : '';
+    if (!resp.period) {
+      this.updateDate = '';
+    } else if (this.showExtrapolated) {
+      // Extrapolated full-year view: period is still the Q3 reporting date, so
+      // label it as a forecast derived from that period, not an actual report.
+      this.updateDate = `预测全年（基于报告期 ${resp.period} × 4/3）`;
+    } else {
+      this.updateDate = `报告期：${resp.period}`;
+    }
     this.nodes = this.buildNodes(resp.nodes);
     this.headlineDrivers = (resp.headline_drivers ?? []).map((d) => ({
       label: d.label,
