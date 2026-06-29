@@ -26,7 +26,7 @@ type FinancialStatement struct {
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (FinancialStatement) TableName() string { return "financial_statement" }
+func (FinancialStatement) TableName() string { return "ods.financial_statement" }
 
 // FinancialStatementFilters for querying financial statements.
 type FinancialStatementFilters struct {

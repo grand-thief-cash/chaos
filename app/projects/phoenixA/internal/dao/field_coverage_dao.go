@@ -131,7 +131,7 @@ func (d *FieldCoverageDao) ScanDataset(
 		args = append(args, dataset, source, storageTable, k.Key, status, k.Cnt)
 	}
 	upsertSQL := fmt.Sprintf(`
-		INSERT INTO data_field_coverage_observation
+		INSERT INTO govern.data_field_coverage_observation
 		    (dataset, source, storage_table, observed_key, status, sample_count, first_seen_at, last_seen_at)
 		VALUES %s
 		ON CONFLICT (dataset, source, observed_key) DO UPDATE SET
@@ -157,7 +157,7 @@ func limitClause(n int) string {
 // ListObservations returns observations optionally filtered by dataset and
 // status. Sorted with ungoverned first, then by observed_key.
 func (d *FieldCoverageDao) ListObservations(ctx context.Context, dataset, source, status string) ([]model.FieldCoverageObservation, error) {
-	q := d.db.WithContext(ctx).Table("data_field_coverage_observation")
+	q := d.db.WithContext(ctx).Table("govern.data_field_coverage_observation")
 	if dataset != "" {
 		q = q.Where("dataset = ?", dataset)
 	}

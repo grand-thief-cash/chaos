@@ -24,7 +24,7 @@ type EquityStructure struct {
 	UpdatedAt   time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (EquityStructure) TableName() string { return "equity_structure" }
+func (EquityStructure) TableName() string { return "ods.equity_structure" }
 
 // EquityStructureFilters for querying equity_structure.
 type EquityStructureFilters struct {

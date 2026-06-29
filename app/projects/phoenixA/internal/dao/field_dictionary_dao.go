@@ -58,7 +58,7 @@ func (d *FieldDictionaryDao) ListDatasets(ctx context.Context, source string) ([
 		       data_types::text AS data_types_raw,
 		       storage_table, storage_tablespace, dictionary_tablespace,
 		       source_doc, created_at, updated_at
-		FROM data_dataset_dictionary
+		FROM govern.data_dataset_dictionary
 	`
 	args := []any{}
 	if source != "" {
@@ -130,7 +130,7 @@ func (d *FieldDictionaryDao) DiscoverFields(ctx context.Context, p FieldQueryPar
 		       storage_location, is_metadata, is_core, comp_type_scope,
 		       aliases::text AS aliases_raw, source_doc, source_path,
 		       review_status, deprecated, created_at, updated_at
-		FROM data_field_dictionary
+		FROM govern.data_field_dictionary
 		WHERE 1=1
 	`)
 	args := []any{}
@@ -262,7 +262,7 @@ func (d *FieldDictionaryDao) GetEnum(ctx context.Context, enumName, source strin
 		SELECT contract_version, source, enum_name, code, label_zh,
 		       description, sort_order, source_doc, review_status,
 		       deprecated, created_at, updated_at
-		FROM data_enum_dictionary
+		FROM govern.data_enum_dictionary
 		WHERE enum_name = $1
 	`
 	args := []any{enumName}
@@ -318,7 +318,7 @@ func (d *FieldDictionaryDao) GetEnum(ctx context.Context, enumName, source strin
 func (d *FieldDictionaryDao) ListEnumNames(ctx context.Context, source string) ([]string, error) {
 	query := `
 		SELECT DISTINCT enum_ref AS enum_name
-		FROM data_field_dictionary
+		FROM govern.data_field_dictionary
 		WHERE enum_ref != '' AND deprecated = FALSE
 	`
 	args := []any{}

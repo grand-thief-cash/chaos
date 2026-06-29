@@ -78,7 +78,9 @@ type Result struct {
 //  5. Record success in `_migrations`.
 //
 // schema is optional (PostgreSQL only): if non-empty, the tracking table is
-// created as `<schema>._migrations` and search_path is set before execution.
+// created as `<firstSchema>._migrations` (first schema of a comma-separated
+// list) and search_path is set to the full schema list before each migration
+// file executes.
 func Run(ctx context.Context, db *sql.DB, dialect Dialect, dir string, schema string) (*Result, error) {
 	start := time.Now()
 	res := &Result{}
@@ -126,12 +128,29 @@ func Run(ctx context.Context, db *sql.DB, dialect Dialect, dir string, schema st
 	return res, nil
 }
 
+// firstSchema returns the first schema of a comma-separated schema list
+// (e.g. "ods,dwd,govern" -> "ods"). Used to qualify the _migrations tracking
+// table, which can only live in a single schema. Returns "" when schema is empty.
+func firstSchema(schema string) string {
+	schema = strings.TrimSpace(schema)
+	if schema == "" {
+		return ""
+	}
+	return strings.TrimSpace(strings.Split(schema, ",")[0])
+}
+
+// trackingTableName returns the schema-qualified _migrations table name, using
+// only the first schema when given a comma-separated list.
+func trackingTableName(schema string) string {
+	if s := firstSchema(schema); s != "" {
+		return s + "._migrations"
+	}
+	return "_migrations"
+}
+
 // ensureTrackingTable creates the _migrations table if it doesn't exist.
 func ensureTrackingTable(ctx context.Context, db *sql.DB, dialect Dialect, schema string) error {
-	tableName := "_migrations"
-	if schema != "" {
-		tableName = schema + "._migrations"
-	}
+	tableName := trackingTableName(schema)
 
 	var ddl string
 	switch dialect {
@@ -159,10 +178,7 @@ func ensureTrackingTable(ctx context.Context, db *sql.DB, dialect Dialect, schem
 
 // listApplied returns a set of already-applied migration filenames.
 func listApplied(ctx context.Context, db *sql.DB, schema string) (map[string]bool, error) {
-	tableName := "_migrations"
-	if schema != "" {
-		tableName = schema + "._migrations"
-	}
+	tableName := trackingTableName(schema)
 
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT filename FROM %s ORDER BY filename", tableName))
 	if err != nil {
@@ -183,10 +199,7 @@ func listApplied(ctx context.Context, db *sql.DB, schema string) (map[string]boo
 
 // recordApplied inserts a record into the tracking table.
 func recordApplied(ctx context.Context, db *sql.DB, filename string, schema string) error {
-	tableName := "_migrations"
-	if schema != "" {
-		tableName = schema + "._migrations"
-	}
+	tableName := trackingTableName(schema)
 
 	_, err := db.ExecContext(ctx,
 		fmt.Sprintf("INSERT INTO %s (filename) VALUES ($1)", tableName),
@@ -222,8 +235,11 @@ func listMigrationFiles(dir string) ([]string, error) {
 }
 
 // executeMigrationFile reads and executes all statements in a single .sql file.
-// schema is reserved for future use (e.g., setting search_path before execution).
-func executeMigrationFile(ctx context.Context, db *sql.DB, dialect Dialect, path string, _ string) error {
+// For PostgreSQL, when schema is non-empty, search_path is set inside the
+// transaction so bare-name DDL resolves to the configured schema(s). The schema
+// string may be comma-separated (e.g. "ods,dwd,govern,kg,public"); SET
+// search_path accepts a comma-separated list.
+func executeMigrationFile(ctx context.Context, db *sql.DB, dialect Dialect, path string, schema string) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
@@ -241,7 +257,10 @@ func executeMigrationFile(ctx context.Context, db *sql.DB, dialect Dialect, path
 	// Try to run in a transaction
 	tx, txErr := db.BeginTx(ctx, nil)
 	if txErr != nil {
-		// If transaction not supported, run without
+		// If transaction not supported, run without. SET search_path is skipped
+		// here to avoid the connection-pool pitfall (SET only applies to the
+		// borrowed connection, not subsequent borrows). PostgreSQL always
+		// supports transactions, so this branch is effectively unreachable for PG.
 		for _, s := range stmts {
 			if strings.TrimSpace(s) == "" {
 				continue
@@ -251,6 +270,14 @@ func executeMigrationFile(ctx context.Context, db *sql.DB, dialect Dialect, path
 			}
 		}
 		return nil
+	}
+
+	// Set search_path IN TRANSACTION (same connection as the statements).
+	if dialect == DialectPostgres && strings.TrimSpace(schema) != "" {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", schema)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("set search_path for migration %s: %w", filepath.Base(path), err)
+		}
 	}
 
 	for _, s := range stmts {

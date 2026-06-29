@@ -84,7 +84,7 @@ func (d *CatalogDao) AnalyzeSchemas(ctx context.Context, schemas []string) {
 // ListTables queries pg system catalogs for all user tables in the given schemas.
 func (d *CatalogDao) ListTables(ctx context.Context, schemas []string) ([]rawTableRow, error) {
 	if len(schemas) == 0 {
-		schemas = []string{"public", "kg", "security_dev", "security"}
+		schemas = []string{"public", "kg", "ods", "dwd", "govern"}
 	}
 
 	query := `

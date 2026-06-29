@@ -20,7 +20,7 @@ type LongHuBang struct {
 	TotalVolume    float64 `gorm:"type:numeric(24,4);not null;default:0" json:"total_volume"`
 }
 
-func (LongHuBang) TableName() string { return "long_hu_bang" }
+func (LongHuBang) TableName() string { return "ods.long_hu_bang" }
 
 // LongHuBangFilters for querying long hu bang rows.
 type LongHuBangFilters struct {

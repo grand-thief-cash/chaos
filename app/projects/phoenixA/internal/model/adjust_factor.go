@@ -14,7 +14,7 @@ type AdjustFactor struct {
 	AdjustFactor     *float64 `gorm:"column:adjust_factor;type:numeric(20,8)" json:"adjust_factor,omitempty"`
 }
 
-func (AdjustFactor) TableName() string { return "adjust_factor" }
+func (AdjustFactor) TableName() string { return "ods.adjust_factor" }
 
 type AdjustFactorFilters struct {
 	Symbol    string
