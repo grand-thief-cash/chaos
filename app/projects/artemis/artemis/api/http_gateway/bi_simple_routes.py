@@ -183,9 +183,7 @@ async def get_dupont_analysis(
     symbol: str,
     source: str = Query("amazing_data"),
     market: str = Query("zh_a"),
-    report_type: str | None = Query(None, description="4=年报, 1=一季报, 2=半年报, 3=三季报"),
     statement_code: str = Query("1", description="1=合并, 6=母公司"),
-    period_end: str | None = Query(None, description="报告期上限 YYYY-MM-DD；省略取最新"),
     period_kind: Literal["annual", "single_quarter", "ytd", "ttm"] = Query("ttm", description="年度/单季度/年初至今/滚动12个月(默认)"),
     target_reporting_period: str | None = Query(None, description="指定目标报告期YYYY-MM-DD，省略取最新可用"),
     extrapolate_q4: bool = Query(False, description="仅当period_kind=ytd且target_period是Q3时生效，按Q3YTD×4/3外推全年预测"),
@@ -194,8 +192,7 @@ async def get_dupont_analysis(
     try:
         return service.get_dupont_analysis(
             symbol=symbol, source=source, market=market,
-            report_type=report_type, statement_code=statement_code,
-            period_end=period_end, period_kind=period_kind,
+            statement_code=statement_code, period_kind=period_kind,
             target_reporting_period=target_reporting_period,
             extrapolate_q4=extrapolate_q4,
         )

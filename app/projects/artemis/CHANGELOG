@@ -1,7 +1,20 @@
 # VERSION
-- v0.38.0
+- v0.38.1
 
 # Changelog
+- v0.38.1
+    - **DuPont analysis: caliber-consistency and metadata fixes**
+        - **single_quarter detail caliber** (`bi_simple_service.py`): detail stacks/equations previously read from the raw YTD income row while the ratios used a single-quarter value (YTD − prior YTD), so breakdown totals didn't match their rows. Now synthesizes a single-quarter income row (`_synthesize_single_quarter_income`) and passes it as the detail row; tree nodes, ratios, and breakdown stacks are all on the single-quarter caliber.
+        - **Q3 extrapolation detail caliber** (`_extrapolate_q3_full_year`): the extrapolated view scales profit/revenue ×4/3 but reused the unscaled Q3 YTD income row for detail stacks, so totals mismatched their rows. Now scales the income row with `_scale_income_row(…, 4/3)` so detail stacks match the scaled ratios.
+        - **Q3 extrapolation prior-period baseline (P1)**: the extrapolated view is a full-year FORECAST, but its `prev` was the prior-year Q3 YTD (from the underlying YTD response), so every delta/direction compared a forecast full year to a prior 三季报累计 — systematically inflated. Now computes the prior year's ANNUAL (年报 full-year actual) as the baseline via `_ratios_for(period_kind="annual", …)`; falls back to `prev=None` (no false trend) when prior-year annual data is missing. `prev_period` reflects the annual baseline.
+        - **statement_code passthrough (P2)**: `_compute_dupont_by_kind` hardcoded `statement_code="1"` in the response while fetching with the caller's value, so a 母公司 (6) query was mislabeled as 合并 (1). `statement_code` now flows through `get_dupont_analysis` → `_compute_dupont_by_kind` → `_build_dupont_response`.
+        - **prev_period populated**: the response's `prev_period` was always `None` (computed but never passed to `_build_dupont_response`); now carried through.
+        - **No more internal-row leakage**: removed `_inc_cur`/`_bal_cur`/`_cur`/`_prev` keys injected into the HTTP response (full phoenixA raw rows were being returned to the frontend). Intermediate state is now passed explicitly via a `ctx` dict between `_compute_dupont_by_kind` and `_extrapolate_q3_full_year`.
+        - **Removed dead params**: dropped the unused `report_type` / `period_end` params from `get_dupont_analysis` and the `/bi/dupont/{symbol}` route (and the matching `getDupont` opts in cthulhu) — they were never used in the function body.
+        - **Removed dead fields**: dropped the always-`None` `BIDetailStackRow.prev_value` and `BIDetailStack.prev_total` from `bi_simple.py` (mirrored in cthulhu `bi-simple.models.ts`); `_build_stack` no longer takes a `prev_row` it always ignored.
+        - **Paged full-period fetch**: `_fetch_all_dupont_rows` paginates (200/page, total-aware, 200-page backstop) instead of a single `page_size=150` that silently truncated symbols with >150 periods.
+        - **Clearer caliber notes**: per-kind `kind_notes` now spell out the balance-sheet denominator endpoints per kind and note that TTM uses last year-end (not prior-year same-period) as a simplified denominator.
+        - **Tests**: added `tests/test_bi_dupont_service.py` covering single-quarter detail caliber, Q3 extrapolation detail scaling + prior-period annual baseline (P1 regression), `prev_period` population, and `statement_code` passthrough (P2 regression). Removed the stale `tests/test_bi_service.py` / `tests/test_bi_routes.py`, which imported the long-deleted legacy BI modules and could never be collected.
 - v0.38.0
     - **DuPont analysis backend (artemis-owned computation)**
         - New `BISimpleService.get_dupont_analysis` fetches all-period income + balance_sheet from phoenixA in one pass and computes the DuPont decomposition tree, headline drivers, relationship equations, and breakdown stacks in artemis — artemis is the BI backend and owns business computation when needed (not limited to passthrough).
