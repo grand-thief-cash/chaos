@@ -43,11 +43,11 @@ postgres_gorm:
   data_sources:
     security:
       host: 127.0.0.1
-      port: 5432
-      user: chaos_app
-      password: changeme
-      database: chaos_db
-      schema: security_dev
+      port: 15432
+      user: postgres
+      password: 123456
+      database: security
+      schema: ods,dwd,govern,kg,public
       max_open_conns: 10
       max_idle_conns: 5
       conn_max_life: 60m
@@ -55,6 +55,23 @@ postgres_gorm:
       skip_default_tx: true
       migrate_enabled: true
       migrate_base: ./migrations
+
+redis:
+  enabled: false
+  mode: single            # single | cluster | sentinel
+  addresses:
+    - 127.0.0.1:6379
+  username: ""
+  password: ""
+  db: 0
+  sentinel_master: ""
+  pool_size: 16
+  min_idle_conns: 4
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 10m
+  dial_timeout: 3s
+  read_timeout: 1s
+  write_timeout: 1s
 
 http_server:
   enabled: true

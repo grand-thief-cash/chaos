@@ -1,7 +1,9 @@
 # VERSION
-v0.0.6
+v0.0.7
 
 # Changelog
+- v0.0.7
+    - Updated: [2026-06-11]SDK_DOWNLOAD_TASK_ONBOARDING — updated "Specified how to design fields of new table"
 - v0.0.6
     - Updated: [2026-06-11]SDK_DOWNLOAD_TASK_ONBOARDING — added new "Creating new import file for cronjob"
 - v0.0.5

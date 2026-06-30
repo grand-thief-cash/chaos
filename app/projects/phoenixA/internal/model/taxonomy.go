@@ -20,7 +20,7 @@ type TaxonomyCategory struct {
 	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (TaxonomyCategory) TableName() string { return "taxonomy_category" }
+func (TaxonomyCategory) TableName() string { return "ods.taxonomy_category" }
 
 // TaxonomySecurityMap maps a category to a security.
 // Table: taxonomy_security_map
@@ -35,7 +35,22 @@ type TaxonomySecurityMap struct {
 	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updated_at,omitempty"`
 }
 
-func (TaxonomySecurityMap) TableName() string { return "taxonomy_security_map" }
+func (TaxonomySecurityMap) TableName() string { return "ods.taxonomy_security_map" }
+
+// TaxonomyCategoryDerivedFlags stores PhoenixA-owned semantic derivations outside the ODS taxonomy table.
+// Table: taxonomy_category_derived_flags
+type TaxonomyCategoryDerivedFlags struct {
+	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
+	Source       string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_tcdf_src_tax_mkt_code" json:"source"`
+	Taxonomy     string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_tcdf_src_tax_mkt_code" json:"taxonomy"`
+	Market       string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_tcdf_src_tax_mkt_code" json:"market"`
+	Code         string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_tcdf_src_tax_mkt_code" json:"code"`
+	DerivedFlags *string   `gorm:"column:derived_flags;type:jsonb" json:"derived_flags,omitempty"`
+	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (TaxonomyCategoryDerivedFlags) TableName() string { return "dwd.taxonomy_category_derived_flags" }
 
 // IndustryConstituent represents a constituent stock of an industry index.
 // Table: industry_constituent
@@ -54,7 +69,7 @@ type IndustryConstituent struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (IndustryConstituent) TableName() string { return "industry_constituent" }
+func (IndustryConstituent) TableName() string { return "ods.industry_constituent" }
 
 // IndustryWeight represents a daily weight of a constituent in an industry index.
 // Table: industry_weight
@@ -72,7 +87,7 @@ type IndustryWeight struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (IndustryWeight) TableName() string { return "industry_weight" }
+func (IndustryWeight) TableName() string { return "ods.industry_weight" }
 
 // IndustryDaily represents daily OHLCV + valuation data for an industry index.
 // Table: industry_daily
@@ -98,7 +113,7 @@ type IndustryDaily struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (IndustryDaily) TableName() string { return "industry_daily" }
+func (IndustryDaily) TableName() string { return "ods.industry_daily" }
 
 // TaxonomyCategoryFilters for querying taxonomy categories.
 type TaxonomyCategoryFilters struct {
@@ -120,16 +135,26 @@ type TaxonomyCategoryFilters struct {
 // TaxonomySecurityMapWithDetail is the response structure for GET /api/v2/taxonomy/by_security/{symbol}
 // It includes fields from both taxonomy_security_map and taxonomy_category tables.
 type TaxonomySecurityMapWithDetail struct {
-	ID           uint64    `json:"id,omitempty"`
-	Source       string    `json:"source"`
-	Taxonomy     string    `json:"taxonomy"`
-	CategoryCode string    `json:"category_code"`
-	CategoryName string    `json:"category_name"`
-	Level        uint8     `json:"level"`
-	ParentCode   string    `json:"parent_code"`
-	Symbol       string    `json:"symbol"`
-	AssetType    string    `json:"asset_type"`
-	Market       string    `json:"market"`
-	CreatedAt    time.Time `json:"created_at,omitempty"`
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	ID           uint64 `json:"id,omitempty"`
+	Source       string `json:"source"`
+	Taxonomy     string `json:"taxonomy"`
+	CategoryCode string `json:"category_code"`
+	CategoryName string `json:"category_name"`
+	Level        uint8  `json:"level"`
+	ParentCode   string `json:"parent_code"`
+	IndexCode    string `json:"index_code"`
+	// Canonical fields provide a stable taxonomy-consumption view for downstream systems.
+	CanonicalSource       string          `json:"canonical_source"`
+	CanonicalTaxonomy     string          `json:"canonical_taxonomy"`
+	CanonicalLevel        uint8           `json:"canonical_level"`
+	CanonicalCategoryCode string          `json:"canonical_category_code"`
+	CanonicalCategoryName string          `json:"canonical_category_name"`
+	CanonicalParentCode   string          `json:"canonical_parent_code"`
+	CanonicalIndexCode    string          `json:"canonical_index_code"`
+	DerivedFlags          map[string]bool `json:"derived_flags"`
+	Symbol                string          `json:"symbol"`
+	AssetType             string          `json:"asset_type"`
+	Market                string          `json:"market"`
+	CreatedAt             time.Time       `json:"created_at,omitempty"`
+	UpdatedAt             time.Time       `json:"updated_at,omitempty"`
 }

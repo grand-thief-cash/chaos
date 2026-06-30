@@ -1,21 +1,27 @@
 """Unit tests for Factor Engine core modules."""
 
-import math
-import numpy as np
+from typing import Dict, List, Optional
+
 import pandas as pd
 import pytest
 
+from artemis.consts.task_params import ADJUST_FORWARD, ADJUST_NONE
 from artemis.engines.factor_engine.ttm import (
     get_quarter, get_year, make_period, get_prev_quarter_period,
-    _val, compute_ttm, compute_single_quarter,
+    _val, compute_ttm, compute_single_quarter, normalize_period,
 )
 from artemis.engines.factor_engine.point_in_time import (
     get_latest_available_reports, get_latest_period,
 )
+from artemis.engines.factor_engine.pipeline import FactorPipeline
 from artemis.engines.factor_engine.normalizer import FactorNormalizer
-from artemis.engines.factor_engine.factors.base import safe_div, avg_balance
+from artemis.engines.factor_engine.factors.base import BaseFactor, safe_div, avg_balance
 from artemis.engines.factor_engine.factors.growth import _growth_rate, _cagr
-from artemis.engines.factor_engine.registry import FACTOR_REGISTRY
+from artemis.engines.factor_engine.factors.per_share import PerShareFactors
+from artemis.engines.factor_engine.factors.valuation import ValuationFactors
+from artemis.engines.factor_engine.models import FactorCategory, FactorMeta
+from artemis.engines.factor_engine.registry import FACTOR_REGISTRY, get_factor_definition, get_factor_market_adjust_policy, list_factors
+from artemis.engines.factor_engine.storage.factor_store import FactorStore
 
 
 # ===================================================================
@@ -40,6 +46,9 @@ class TestGetQuarter:
 
     def test_garbage_input(self):
         assert get_quarter("abcdefgh") == 0
+
+    def test_iso_date_input(self):
+        assert get_quarter("2025-09-30") == 3
 
 
 class TestGetYear:
@@ -105,6 +114,15 @@ class TestVal:
         df = pd.DataFrame({"reporting_period": ["20250930"], "REV": [100.0]})
         assert _val(df, "20241231", "REV") is None
 
+    def test_reads_from_index_when_column_missing(self):
+        df = pd.DataFrame({"REV": [100.0]}, index=pd.Index(["20250930"], name="reporting_period"))
+        assert _val(df, "2025-09-30", "REV") == 100.0
+
+    def test_uses_canonical_phoenixa_field_names_only(self):
+        df = pd.DataFrame({"reporting_period": ["20250930"], "INCOME_TAX": [12.0]})
+        assert _val(df, "20250930", "INCOME_TAX") == 12.0
+        assert _val(df, "20250930", "INC_TAX") is None
+
 
 # ===================================================================
 # TTM computation
@@ -140,6 +158,12 @@ class TestComputeTTM:
     def test_invalid_period(self, income_df):
         assert compute_ttm(income_df, "OPERA_REV", "") is None
         assert compute_ttm(income_df, "OPERA_REV", "20250131") is None
+
+
+class TestNormalizePeriod:
+    def test_compact_and_iso(self):
+        assert normalize_period("2025-09-30") == "20250930"
+        assert normalize_period("20250930") == "20250930"
 
 
 class TestComputeSingleQuarter:
@@ -239,7 +263,7 @@ class TestNormalizerMAD:
     def test_all_same_values(self):
         s = pd.Series([5.0, 5.0, 5.0, 5.0])
         result = FactorNormalizer.winsorize_mad(s)
-        assert (result == 5.0).all()  # MAD=0, no clipping
+        assert result.tolist() == [5.0, 5.0, 5.0, 5.0]  # MAD=0, no clipping
 
     def test_too_few_values(self):
         s = pd.Series([1.0, 2.0])
@@ -361,6 +385,276 @@ class TestFactorRegistry:
         names = list(FACTOR_REGISTRY.keys())
         assert len(names) == len(set(names))
 
+    def test_catalog_seeded_management_fields_are_exposed(self):
+        meta_by_name = {item["name"]: item for item in list_factors()}
+
+        div_meta = meta_by_name["dividend_yield"]
+        assert div_meta["catalog_seeded"] is True
+        assert div_meta["catalog_version"] == "2026-05-14"
+        assert "dividend" in div_meta["management_tags"]
+        assert div_meta["financial_policy"]["mode"] == "standard"
+        assert div_meta["phoenix_queries"][0]["endpoint"] == "/api/v2/corporate-action/{source}/{action_type}"
+
+    def test_all_registered_factors_are_seeded_in_catalog(self):
+        seeded = [item for item in list_factors() if item.get("catalog_seeded")]
+        assert len(seeded) == len(FACTOR_REGISTRY) == 39
+
+        meta_by_name = {item["name"]: item for item in seeded}
+        assert meta_by_name["revenue_cagr_3y"]["availability"]["expected"] == "conditional"
+        assert "income history >= 12 quarters" in meta_by_name["revenue_cagr_3y"]["availability"]["requirements"]
+
+    def test_factor_definition_exposes_required_fields_and_provenance(self):
+        factor_def = get_factor_definition("dividend_yield")
+
+        assert factor_def is not None
+        assert "corporate_action.dividend.data_json.DVD_PER_SHARE_PRE_TAX_CASH" in factor_def["required_fields"]
+        assert factor_def["provenance"]["phoenix_queries"][0]["endpoint"] == "/api/v2/corporate-action/{source}/{action_type}"
+        assert "bars" in factor_def["required_data_sources"]
+
+    def test_factor_definition_exposes_market_adjust_policy(self):
+        factor_def = get_factor_definition("pe_ttm")
+
+        assert factor_def is not None
+        assert factor_def["market_adjust_policy"]["adjust"] == ADJUST_NONE
+
+    def test_factor_catalog_market_adjust_policy_is_factor_specific(self):
+        pe_policy = get_factor_market_adjust_policy("pe_ttm")
+        roe_policy = get_factor_market_adjust_policy("roe")
+
+        assert pe_policy["adjust"] == ADJUST_NONE
+        assert roe_policy == {}
+
+    def test_financial_variant_pending_policy_is_exposed(self):
+        meta_by_name = {item["name"]: item for item in list_factors()}
+        roic_meta = meta_by_name["roic"]
+
+        assert roic_meta["financial_policy"]["mode"] == "financial_variant_pending"
+        assert roic_meta["financial_policy"]["action"] == "exclude_for_banks_insurers_brokers"
+
+
+class TestFinancialClassification:
+    def test_prefers_comp_type_code_for_financial_company_kind(self):
+        financial_data = {
+            "balance_sheet": pd.DataFrame({"reporting_period": ["20241231"], "comp_type_code": [2]}),
+        }
+
+        assert FactorPipeline._financial_company_kind(financial_data, None) == "bank"
+
+    def test_uses_phoenixa_derived_flags_when_comp_type_missing(self):
+        financial_data = {"balance_sheet": pd.DataFrame({"reporting_period": ["20241231"]})}
+
+        assert FactorPipeline._financial_company_kind(
+            financial_data,
+            {"derived_flags": {"financial_sector": True}},
+        ) == "financial"
+
+    def test_no_longer_uses_industry_code_prefix_fallback(self):
+        financial_data = {"balance_sheet": pd.DataFrame({"reporting_period": ["20241231"]})}
+
+        assert FactorPipeline._financial_company_kind(financial_data, {"industry_code": "801010"}) is None
+
+
+class TestSnapshotRuntimeMetadata:
+    def test_build_snapshot_meta_contains_freshness_and_missing_reasons(self):
+        financial_data = {
+            "balance_sheet": pd.DataFrame({
+                "reporting_period": ["20241231", "20240930"],
+                "ann_date": ["20250321", "20241025"],
+                "comp_type_code": [2, 2],
+            }),
+            "income": pd.DataFrame({
+                "reporting_period": ["20241231", "20240930"],
+                "ann_date": ["20250321", "20241025"],
+            }),
+        }
+
+        meta = FactorPipeline._build_snapshot_meta(
+            factor_values={"current_ratio": None, "pe_ttm": None, "revenue_cagr_3y": None, "debt_ratio": 0.4},
+            financial_data=financial_data,
+            market_data=None,
+            current_period="20241231",
+            as_of_date="20250501",
+            industry_code="801010",
+            industry_context={"derived_flags": {"financial_sector": True}},
+        )
+
+        assert meta["company_kind"] == "bank"
+        assert meta["industry_flags"]["financial_sector"] is True
+        assert meta["reporting_period"] == "20241231"
+        assert meta["latest_ann_date"] == "20250321"
+        assert meta["freshness"]["freshness_label"] in {"fresh", "acceptable"}
+        assert meta["missing_reasons"]["current_ratio"] == "excluded_for_bank"
+        assert meta["missing_reasons"]["pe_ttm"] == "missing_market_data_frame"
+        assert meta["missing_reasons"]["revenue_cagr_3y"] == "missing_required_field:income.OPERA_REV"
+
+    def test_missing_reason_can_point_to_specific_required_field(self):
+        financial_data = {
+            "balance_sheet": pd.DataFrame({
+                "reporting_period": ["20241231", "20240930"],
+                "ann_date": ["20250321", "20241025"],
+                "comp_type_code": [1, 1],
+                "TOT_SHARE": [1000, 1000],
+            }),
+            "income": pd.DataFrame({
+                "reporting_period": ["20241231", "20240930", "20240331", "20231231"],
+                "ann_date": ["20250321", "20241025", "20240420", "20240320"],
+                "NET_PRO_EXCL_MIN_INT_INC": [1, 1, 1, 1],
+            }),
+        }
+        market_data = pd.DataFrame({"close": [10.0]}, index=pd.Index(["20250501"], name="trade_date"))
+
+        meta = FactorPipeline._build_snapshot_meta(
+            factor_values={"dividend_yield": None},
+            financial_data=financial_data,
+            market_data=market_data,
+            current_period="20241231",
+            as_of_date="20250501",
+            industry_code="801150",
+            industry_context={"derived_flags": {"financial_sector": False}},
+        )
+
+        assert meta["missing_reasons"]["dividend_yield"] == "missing_market_enrichment:dps"
+
+    def test_factor_store_persists_snapshot_meta(self):
+        store = FactorStore()
+        raw = pd.DataFrame({"roe": [0.1]}, index=["000001"])
+        norm = pd.DataFrame({"roe": [1.0]}, index=["000001"])
+        store.save_factor_snapshot(
+            "20250501",
+            "zh_a",
+            raw,
+            norm,
+            snapshot_meta={"000001": {"version": "v1.0", "reporting_period": "20241231"}},
+        )
+
+        snap = store.get_factor_snapshot("000001", "20250501", "zh_a")
+        assert snap is not None
+        assert snap["meta"]["reporting_period"] == "20241231"
+
+
+class _AdjustAwareFactor(BaseFactor):
+    def __init__(self, category: FactorCategory, name: str):
+        self._meta = FactorMeta(name, name, category, "test", (), requires_market_data=True)
+
+    def factor_metas(self) -> list:
+        return [self._meta]
+
+    def compute(
+        self,
+        symbol: str,
+        financial_data: Dict[str, pd.DataFrame],
+        market_data: Optional[pd.DataFrame] = None,
+        current_period: Optional[str] = None,
+    ) -> Dict[str, Optional[float]]:
+        adjust = None
+        if market_data is not None and not market_data.empty and "adjust" in market_data.columns:
+            adjust = market_data["adjust"].iloc[-1]
+        return {self._meta.name: 1.0 if adjust else None}
+
+
+class _MixedAdjustAwareFactor(BaseFactor):
+    def __init__(self):
+        self._metas = [
+            FactorMeta("valuation_probe_a", "valuation_probe_a", FactorCategory.VALUATION, "test", (), requires_market_data=True),
+            FactorMeta("valuation_probe_b", "valuation_probe_b", FactorCategory.VALUATION, "test", (), requires_market_data=True),
+        ]
+
+    def factor_metas(self) -> list:
+        return list(self._metas)
+
+    def compute(
+        self,
+        symbol: str,
+        financial_data: Dict[str, pd.DataFrame],
+        market_data: Optional[pd.DataFrame] = None,
+        current_period: Optional[str] = None,
+    ) -> Dict[str, Optional[float]]:
+        adjust = None
+        if market_data is not None and not market_data.empty and "adjust" in market_data.columns:
+            adjust = market_data["adjust"].iloc[-1]
+        return {meta.name: 1.0 if adjust else None for meta in self._metas}
+
+
+class _AdjustAwareProvider:
+    def __init__(self):
+        self.adjust_requests = []
+
+    def get_active_symbols(self, market: str, as_of_date: str):
+        return ["000001"]
+
+    def get_industry_map(self, taxonomy: str, market: str, use_batch: bool = True, symbols: Optional[List[str]] = None):
+        return {"000001": "801010"}
+
+    def get_industry_context(self, symbol: str, taxonomy: str, market: str):
+        return {"derived_flags": {"financial_sector": False}}
+
+    def get_financial_data(self, symbol: str, as_of_date: str):
+        return {"balance_sheet": pd.DataFrame({"reporting_period": ["20241231"], "ann_date": ["20250321"]})}
+
+    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None):
+        self.adjust_requests.append(adjust)
+        return pd.DataFrame({"close": [10.0], "adjust": [adjust or ADJUST_NONE]}, index=pd.Index(["20250501"], name="trade_date"))
+
+    def get_current_period(self, symbol: str, as_of_date: str):
+        return "20241231"
+
+
+class TestMarketAdjustPolicy:
+    def test_pipeline_uses_factor_catalog_market_adjust_policy(self, monkeypatch):
+        provider = _AdjustAwareProvider()
+        pipeline = FactorPipeline(provider, FactorStore())
+        pipeline.factor_groups = [_AdjustAwareFactor(FactorCategory.VALUATION, "valuation_probe")]
+        monkeypatch.setattr(
+            "artemis.engines.factor_engine.pipeline.get_factor_market_adjust_policy",
+            lambda name: {"adjust": ADJUST_FORWARD},
+        )
+
+        pipeline.run_full("20250501", "zh_a")
+
+        assert provider.adjust_requests == [ADJUST_FORWARD]
+
+    def test_pipeline_errors_when_factor_lacks_market_adjust_policy(self, monkeypatch):
+        provider = _AdjustAwareProvider()
+        pipeline = FactorPipeline(provider, FactorStore())
+        pipeline.factor_groups = [_AdjustAwareFactor(FactorCategory.VALUATION, "valuation_probe")]
+        monkeypatch.setattr(
+            "artemis.engines.factor_engine.pipeline.get_factor_market_adjust_policy",
+            lambda name: {},
+        )
+
+        with pytest.raises(ValueError, match="market_adjust_policy"):
+            pipeline.run_full("20250501", "zh_a")
+
+    def test_pipeline_errors_when_group_contains_mixed_market_adjust_policies(self, monkeypatch):
+        provider = _AdjustAwareProvider()
+        pipeline = FactorPipeline(provider, FactorStore())
+        pipeline.factor_groups = [_MixedAdjustAwareFactor()]
+        policy_map = {
+            "valuation_probe_a": {"adjust": ADJUST_NONE},
+            "valuation_probe_b": {"adjust": ADJUST_FORWARD},
+        }
+        monkeypatch.setattr(
+            "artemis.engines.factor_engine.pipeline.get_factor_market_adjust_policy",
+            lambda name: policy_map[name],
+        )
+
+        with pytest.raises(ValueError, match="mixed market_adjust_policy"):
+            pipeline.run_full("20250501", "zh_a")
+
+    def test_incremental_pipeline_completes_without_skipped_symbol_name_error(self):
+        provider = _AdjustAwareProvider()
+        store = FactorStore()
+        store.save_industry_stats("20250501", "zh_a", {})
+        pipeline = FactorPipeline(provider, store)
+        pipeline.factor_groups = []
+
+        pipeline.run_incremental(["000001"], "20250501", "zh_a")
+
+        snap = store.get_factor_snapshot("000001", "20250501", "zh_a")
+        assert snap is not None
+        assert snap["meta"]["incremental"] is True
+
+
 
 # ===================================================================
 # avg_balance
@@ -387,4 +681,61 @@ class TestAvgBalance:
         df = pd.DataFrame({"reporting_period": ["20250930"], "TOTAL_ASSETS": [1200]})
         result = avg_balance(df, "TOTAL_ASSETS", "")
         assert result is None
+
+
+# ===================================================================
+# Factor formulas using corrected PhoenixA sourcing
+# ===================================================================
+
+class TestValuationAndPerShareFactors:
+    @pytest.fixture
+    def financial_data(self):
+        return {
+            "income": pd.DataFrame({
+                "reporting_period": ["20241231", "20250331", "20240331"],
+                "NET_PRO_EXCL_MIN_INT_INC": [1000.0, 300.0, 200.0],
+                "OPERA_REV": [5000.0, 1300.0, 1000.0],
+                "OPERA_PROFIT": [1200.0, 320.0, 250.0],
+                "EBITDA": [1500.0, 380.0, 300.0],
+            }),
+            "balance_sheet": pd.DataFrame({
+                "reporting_period": ["20241231", "20250331"],
+                "TOT_SHARE_EQUITY_EXCL_MIN_INT": [4000.0, 4200.0],
+                "TOT_SHARE": [1000.0, 1000.0],
+                "ST_BORROWING": [200.0, 220.0],
+                "LT_LOAN": [300.0, 330.0],
+                "BONDS_PAYABLE": [100.0, 100.0],
+                "CURRENCY_CAP": [150.0, 120.0],
+            }),
+            "cashflow": pd.DataFrame({
+                "reporting_period": ["20241231", "20250331", "20240331"],
+                "NET_CASH_FLOW_OPERA_ACT": [900.0, 250.0, 200.0],
+                "CASH_PAID_PUR_CONST_FIOLTA": [200.0, 60.0, 40.0],
+            }),
+        }
+
+    @pytest.fixture
+    def market_data(self):
+        return pd.DataFrame({
+            "close": [10.0],
+            "total_share": [1000.0],
+            "market_cap": [10000.0],
+            "dps": [0.5],
+        }, index=pd.Index(["20250501"], name="trade_date"))
+
+    def test_valuation_uses_market_cap_total_share_and_dividend(self, financial_data, market_data):
+        result = ValuationFactors().compute("000001", financial_data, market_data, "2025-03-31")
+
+        assert result["pe_ttm"] == pytest.approx(10000.0 / 1100.0)
+        assert result["pb"] == pytest.approx(10000.0 / 4200.0)
+        assert result["dividend_yield"] == pytest.approx(0.05)
+        assert result["peg"] is not None
+
+    def test_per_share_uses_tot_share_and_market_dividend(self, financial_data, market_data):
+        result = PerShareFactors().compute("000001", financial_data, market_data, "2025-03-31")
+
+        assert result["eps_ttm"] == pytest.approx(1.1)
+        assert result["cfps"] == pytest.approx(0.95)
+        assert result["dps"] == pytest.approx(0.5)
+
 

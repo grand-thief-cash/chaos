@@ -26,7 +26,7 @@ type FinancialStatement struct {
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (FinancialStatement) TableName() string { return "financial_statement" }
+func (FinancialStatement) TableName() string { return "ods.financial_statement" }
 
 // FinancialStatementFilters for querying financial statements.
 type FinancialStatementFilters struct {
@@ -34,6 +34,7 @@ type FinancialStatementFilters struct {
 	Symbols          []string // batch query for multiple symbols
 	Market           string
 	StatementType    string
+	StatementCode    string   // report type code (e.g., "合并报表", "母公司报表")
 	ReportingPeriod  string   // exact match
 	ReportingPeriods []string // batch: IN (...)
 	PeriodStart      string   // range: >= this

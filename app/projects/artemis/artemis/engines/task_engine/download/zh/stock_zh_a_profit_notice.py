@@ -1,6 +1,7 @@
 import pandas as pd
 
 from artemis.engines.task_engine.download.zh.base_financial_statement import BaseFinancialStatementTask
+from artemis.engines.task_engine.download.zh.utils import normalize_date_yyyymmdd
 
 
 class StockZHAProfitNotice(BaseFinancialStatementTask):
@@ -21,7 +22,7 @@ class StockZHAProfitNotice(BaseFinancialStatementTask):
             'report_type': _str(row.get('REPORT_TYPE')),
             'statement_code': '',
             'security_name': _str(row.get('SECURITY_NAME')),
-            'ann_date': _str(row.get('ANN_DATE')),
+            'ann_date': normalize_date_yyyymmdd(_str(row.get('ANN_DATE'))),
             'actual_ann_date': '',
             'comp_type_code': 0,
         }

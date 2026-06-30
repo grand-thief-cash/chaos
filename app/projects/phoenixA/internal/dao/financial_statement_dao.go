@@ -17,9 +17,10 @@ import (
 // FinancialStatementDao handles persistence for financial statement data.
 type FinancialStatementDao struct {
 	*core.BaseComponent
-	GormComp *pg.PostgresGormComponent `infra:"dep:postgres_gorm"`
-	db       *gorm.DB
-	dsName   string
+	GormComp     *pg.PostgresGormComponent `infra:"dep:postgres_gorm"`
+	FieldDictDao *FieldDictionaryDao       `infra:"dep:dao_field_dictionary"`
+	db           *gorm.DB
+	dsName       string
 }
 
 func NewFinancialStatementDao(dsName string) *FinancialStatementDao {
@@ -100,6 +101,9 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 		if f.StatementType != "" {
 			q = q.Where("statement_type = ?", f.StatementType)
 		}
+		if f.StatementCode != "" {
+			q = q.Where("statement_code = ?", f.StatementCode)
+		}
 		if f.ReportingPeriod != "" {
 			q = q.Where("reporting_period = ?", f.ReportingPeriod)
 		}
@@ -162,6 +166,9 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 		if f.StatementType != "" {
 			q = q.Where("statement_type = ?", f.StatementType)
 		}
+		if f.StatementCode != "" {
+			q = q.Where("statement_code = ?", f.StatementCode)
+		}
 		if f.ReportingPeriod != "" {
 			q = q.Where("reporting_period = ?", f.ReportingPeriod)
 		}
@@ -197,4 +204,183 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 		return 0, err
 	}
 	return cnt, nil
+}
+
+// applyFinStmtFilters mutates the gorm query with financial-statement WHERE
+// clauses. Shared between QueryFlat and QueryNested.
+func applyFinStmtFilters(q *gorm.DB, f *model.FinancialStatementFilters) {
+	if f == nil {
+		return
+	}
+	if f.Symbol != "" {
+		q = q.Where("symbol = ?", f.Symbol)
+	}
+	if len(f.Symbols) > 0 {
+		q = q.Where("symbol IN ?", f.Symbols)
+	}
+	if f.Market != "" {
+		q = q.Where("market = ?", f.Market)
+	}
+	if f.StatementType != "" {
+		q = q.Where("statement_type = ?", f.StatementType)
+	}
+	if f.StatementCode != "" {
+		q = q.Where("statement_code = ?", f.StatementCode)
+	}
+	if f.ReportingPeriod != "" {
+		q = q.Where("reporting_period = ?", f.ReportingPeriod)
+	}
+	if len(f.ReportingPeriods) > 0 {
+		q = q.Where("reporting_period IN ?", f.ReportingPeriods)
+	}
+	if f.PeriodStart != "" {
+		q = q.Where("reporting_period >= ?", f.PeriodStart)
+	}
+	if f.PeriodEnd != "" {
+		q = q.Where("reporting_period <= ?", f.PeriodEnd)
+	}
+	if f.AnnDateBefore != "" {
+		q = q.Where("ann_date < ?", f.AnnDateBefore)
+	}
+	if f.ReportType != "" {
+		q = q.Where("report_type = ?", f.ReportType)
+	}
+	if f.CompTypeCode != nil {
+		q = q.Where("comp_type_code = ?", *f.CompTypeCode)
+	}
+	if len(f.DataContains) > 0 {
+		if jsonBytes, err := json.Marshal(f.DataContains); err == nil {
+			q = q.Where("data_json @> ?::jsonb", string(jsonBytes))
+		}
+	}
+	if f.DataHasKey != "" {
+		q = q.Where("data_json ?? ?", f.DataHasKey)
+	}
+}
+
+// ResolveQueryFields resolves user-supplied field names against the field
+// dictionary for the financial_statement dataset. dataType is the
+// statement_type (balance_sheet / income / cashflow / ...). Returns resolved
+// fields plus unknown-field hints; the caller turns non-empty unknown into a
+// 400 response.
+func (d *FinancialStatementDao) ResolveQueryFields(ctx context.Context, source, dataType string, requested []string) ([]ResolvedField, []model.UnknownFieldHint, error) {
+	return d.FieldDictDao.ResolveFields(ctx, source, "financial_statement", dataType, requested)
+}
+
+// QueryFlat runs a flat query: each resolved field becomes one column in a
+// flat map. When resolved is empty, all top-level columns plus the full
+// data_json are projected (callers asking for "*" semantics should pass an
+// empty resolved list and use format=nested instead).
+func (d *FinancialStatementDao) QueryFlat(ctx context.Context, source string, f *model.FinancialStatementFilters, resolved []ResolvedField, limit, offset int) ([]map[string]any, error) {
+	selectClause, _ := BuildFlatSelect(resolved)
+	q := d.db.WithContext(ctx).Table("ods.financial_statement").Where("source = ?", source)
+	applyFinStmtFilters(q, f)
+	q = q.Order("symbol ASC, reporting_period DESC")
+	if selectClause != "" {
+		q = q.Select(selectClause)
+	}
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if offset > 0 {
+		q = q.Offset(offset)
+	}
+
+	var rows []map[string]any
+	if err := q.Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// QueryNested runs a nested query: top-level columns go into the TopLevel
+// map; data_json (full or filtered to requested keys) goes into the DataJSON
+// map. When resolved is empty, the full data_json is returned.
+func (d *FinancialStatementDao) QueryNested(ctx context.Context, source string, f *model.FinancialStatementFilters, resolved []ResolvedField, limit, offset int) ([]model.NestedRow, error) {
+	topLevel, dataJSONFields := SplitResolved(resolved)
+
+	// Build SELECT list: always include the canonical top-level columns that
+	// make sense for nested output, plus any explicitly requested top_level
+	// fields, plus either the full or filtered data_json.
+	selectParts := []string{
+		"source", "symbol", "market", "statement_type", "reporting_period",
+		"report_type", "statement_code", "security_name", "ann_date",
+		"actual_ann_date", "comp_type_code",
+	}
+	// Add explicitly requested top_level fields not already in the list.
+	seen := map[string]bool{}
+	for _, p := range selectParts {
+		seen[p] = true
+	}
+	for _, r := range topLevel {
+		if r.SelectExpr != "" && !seen[r.OutputKey] {
+			selectParts = append(selectParts, r.SelectExpr)
+			seen[r.OutputKey] = true
+		}
+	}
+
+	dataJSONExpr := "data_json"
+	if filtered := BuildFilteredDataJSON(dataJSONFields); filtered != "" {
+		dataJSONExpr = filtered
+	}
+	selectParts = append(selectParts, dataJSONExpr)
+
+	q := d.db.WithContext(ctx).
+		Table("financial_statement").
+		Select(strings.Join(selectParts, ", ")).
+		Where("source = ?", source)
+	applyFinStmtFilters(q, f)
+	q = q.Order("symbol ASC, reporting_period DESC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	if offset > 0 {
+		q = q.Offset(offset)
+	}
+
+	type rawNestedRow struct {
+		Source          string `gorm:"column:source"`
+		Symbol          string `gorm:"column:symbol"`
+		Market          string `gorm:"column:market"`
+		StatementType   string `gorm:"column:statement_type"`
+		ReportingPeriod string `gorm:"column:reporting_period"`
+		ReportType      string `gorm:"column:report_type"`
+		StatementCode   string `gorm:"column:statement_code"`
+		SecurityName    string `gorm:"column:security_name"`
+		AnnDate         string `gorm:"column:ann_date"`
+		ActualAnnDate   string `gorm:"column:actual_ann_date"`
+		CompTypeCode    int    `gorm:"column:comp_type_code"`
+		DataJSON        []byte `gorm:"column:data_json"`
+	}
+	var rawRows []rawNestedRow
+	if err := q.Scan(&rawRows).Error; err != nil {
+		return nil, err
+	}
+
+	rows := make([]model.NestedRow, 0, len(rawRows))
+	for _, r := range rawRows {
+		row := model.NestedRow{
+			TopLevel: map[string]any{
+				"source":           r.Source,
+				"symbol":           r.Symbol,
+				"market":           r.Market,
+				"statement_type":   r.StatementType,
+				"reporting_period": r.ReportingPeriod,
+				"report_type":      r.ReportType,
+				"statement_code":   r.StatementCode,
+				"security_name":    r.SecurityName,
+				"ann_date":         r.AnnDate,
+				"actual_ann_date":  r.ActualAnnDate,
+				"comp_type_code":   r.CompTypeCode,
+			},
+		}
+		if len(r.DataJSON) > 0 && string(r.DataJSON) != "null" {
+			var dj map[string]any
+			if err := json.Unmarshal(r.DataJSON, &dj); err == nil {
+				row.DataJSON = dj
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }

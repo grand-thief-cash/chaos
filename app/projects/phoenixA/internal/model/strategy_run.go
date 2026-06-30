@@ -32,7 +32,7 @@ type StrategyRunSummary struct {
 	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`                          // 更新时间
 }
 
-func (StrategyRunSummary) TableName() string { return "strategy_run_summary" }
+func (StrategyRunSummary) TableName() string { return "govern.strategy_run_summary" }
 
 // StrategyRunArtifact 存储回测产生的制品数据（分析结果、交易明细、权益曲线等）。
 type StrategyRunArtifact struct {
@@ -45,7 +45,7 @@ type StrategyRunArtifact struct {
 	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`                                                                  // 更新时间
 }
 
-func (StrategyRunArtifact) TableName() string { return "strategy_run_artifact" }
+func (StrategyRunArtifact) TableName() string { return "govern.strategy_run_artifact" }
 
 // StrategyRunSummaryFilters 用于查询回测汇总列表时的过滤条件。
 type StrategyRunSummaryFilters struct {

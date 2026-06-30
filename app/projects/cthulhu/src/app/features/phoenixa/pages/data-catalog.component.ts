@@ -155,7 +155,7 @@ import type {EChartsOption} from 'echarts';
                 <div style="margin-bottom: 12px;">
                   <span style="color: #666;">{{ d.description }}</span>
                 </div>
-                @if (d.tables?.length) {
+                @if (d.tables.length) {
                   <div style="margin-bottom: 10px;">
                     <strong>\u6570\u636E\u8868\uFF1A</strong>
                     @for (t of d.tables; track t) {

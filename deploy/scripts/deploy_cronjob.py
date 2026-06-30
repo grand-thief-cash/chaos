@@ -22,10 +22,13 @@ DOCKERFILE_PATH = "../docker/dockerfile/Dockerfile-cronjob"
 DOCKER_COMPOSE_FILE = "cronjob.yaml"
 DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
-FORCE_GO_BUILD = True
-FORCE_DOCKER_COMPOSE_BUILD = True
+FORCE_GO_BUILD = False
+FORCE_DOCKER_COMPOSE_BUILD = False
 FORCE_DOCKER_BUILD = True
 SERVICE_NAME = "cronjob"
+
+SKIP_UPLOAD_BINARY = False
+SKIP_UPLOAD_MIGRATIONS = False
 
 VPN = "192.168.31.169:7890"
 PRIMARY_PROXY = "http://192.168.31.170:7890"
@@ -186,14 +189,23 @@ def create_temp_compose(version):
 
 
 def upload_files(build_file, compose_file):
-    print("⬆️ 上传构建产物和 docker 文件...")
-
     ssh = ssh_connect()
 
-    sftp_upload(ssh, build_file, f"{REMOTE_DEPLOY_PATH}/{SERVICE_NAME}")
-    sftp_upload(ssh, DOCKERFILE_PATH, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
-    sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
-    sftp_upload(ssh, f"{GO_PROJECT_PATH}/migrations", f"{REMOTE_DEPLOY_PATH}/migrations")
+    if not SKIP_UPLOAD_BINARY:
+        print("⬆️ 上传构建产物和 docker 文件...")
+        sftp_upload(ssh, build_file, f"{REMOTE_DEPLOY_PATH}/{SERVICE_NAME}")
+        sftp_upload(ssh, DOCKERFILE_PATH, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
+        sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
+    else:
+        print("⏭️  跳过上传构建产物和 docker 文件")
+
+    if not SKIP_UPLOAD_MIGRATIONS:
+        print("⬆️ 上传 migrations 目录...")
+        # 清理远程 migrations 目录中的旧文件，防止已删除的本地文件残留在服务器上
+        remote_exec(ssh, f"rm -rf {REMOTE_DEPLOY_PATH}/migrations")
+        sftp_upload(ssh, f"{GO_PROJECT_PATH}/migrations", f"{REMOTE_DEPLOY_PATH}/migrations")
+    else:
+        print("⏭️  跳过上传 migrations（使用远程服务器上已有的 migrations）")
 
     ssh.close()
 

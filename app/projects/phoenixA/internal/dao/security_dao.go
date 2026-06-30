@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
@@ -17,7 +17,7 @@ import (
 // SecurityRegistryDao handles CRUD for the unified security registry table.
 type SecurityRegistryDao struct {
 	*core.BaseComponent
-	GormComp *mg.GormComponent `infra:"dep:mysql_gorm"`
+	GormComp *pg.PostgresGormComponent `infra:"dep:postgres_gorm"`
 	db       *gorm.DB
 	dsName   string
 }

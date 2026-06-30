@@ -83,7 +83,7 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2026-01-01"     # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"     # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"       # "YYYY-MM-DD" 或 null（不限）
           symbols: ["000001"]
           exchange : "SZ"
@@ -92,7 +92,7 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2026-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-06-01"               # "YYYY-MM-DD" 或 null（不限）
           symbols: ["000001"]        # 纯代码格式，缺省则全量下载
           exchange: "SZ"             # 与 symbols 配合使用
@@ -101,7 +101,7 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2025-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
           symbols: ["000001"]        # 纯代码格式，缺省则全量下载
           exchange: "SZ"             # 与 symbols 配合使用
@@ -110,19 +110,19 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2026-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
-          # symbols: ["000001"]        # 纯代码格式，缺省则全量下载
-          # exchange: "SZ"             # 与 symbols 配合使用
+          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_PROFIT_NOTICE:
     variants:
       - match: {}
         config:
-          start_date: "2026-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
-          # symbols: ["000001"]        # 纯代码格式，缺省则全量下载
-          # exchange: "SZ"             # 与 symbols 配合使用
+          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          exchange: "SZ"             # 与 symbols 配合使用
 
   # Corporate Actions
   # SDK: AmazingData InfoData.get_dividend / get_right_issue
@@ -135,7 +135,7 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2026-01-01"              # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"              # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-06-01"
           symbols: ["000001"]                   # 纯代码格式，缺省则全量下载
           exchange: "SZ"                        # 与 symbols 配合使用（SH/SZ/BJ）
@@ -144,10 +144,24 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "1993-01-01"                     # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"                     # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"                    # "YYYY-MM-DD" 或 null（不限）
           symbols: ["000001"]                 # 纯代码格式，缺省则全量下载
           exchange: "SZ"                      # 与 symbols 配合使用
+
+  # Trading anomaly dataset
+  # SDK: AmazingData InfoData.get_long_hu_bang
+  # 支持 code_list 批量下载
+  # symbols: 纯代码格式（如 "000001"），缺省则全量下载；exchange 指定交易所
+  # start_date/end_date: YYYY-MM-DD，对应 SDK 的交易日期范围
+  STOCK_ZH_A_LONG_HU_BANG:
+    variants:
+      - match: {}
+        config:
+          start_date: "2026-01-01"             # "YYYY-MM-DD" 或 null（不限）
+          end_date: "2026-05-27"               # "YYYY-MM-DD" 或 null（不限）
+          # symbols: ["000001"]               # 纯代码格式，缺省则全量下载
+          # exchange: "SZ"                    # 与 symbols 配合使用（SH/SZ/BJ）
 
   # Baostock 季频偿债能力
   # SDK: baostock query_balance_data(code, year, quarter)
@@ -182,6 +196,24 @@ tasks:
           symbol_list: "000001,600000"
 
   STOCK_ZH_A_BS_DIVIDEND_CHILD:
+    variants:
+      - match: {}
+        config: {}
+
+  # Baostock 复权因子
+  # SDK: baostock query_adjust_factor(code, start_date, end_date)
+  # 单 symbol 查询 → plan/child 模式
+  # start_date/end_date 直接传递给 child 的单证券查询
+  STOCK_ZH_A_BS_ADJUST_FACTOR_PARENT:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          exchange: "SH,SZ"
+          # symbol_list: "000001,600000"     # 逗号分隔，缺省则从 PhoenixA 拉取全量证券
+
+  STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD:
     variants:
       - match: {}
         config: {}

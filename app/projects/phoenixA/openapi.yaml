@@ -1,0 +1,776 @@
+openapi: 3.0.3
+info:
+  title: PhoenixA AmazingData Dataset API
+  version: v1.24.0
+  description: |
+    PhoenixA data middle-platform API for AmazingData datasets.
+
+    ## Design principle
+
+    This OpenAPI spec describes the **API shape** (paths, parameters, response
+    envelopes, error codes). It does NOT describe individual field meanings —
+    those live in the field dictionary and are exposed via the discovery API.
+
+    ## Two-contract model
+
+    - **API contract** (this file): how to call — paths, params, envelope.
+    - **Data contract** (discovery API): what fields exist, their meanings,
+      units, types. Always query discovery first when you need field info.
+
+    ## Agent integration flow
+
+    1. `GET /api/v2/catalog/datasets` — list available datasets.
+    2. `GET /api/v2/catalog/datasets/{dataset}/fields?type=X&search=keyword`
+       — discover field names by keyword; learn raw_field, canonical_field,
+       unit, scale, value_type, storage_location.
+    3. `GET /api/v2/catalog/enums/{enum_name}` — resolve enum codes.
+    4. `GET /api/v2/{dataset-query-path}?fields=RAW_A,RAW_B&format=flat` —
+       query data, projecting only the fields you discovered.
+    5. `POST /api/v2/catalog/field-coverage/scan` periodically — find SDK-added
+       fields the dictionary hasn't caught up with.
+
+    Unknown fields in `fields=` return 400 with suggestions from the
+    dictionary; use the suggestions to correct your request.
+
+servers:
+  - url: http://localhost:8085
+    description: Local dev (config-home.yaml)
+
+# ───────────────────────────────────────────────────────────────────
+# Common conventions:
+#   - Dates: YYYY-MM-DD strings.
+#   - Symbols: pure codes without exchange suffix (e.g. "600519", not "sh600519").
+#   - Markets: "zh_a" by default for A-share.
+#   - Paginated endpoints accept page (1-based) and page_size (max 1000).
+# ───────────────────────────────────────────────────────────────────
+
+paths:
+  # ─── Discovery: datasets ───
+  /api/v2/catalog/datasets:
+    get:
+      tags: [Discovery]
+      summary: List governed datasets
+      description: |
+        Returns all datasets registered in the field dictionary, with their
+        storage table, data_types, and query/discovery API path templates.
+      parameters:
+        - in: query
+          name: source
+          schema: { type: string }
+          description: Filter by source (e.g. "amazing_data").
+      responses:
+        '200':
+          description: Dataset list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DatasetListResponse' }
+
+  /api/v2/catalog/datasets/{dataset}/fields:
+    get:
+      tags: [Discovery]
+      summary: Discover fields in a dataset
+      description: |
+        Returns field dictionary rows for one dataset, optionally filtered by
+        data_type, search keyword, and metadata flags. Each row carries the
+        raw_field name (what to pass to `fields=` in queries), canonical_field,
+        label_zh, unit, scale, value_type, storage_location, is_core, and
+        enum_ref.
+      parameters:
+        - in: path
+          name: dataset
+          required: true
+          schema: { type: string }
+          description: Dataset name (e.g. "financial_statement").
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: type
+          schema: { type: string }
+          description: Data type filter (e.g. "balance_sheet", "dividend").
+        - in: query
+          name: search
+          schema: { type: string }
+          description: Substring match on raw_field / canonical_field / label_zh / aliases.
+        - in: query
+          name: include
+          schema: { type: string, enum: [all, core, metadata] }
+          description: Filter by importance. Default "all".
+      responses:
+        '200':
+          description: Field list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldDiscoveryResponse' }
+
+  /api/v2/catalog/enums/{enum_name}:
+    get:
+      tags: [Discovery]
+      summary: Resolve enum values
+      description: Returns all code/label pairs for a named enum (e.g. REPORT_TYPE).
+      parameters:
+        - in: path
+          name: enum_name
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Enum values.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnumDiscoveryResponse' }
+        '404':
+          description: Enum not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  # ─── Discovery: per-symbol data coverage ───
+  /api/v2/catalog/securities/{symbol}/datasets/summary:
+    get:
+      tags: [Discovery]
+      summary: Per-symbol data coverage summary
+      description: |
+        Returns row counts and time ranges for each dataset/data_type that
+        exists for a given symbol. Covers financial_statement (by
+        statement_type × report_type), corporate_action (by action_type),
+        and equity_structure. Generic discovery API — not BI-specific.
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema: { type: string }
+          description: Security code (e.g. "000001").
+        - in: query
+          name: market
+          schema: { type: string, default: zh_a }
+      responses:
+        '200':
+          description: Coverage summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SymbolCoverageResponse' }
+
+  # ─── Discovery: field coverage ───
+  /api/v2/catalog/field-coverage/scan:
+    post:
+      tags: [Coverage]
+      summary: Scan datasets for observed data_json keys
+      description: |
+        Scans `data_json` keys in governed datasets, classifies each as
+        governed (in dictionary) or ungoverned (SDK-added, not yet in
+        dictionary), and upserts observations. Returns per-dataset summaries
+        including the list of ungoverned keys found.
+
+        Without `dataset=`, scans all governed datasets. Sampling caps
+        per-dataset work to keep latency bounded; pass `sample_limit=0` for a
+        full scan on small tables.
+      parameters:
+        - in: query
+          name: dataset
+          schema: { type: string }
+          description: Optional — scan only this dataset.
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: sample_limit
+          schema: { type: integer, minimum: 0 }
+          description: Max rows scanned per dataset (most recent by id). 0 = no limit. Default 10000.
+      responses:
+        '200':
+          description: Scan summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoverageScanResponse' }
+
+  /api/v2/catalog/field-coverage:
+    get:
+      tags: [Coverage]
+      summary: List field coverage observations
+      parameters:
+        - in: query
+          name: dataset
+          schema: { type: string }
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string, enum: [governed, ungoverned] }
+          description: Filter by status. Omit for all.
+      responses:
+        '200':
+          description: Observations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoverageListResponse' }
+
+  # ─── Query: financial statements ───
+  /api/v2/financial/{source}/{statement_type}:
+    get:
+      tags: [Query]
+      summary: Query financial statements
+      description: |
+        Dictionary-resolved query against the financial_statement table.
+        Fields in `fields=` are resolved through the field dictionary — pass
+        raw_field names (e.g. TOTAL_ASSETS) or canonical_field names; mixing
+        is allowed. Unknown fields return 400 with suggestions.
+
+        Use discovery (`/api/v2/catalog/datasets/financial_statement/fields`)
+        to learn available field names, units, and types.
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema: { type: string }
+          example: amazing_data
+        - in: path
+          name: statement_type
+          required: true
+          schema: { type: string, enum: [balance_sheet, income, cashflow, profit_express, profit_notice] }
+        - in: query
+          name: format
+          schema: { type: string, enum: [flat, nested], default: nested }
+          description: |
+            - `nested` (default): top_level columns + full data_json object.
+            - `flat`: returns projected fields as top-level keys.
+        - in: query
+          name: fields
+          schema: { type: string }
+          description: |
+            Comma-separated raw/canonical field names for flat projection.
+            Ignored for nested format (which returns full data_json).
+            Unknown fields return 400 with suggestions.
+        - in: query
+          name: symbol
+          schema: { type: string }
+        - in: query
+          name: symbols
+          schema: { type: string }
+          description: Comma-separated list of symbols.
+        - in: query
+          name: market
+          schema: { type: string, default: zh_a }
+        - in: query
+          name: report_period
+          schema: { type: string }
+          description: Exact match on report_period (YYYY-MM-DD).
+        - in: query
+          name: period_start
+          schema: { type: string }
+        - in: query
+          name: period_end
+          schema: { type: string }
+        - in: query
+          name: ann_date_before
+          schema: { type: string }
+          description: PIT filter — only rows announced before this date.
+        - in: query
+          name: statement_code
+          schema: { type: string }
+          description: Numeric code (1=合并, 2=合并单季, 6=母公司, 7=母公司单季).
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: Query result.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FlatQueryResponse'
+                  - $ref: '#/components/schemas/NestedQueryResponse'
+        '400':
+          description: Unknown field in `fields=`. Body contains suggestions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldResolutionError' }
+
+  /api/v2/financial/{source}/{statement_type}/upsert:
+    post:
+      tags: [Write]
+      summary: Batch upsert financial statements
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema: { type: string }
+        - in: path
+          name: statement_type
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: object } }
+      responses:
+        '200':
+          description: Upserted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpsertResponse' }
+
+  # ─── Query: corporate actions ───
+  /api/v2/corporate-action/{source}/{action_type}:
+    get:
+      tags: [Query]
+      summary: Query corporate actions (dividend / right_issue)
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema: { type: string }
+        - in: path
+          name: action_type
+          required: true
+          schema: { type: string, enum: [dividend, right_issue] }
+        - in: query
+          name: format
+          schema: { type: string, enum: [flat, nested], default: nested }
+        - in: query
+          name: fields
+          schema: { type: string }
+          description: Comma-separated raw/canonical field names for flat projection.
+        - in: query
+          name: symbol
+          schema: { type: string }
+        - in: query
+          name: symbols
+          schema: { type: string }
+        - in: query
+          name: market
+          schema: { type: string }
+        - in: query
+          name: report_period
+          schema: { type: string }
+        - in: query
+          name: period_start
+          schema: { type: string }
+        - in: query
+          name: period_end
+          schema: { type: string }
+        - in: query
+          name: ann_date_before
+          schema: { type: string }
+        - in: query
+          name: progress_code
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: Query result.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FlatQueryResponse'
+                  - $ref: '#/components/schemas/NestedQueryResponse'
+        '400':
+          description: Unknown field in `fields=`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldResolutionError' }
+
+  /api/v2/corporate-action/{source}/{action_type}/upsert:
+    post:
+      tags: [Write]
+      summary: Batch upsert corporate actions
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema: { type: string }
+        - in: path
+          name: action_type
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: object } }
+      responses:
+        '200':
+          description: Upserted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpsertResponse' }
+
+  # ─── Query: equity structure ───
+  /api/v2/equity-structure/{source}:
+    get:
+      tags: [Query]
+      summary: Query equity structure
+      description: |
+        AmazingData get_equity_structure output. Has a single data_type
+        (equity_structure) — no `type` parameter needed.
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema: { type: string }
+        - in: query
+          name: format
+          schema: { type: string, enum: [flat, nested], default: nested }
+        - in: query
+          name: fields
+          schema: { type: string }
+        - in: query
+          name: symbol
+          schema: { type: string }
+        - in: query
+          name: symbols
+          schema: { type: string }
+        - in: query
+          name: market
+          schema: { type: string }
+        - in: query
+          name: change_date
+          schema: { type: string }
+          description: Exact match.
+        - in: query
+          name: change_start
+          schema: { type: string }
+        - in: query
+          name: change_end
+          schema: { type: string }
+        - in: query
+          name: ann_date_before
+          schema: { type: string }
+        - in: query
+          name: current_only
+          schema: { type: string, enum: ["1", "0", "true", "false"] }
+          description: Only rows with current_sign=1.
+        - in: query
+          name: valid_only
+          schema: { type: string, enum: ["1", "0", "true", "false"] }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+      responses:
+        '200':
+          description: Query result.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FlatQueryResponse'
+                  - $ref: '#/components/schemas/NestedQueryResponse'
+        '400':
+          description: Unknown field in `fields=`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldResolutionError' }
+
+  /api/v2/equity-structure/{source}/upsert:
+    post:
+      tags: [Write]
+      summary: Batch upsert equity structure rows
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: array, items: { type: object } }
+      responses:
+        '200':
+          description: Upserted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpsertResponse' }
+
+components:
+  schemas:
+    ApiError:
+      type: object
+      properties:
+        error: { type: string }
+
+    UpsertResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        count: { type: integer }
+
+    SymbolCoverageResponse:
+      type: object
+      description: |
+        Per-symbol data coverage. Lists each dataset that has rows for this
+        symbol, broken down by data_type. For financial_statement, each
+        data_type further breaks down by report_type (1=Q1, 2=H1, 3=Q3, 4=FY).
+      properties:
+        generated_at: { type: string, format: date-time }
+        symbol: { type: string }
+        market: { type: string }
+        datasets:
+          type: array
+          items: { $ref: '#/components/schemas/SymbolCoverageDataset' }
+
+    SymbolCoverageDataset:
+      type: object
+      properties:
+        dataset: { type: string }
+        source: { type: string }
+        data_types:
+          type: array
+          items: { $ref: '#/components/schemas/SymbolCoverageDataType' }
+
+    SymbolCoverageDataType:
+      type: object
+      properties:
+        data_type: { type: string }
+        total_rows: { type: integer }
+        earliest_period: { type: string, description: 'YYYY-MM-DD or empty' }
+        latest_period: { type: string, description: 'YYYY-MM-DD or empty' }
+        latest_ann_date: { type: string, description: 'YYYY-MM-DD or empty' }
+        by_report_type:
+          type: array
+          description: Only for financial_statement; empty otherwise.
+          items: { $ref: '#/components/schemas/SymbolCoverageReportTypeBucket' }
+
+    SymbolCoverageReportTypeBucket:
+      type: object
+      properties:
+        report_type: { type: string }
+        row_count: { type: integer }
+        earliest_period: { type: string }
+        latest_period: { type: string }
+        latest_ann_date: { type: string }
+
+    DatasetListResponse:
+      type: object
+      properties:
+        generated_at: { type: string, format: date-time }
+        contract_version: { type: string }
+        datasets:
+          type: array
+          items: { $ref: '#/components/schemas/DatasetEntry' }
+
+    DatasetEntry:
+      type: object
+      properties:
+        source: { type: string }
+        dataset: { type: string }
+        label_zh: { type: string }
+        data_types:
+          type: array
+          items: { type: string }
+        storage_table: { type: string }
+        source_doc: { type: string }
+        field_discovery: { type: string }
+        query: { type: string }
+      description: |
+        `query` is the path template for data queries (may be empty if
+        discovery-only). `field_discovery` is the path to field discovery.
+
+    FieldDiscoveryResponse:
+      type: object
+      properties:
+        generated_at: { type: string, format: date-time }
+        dataset: { type: string }
+        source: { type: string }
+        data_type: { type: string }
+        contract_version: { type: string }
+        fields:
+          type: array
+          items: { $ref: '#/components/schemas/FieldDiscoveryEntry' }
+
+    FieldDiscoveryEntry:
+      type: object
+      description: |
+        Authoritative field metadata. Use `raw_field` (or canonical_field) in
+        query `fields=` parameters. `storage_location` tells you whether the
+        field is a top_level column or lives in data_json — but you do not
+        need to know this to query it; the resolver handles it.
+      properties:
+        raw_field: { type: string }
+        canonical_field: { type: string }
+        label_zh: { type: string }
+        description: { type: string }
+        value_type: { type: string }
+        unit: { type: string }
+        scale: { type: integer }
+        enum_ref: { type: string }
+        storage_location: { type: string, enum: [top_level, data_json] }
+        query_name: { type: string }
+        is_metadata: { type: boolean }
+        is_core: { type: boolean }
+        aliases:
+          type: array
+          items: { type: string }
+        source_doc: { type: string }
+
+    EnumDiscoveryResponse:
+      type: object
+      properties:
+        generated_at: { type: string, format: date-time }
+        enum_name: { type: string }
+        values:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              label_zh: { type: string }
+
+    FlatQueryResponse:
+      type: object
+      description: |
+        Flat query envelope. `rows` is an array of objects whose keys are the
+        requested `fields` (or all top-level keys if `fields` omitted). Values
+        are serialized as strings (numeric/JSONB values are cast to text).
+        `fields` echoes per-field metadata sourced from the dictionary — use
+        it to interpret units and types.
+      properties:
+        generated_at: { type: string, format: date-time }
+        dataset: { type: string }
+        source: { type: string }
+        data_type: { type: string }
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: { type: string }
+        fields:
+          type: array
+          items: { $ref: '#/components/schemas/FieldMeta' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    FieldMeta:
+      type: object
+      properties:
+        name: { type: string }
+        raw_field: { type: string }
+        canonical_field: { type: string }
+        label_zh: { type: string }
+        value_type: { type: string }
+        unit: { type: string }
+        scale: { type: integer }
+        storage_location: { type: string }
+        is_metadata: { type: boolean }
+        is_core: { type: boolean }
+
+    NestedQueryResponse:
+      type: object
+      description: |
+        Nested query envelope. Each row has `top_level` (stable query columns)
+        and `data_json` (full SDK detail object, unfiltered unless `fields=`
+        is given, in which case data_json is filtered to the requested
+        data_json-resident fields).
+      properties:
+        generated_at: { type: string, format: date-time }
+        dataset: { type: string }
+        source: { type: string }
+        data_type: { type: string }
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/NestedRow' }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    NestedRow:
+      type: object
+      properties:
+        top_level:
+          type: object
+          additionalProperties: true
+        data_json:
+          type: object
+          additionalProperties: true
+
+    FieldResolutionError:
+      type: object
+      description: |
+        Returned 400 when `fields=` contains unknown field names. Each entry
+        includes up to 5 dictionary-suggested alternatives; pick one and retry.
+      properties:
+        error:
+          type: string
+          example: unknown_field
+          description: Always "unknown_field".
+        dataset: { type: string }
+        data_type: { type: string }
+        source: { type: string }
+        unknown:
+          type: array
+          items: { $ref: '#/components/schemas/UnknownFieldHint' }
+
+    UnknownFieldHint:
+      type: object
+      properties:
+        field: { type: string }
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              raw_field: { type: string }
+              label_zh: { type: string }
+
+    CoverageScanResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        scanned: { type: integer }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/CoverageScanResult' }
+
+    CoverageScanResult:
+      type: object
+      properties:
+        dataset: { type: string }
+        source: { type: string }
+        storage_table: { type: string }
+        rows_scanned: { type: integer }
+        distinct_keys: { type: integer }
+        governed_count: { type: integer }
+        ungoverned_count: { type: integer }
+        ungoverned_keys:
+          type: array
+          items: { type: string }
+
+    CoverageListResponse:
+      type: object
+      properties:
+        generated_at: { type: string, format: date-time }
+        dataset: { type: string }
+        status_filter: { type: string }
+        count: { type: integer }
+        observations:
+          type: array
+          items: { $ref: '#/components/schemas/CoverageObservation' }
+
+    CoverageObservation:
+      type: object
+      properties:
+        dataset: { type: string }
+        source: { type: string }
+        storage_table: { type: string }
+        observed_key: { type: string }
+        status: { type: string, enum: [governed, ungoverned] }
+        sample_count: { type: integer }
+        first_seen_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }

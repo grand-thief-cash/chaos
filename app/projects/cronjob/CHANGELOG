@@ -1,7 +1,12 @@
 # VERSION
-v0.14.3
+v0.15.0
 
 # Changelog
+- v0.15.0
+    - Migrated cronjob to postgresql.
+- v0.14.4
+    - Migrated bars sql.
+    - Upgraded cronjob to v0.18.3.
 - v0.14.3
     - Updated `docs/2026-05-07 CONFIG_OF_CRONJOB_AND_ARTEMIS.md`: expanded task.yaml parameter documentation with types, formats, and examples for all tasks; marked resolved issues
     - Updated config doc: `STOCK_ZH_A_MKT_CATEGORY` → `STOCK_ZH_A_MKT_CATEGORY_MAIRUI` (aligned with Artemis rename)

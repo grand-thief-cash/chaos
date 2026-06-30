@@ -11,6 +11,8 @@
 ### 行情数据
 
 - [bars.md](bars.md) - K线/OHLCV 行情数据
+- [adjust_factors.md](adjust_factors.md) - 复权因子数据
+- [long_hu_bang.md](long_hu_bang.md) - 龙虎榜营业部明细数据
 
 ### 分类与行业数据
 
@@ -23,4 +25,4 @@
 
 ---
 
-*文档最后更新: 2026-05-13*
+*文档最后更新: 2026-05-27*
