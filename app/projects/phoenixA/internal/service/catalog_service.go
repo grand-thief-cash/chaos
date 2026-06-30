@@ -79,6 +79,15 @@ var tableMetaRegistry = map[string]tableMeta{
 			RefreshSchedule: "每日全量替换",
 		},
 	},
+	"taxonomy_category_derived_flags": {
+		Domain:      "taxonomy",
+		Description: "分类语义派生标记（PhoenixA 维护）",
+		Lineage: &model.DataLineage{
+			SourceSystem:    "phoenixA",
+			IngestionMethod: "DAO derive + upsert",
+			RefreshSchedule: "随 taxonomy 更新增量刷新",
+		},
+	},
 	"industry_constituent": {
 		Domain:      "taxonomy",
 		Description: "行业成分股",
@@ -126,6 +135,28 @@ var tableMetaRegistry = map[string]tableMeta{
 			IngestionMethod: "REST API batch upsert",
 			RefreshSchedule: "每日增量",
 			APIEndpoint:     "POST /api/v2/corporate-action/{source}/{action_type}/upsert",
+		},
+	},
+	"adjust_factor": {
+		Domain:      "bars",
+		Description: "复权因子（用于复权行情重建）",
+		TimeColumn:  "divid_operate_date",
+		Lineage: &model.DataLineage{
+			SourceSystem:    "artemis",
+			IngestionMethod: "REST API batch upsert",
+			RefreshSchedule: "每日增量",
+			APIEndpoint:     "POST /api/v2/adjust-factors/{source}/upsert",
+		},
+	},
+	"long_hu_bang": {
+		Domain:      "regime",
+		Description: "龙虎榜营业部明细",
+		TimeColumn:  "trade_date",
+		Lineage: &model.DataLineage{
+			SourceSystem:    "artemis",
+			IngestionMethod: "REST API batch upsert",
+			RefreshSchedule: "每日增量",
+			APIEndpoint:     "POST /api/v2/long-hu-bang/{source}/upsert",
 		},
 	},
 	// Strategy
@@ -225,27 +256,41 @@ var tableMetaRegistry = map[string]tableMeta{
 
 // column description registry (table.column → description)
 var columnDescRegistry = map[string]string{
-	"*.id":               "自增主键",
-	"*.symbol":           "证券代码",
-	"*.market":           "市场（如 zh_a, hk, us）",
-	"*.source":           "数据来源",
-	"*.created_at":       "创建时间",
-	"*.updated_at":       "更新时间",
-	"*.trade_date":       "交易日期",
-	"*.open":             "开盘价",
-	"*.high":             "最高价",
-	"*.low":              "最低价",
-	"*.close":            "收盘价",
-	"*.volume":           "成交量",
-	"*.amount":           "成交额",
-	"*.preclose":         "昨收价",
-	"*.pct_chg":          "涨跌幅(%)",
-	"*.data_json":        "业务数据（JSONB 灵活字段）",
-	"*.statement_type":   "报表类型（balance_sheet/income/cashflow/profit_express/profit_notice）",
-	"*.reporting_period": "报告期（YYYYMMDD）",
-	"*.action_type":      "公司行为类型（dividend/right_issue）",
-	"*.ann_date":         "公告日期",
-	"*.security_name":    "证券名称",
+	"*.id":                 "自增主键",
+	"*.symbol":             "证券代码",
+	"*.market":             "市场（如 zh_a, hk, us）",
+	"*.source":             "数据来源",
+	"*.created_at":         "创建时间",
+	"*.updated_at":         "更新时间",
+	"*.trade_date":         "交易日期",
+	"*.open":               "开盘价",
+	"*.high":               "最高价",
+	"*.low":                "最低价",
+	"*.close":              "收盘价",
+	"*.volume":             "成交量",
+	"*.amount":             "成交额",
+	"*.preclose":           "昨收价",
+	"*.pct_chg":            "涨跌幅(%)",
+	"*.data_json":          "业务数据（JSONB 灵活字段）",
+	"*.derived_flags":      "PhoenixA 派生语义标记（JSONB）",
+	"*.statement_type":     "报表类型（balance_sheet/income/cashflow/profit_express/profit_notice）",
+	"*.reporting_period":   "报告期（YYYYMMDD）",
+	"*.action_type":        "公司行为类型（dividend/right_issue）",
+	"*.ann_date":           "公告日期",
+	"*.divid_operate_date": "除权除息日期",
+	"*.fore_adjust_factor": "向前复权因子",
+	"*.back_adjust_factor": "向后复权因子",
+	"*.adjust_factor":      "本次复权因子",
+	"*.security_name":      "证券名称",
+	"*.reason_type":        "上榜原因类型代码",
+	"*.reason_type_name":   "上榜原因名称",
+	"*.trader_name":        "营业部名称",
+	"*.flow_mark":          "买卖方向（1买入/2卖出）",
+	"*.change_range":       "涨跌幅（%）",
+	"*.buy_amount":         "买入金额（元）",
+	"*.sell_amount":        "卖出金额（元）",
+	"*.total_amount":       "实际交易金额（元）",
+	"*.total_volume":       "实际交易量（万股）",
 }
 
 // ─── Domain label map ───
@@ -284,15 +329,27 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data/baostock）"},
 			{Name: "statement_type", Type: "varchar(32)", Description: "报表类型"},
 			{Name: "reporting_period", Type: "varchar(10)", Description: "报告期（YYYY-MM-DD）"},
+			{Name: "report_type", Type: "varchar(32)", Description: "报告期名称"},
+			{Name: "ann_date", Type: "varchar(10)", Description: "公告日期（YYYY-MM-DD）"},
+			{Name: "comp_type_code", Type: "int", Description: "公司类型代码（1:非金融 2:银行 3:保险 4:证券）"},
 			{Name: "data_json", Type: "jsonb", Description: "业务数据字段（JSONB），内容因 statement_type 而异", InJSONB: true},
 		},
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data", "baostock"}},
 			{Name: "statement_type", Type: "string", Required: true, Description: "报表类型", Enum: []string{"balance_sheet", "income", "cashflow", "profit_express", "profit_notice", "bs_balance"}},
 			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
+			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
 			{Name: "period_start", Type: "string", Required: false, Description: "报告期起始（YYYY-MM-DD）"},
 			{Name: "period_end", Type: "string", Required: false, Description: "报告期截止（YYYY-MM-DD）"},
+			{Name: "reporting_period", Type: "string", Required: false, Description: "单个报告期（YYYY-MM-DD）"},
+			{Name: "reporting_periods", Type: "string", Required: false, Description: "报告期列表（逗号分隔）"},
 			{Name: "ann_date_before", Type: "string", Required: false, Description: "PIT查询：仅返回公告日<=此日期的记录"},
+			{Name: "report_type", Type: "string", Required: false, Description: "按报告期名称过滤"},
+			{Name: "comp_type_code", Type: "int", Required: false, Description: "公司类型代码（1:非金融 2:银行 3:保险 4:证券）"},
+			{Name: "fields", Type: "string", Required: false, Description: "返回字段列表（逗号分隔）"},
+			{Name: "page", Type: "int", Required: false, Description: "页码"},
+			{Name: "page_size", Type: "int", Required: false, Description: "每页条数"},
 		},
 		RefreshSchedule:     "每日增量",
 		CoverageDescription: "A股全量上市公司，2007至今（baostock偿债能力）/ 历史全量（AmazingData三表）",
@@ -321,6 +378,75 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		},
 		RefreshSchedule:     "每日增量",
 		CoverageDescription: "A股全量，2015至今（baostock除权除息）/ 历史全量（AmazingData分红配股）",
+	},
+	"adjust_factor": {
+		Provider:            "复权因子",
+		ProviderDescription: "A股复权因子数据，记录每次除权除息事件对应的前复权因子、后复权因子和本次复权因子，可用于基于本地不复权日线重建前复权/后复权价格序列。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "adjust_factor", Label: "复权因子", Description: "Baostock query_adjust_factor 输出的事件级复权因子", Source: "baostock"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
+			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "source", Type: "varchar(32)", Description: "数据来源（baostock）"},
+			{Name: "divid_operate_date", Type: "varchar(10)", Description: "除权除息日期（YYYY-MM-DD）"},
+			{Name: "fore_adjust_factor", Type: "numeric(20,8)", Description: "向前复权因子"},
+			{Name: "back_adjust_factor", Type: "numeric(20,8)", Description: "向后复权因子"},
+			{Name: "adjust_factor", Type: "numeric(20,8)", Description: "本次复权因子"},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"baostock"}},
+			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
+			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "start_date", Type: "string", Required: false, Description: "起始除权除息日期（YYYY-MM-DD）"},
+			{Name: "end_date", Type: "string", Required: false, Description: "截止除权除息日期（YYYY-MM-DD）"},
+			{Name: "fields", Type: "string", Required: false, Description: "返回字段列表（逗号分隔）"},
+			{Name: "page", Type: "int", Required: false, Description: "页码"},
+			{Name: "page_size", Type: "int", Required: false, Description: "每页条数"},
+		},
+		RefreshSchedule:     "每日增量",
+		CoverageDescription: "A股全量，2015至今（baostock query_adjust_factor）",
+	},
+	"long_hu_bang": {
+		Provider:            "龙虎榜",
+		ProviderDescription: "A股龙虎榜营业部明细数据，字段数量少且结构稳定，直接以显式列存储证券、原因类型、席位名称以及金额/交易量指标，可用于异常交易和市场情绪分析。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "long_hu_bang", Label: "龙虎榜明细", Description: "AmazingData get_long_hu_bang 输出的营业部级龙虎榜数据", Source: "amazing_data"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
+			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data）"},
+			{Name: "trade_date", Type: "varchar(10)", Description: "交易日期（YYYY-MM-DD）"},
+			{Name: "security_name", Type: "varchar(128)", Description: "证券名称"},
+			{Name: "reason_type", Type: "varchar(32)", Description: "上榜原因类型代码"},
+			{Name: "reason_type_name", Type: "varchar(256)", Description: "上榜原因名称"},
+			{Name: "trader_name", Type: "varchar(256)", Description: "营业部名称"},
+			{Name: "flow_mark", Type: "smallint", Description: "买卖方向：1买入，2卖出"},
+			{Name: "change_range", Type: "numeric(20,6)", Description: "涨跌幅（%）"},
+			{Name: "buy_amount", Type: "numeric(24,4)", Description: "买入金额（元）"},
+			{Name: "sell_amount", Type: "numeric(24,4)", Description: "卖出金额（元）"},
+			{Name: "total_amount", Type: "numeric(24,4)", Description: "实际交易金额（元）"},
+			{Name: "total_volume", Type: "numeric(24,4)", Description: "实际交易量（万股）"},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data"}},
+			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
+			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "trade_date", Type: "string", Required: false, Description: "精确交易日期（YYYY-MM-DD）"},
+			{Name: "start_date", Type: "string", Required: false, Description: "起始交易日期（YYYY-MM-DD）"},
+			{Name: "end_date", Type: "string", Required: false, Description: "截止交易日期（YYYY-MM-DD）"},
+			{Name: "reason_type", Type: "string", Required: false, Description: "上榜原因类型代码"},
+			{Name: "trader_name", Type: "string", Required: false, Description: "营业部名称"},
+			{Name: "flow_mark", Type: "int", Required: false, Description: "买卖方向（1买入，2卖出）"},
+			{Name: "fields", Type: "string", Required: false, Description: "返回字段列表（逗号分隔）"},
+			{Name: "page", Type: "int", Required: false, Description: "页码"},
+			{Name: "page_size", Type: "int", Required: false, Description: "每页条数"},
+		},
+		RefreshSchedule:     "每日增量",
+		CoverageDescription: "A股全量，历史可回溯至 AmazingData 提供的交易异动覆盖范围",
 	},
 	"bars_": {
 		Provider:            "K线行情",
@@ -379,6 +505,14 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 		{Method: "GET", Path: "/api/v2/corporate-action/{source}/{action_type}", Description: "查询公司行为"},
 		{Method: "POST", Path: "/api/v2/corporate-action/{source}/{action_type}/upsert", Description: "写入公司行为"},
 	},
+	"adjust_factor": {
+		{Method: "GET", Path: "/api/v2/adjust-factors/{source}", Description: "查询复权因子"},
+		{Method: "POST", Path: "/api/v2/adjust-factors/{source}/upsert", Description: "写入复权因子"},
+	},
+	"long_hu_bang": {
+		{Method: "GET", Path: "/api/v2/long-hu-bang/{source}", Description: "查询龙虎榜明细"},
+		{Method: "POST", Path: "/api/v2/long-hu-bang/{source}/upsert", Description: "写入龙虎榜明细"},
+	},
 	"taxonomy_category": {
 		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories", Description: "查询分类节点"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert", Description: "写入分类节点"},
@@ -422,10 +556,11 @@ var domainApiRegistry = map[string]struct {
 	CrossRefs    []model.CrossRef
 }{
 	"bars": {
-		Description: "K线行情数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织",
+		Description: "K线行情数据与复权支撑数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织",
 		ExampleCalls: []model.ExampleCall{
 			{Title: "查询A股日线行情", URL: "GET /api/v2/bars/stock/zh_a?symbol=000001&start_date=2026-01-01"},
 			{Title: "查询指数行情", URL: "GET /api/v2/bars/index/zh_a?symbol=000001&start_date=2026-01-01"},
+			{Title: "查询复权因子", URL: "GET /api/v2/adjust-factors/baostock?symbol=600000&start_date=2024-01-01"},
 		},
 		CrossRefs: []model.CrossRef{
 			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
@@ -495,12 +630,12 @@ func (s *CatalogService) resolveDomainMeta(domain string) (examples []model.Exam
 
 // resolveCapability finds the capability description for a table using exact/prefix matching.
 func (s *CatalogService) resolveCapability(table string) *model.DataCapability {
-	if cap, ok := tableCapabilityRegistry[table]; ok {
-		return cap
+	if capability, ok := tableCapabilityRegistry[table]; ok {
+		return capability
 	}
-	for prefix, cap := range tableCapabilityRegistry {
+	for prefix, capability := range tableCapabilityRegistry {
 		if strings.HasSuffix(prefix, "_") && strings.HasPrefix(table, prefix) {
-			return cap
+			return capability
 		}
 	}
 	return nil
@@ -628,9 +763,10 @@ var tablespaceTiers = map[string]struct {
 
 type CatalogService struct {
 	*core.BaseComponent
-	Dao       *dao.CatalogDao `infra:"dep:dao_catalog"`
-	SchemaDao *dao.SchemaDao  `infra:"dep:dao_schema"`
-	GraphDao  *dao.GraphDao   `infra:"dep_optional:dao_graph"`
+	Dao          *dao.CatalogDao         `infra:"dep:dao_catalog"`
+	SchemaDao    *dao.SchemaDao          `infra:"dep:dao_schema"`
+	GraphDao     *dao.GraphDao           `infra:"dep_optional:dao_graph"`
+	FieldDictDao *dao.FieldDictionaryDao `infra:"dep:dao_field_dictionary"`
 
 	cacheMu      sync.RWMutex
 	cachedTables []model.TableCatalogEntry
@@ -641,6 +777,14 @@ type CatalogService struct {
 	cachedDict *model.DataDictionary
 	dictTime   time.Time
 	dictTTL    time.Duration
+
+	// fieldDictCache caches the per-storage-table field dictionary view used
+	// to aggregate dictionary + observed stats in GetDataDictionary. Keyed by
+	// storage_table name (e.g. "financial_statement").
+	fieldDictMu    sync.RWMutex
+	fieldDictCache map[string]*tableFieldDict
+	fieldDictTime  time.Time
+	fieldDictTTL   time.Duration
 }
 
 func NewCatalogService() *CatalogService {
@@ -648,6 +792,7 @@ func NewCatalogService() *CatalogService {
 		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_CATALOG),
 		cacheTTL:      5 * time.Minute,
 		dictTTL:       10 * time.Minute,
+		fieldDictTTL:  10 * time.Minute,
 	}
 }
 
@@ -745,6 +890,10 @@ func (s *CatalogService) ListTables(ctx context.Context, domain string, refresh 
 
 // GetTableDetail returns detailed metadata for a specific table.
 func (s *CatalogService) GetTableDetail(ctx context.Context, schema, table string, refresh bool) (*model.TableDetail, error) {
+	schemaCtx := ctx
+	if refresh {
+		schemaCtx = dao.WithSchemaCacheBypass(ctx)
+	}
 	tables, _, err := s.getTables(ctx, refresh)
 	if err != nil {
 		return nil, err
@@ -778,7 +927,7 @@ func (s *CatalogService) GetTableDetail(ctx context.Context, schema, table strin
 	// Get JSONB keys for JSONB columns (check column type, not HasJSONB flag)
 	for i, col := range cols {
 		if strings.Contains(col.Type, "jsonb") {
-			jsonbKeys := s.discoverJSONBKeys(ctx, schema, table, col.Name)
+			jsonbKeys := s.discoverJSONBKeys(schemaCtx, schema, table, col.Name)
 			if jsonbKeys != nil {
 				cols[i].JSONBKeys = jsonbKeys
 			}
@@ -876,9 +1025,9 @@ func (s *CatalogService) getTables(ctx context.Context, refresh bool) ([]model.T
 
 	// Rebuild cache (ANALYZE first on refresh to get accurate pg statistics)
 	if refresh {
-		s.Dao.AnalyzeSchemas(ctx, []string{"public", "kg", "security_dev", "security"})
+		s.Dao.AnalyzeSchemas(ctx, []string{"public", "kg", "ods", "dwd", "govern"})
 	}
-	rows, err := s.Dao.ListTables(ctx, []string{"public", "kg", "security_dev", "security"})
+	rows, err := s.Dao.ListTables(ctx, []string{"public", "kg", "ods", "dwd", "govern"})
 	if err != nil {
 		return nil, false, err
 	}
@@ -1127,6 +1276,10 @@ func (s *CatalogService) GetGraphCatalog(ctx context.Context) (*model.GraphCatal
 // Suitable for UI display and LLM function calling.
 // Results are cached for dictTTL duration (default 10 minutes).
 func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*model.DataDictionary, error) {
+	schemaCtx := ctx
+	if refresh {
+		schemaCtx = dao.WithSchemaCacheBypass(ctx)
+	}
 	// Check dict cache first
 	if !refresh {
 		s.dictMu.RLock()
@@ -1141,6 +1294,16 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 	tables, _, err := s.getTables(ctx, refresh)
 	if err != nil {
 		return nil, err
+	}
+
+	// Load the field dictionary view (storage_table -> dict) once. Used to
+	// attach the aggregated dictionary + ungoverned-key diff to governed
+	// tables. When FieldDictDao is not registered, this returns nil and the
+	// data-dictionary falls back to observed-only behavior.
+	fieldDictMap, dictErr := s.loadFieldDictionary(ctx, refresh)
+	if dictErr != nil {
+		logging.Warnf(ctx, "data-dict: load field dictionary failed: %v", dictErr)
+		fieldDictMap = nil
 	}
 
 	entries := make([]model.TableDictionaryEntry, 0, len(tables))
@@ -1162,6 +1325,9 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 			logging.Errorf(ctx, "data-dict: get columns for %s.%s failed: %v", t.Schema, t.TableName, err)
 		}
 		colDicts := make([]model.ColumnDictionary, 0, len(cols))
+		// observedDataJSONKeys captures the JSONB keys discovered for the
+		// data_json column so we can diff against the dictionary below.
+		var observedDataJSONKeys []model.JSONBKeyRef
 		for _, col := range cols {
 			cd := model.ColumnDictionary{
 				Name:         col.Name,
@@ -1172,7 +1338,7 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 			}
 			// JSONB key discovery
 			if t.HasJSONB && strings.Contains(col.Type, "jsonb") && s.SchemaDao != nil {
-				keys, err := s.SchemaDao.DiscoverJSONBKeysGeneric(ctx, t.Schema, t.TableName, col.Name, 100)
+				keys, err := s.SchemaDao.DiscoverJSONBKeysGeneric(schemaCtx, t.Schema, t.TableName, col.Name, 100)
 				if err == nil && len(keys) > 0 {
 					cd.JSONBKeys = make([]model.JSONBKeyRef, 0, len(keys))
 					for _, k := range keys {
@@ -1181,6 +1347,11 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 							ValueType:  k.ValueType,
 							SampleVals: k.SampleVals,
 						})
+					}
+					// The field dictionary applies to the data_json column.
+					// Remember observed keys for ungoverned-key diffing.
+					if col.Name == "data_json" {
+						observedDataJSONKeys = cd.JSONBKeys
 					}
 				}
 			}
@@ -1219,6 +1390,21 @@ func (s *CatalogService) GetDataDictionary(ctx context.Context, refresh bool) (*
 			tr, trErr := s.Dao.GetTimeRange(ctx, t.Schema, t.TableName, meta.TimeColumn)
 			if trErr == nil && tr != nil {
 				entry.TimeRange = tr
+			}
+		}
+
+		// Phase 2: attach aggregated field dictionary view for governed tables.
+		// Combines the authoritative dictionary contract with observed JSONB
+		// key stats and flags ungoverned keys (observed but not registered).
+		if fieldDictMap != nil {
+			if fd, ok := fieldDictMap[t.TableName]; ok {
+				entry.FieldDictionary = &model.TableFieldDictionary{
+					Dataset:         fd.Dataset,
+					Source:          fd.Source,
+					ContractVersion: fd.ContractVersion,
+					Groups:          fd.Groups,
+					UngovernedKeys:  computeUngovernedKeys(observedDataJSONKeys, fd.DataJSONRawField),
+				}
 			}
 		}
 
@@ -1392,7 +1578,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		var tableCaps []model.TableCapability
 		for _, t := range ts {
 			meta := s.findMeta(t.Schema, t.TableName)
-			cap := s.resolveCapability(t.TableName)
+			capability := s.resolveCapability(t.TableName)
 			sources := s.queryDataSources(ctx, t.Schema, t.TableName, meta.TimeColumn)
 
 			tc := model.TableCapability{
@@ -1402,7 +1588,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 				RowCount:    t.RowCount,
 				TimeRange:   t.TimeRange,
 				DataSources: sources,
-				Capability:  cap,
+				Capability:  capability,
 			}
 
 			// Get time range if not already set
@@ -1431,3 +1617,152 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 	}, nil
 }
 
+// ─── Phase 2: field dictionary aggregation ───
+
+// tableFieldDict is the cached per-table field-dictionary view used by
+// GetDataDictionary to aggregate the authoritative field contract with
+// observed JSONB key stats.
+type tableFieldDict struct {
+	Dataset          string
+	Source           string
+	ContractVersion  string
+	Groups           []model.DictionaryFieldGroup
+	DataJSONRawField map[string]bool // raw_field names with storage_location=data_json
+}
+
+// loadFieldDictionary returns a map keyed by storage_table name. It reads
+// data_dataset_dictionary (for the storage_table -> dataset mapping) and
+// data_field_dictionary (for the full field list per dataset). Results are
+// cached for fieldDictTTL.
+//
+// When FieldDictDao is nil (component not registered), returns nil without
+// error so the catalog falls back to observed-only behavior.
+func (s *CatalogService) loadFieldDictionary(ctx context.Context, refresh bool) (map[string]*tableFieldDict, error) {
+	if s.FieldDictDao == nil {
+		return nil, nil
+	}
+	s.fieldDictMu.RLock()
+	if !refresh && s.fieldDictCache != nil && time.Since(s.fieldDictTime) < s.fieldDictTTL {
+		result := s.fieldDictCache
+		s.fieldDictMu.RUnlock()
+		return result, nil
+	}
+	s.fieldDictMu.RUnlock()
+
+	datasets, err := s.FieldDictDao.ListDatasets(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("list dataset dictionary: %w", err)
+	}
+
+	cache := make(map[string]*tableFieldDict, len(datasets))
+	for _, d := range datasets {
+		if d.StorageTable == "" {
+			continue
+		}
+		rows, err := s.FieldDictDao.DiscoverFields(ctx, dao.FieldQueryParams{
+			Dataset:           d.Dataset,
+			Source:            d.Source,
+			Include:           "all",
+			IncludeDeprecated: false,
+		})
+		if err != nil {
+			logging.Warnf(ctx, "catalog: load field dictionary for %s failed: %v", d.Dataset, err)
+			continue
+		}
+
+		// Group fields by data_type, preserving alphabetical order for stable
+		// output. Within a group, DiscoverFields already orders rows.
+		groupsMap := make(map[string][]model.FieldDiscoveryEntry)
+		groupLabel := make(map[string]string)
+		rawFieldSet := make(map[string]bool)
+		var contractVersion string
+		for _, r := range rows {
+			if contractVersion == "" {
+				contractVersion = r.ContractVersion
+			}
+			entry := model.FieldDiscoveryEntry{
+				RawField:        r.RawField,
+				CanonicalField:  r.CanonicalField,
+				LabelZh:         r.LabelZh,
+				Description:     r.Description,
+				ValueType:       r.ValueType,
+				Unit:            r.Unit,
+				Scale:           r.Scale,
+				EnumRef:         r.EnumRef,
+				StorageLocation: r.StorageLocation,
+				QueryName:       queryNameFor(r),
+				IsMetadata:      r.IsMetadata,
+				IsCore:          r.IsCore,
+				CompTypeScope:   r.CompTypeScope,
+				Aliases:         r.Aliases,
+				SourceDoc:       r.SourceDoc,
+				Deprecated:      r.Deprecated,
+			}
+			groupsMap[r.DataType] = append(groupsMap[r.DataType], entry)
+			if r.DataTypeLabelZh != "" {
+				groupLabel[r.DataType] = r.DataTypeLabelZh
+			}
+			if r.StorageLocation == "data_json" {
+				rawFieldSet[r.RawField] = true
+			}
+		}
+
+		dataTypeOrder := make([]string, 0, len(groupsMap))
+		for dt := range groupsMap {
+			dataTypeOrder = append(dataTypeOrder, dt)
+		}
+		sort.Strings(dataTypeOrder)
+
+		groups := make([]model.DictionaryFieldGroup, 0, len(dataTypeOrder))
+		for _, dt := range dataTypeOrder {
+			groups = append(groups, model.DictionaryFieldGroup{
+				DataType: dt,
+				LabelZh:  groupLabel[dt],
+				Fields:   groupsMap[dt],
+			})
+		}
+
+		cache[d.StorageTable] = &tableFieldDict{
+			Dataset:          d.Dataset,
+			Source:           d.Source,
+			ContractVersion:  contractVersion,
+			Groups:           groups,
+			DataJSONRawField: rawFieldSet,
+		}
+	}
+
+	s.fieldDictMu.Lock()
+	s.fieldDictCache = cache
+	s.fieldDictTime = time.Now()
+	s.fieldDictMu.Unlock()
+	return cache, nil
+}
+
+// computeUngovernedKeys returns observed JSONB keys that are not registered in
+// the field dictionary. These are SDK-added fields the dictionary has not
+// caught up with — candidates for backfill.
+func computeUngovernedKeys(observed []model.JSONBKeyRef, governed map[string]bool) []string {
+	if len(governed) == 0 {
+		return nil
+	}
+	var out []string
+	for _, k := range observed {
+		if !governed[k.Name] {
+			out = append(out, k.Name)
+		}
+	}
+	return out
+}
+
+// GetSymbolCoverage returns per-dataset/data_type row counts and time ranges
+// for a given symbol+market. This is a generic discovery API — callers (e.g.,
+// artemis BI layer) use it to show what data exists for a company.
+func (s *CatalogService) GetSymbolCoverage(ctx context.Context, symbol, market string) (*model.CatalogSymbolCoverage, error) {
+	rows, err := s.Dao.GetSymbolCoverage(ctx, symbol, market)
+	if err != nil {
+		return nil, err
+	}
+	coverage := dao.AggregateCoverage(rows, symbol, market)
+	coverage.GeneratedAt = time.Now().UTC()
+	return coverage, nil
+}

@@ -1,7 +1,6 @@
 from typing import Dict, Any, Iterator, List, Optional
 
-import requests
-
+from artemis.consts.task_params import ADJUST_NONE
 from artemis.core.clients.dept_clients import HTTPDeptServiceClient
 
 
@@ -75,6 +74,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         asset_type: str = "stock",
         market: str = "zh_a",
         exchanges: Optional[List[str]] = None,
+        status: Optional[str] = None,
         limit: int = 20000,
     ) -> Dict[str, Dict[str, Any]]:
         """Query securities from v2 API."""
@@ -88,6 +88,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
             params["symbol_list"] = ",".join([str(s) for s in symbols if str(s).strip()])
         if exchanges:
             params["exchange"] = ",".join([str(e).strip().upper() for e in exchanges if str(e).strip()])
+        if status:
+            params["status"] = status
 
         result: Dict[str, Dict[str, Any]] = {}
         try:
@@ -101,9 +103,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
                         result[sym] = {
                             "symbol": sym,
                             "name": str(item.get("name", "")),
+                            "full_name": str(item.get("full_name", "")) if item.get("full_name") is not None else "",
                             "exchange": str(item.get("exchange", "")).upper(),
                             "asset_type": str(item.get("asset_type", asset_type)),
                             "market": str(item.get("market", market)),
+                            "status": str(item.get("status", "")),
+                            "list_date": str(item.get("list_date", "")) if item.get("list_date") is not None else "",
+                            "delist_date": str(item.get("delist_date", "")) if item.get("delist_date") is not None else "",
                         }
             return result
         except Exception as e:
@@ -169,7 +175,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         start_date: str,
         end_date: str,
         period: str = "daily",
-        adjust: str = "nf",
+        adjust: str = ADJUST_NONE,
         fields: Optional[List[str]] = None,
         source: str | None = None,
         limit: int = 5000,
@@ -203,7 +209,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         start_date: str,
         end_date: str,
         period: str = "daily",
-        adjust: str = "nf",
+        adjust: str = ADJUST_NONE,
         fields: Optional[List[str]] = None,
         source: str | None = None,
         limit: int = 5000,
@@ -451,7 +457,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         bars_raw = data.get("data", [])
         return self.upsert_bars(
             period=meta.get("period", "daily"),
-            adjust=meta.get("adjust", "nf"),
+            adjust=meta.get("adjust", ADJUST_NONE),
             source=meta.get("source", ""),
             bars=bars_raw,
             run_id=run_id,
@@ -581,36 +587,53 @@ class PhoenixAClient(HTTPDeptServiceClient):
         source: str,
         statement_type: str,
         symbol: str = "",
+        symbols: Optional[List[str]] = None,
+        market: str = "",
         period_start: str = "",
         period_end: str = "",
         ann_date_before: str = "",
+        reporting_period: str = "",
         reporting_periods: Optional[List[str]] = None,
         report_type: str = "",
+        statement_code: str = "",
         comp_type_code: Optional[int] = None,
+        fields: Optional[List[str]] = None,
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
         """Query financial statements via v2 API.
 
-        Supports PIT filtering (ann_date_before) and batch period queries (reporting_periods)
-        for factor engine TTM calculations.
+        Mirrors PhoenixA controller query params:
+        `symbol`, `symbols`, `market`, `period_start`, `period_end`, `ann_date_before`,
+        `reporting_period`, `reporting_periods`, `report_type`, `statement_code`, `comp_type_code`,
+        `fields`, `page`, and `page_size`.
         """
         path = f"/api/v2/financial/{source}/{statement_type}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
         if symbol:
             params["symbol"] = symbol
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        if market:
+            params["market"] = market
         if period_start:
             params["period_start"] = period_start
         if period_end:
             params["period_end"] = period_end
         if ann_date_before:
             params["ann_date_before"] = ann_date_before
+        if reporting_period:
+            params["reporting_period"] = reporting_period
         if reporting_periods:
             params["reporting_periods"] = ",".join(reporting_periods)
         if report_type:
             params["report_type"] = report_type
+        if statement_code:
+            params["statement_code"] = statement_code
         if comp_type_code is not None:
             params["comp_type_code"] = str(comp_type_code)
+        if fields:
+            params["fields"] = ",".join([str(f) for f in fields if str(f).strip()])
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
@@ -668,8 +691,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         source: str,
         action_type: str,
         symbol: str = "",
+        symbols: Optional[List[str]] = None,
         period_start: str = "",
         period_end: str = "",
+        report_period: str = "",
+        ann_date_before: str = "",
+        progress_code: str = "",
+        fields: Optional[List[str]] = None,
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
@@ -678,10 +706,20 @@ class PhoenixAClient(HTTPDeptServiceClient):
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
         if symbol:
             params["symbol"] = symbol
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
         if period_start:
             params["period_start"] = period_start
         if period_end:
             params["period_end"] = period_end
+        if report_period:
+            params["report_period"] = report_period
+        if ann_date_before:
+            params["ann_date_before"] = ann_date_before
+        if progress_code:
+            params["progress_code"] = progress_code
+        if fields:
+            params["fields"] = ",".join([str(f) for f in fields if str(f).strip()])
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
@@ -693,6 +731,168 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     'event': 'phoenixA_query_corporate_actions_failed',
                     'source': source,
                     'action_type': action_type,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+
+    # ──────────── Adjust Factors (v2) ────────────
+
+    def upsert_adjust_factors(
+        self,
+        factors: List[Dict[str, Any]],
+        data_source: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert adjust factor rows via v2 API."""
+        path = f"/api/v2/adjust-factors/{data_source}/upsert"
+        try:
+            resp = self.post(path, factors)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_adjust_factors_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(factors) if factors else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_adjust_factors_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
+
+    def query_adjust_factors(
+        self,
+        *,
+        source: str,
+        symbol: str = "",
+        symbols: Optional[List[str]] = None,
+        market: str = "",
+        start_date: str = "",
+        end_date: str = "",
+        fields: Optional[List[str]] = None,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query adjust factor rows via v2 API."""
+        path = f"/api/v2/adjust-factors/{source}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if symbol:
+            params["symbol"] = symbol
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        if market:
+            params["market"] = market
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if fields:
+            params["fields"] = ",".join([str(f) for f in fields if str(f).strip()])
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_adjust_factors_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+
+    # ──────────── Long Hu Bang (v2) ────────────
+
+    def upsert_long_hu_bang(
+        self,
+        rows: List[Dict[str, Any]],
+        data_source: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Upsert long hu bang rows via v2 API."""
+        path = f"/api/v2/long-hu-bang/{data_source}/upsert"
+        try:
+            resp = self.post(path, rows)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_long_hu_bang_failure',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(rows) if rows else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_long_hu_bang_exception',
+                    'run_id': run_id,
+                    'source': data_source,
+                    'error': str(e),
+                })
+            raise
+
+    def query_long_hu_bang(
+        self,
+        *,
+        source: str,
+        symbol: str = "",
+        symbols: Optional[List[str]] = None,
+        market: str = "",
+        trade_date: str = "",
+        start_date: str = "",
+        end_date: str = "",
+        reason_type: str = "",
+        trader_name: str = "",
+        flow_mark: Optional[int] = None,
+        fields: Optional[List[str]] = None,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query long hu bang rows via v2 API."""
+        path = f"/api/v2/long-hu-bang/{source}"
+        params: Dict[str, Any] = {"page": page, "page_size": page_size}
+        if symbol:
+            params["symbol"] = symbol
+        if symbols:
+            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        if market:
+            params["market"] = market
+        if trade_date:
+            params["trade_date"] = trade_date
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if reason_type:
+            params["reason_type"] = reason_type
+        if trader_name:
+            params["trader_name"] = trader_name
+        if flow_mark is not None:
+            params["flow_mark"] = str(flow_mark)
+        if fields:
+            params["fields"] = ",".join([str(f) for f in fields if str(f).strip()])
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_long_hu_bang_failed',
+                    'source': source,
                     'error': str(e),
                 })
             return {"data": [], "total": 0}
@@ -824,9 +1024,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         """Query all taxonomy mappings for a security via v2 API.
 
         Returns list of TaxonomySecurityMap entries with fields:
-        - source, taxonomy, category_code, symbol, asset_type, market
+        - source, taxonomy, category_code, category_name, level, parent_code, index_code, symbol, asset_type, market
+        - Standardized hierarchy fields exposed by PhoenixA:
+          canonical_source, canonical_taxonomy, canonical_level,
+          canonical_category_code, canonical_category_name, canonical_parent_code,
+          canonical_index_code, derived_flags
 
-        For factor engine: use category_code from first sw_l1 entry.
+        Factor engine should consume PhoenixA canonical/derived fields directly.
         """
         path = f"/api/v2/taxonomy/by_security/{symbol}"
         try:
@@ -845,3 +1049,26 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     'error': str(e),
                 })
             return []
+
+    def get_catalog_capabilities(self, *, refresh: bool = False) -> Dict[str, Any]:
+        """Query PhoenixA catalog capabilities for factor-availability analysis."""
+        path = "/api/v2/catalog/capabilities"
+        params: Dict[str, Any] = {}
+        if refresh:
+            params["refresh"] = "true"
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                if isinstance(data, dict):
+                    data.setdefault("_reachable", True)
+                    return data
+            return {"capabilities": [], "_reachable": False, "_status_code": resp.status_code}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_catalog_capabilities_failed',
+                    'error': str(e),
+                })
+            return {"capabilities": [], "_reachable": False, "_error": str(e)}
+

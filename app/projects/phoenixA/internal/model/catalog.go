@@ -227,6 +227,35 @@ type TableDictionaryEntry struct {
 	DataSources []DataSourceSummary `json:"data_sources,omitempty"`
 	// Enhanced: capability description for LLM function-calling
 	Capability *DataCapability `json:"capability,omitempty"`
+	// Phase 2: aggregated field dictionary view. Present when the table is
+	// registered in data_dataset_dictionary (i.e. governed by the field
+	// dictionary). Combines the authoritative field contract with observed
+	// JSONB key stats so callers get meaning + coverage + governance state
+	// in one request.
+	FieldDictionary *TableFieldDictionary `json:"field_dictionary,omitempty"`
+}
+
+// TableFieldDictionary is the table-level aggregated view of the field
+// dictionary for a governed table. It is the union of the authoritative
+// data_field_dictionary contract and the observed JSONB key statistics.
+type TableFieldDictionary struct {
+	Dataset         string                 `json:"dataset"`
+	Source          string                 `json:"source"`
+	ContractVersion string                 `json:"contract_version,omitempty"`
+	Groups          []DictionaryFieldGroup `json:"groups"`
+	// UngovernedKeys lists JSONB keys observed in the data but not registered
+	// in data_field_dictionary. These are candidates for dictionary backfill
+	// — typically SDK-added fields the dictionary has not caught up with.
+	UngovernedKeys []string `json:"ungoverned_keys,omitempty"`
+}
+
+// DictionaryFieldGroup groups dictionary fields by data_type within a
+// governed table (e.g. balance_sheet / income / cashflow for
+// financial_statement).
+type DictionaryFieldGroup struct {
+	DataType string                `json:"data_type"`
+	LabelZh  string                `json:"label_zh,omitempty"`
+	Fields   []FieldDiscoveryEntry `json:"fields"`
 }
 
 // DataSourceSummary describes per-source statistics for a table.
@@ -287,8 +316,8 @@ type ParamDesc struct {
 // DataCapabilities is the response for GET /api/v2/catalog/capabilities.
 // A lightweight LLM-optimized view of data availability.
 type DataCapabilities struct {
-	GeneratedAt  time.Time           `json:"generated_at"`
-	Capabilities []DomainCapability  `json:"capabilities"`
+	GeneratedAt  time.Time          `json:"generated_at"`
+	Capabilities []DomainCapability `json:"capabilities"`
 }
 
 // DomainCapability groups capabilities by business domain.
@@ -301,13 +330,13 @@ type DomainCapability struct {
 
 // TableCapability is a lightweight per-table capability summary.
 type TableCapability struct {
-	Schema      string            `json:"schema"`
-	TableName   string            `json:"table_name"`
-	Description string            `json:"description"`
-	RowCount    int64             `json:"row_count"`
-	TimeRange   *TimeRange        `json:"time_range,omitempty"`
+	Schema      string              `json:"schema"`
+	TableName   string              `json:"table_name"`
+	Description string              `json:"description"`
+	RowCount    int64               `json:"row_count"`
+	TimeRange   *TimeRange          `json:"time_range,omitempty"`
 	DataSources []DataSourceSummary `json:"data_sources,omitempty"`
-	Capability  *DataCapability   `json:"capability,omitempty"`
+	Capability  *DataCapability     `json:"capability,omitempty"`
 }
 
 // ColumnDictionary extends ColumnMeta with value-level metadata.

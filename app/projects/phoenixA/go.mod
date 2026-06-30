@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/grand-thief-cash/chaos/app/infra/go/application v0.18.3
+	github.com/redis/go-redis/v9 v9.14.0
 	gorm.io/gorm v1.31.0
 )
 
@@ -32,7 +33,6 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
-	github.com/redis/go-redis/v9 v9.14.0 // indirect
 	github.com/riandyrn/otelchi v0.12.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
@@ -66,4 +66,4 @@ require (
 	gorm.io/driver/postgres v1.6.0 // indirect
 )
 
-//replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application
+replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application

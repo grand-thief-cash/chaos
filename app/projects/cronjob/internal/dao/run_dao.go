@@ -9,7 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
-	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/mysqlgorm"
+	mg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/cronjob/internal/consts"
@@ -55,8 +55,8 @@ type RunDao interface {
 type runDaoImpl struct {
 	db *gorm.DB
 	*core.BaseComponent
-	GormComp *mg.GormComponent `infra:"dep:mysql_gorm"`
-	dsName   string            // 数据源名称
+	GormComp *mg.PostgresGormComponent `infra:"dep:postgres_gorm"`
+	dsName   string                    // 数据源名称
 }
 
 func NewRunDao(dsName string) RunDao {

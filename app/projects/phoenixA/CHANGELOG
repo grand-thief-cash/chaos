@@ -1,7 +1,218 @@
 # VERSION
-v1.17.0
+v1.26.0
 
 # Changelog
+- v1.26.0
+    - **Datawarehouse layering refactor: single datasource + multi-schema search_path** — split the ODS landing tables, derived/processed tables, and PhoenixA-owned governance tables that were previously mixed in a single `security_dev` schema into separate PostgreSQL schemas by warehouse layer (ods / dwd / govern), accessed uniformly through a single datasource's comma-separated `search_path`. No datasource split, no DAO registration changes. Design doc: `docs/2026-06-29 DATAWAREHOUSE_LAYERING_AND_SCHEMA_REFACTOR.md`.
+    - **Depends on infra v0.18.4**: `go.mod` enables `replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application` and re-runs `go mod vendor` to consume its multi-schema fixes (CREATE SCHEMA comma-split + hoisted before migrations, SET search_path inside the migration transaction, `_migrations` tracking table qualified with the first schema).
+    - **config/config.yaml**: `postgres_gorm.data_sources.security.schema` changed from `security_dev` to `ods,dwd,govern,kg,public`. The datasource name stays `security` (`GetDB("security")` is an exact map-key lookup, so no `NewXxxDao("security")` registration needs to change).
+    - **migrations/postgresql/security/**: the original 15 bare-name migrations (0001~0015, all landing in `security_dev` via implicit search_path) are rewritten into 4 schema-qualified layered migrations:
+        - `0001_ods.sql` (14 tables): taxonomy_category / taxonomy_security_map / industry_constituent / industry_weight / industry_daily / financial_statement / corporate_action / bars_stock_zh_a_daily_{nf,hfq} / bars_index_zh_a_daily_nf / bars_ext_baostock_stock_zh_a_daily / adjust_factor / long_hu_bang / equity_structure. Each file runs `CREATE SCHEMA IF NOT EXISTS ods` + `CREATE TABLE IF NOT EXISTS ods.xxx`.
+        - `0002_dwd.sql` (1 table): taxonomy_category_derived_flags.
+        - `0003_govern.sql` (7 tables + 1 view): security_registry / strategy_run_summary / strategy_run_artifact / data_dataset_dictionary / data_field_dictionary / data_enum_dictionary / data_field_coverage_observation + govern.v_data_field_dictionary_active.
+        - `0004_govern_seed.sql`: the former 0013 256KB AmazingData field-dictionary seed data, with table names schema-qualified to `govern.*`; uses `DELETE WHERE source=... AND contract_version=...` + `INSERT` for re-entrancy.
+        - All 59 `CREATE INDEX` statements now carry `IF NOT EXISTS` (including 13 that the former 0012/0014 omitted); migrations are fully idempotent.
+        - The former 0003 `trade_date` DATE type change is folded directly into CREATE TABLE (fresh reload needs no ALTER); the former 0004 storage backfill is dropped (on fresh reload tables are created directly on the correct tablespace, so backfill is redundant).
+        - **Prerequisite**: with the former 0004 removed there is no backfill fallback — before reload, a superuser must pre-create `CREATE TABLESPACE warm_storage LOCATION '...'`, otherwise every `TABLESPACE warm_storage` clause fails.
+    - **model / DAO table-name mapping**: all `TableName()` methods now return schema-qualified names (ODS→`ods.`, DWD→`dwd.`, Govern→`govern.`, kg unchanged at `kg.`); `dao/table_resolver.go` `BarsTableName` / `BarsExtTableName` gain an `ods.` prefix; bare-name SQL in `field_dictionary_dao.go` / `catalog_coverage_dao.go` / `field_coverage_dao.go` / `taxonomy_dao.go` (three-table JOIN) / `schema_dao.go` (domainAllowList) / `corporate_action_dao.go` / `financial_statement_dao.go` / `equity_structure_dao.go` is all schema-qualified. The schema enumeration in `catalog_dao.go` and `catalog_service.go` changed from `["public","kg","security_dev","security"]` to `["public","kg","ods","dwd","govern"]`.
+    - **Tests**: updated assertions in `model_test.go` / `catalog_dao_test.go` / `write_buffer_test.go` to the qualified names (strict `!=`, not weakened). `go build ./...`, `go vet ./...`, `go test ./...` all green. End-to-end DB validation (throwaway database): all 4 migrations run twice cleanly (idempotency confirmed); tables land as ods 14 / dwd 1 / govern 7 + view; seed data does not double on re-run (dataset=3 / field=565 / enum=56).
+- v1.25.1
+    - **FieldMeta carries enum_ref end-to-end**
+        - Added `EnumRef` field to `FieldMeta` in `internal/model/query_response.go` so flat query responses advertise which enum backs each field.
+        - Populated `EnumRef` in `fieldMetasFromResolved` (in `financial_statement_service.go`, shared by `corporate_action_service.go` and `equity_structure_service.go`) from the already-resolved `ResolvedField.EnumRef`.
+        - Lets BI clients (cthulhu via artemis) render enum code → label_zh without a separate field-discovery round-trip per cell.
+- v1.25.0
+    - **AmazingData field dictionary comprehensive fixes**
+        - **Added missing STATEMENT_TYPE enum** — added `STATEMENT_TYPE` enum with values 1=合并报表, 2=母公司报表
+        - **Fixed comp_type_scope field classification** — reclassified all 457 financial fields from uniform `all` to proper categories:
+            - 399 fields = `all` (适用于所有公司类型)
+            - 9 fields = `bank` (银行专用字段，如 CONT_LIABILITIES, CASH_CENTRAL_BANK_DEPOSITS)
+            - 11 fields = `insurance` (保险专用字段)
+            - 33 fields = `non_bank` (非银行专用字段)
+            - 5 fields = `securities` (券商专用字段)
+        - **Fixed TOT_SHARE_EQUITY_EXCL_MIN_INT field** — corrected unit from 股 to 元, cleaned up label_zh
+        - **Cleaned up redundant label suffixes** — removed redundant "(元)" etc suffixes from field labels since unit is already stored separately
+        - **Updated contract_version** — all dictionary entries updated from 2026-06-25 to 2026-06-27
+        - **Regenerated seed migration 0013** — idempotent migration deletes old entries by source + contract_version before inserting new ones
+        - **Added helper scripts** in `config/field_dictionary/amazing_data/`:
+            - `fix_dictionary.py` — fixes financial_statement.fields.jsonl
+            - `fix_all_dictionaries.py` — fixes all dictionaries (financial, corporate_action, equity_structure)
+            - `regenerate_seed_sql.py` — regenerates 0013 from JSONL source files
+            - `update_version.py` — bulk updates contract_version in all dictionary files
+- v1.24.0
+    - **Phase 2: AmazingData field discovery APIs**
+        - Added `GET /api/v2/catalog/datasets` to list governed datasets with their storage table, data_types, and query/discovery API path templates.
+        - Added `GET /api/v2/catalog/datasets/{dataset}/fields` to discover field dictionary rows by data_type, search keyword, and importance filter (`include=all|core|metadata`). Each row carries raw_field, canonical_field, label_zh, unit, scale, value_type, storage_location, is_core, enum_ref, and aliases.
+        - Added `GET /api/v2/catalog/enums/{enum_name}` to resolve enum code/label pairs.
+        - Extended `GET /api/v2/catalog/data-dictionary` to aggregate the field dictionary with observed JSONB key stats. Governed tables now carry `field_dictionary.groups` (fields grouped by data_type) and `field_dictionary.ungoverned_keys` (observed SDK keys the dictionary hasn't caught up with).
+        - Added `FieldDictionaryDao`, `FieldDictionaryService`, `FieldDictionaryController`, and component consts `dao_field_dictionary` / `svc_field_dictionary` / `ctrl_field_dictionary`.
+    - **Phase 3: Dictionary-resolved query APIs**
+        - Refactored `GET /api/v2/financial/{source}/{statement_type}` to resolve `fields=` through the field dictionary. Unknown fields return 400 with up to 5 dictionary-suggested alternatives. Added `format=flat|nested` (nested default). Flat responses include per-field metadata sourced from the dictionary.
+        - Refactored `GET /api/v2/corporate-action/{source}/{action_type}` with the same dictionary-resolved field projection and flat/nested format.
+        - Added `GET /api/v2/equity-structure/{source}` and `POST /api/v2/equity-structure/{source}/upsert` for AmazingData `get_equity_structure()` output. The equity_structure dataset was previously discovery-only (table + migration + dictionary existed but no query API was exposed); this completes the stack with model / DAO / service / controller / routes.
+        - Added shared query helpers `BuildFlatSelect`, `SplitResolved`, `BuildFilteredDataJSON` in `internal/dao/query_helpers.go` so all three datasets share the same projection logic.
+        - Added `FieldResolutionError` model implementing the `error` interface so service-layer unknown-field errors bubble to the controller and map to HTTP 400 with the structured payload.
+        - Updated `queryPathForDataset` in `FieldDictionaryService` so `/api/v2/catalog/datasets` now advertises the equity-structure query path.
+    - **Phase 4 #3: Field coverage observation**
+        - Added migration `0015_field_coverage_observation.sql` creating `data_field_coverage_observation` (dataset, source, storage_table, observed_key, status, sample_count, first_seen_at, last_seen_at). Stores on `pg_default` tablespace. Implements design doc §11.5 — SDK-added fields are now exposed as governance candidates instead of being silently written.
+        - Added `POST /api/v2/catalog/field-coverage/scan?dataset=&source=&sample_limit=` to scan `data_json` keys across governed datasets, classify each as `governed` / `ungoverned`, and upsert observations. Returns per-dataset summaries including the list of ungoverned keys. Default sampling caps per-dataset work at 10000 most-recent rows; pass `sample_limit=0` for full scan.
+        - Added `GET /api/v2/catalog/field-coverage?dataset=&source=&status=` to list observations, filtered by status. Ungoverned entries are returned first.
+        - Scan SQL filters to `jsonb_typeof(data_json) = 'object'` so rows predating the object CHECK constraint don't break the scan.
+        - Per-dataset scan errors surface in the response (`error` field on the per-dataset result) rather than aborting the whole batch — callers see partial results plus the failure reason.
+        - Added `FieldCoverageDao`, `FieldCoverageService`, `FieldCoverageController`, and component consts `dao_field_coverage` / `svc_field_coverage` / `ctrl_field_coverage`.
+    - **Phase 4 #2b: OpenAPI spec + route consistency check**
+        - Replaced the stale v1 `docs/openapi.yaml` with a v2 spec covering the AmazingData dataset APIs: discovery (datasets / fields / enums), field coverage (scan / list), query (financial / corporate-action / equity-structure), and writes (upsert). Spec is served at `GET /openapi.yaml` (file relocated to repo root `openapi.yaml`).
+        - The spec follows the two-contract model from the design doc: it describes API shape (paths, parameters, response envelopes, error codes) but does NOT describe individual field meanings — those are exposed dynamically via the discovery API. Field-level docs in Markdown are deprecated; the field dictionary is now the single source of truth.
+        - Added `scripts/verify_openapi_routes.py` as a CI check that the in-scope paths declared in `openapi.yaml` match those registered in `internal/api/router_v2.go`. Catches drift in either direction (route added without doc, or doc referencing a removed route). Scope is limited to AmazingData dataset APIs; other route groups (bars, taxonomy, KG, graph, legacy v1) are intentionally out of scope.
+    - **Out of scope (deliberately not done)**
+        - Phase 4 #1 (core field views) was deferred — no business need since all consumers go through PhoenixA HTTP APIs rather than connecting to PostgreSQL directly. Views can be added later if BI / ad-hoc analytics users appear.
+        - Phase 4 #2a (Markdown field docs generated from dictionary) was deprecated rather than built — the dictionary is now the single source of truth and Markdown duplicates would drift.
+- v1.23.0
+    - **AmazingData field dictionary and discoverability contract**
+        - Added machine-readable AmazingData field dictionary source files under `config/field_dictionary/amazing_data/`.
+        - Bootstrapped and curated:
+            - `financial_statement.fields.jsonl`: 457 fields across `balance_sheet`, `cashflow`, `income`, `profit_express`, `profit_notice`
+            - `corporate_action.fields.jsonl`: 54 fields across AmazingData `dividend` and `right_issue`
+            - `equity_structure.fields.jsonl`: 54 fields from AmazingData `get_equity_structure`
+            - `enums.jsonl`: 54 enum values for `REPORT_TYPE`, `COMP_TYPE_CODE`, `DIV_PROGRESS`, `PROGRESS`, `P_TYPECODE`, and boolean flags
+            - `datasets.json`: dataset-level metadata for `financial_statement`, `corporate_action`, and `equity_structure`
+        - Added `storage_location`, `unit`, `scale`, `enum_ref`, `aliases`, `is_core`, and `source_doc` metadata so downstream services can discover fields and understand field meanings without reading Markdown docs manually.
+        - Corrected key AmazingData field semantics during dictionary generation:
+            - `financial_statement.balance_sheet.TOT_SHARE` is stored with unit `股`
+            - `equity_structure.TOT_SHARE` is stored with unit `万股` and `scale=10000`
+            - cashflow `NET_CASH_FLOW_*` fields carry aliases for SDK/PDF `NET_CASH_FLOWS_*` spelling
+            - metadata fields such as `MARKET_CODE`, `REPORTING_PERIOD`, `ANN_DATE`, `DIV_PROGRESS`, and `PROGRESS` are marked as `top_level`
+    - **Field dictionary migrations**
+        - Added PostgreSQL migration `0012_field_dictionary.sql`.
+        - Creates:
+            - `data_dataset_dictionary`
+            - `data_field_dictionary`
+            - `data_enum_dictionary`
+            - `v_data_field_dictionary_active`
+        - Stores dictionary metadata on `pg_default` tablespace because these are small schema/contract tables.
+        - Added full `COMMENT ON TABLE/COLUMN/VIEW` coverage so catalog/schema tooling can read database-native descriptions.
+        - Added generated seed migration `0013_seed_amazing_data_field_dictionary.sql` to load the AmazingData dictionary into the database.
+    - **Standalone equity_structure dataset**
+        - Added PostgreSQL migration `0014_equity_structure.sql` for AmazingData `get_equity_structure()` output.
+        - Stores business data on `warm_storage` tablespace, consistent with other large business datasets.
+        - Uses top-level query columns for `source`, `symbol`, `market`, `ann_date`, `change_date`, `current_sign`, and `is_valid`.
+        - Stores source detail fields in `data_json JSONB` with a `jsonb_typeof(data_json) = 'object'` constraint.
+        - Added table and column comments for database-native discoverability.
+    - **Cross-platform dictionary generation tooling**
+        - Added `scripts/generate_field_dictionary_from_docs.py` as the single source of generation logic.
+        - Added Linux/CI wrapper `scripts/generate_field_dictionary_from_docs.sh`.
+        - Replaced the Windows PowerShell generator with a thin wrapper `scripts/generate_field_dictionary_from_docs.ps1` that calls the same Python script.
+        - Documented generation, migration, verification, and tablespace usage in `config/field_dictionary/amazing_data/README.md`.
+    - **Design review documentation**
+        - Added `docs/2026-06-25 PHOENIXA_DESIGN_REVIEW.md` covering PhoenixA design review findings.
+        - Added `docs/2026-06-25 AMAZINGDATA_FIELD_DISCOVERY_AND_ACCESS_DESIGN.md` describing the AmazingData field dictionary, JSONB boundary, discovery API direction, and storage contract.
+- v1.22.2
+    - **Standalone long_hu_bang dataset**
+        - Added a new standalone `long_hu_bang` table for AmazingData `get_long_hu_bang()` output instead of reusing existing financial/company-action tables.
+        - Added PhoenixA v2 endpoints:
+            - `GET /api/v2/long-hu-bang/{source}`
+            - `POST /api/v2/long-hu-bang/{source}/upsert`
+        - Registered the new table in catalog metadata, API maps, capability discovery, and documentation.
+        - Added migration `0011_long_hu_bang.sql` plus model / DAO / service / controller support.
+- v1.22.1
+    - **Standalone adjust factor dataset**
+        - Added a new standalone `adjust_factor` table for Baostock `query_adjust_factor()` output instead of reusing `corporate_action`.
+        - Added PhoenixA v2 endpoints:
+            - `GET /api/v2/adjust-factors/{source}`
+            - `POST /api/v2/adjust-factors/{source}/upsert`
+        - Registered the new table in catalog metadata, API maps, and capability discovery so downstream consumers can discover adjust factor availability.
+        - Added migration `0010_adjust_factor.sql` and updated API/table documentation.
+- v1.22.0
+    - **Redis cache expansion — taxonomy second batch + operability docs**
+        - Extended Redis cache usage from security/schema discovery into taxonomy read APIs with best-effort invalidation on writes
+        - Fixed taxonomy industry read semantics so `market` is now propagated end-to-end (controller → service → DAO) for:
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{indexCode}`
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_stock/{symbol}`
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{indexCode}`
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily`
+        - This change is backward-compatible for v2 callers because the `market` path segment already existed; PhoenixA now honors it consistently instead of ignoring it on some read paths
+        - Added taxonomy cache coverage for:
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/categories`
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/{code}`
+            - `GET /api/v2/taxonomy/by_security/{symbol}`
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/mapping/by_category/{categoryCode}`
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{indexCode}`
+            - `GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_stock/{symbol}`
+        - Refined paginated cache strategy:
+            - `categories`, `mapping/by_category`, and `industry-constituents/by_index` now cache stable full-result sets and slice pages in service code
+            - Removed `page/page_size` from Redis keys to avoid cache fragmentation and low cross-page hit rates
+        - Explicitly did **not** enable Redis cache for `industry-weights` and `industry-daily` query endpoints after re-evaluating key cardinality and hit-rate economics
+        - Added centralized taxonomy cache key builders and TTL constants in `internal/consts/cache.go`
+        - Lengthened security + schema discovery Redis TTLs to day-level values:
+            - security list/count: 24h
+            - schema fields / JSONB key discovery: 24h
+        - Lengthened taxonomy TTLs significantly to match low-churn classification data while still relying on write-path invalidation for correctness:
+            - category list/get: 30d
+            - mapping by symbol/category: 14d
+            - constituents: 14d
+        - Added generic Redis JSON helpers and pattern-based invalidation support for scoped cache cleanup
+        - Security cache invalidation improved: `DeleteAll` now supports wildcard/pattern invalidation for partial scopes
+        - Added explicit schema/cache refresh bypass support for rare metadata-change scenarios:
+            - `/api/v2/schema/fields?...&refresh=true`
+            - `/api/v2/catalog/tables/{schema}/{table}?refresh=true`
+            - `/api/v2/catalog/data-dictionary?refresh=true`
+    - **Redis config + observability documentation**
+        - Updated `config/config.yaml` with a disabled-by-default Redis config section and example connection settings
+        - Expanded `docs/2026-05-11 REDIS_USAGE_ANALYSIS.md` to review PhoenixA GET routes from `router_v2.go` instead of only infra-side ROI
+        - Added `docs/2026-05-21 REDIS_CACHE_CONFIGURATION_AND_OBSERVABILITY.md` covering enablement, key inventory, TTL rationale, hit/invalidation expectations, and future expansion candidates
+    - **Review + testing**
+        - Added service-layer cache-scope tests for security cacheability rules
+        - Added DAO-level test for schema cache-bypass context propagation
+        - Added taxonomy cache-token tests to keep category-list cache keys deterministic
+        - Added taxonomy cache-key tests to ensure market-aware industry cache keys do not collide across markets
+        - Stabilized `internal/buffer` channel-full test to remove a goroutine-scheduling race and keep `go test ./...` deterministic
+        - Re-ran `go test ./...` for PhoenixA after Redis/taxonomy cache changes
+- v1.21.1
+    - **BI statement_code documentation**
+        - Documented that `statement_code` uses numeric codes, not text values
+        - See `internal/consts/financial.go` for mapping:
+            - `"1"` = 合并报表
+            - `"2"` = 合并报表(单季度)
+            - `"6"` = 母公司报表
+            - `"7"` = 母公司报表(单季度)
+        - Artemis BI service should use numeric codes when filtering
+    - **BI financial data filtering fix**
+        - Added `statement_code` parameter support to `/api/v2/financial/{source}/{statement_type}` endpoint
+        - Added `StatementCode` field to `FinancialStatementFilters` model
+        - Added `statement_code` filter to DAO query logic (both Query and Count functions)
+        - Updated controller to accept and parse `statement_code` query parameter
+        - This prevents mixing data from different statement types (e.g., "合并报表" vs "母公司报表")
+- v1.21.0
+    - **Bars Storage Migration** — migrated bars tables from MySQL to PostgreSQL with TimescaleDB support
+        - Updated `BarsDao` to use `postgres_gorm` component instead of `mysql_gorm`
+        - Bars tables (`bars_stock_zh_a_daily_nf`, `bars_stock_zh_a_daily_hfq`, `bars_index_zh_a_daily_nf`) now stored on `warm_storage` tablespace (SATA SSD) for optimal performance
+        - Bars extension table (`bars_ext_baostock_stock_zh_a_daily`) also migrated to PostgreSQL
+        - Tables are ready for TimescaleDB hypertable conversion (see comments in migration files)
+        - Maintained full API compatibility with no functional changes
+        - All bars API endpoints (`/api/v2/bars/{asset_type}/{market}`, `/api/v2/bars/{asset_type}/{market}/last_update`) continue to work as expected
+        - Updated phoenixA changelog.
+- 1.20.0
+    - **Taxonomy derived-flags discoverability**
+        - Added catalog/data-dictionary metadata for `taxonomy_category_derived_flags`, so the PhoenixA-owned semantic flag table is visible in table listings and downstream troubleshooting flows
+        - Added explicit column description for `derived_flags` JSONB payloads, clarifying that these are PhoenixA-derived semantic annotations rather than raw ODS attrs
+        - Extended catalog metadata tests to cover the derived-flags taxonomy table registration
+    - **Factor Engine follow-up support notes**
+        - Documented that Artemis availability/runtime troubleshooting now relies on PhoenixA capability trust levels (`phoenixA_catalog`, `phoenixA_catalog_empty`, `unavailable`) instead of collapsing all failures into a generic missing state
+- 1.19.0
+    - **API Documentation Fix** — corrected `data_json` field description and response examples
+        - Removed `MARKET_CODE`, `SECURITY_NAME`, `STATEMENT_TYPE`, `REPORT_TYPE`, `reporting_period`, `ANN_DATE`, `ACTUAL_ANN_DATE`, `COMP_TYPE_CODE` from `data_json` sections
+        - These metadata fields are stored as top-level fields, not inside `data_json`
+        - Fixed for all statement types: balance_sheet, income, cashflow, profit_express, profit_notice
+        - Corrected response example: removed metadata fields from `data_json` sample data
+        - Added note explaining the distinction between metadata fields and `data_json` fields (SDK original uppercase fields)
+- 1.18.0
+    - **Taxonomy canonical hierarchy fields** — `GET /api/v2/taxonomy/by_security/{symbol}` now returns a stable standardized industry view
+        - Added response fields: `index_code`, `canonical_source`, `canonical_taxonomy`, `canonical_level`, `canonical_category_code`, `canonical_category_name`, `canonical_parent_code`, `canonical_index_code`, `derived_flags`
+        - Canonical normalization now unifies `sw_*`, legacy `swhy`, `citics_*`, and `source=sw/citics + taxonomy=industry` style records into a single downstream-facing hierarchy contract
+        - `ListMappingsBySymbol` now resolves taxonomy categories by full `(source, taxonomy, market, code)` composite key instead of `code` alone, avoiding cross-taxonomy collisions
+        - Parent-category chain is now loaded when enriching `by_security` responses so PhoenixA can classify `derived_flags.financial_sector` at subtree level without pushing those semantics back into the raw ODS taxonomy table
+        - Added `taxonomy_category_derived_flags` as a dedicated PhoenixA-derived persistence layer for taxonomy semantic flags; `taxonomy_category.attrs_json` is now only treated as a backward-compatible read fallback
+        - Updated docs and API validation scripts to reflect the canonical field contract
 - 1.17.0
     - **API Field Filtering** — selective field retrieval for financial and corporate action APIs
         - New parameter: `fields` on `GET /api/v2/financial/{source}/{statement_type}` and `GET /api/v2/corporate-action/{source}/{action_type}` — specify which fields to return

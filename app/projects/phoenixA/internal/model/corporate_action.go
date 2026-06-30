@@ -22,7 +22,7 @@ type CorporateAction struct {
 	UpdatedAt    time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-func (CorporateAction) TableName() string { return "corporate_action" }
+func (CorporateAction) TableName() string { return "ods.corporate_action" }
 
 // CorporateActionFilters for querying corporate actions.
 type CorporateActionFilters struct {

@@ -2,14 +2,11 @@
 Unit tests for corporate action task post_process logic (dividend, right_issue).
 """
 import json
-import numpy as np
+from typing import cast
 import pandas as pd
 import pytest
 
-from artemis.engines.task_engine.download.zh.base_corporate_action import (
-    BaseCorporateActionTask,
-    CORP_ACTION_METADATA_FIELDS,
-)
+from artemis.core import TaskContext
 from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHADividend
 from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
 
@@ -40,6 +37,10 @@ class _FakeCtx:
 
     def has_failed(self):
         return self.error is not None
+
+
+def _as_task_context(ctx: _FakeCtx) -> TaskContext:
+    return cast(TaskContext, cast(object, ctx))
 
 
 def _make_dividend_df():
@@ -94,15 +95,15 @@ class TestDividendPostProcess:
         ctx = _FakeCtx()
         result = _make_dividend_df()
 
-        processed = task.post_process(ctx, result)
+        processed = task.post_process(_as_task_context(ctx), result)
 
         assert len(processed) == 1
         rec = processed[0]
-        assert rec['symbol'] == '600519.SH'
+        assert rec['symbol'] == '600519'
         assert rec['market'] == 'zh_a'
         assert rec['action_type'] == 'dividend'
-        assert rec['report_period'] == '20231231'
-        assert rec['ann_date'] == '20240618'
+        assert rec['report_period'] == '2023-12-31'
+        assert rec['ann_date'] == '2024-06-18'
         assert rec['progress_code'] == '3'
 
         data = json.loads(rec['data_json'])
@@ -116,7 +117,7 @@ class TestDividendPostProcess:
         ctx = _FakeCtx()
         result = _make_dividend_df()
 
-        processed = task.post_process(ctx, result)
+        processed = task.post_process(_as_task_context(ctx), result)
         data = json.loads(processed[0]['data_json'])
 
         # MARKET_CODE, ANN_DATE are base metadata
@@ -129,19 +130,19 @@ class TestDividendPostProcess:
     def test_empty_result(self):
         task = StockZHADividend()
         ctx = _FakeCtx()
-        assert task.post_process(ctx, pd.DataFrame()) == []
+        assert task.post_process(_as_task_context(ctx), pd.DataFrame()) == []
 
     def test_none_result(self):
         task = StockZHADividend()
         ctx = _FakeCtx()
-        assert task.post_process(ctx, None) == []
+        assert task.post_process(_as_task_context(ctx), None) == []
 
     def test_missing_market_code_skipped(self):
         task = StockZHADividend()
         ctx = _FakeCtx()
         df = _make_dividend_df()
         df.at[0, 'MARKET_CODE'] = ''
-        assert task.post_process(ctx, df) == []
+        assert task.post_process(_as_task_context(ctx), df) == []
 
 
 # ── Right Issue Tests ────────────────────────────────
@@ -153,14 +154,14 @@ class TestRightIssuePostProcess:
         ctx = _FakeCtx()
         result = _make_right_issue_df()
 
-        processed = task.post_process(ctx, result)
+        processed = task.post_process(_as_task_context(ctx), result)
 
         assert len(processed) == 1
         rec = processed[0]
-        assert rec['symbol'] == '601988.SH'
+        assert rec['symbol'] == '601988'
         assert rec['action_type'] == 'right_issue'
         assert rec['report_period'] == '2024'
-        assert rec['ann_date'] == '20240115'
+        assert rec['ann_date'] == '2024-01-15'
         assert rec['progress_code'] == '3'
 
         data = json.loads(rec['data_json'])
@@ -174,7 +175,7 @@ class TestRightIssuePostProcess:
         ctx = _FakeCtx()
         result = _make_right_issue_df()
 
-        processed = task.post_process(ctx, result)
+        processed = task.post_process(_as_task_context(ctx), result)
         data = json.loads(processed[0]['data_json'])
 
         assert 'MARKET_CODE' not in data
@@ -202,7 +203,7 @@ class TestCorporateActionFieldMapping:
         ctx = _FakeCtx()
         result = result_factory()
 
-        processed = task.post_process(ctx, result)
+        processed = task.post_process(_as_task_context(ctx), result)
         assert len(processed) > 0
 
         for rec in processed:
@@ -219,7 +220,7 @@ class TestCorporateActionFieldMapping:
     def test_data_json_is_valid_json(self, task_cls, result_factory):
         task = task_cls()
         ctx = _FakeCtx()
-        processed = task.post_process(ctx, result_factory())
+        processed = task.post_process(_as_task_context(ctx), result_factory())
         for rec in processed:
             data = json.loads(rec['data_json'])
             assert isinstance(data, dict)
@@ -231,7 +232,7 @@ class TestCorporateActionFieldMapping:
     def test_data_json_excludes_all_metadata(self, task_cls, result_factory):
         task = task_cls()
         ctx = _FakeCtx()
-        processed = task.post_process(ctx, result_factory())
+        processed = task.post_process(_as_task_context(ctx), result_factory())
         all_meta = task._get_all_metadata_fields()
         for rec in processed:
             data = json.loads(rec['data_json'])

@@ -122,6 +122,42 @@ func init() {
 			r.Get("/", corpActionCtrl.Query)
 		})
 
+		// ====== Adjust Factors ======
+		adjustFactorCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_ADJUST_FACTOR)
+		if err != nil {
+			return err
+		}
+		adjustFactorCtrl := adjustFactorCtrlComp.(*controller.AdjustFactorController)
+
+		r.Route("/api/v2/adjust-factors/{source}", func(r chi.Router) {
+			r.Post("/upsert", adjustFactorCtrl.BatchUpsert)
+			r.Get("/", adjustFactorCtrl.Query)
+		})
+
+		// ====== Long Hu Bang ======
+		longHuBangCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_LONG_HU_BANG)
+		if err != nil {
+			return err
+		}
+		longHuBangCtrl := longHuBangCtrlComp.(*controller.LongHuBangController)
+
+		r.Route("/api/v2/long-hu-bang/{source}", func(r chi.Router) {
+			r.Post("/upsert", longHuBangCtrl.BatchUpsert)
+			r.Get("/", longHuBangCtrl.Query)
+		})
+
+		// ====== Equity Structure ======
+		equityStructCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_EQUITY_STRUCTURE)
+		if err != nil {
+			return err
+		}
+		equityStructCtrl := equityStructCtrlComp.(*controller.EquityStructureController)
+
+		r.Route("/api/v2/equity-structure/{source}", func(r chi.Router) {
+			r.Post("/upsert", equityStructCtrl.BatchUpsert)
+			r.Get("/", equityStructCtrl.Query)
+		})
+
 		// ====== Schema Discovery ======
 		schemaCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_SCHEMA)
 		if err != nil {
@@ -143,6 +179,20 @@ func init() {
 		}
 		catalogCtrl := catalogCtrlComp.(*controller.CatalogController)
 
+		// ====== Field Dictionary Discovery (Phase 2) ======
+		fieldDictCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_FIELD_DICTIONARY)
+		if err != nil {
+			return err
+		}
+		fieldDictCtrl := fieldDictCtrlComp.(*controller.FieldDictionaryController)
+
+		// ====== Field Coverage Observation (Phase 4 #3) ======
+		fieldCoverageCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_FIELD_COVERAGE)
+		if err != nil {
+			return err
+		}
+		fieldCoverageCtrl := fieldCoverageCtrlComp.(*controller.FieldCoverageController)
+
 		r.Route("/api/v2/catalog", func(r chi.Router) {
 			r.Get("/overview", catalogCtrl.Overview)
 			r.Get("/tables", catalogCtrl.ListTables)
@@ -152,6 +202,22 @@ func init() {
 			r.Get("/data-dictionary", catalogCtrl.DataDictionary)
 			r.Get("/business-overview", catalogCtrl.BusinessOverview)
 			r.Get("/capabilities", catalogCtrl.Capabilities)
+			r.Get("/securities/{symbol}/datasets/summary", catalogCtrl.GetSymbolCoverage)
+
+			// Field dictionary discovery APIs (Phase 2 of AmazingData field
+			// discovery design). Backed by data_dataset_dictionary /
+			// data_field_dictionary / data_enum_dictionary.
+			r.Get("/datasets", fieldDictCtrl.ListDatasets)
+			r.Get("/datasets/{dataset}/fields", fieldDictCtrl.DiscoverFields)
+			r.Get("/enums/{enum_name}", fieldDictCtrl.GetEnum)
+
+			// Field coverage observation APIs (Phase 4 #3). Scans observed
+			// data_json keys and flags SDK-added fields the dictionary hasn't
+			// caught up with.
+			r.Route("/field-coverage", func(r chi.Router) {
+				r.Post("/scan", fieldCoverageCtrl.Scan)
+				r.Get("/", fieldCoverageCtrl.List)
+			})
 		})
 
 		// ====== Knowledge Graph (KG) ======

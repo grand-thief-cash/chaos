@@ -6,12 +6,13 @@ import (
 	"net/http"
 	"strconv"
 
+	"strings"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
 	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/service"
-	"strings"
 )
 
 type CorporateActionController struct {
@@ -58,12 +59,25 @@ func (c *CorporateActionController) BatchUpsert(w http.ResponseWriter, r *http.R
 }
 
 // GET /api/v2/corporate-action/{source}/{action_type}
+//
+// Query params:
+//
+//	format          - "nested" (default) | "flat"
+//	fields          - comma-separated raw/canonical field names; resolved
+//	                  through the field dictionary. Unknown fields return 400
+//	                  with suggestions.
+//	symbol / symbols / market / report_period / period_start / period_end /
+//	ann_date_before / progress_code / page / page_size
 func (c *CorporateActionController) Query(w http.ResponseWriter, r *http.Request) {
 	source := chi.URLParam(r, "source")
 	actionType := chi.URLParam(r, "action_type")
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
 	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+	format := q.Get("format")
+	if format == "" {
+		format = "nested"
+	}
 
 	f := &model.CorporateActionFilters{
 		ActionType:    actionType,
@@ -75,17 +89,31 @@ func (c *CorporateActionController) Query(w http.ResponseWriter, r *http.Request
 		AnnDateBefore: q.Get("ann_date_before"),
 		ProgressCode:  q.Get("progress_code"),
 	}
+	var requestedFields []string
 	if v := q.Get("fields"); v != "" {
-		f.Fields = strings.Split(v, ",")
+		requestedFields = strings.Split(v, ",")
+		f.Fields = requestedFields
 	}
-
-	list, count, err := c.Svc.Query(r.Context(), source, f, page, pageSize)
 	if v := q.Get("symbols"); v != "" {
 		f.Symbols = strings.Split(v, ",")
 	}
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
-		return
+
+	switch format {
+	case "flat":
+		resp, err := c.Svc.QueryFlat(r.Context(), source, f, requestedFields, page, pageSize)
+		if err != nil {
+			writeQueryError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	case "nested":
+		resp, err := c.Svc.QueryNested(r.Context(), source, f, requestedFields, page, pageSize)
+		if err != nil {
+			writeQueryError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	default:
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "format must be 'flat' or 'nested'"})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": list, "total": count})
 }

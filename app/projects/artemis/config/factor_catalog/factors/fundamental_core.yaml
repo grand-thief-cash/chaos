@@ -1,0 +1,360 @@
+factors:
+  - name: roe
+    description: 归母净利润 TTM 相对平均归母股东权益的回报率。
+    management_tags: [profitability]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, financial.balance_sheet.data_json.TOT_SHARE_EQUITY_EXCL_MIN_INT]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters, balance_sheet current and previous quarter]
+      runtime_state: snapshot_meta
+
+  - name: roa
+    description: 归母净利润 TTM 相对平均总资产的回报率。
+    management_tags: [profitability]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, financial.balance_sheet.data_json.TOTAL_ASSETS]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters, balance_sheet current and previous quarter]
+      runtime_state: snapshot_meta
+
+  - name: gross_margin
+    description: 营业收入 TTM 与营业成本 TTM 形成的毛利率。
+    management_tags: [profitability]
+    source_fields: [financial.income.data_json.OPERA_REV, financial.income.data_json.LESS_OPERA_COST]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: operating_margin
+    description: 营业利润 TTM 相对营业收入 TTM 的利润率。
+    management_tags: [profitability]
+    source_fields: [financial.income.data_json.OPERA_PROFIT, financial.income.data_json.OPERA_REV]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: net_margin
+    description: 归母净利润 TTM 相对营业收入 TTM 的净利率。
+    management_tags: [profitability]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, financial.income.data_json.OPERA_REV]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: roic
+    description: NOPAT 相对投入资本的回报率；当前仅面向非金融公司。
+    management_tags: [profitability, financial_policy]
+    source_fields: [financial.income.data_json.OPERA_PROFIT, financial.income.data_json.INCOME_TAX, financial.income.data_json.TOTAL_PROFIT, financial.balance_sheet.data_json.TOT_SHARE_EQUITY_EXCL_MIN_INT, financial.balance_sheet.data_json.ST_BORROWING, financial.balance_sheet.data_json.LT_LOAN, financial.balance_sheet.data_json.BONDS_PAYABLE, financial.balance_sheet.data_json.CURRENCY_CAP]
+    availability:
+      expected: conditional
+      requirements: [income history >= 4 quarters, balance_sheet current quarter, non-financial issuer]
+      runtime_state: snapshot_meta
+
+  - name: revenue_growth_yoy
+    description: 本期单季度营业收入相对去年同期单季度营业收入的同比增长率。
+    management_tags: [growth]
+    source_fields: [financial.income.data_json.OPERA_REV]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: ni_growth_yoy
+    description: 本期单季度归母净利润相对去年同期单季度归母净利润的同比增长率。
+    management_tags: [growth]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: revenue_cagr_3y
+    description: 最近 TTM 营收相对三年前 TTM 营收的三年复合增长率。
+    management_tags: [growth]
+    source_fields: [financial.income.data_json.OPERA_REV]
+    availability:
+      expected: conditional
+      requirements: [income history >= 12 quarters]
+      runtime_state: snapshot_meta
+
+  - name: ni_cagr_3y
+    description: 最近 TTM 归母净利润相对三年前 TTM 归母净利润的三年复合增长率。
+    management_tags: [growth]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC]
+    availability:
+      expected: conditional
+      requirements: [income history >= 12 quarters]
+      runtime_state: snapshot_meta
+
+  - name: ocf_growth
+    description: 最近 TTM 经营现金流相对一年前 TTM 经营现金流的增长率。
+    management_tags: [growth]
+    source_fields: [financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT]
+    availability:
+      expected: ready
+      requirements: [cashflow history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: accrual_ratio
+    description: 净利润与经营现金流的差额相对平均总资产的比例，越低越好。
+    management_tags: [quality]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT, financial.balance_sheet.data_json.TOTAL_ASSETS]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters, cashflow history >= 4 quarters, balance_sheet current and previous quarter]
+      runtime_state: snapshot_meta
+
+  - name: cash_conversion
+    description: 经营现金流 TTM 相对归母净利润 TTM 的现金转换率。
+    management_tags: [quality]
+    source_fields: [financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT, financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters, cashflow history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: fcf_quality
+    description: 自由现金流 TTM 相对归母净利润 TTM 的覆盖率。
+    management_tags: [quality]
+    source_fields: [financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT, financial.cashflow.data_json.CASH_PAID_PUR_CONST_FIOLTA, financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC]
+    availability:
+      expected: ready
+      requirements: [cashflow history >= 4 quarters, income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: earnings_stability
+    description: 最近八个单季度归母净利润的波动度，越低代表盈利更稳定。
+    management_tags: [quality]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC]
+    availability:
+      expected: conditional
+      requirements: [income history >= 8 quarters]
+      runtime_state: snapshot_meta
+
+  - name: goodwill_ratio
+    description: 商誉占总资产的比例，用于观察潜在减值风险。
+    management_tags: [quality]
+    source_fields: [financial.balance_sheet.data_json.GOODWILL, financial.balance_sheet.data_json.TOTAL_ASSETS]
+    availability:
+      expected: ready
+      requirements: [balance_sheet current quarter]
+      runtime_state: snapshot_meta
+
+  - name: debt_ratio
+    description: 总负债相对总资产的资产负债率。
+    management_tags: [solvency]
+    source_fields: [financial.balance_sheet.data_json.TOTAL_LIAB, financial.balance_sheet.data_json.TOTAL_ASSETS]
+    availability:
+      expected: ready
+      requirements: [balance_sheet current quarter]
+      runtime_state: snapshot_meta
+
+  - name: current_ratio
+    description: 流动资产相对流动负债的比率；当前仅面向非金融公司。
+    management_tags: [solvency, financial_policy]
+    source_fields: [financial.balance_sheet.data_json.TOTAL_CUR_ASSETS, financial.balance_sheet.data_json.TOTAL_CUR_LIAB]
+    availability:
+      expected: conditional
+      requirements: [balance_sheet current quarter, non-financial issuer]
+      runtime_state: snapshot_meta
+
+  - name: quick_ratio
+    description: 扣除存货后的速动资产相对流动负债的比率；当前仅面向非金融公司。
+    management_tags: [solvency, financial_policy]
+    source_fields: [financial.balance_sheet.data_json.TOTAL_CUR_ASSETS, financial.balance_sheet.data_json.INV, financial.balance_sheet.data_json.TOTAL_CUR_LIAB]
+    availability:
+      expected: conditional
+      requirements: [balance_sheet current quarter, non-financial issuer]
+      runtime_state: snapshot_meta
+
+  - name: interest_coverage
+    description: EBIT TTM 相对财务费用 TTM 的利息保障倍数。
+    management_tags: [solvency]
+    source_fields: [financial.income.data_json.OPERA_PROFIT, financial.income.data_json.LESS_FIN_EXP]
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: net_debt_to_ebitda
+    description: 净负债相对 EBITDA 的杠杆比率。
+    management_tags: [solvency]
+    source_fields: [financial.balance_sheet.data_json.ST_BORROWING, financial.balance_sheet.data_json.LT_LOAN, financial.balance_sheet.data_json.CURRENCY_CAP, financial.income.data_json.EBITDA, financial.income.data_json.OPERA_PROFIT, financial.income.data_json.LESS_FIN_EXP]
+    availability:
+      expected: ready
+      requirements: [balance_sheet current quarter, income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: cash_to_st_debt
+    description: 货币资金对短期债务的覆盖程度。
+    management_tags: [solvency]
+    source_fields: [financial.balance_sheet.data_json.CURRENCY_CAP, financial.balance_sheet.data_json.ST_BORROWING, financial.balance_sheet.data_json.NONCUR_LIAB_DUE_WITHIN_1Y]
+    availability:
+      expected: ready
+      requirements: [balance_sheet current quarter]
+      runtime_state: snapshot_meta
+
+  - name: pe_ttm
+    description: 总市值相对归母净利润 TTM 的估值倍数。
+    management_tags: [valuation, market_cap]
+    availability:
+      expected: ready
+      requirements: [daily close, balance_sheet TOT_SHARE, income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: pb
+    description: 总市值相对归母净资产的估值倍数。
+    management_tags: [valuation, market_cap]
+    availability:
+      expected: ready
+      requirements: [daily close, balance_sheet current quarter]
+      runtime_state: snapshot_meta
+
+  - name: ps_ttm
+    description: 总市值相对营业收入 TTM 的估值倍数。
+    management_tags: [valuation, market_cap]
+    availability:
+      expected: ready
+      requirements: [daily close, balance_sheet TOT_SHARE, income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: peg
+    description: 市盈率相对净利润同比增速的估值修正指标。
+    management_tags: [valuation, growth_linked]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, bars.stock.zh_a.daily.close, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: PEG 估值侧沿用现价总市值口径，因此 bars 使用不复权收盘价。
+    availability:
+      expected: conditional
+      requirements: [daily close, income history >= 4 quarters, positive PE, positive NI YoY growth]
+      runtime_state: snapshot_meta
+
+  - name: ev_to_ebitda
+    description: 企业价值相对 EBITDA 的估值倍数。
+    management_tags: [valuation, market_cap]
+    availability:
+      expected: ready
+      requirements: [daily close, balance_sheet current quarter, income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: pcf
+    description: 总市值相对经营现金流 TTM 的估值倍数。
+    management_tags: [valuation, market_cap]
+    availability:
+      expected: ready
+      requirements: [daily close, balance_sheet TOT_SHARE, cashflow history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: dividend_yield
+    description: 每股现金分红相对收盘价的股息率。
+    management_tags: [valuation, dividend]
+    availability:
+      expected: conditional
+      requirements: [daily close, dividend corporate action]
+      runtime_state: snapshot_meta
+
+  - name: asset_turnover
+    description: 营业收入 TTM 相对平均总资产的周转率；当前仅面向非金融公司。
+    management_tags: [efficiency, financial_policy]
+    source_fields: [financial.income.data_json.OPERA_REV, financial.balance_sheet.data_json.TOTAL_ASSETS]
+    availability:
+      expected: conditional
+      requirements: [income history >= 4 quarters, balance_sheet current and previous quarter, non-financial issuer]
+      runtime_state: snapshot_meta
+
+  - name: inventory_turnover
+    description: 营业成本 TTM 相对平均存货的周转率；当前仅面向非金融公司。
+    management_tags: [efficiency, financial_policy]
+    source_fields: [financial.income.data_json.LESS_OPERA_COST, financial.balance_sheet.data_json.INV]
+    availability:
+      expected: conditional
+      requirements: [income history >= 4 quarters, balance_sheet current and previous quarter, non-financial issuer]
+      runtime_state: snapshot_meta
+
+  - name: receivable_turnover
+    description: 营业收入 TTM 相对平均应收账款的周转率；当前仅面向非金融公司。
+    management_tags: [efficiency, financial_policy]
+    source_fields: [financial.income.data_json.OPERA_REV, financial.balance_sheet.data_json.ACCT_RECEIVABLE]
+    availability:
+      expected: conditional
+      requirements: [income history >= 4 quarters, balance_sheet current and previous quarter, non-financial issuer]
+      runtime_state: snapshot_meta
+
+  - name: cash_cycle
+    description: 由应收、存货和应付周转天数组成的现金循环天数；当前仅面向非金融公司。
+    management_tags: [efficiency, financial_policy]
+    source_fields: [financial.income.data_json.OPERA_REV, financial.income.data_json.LESS_OPERA_COST, financial.balance_sheet.data_json.INV, financial.balance_sheet.data_json.ACCT_RECEIVABLE, financial.balance_sheet.data_json.ACCT_PAYABLE]
+    availability:
+      expected: conditional
+      requirements: [income history >= 4 quarters, balance_sheet current and previous quarter, non-financial issuer]
+      runtime_state: snapshot_meta
+
+  - name: capex_to_revenue
+    description: 资本开支 TTM 相对营业收入 TTM 的资本密集度指标。
+    management_tags: [efficiency]
+    source_fields: [financial.cashflow.data_json.CASH_PAID_PUR_CONST_FIOLTA, financial.income.data_json.OPERA_REV]
+    availability:
+      expected: ready
+      requirements: [cashflow history >= 4 quarters, income history >= 4 quarters]
+      runtime_state: snapshot_meta
+
+  - name: eps_ttm
+    description: 归母净利润 TTM 相对总股本的每股收益。
+    management_tags: [per_share]
+    source_fields: [financial.income.data_json.NET_PRO_EXCL_MIN_INT_INC, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: 每股类因子当前复用 factor-engine market snapshot，统一使用不复权日频 bars。
+    availability:
+      expected: ready
+      requirements: [income history >= 4 quarters, balance_sheet TOT_SHARE]
+      runtime_state: snapshot_meta
+
+  - name: bps
+    description: 归母净资产相对总股本的每股净资产。
+    management_tags: [per_share]
+    source_fields: [financial.balance_sheet.data_json.TOT_SHARE_EQUITY_EXCL_MIN_INT, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: BPS 当前通过统一 market snapshot 获取 shares/market context，沿用不复权 bars 口径。
+    availability:
+      expected: ready
+      requirements: [balance_sheet current quarter]
+      runtime_state: snapshot_meta
+
+  - name: cfps
+    description: 经营现金流 TTM 相对总股本的每股经营现金流。
+    management_tags: [per_share]
+    source_fields: [financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: CFPS 使用统一 market snapshot 载入 shares，上游 bars 口径保持不复权。
+    availability:
+      expected: ready
+      requirements: [cashflow history >= 4 quarters, balance_sheet TOT_SHARE]
+      runtime_state: snapshot_meta
+
+  - name: fcf_per_share
+    description: 自由现金流 TTM 相对总股本的每股自由现金流。
+    management_tags: [per_share]
+    source_fields: [financial.cashflow.data_json.NET_CASH_FLOW_OPERA_ACT, financial.cashflow.data_json.CASH_PAID_PUR_CONST_FIOLTA, financial.balance_sheet.data_json.TOT_SHARE]
+    market_adjust_policy:
+      adjust: nf
+      rationale: FCF per share 当前与其它每股类因子共享同一 market snapshot，不复权口径保持一致。
+    availability:
+      expected: ready
+      requirements: [cashflow history >= 4 quarters, balance_sheet TOT_SHARE]
+      runtime_state: snapshot_meta
+
+  - name: dps
+    description: 最新可用现金分红方案中的税前每股现金分红。
+    management_tags: [per_share, dividend]
+    availability:
+      expected: conditional
+      requirements: [dividend corporate action]
+      runtime_state: snapshot_meta
+

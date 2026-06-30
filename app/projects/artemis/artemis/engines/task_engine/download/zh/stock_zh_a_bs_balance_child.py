@@ -12,8 +12,6 @@
 
 存储：复用 financial_statement 表，statement_type = "bs_balance"
 """
-import json
-
 import baostock as bs
 import pandas as pd
 
@@ -106,7 +104,7 @@ class StockZhABsBalanceChild(WorkerUnit):
                 'market': 'zh_a',
                 'statement_type': 'bs_balance',
                 'reporting_period': reporting_period,
-                'data_json': json.dumps(data_fields, ensure_ascii=False),
+                'data_json': data_fields,
                 'ann_date': pub_date if pub_date else '',
                 'actual_ann_date': pub_date if pub_date else '',
                 'report_type': '',

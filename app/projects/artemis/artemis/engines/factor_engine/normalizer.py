@@ -44,7 +44,21 @@ class FactorNormalizer:
         industry_map: Dict[str, str],
         min_samples: int = 10,
     ) -> pd.DataFrame:
-        """按行业做 Z-Score，同时缓存行业统计量。"""
+        """按行业对因子列做 Z-Score 标准化，并缓存每个行业的统计量。
+
+        具体行为：
+        - 输入 `factor_df` 为以股票代码（symbol）为 index、若干因子列为 columns 的 DataFrame。
+        - `industry_map` 将 index 中的 symbol 映射到行业编码（或名称）。
+          对于没有映射的 symbol，会被分配到特殊行业 "__UNKNOWN__"，以避免在 groupby 时被静默丢弃。
+        - 对每个因子列、每个行业组单独计算均值和标准差（只使用非 NaN 值）。
+        - 若某行业的有效样本数小于 `min_samples`，则该行业在结果中保持原始值不变，且缓存的该行业统计量的 mean/std 置为 None（同时记录实际样本数 n）。
+        - 若某行业的标准差接近 0（< 1e-10），则对该行业所有样本的 z-score 直接置为 0.0（避免除以 0）；同时依然缓存 mean/std。
+        - 返回值为与输入相同 index、各因子列被标准化为 z-score 的 DataFrame（dtype=float）。
+        - 方法会把本次计算得到的每个因子每个行业的统计量存入 `self._industry_stats`，格式为
+            { factor_col: { industry: {"mean": float|None, "std": float|None, "n": int}, ... }, ... }
+
+        该缓存可用于增量标准化（`zscore_incremental`），以对新样本使用之前计算好的行业均值/标准差进行标准化。
+        """
         df = factor_df.copy()
         mapped = df.index.map(industry_map)
         # Symbols missing from industry_map become NaN → assign a sentinel group

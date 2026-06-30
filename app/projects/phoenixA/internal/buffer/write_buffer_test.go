@@ -60,7 +60,7 @@ func TestWriteBufferManager_SubmitAndFlushOnInterval(t *testing.T) {
 	if stats[0].SubmittedRows != 5 {
 		t.Errorf("expected 5 submitted rows, got %d", stats[0].SubmittedRows)
 	}
-	if stats[0].Key != "bars_bars_stock_zh_a_daily_nf" {
+	if stats[0].Key != "bars_ods.bars_stock_zh_a_daily_nf" {
 		t.Errorf("unexpected key: %s", stats[0].Key)
 	}
 	if stats[0].Category != "bars" {
@@ -102,28 +102,22 @@ func TestWriteBufferManager_FlushOnBatchFull(t *testing.T) {
 }
 
 func TestWriteBufferManager_ChannelFull(t *testing.T) {
-	cfg := Config{
-		Enabled:              true,
-		MaxBatchSize:         10000,
-		FlushInterval:        10 * time.Second,
-		DirectFlushThreshold: 500,
-		ChannelSize:          2,
-		ShutdownTimeout:      5 * time.Second,
+	b := &genericBuffer{
+		key:      "test_key",
+		category: "bars",
+		ch:       make(chan genericEntry, 2),
+		cfg: Config{
+			ChannelSize: 2,
+		},
 	}
-	mgr := NewWriteBufferManager(cfg)
-	_ = mgr.Start(context.Background())
 
-	q := &model.BarsQuery{AssetType: "stock", Market: "zh_a", Period: "daily", Adjust: "nf"}
+	_ = b.submit(genericEntry{Count: 1})
+	_ = b.submit(genericEntry{Count: 1})
 
-	_ = mgr.Submit(q, makeBars(1), nil, "")
-	_ = mgr.Submit(q, makeBars(1), nil, "")
-
-	err := mgr.Submit(q, makeBars(1), nil, "")
+	err := b.submit(genericEntry{Count: 1})
 	if err == nil {
 		t.Error("expected error when channel is full")
 	}
-
-	_ = mgr.Stop(context.Background())
 }
 
 func TestWriteBufferManager_ExtDataBundled(t *testing.T) {

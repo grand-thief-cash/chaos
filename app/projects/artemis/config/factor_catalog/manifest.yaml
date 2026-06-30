@@ -1,0 +1,18 @@
+catalog_version: "2026-05-14"
+description: >-
+  Artemis fundamental factor catalog P0 seed. This catalog stores governance-critical
+  metadata for factors whose PhoenixA lineage, dividend policy, market-cap policy,
+  or financial-sector policy must be explicitly managed and displayed.
+defaults:
+  management_phase: p0_seed
+  status: active
+  financial_policy:
+    mode: standard
+  availability:
+    expected: ready
+    runtime_state: snapshot_meta
+factor_files:
+  - factors/fundamental_core.yaml
+  - factors/governance_seed.yaml
+
+

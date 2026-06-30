@@ -1,7 +1,184 @@
 # VERSION
-- v0.32.0
+- v0.38.2
 
 # Changelog
+- v0.38.2
+    - **BI service: split into `bi/` package and renamed off the `bi_simple` name**
+        - Split the single-file `artemis/services/bi_simple_service.py` (~1195 lines) into an `artemis/services/bi/` package organized by business area: `base.py` (phoenixA client + numeric helpers as `BIServiceBase`), `securities.py`, `discovery.py`, `raw_queries.py` (raw-passthrough mixins), and `dupont.py` (DuPont analytical-computation mixin), combined in `service.py` as `BIService`. Behavior-preserving: all 38 method bodies and field-constant lists are byte-identical to the original (verified via AST equivalence + `tests/test_bi_dupont_service.py`).
+        - Renamed `bi_simple` → `bi` everywhere to match the `/bi` route prefix and the cthulhu `ArtemisBiService` / `features/bi/` naming: `BISimpleService` → `BIService`, models `bi_simple.py` → `bi.py`, routes `bi_simple_routes.py` → `bi_routes.py`, logger names `bi_simple_service` / `bi_simple.routes` → `bi_service` / `bi.routes`. Callers (`bi_routes.py`, `routes.py`, `tests/test_bi_dupont_service.py`) updated.
+- v0.38.1
+    - **DuPont analysis: caliber-consistency and metadata fixes**
+        - **single_quarter detail caliber** (`bi_simple_service.py`): detail stacks/equations previously read from the raw YTD income row while the ratios used a single-quarter value (YTD − prior YTD), so breakdown totals didn't match their rows. Now synthesizes a single-quarter income row (`_synthesize_single_quarter_income`) and passes it as the detail row; tree nodes, ratios, and breakdown stacks are all on the single-quarter caliber.
+        - **Q3 extrapolation detail caliber** (`_extrapolate_q3_full_year`): the extrapolated view scales profit/revenue ×4/3 but reused the unscaled Q3 YTD income row for detail stacks, so totals mismatched their rows. Now scales the income row with `_scale_income_row(…, 4/3)` so detail stacks match the scaled ratios.
+        - **Q3 extrapolation prior-period baseline (P1)**: the extrapolated view is a full-year FORECAST, but its `prev` was the prior-year Q3 YTD (from the underlying YTD response), so every delta/direction compared a forecast full year to a prior 三季报累计 — systematically inflated. Now computes the prior year's ANNUAL (年报 full-year actual) as the baseline via `_ratios_for(period_kind="annual", …)`; falls back to `prev=None` (no false trend) when prior-year annual data is missing. `prev_period` reflects the annual baseline.
+        - **statement_code passthrough (P2)**: `_compute_dupont_by_kind` hardcoded `statement_code="1"` in the response while fetching with the caller's value, so a 母公司 (6) query was mislabeled as 合并 (1). `statement_code` now flows through `get_dupont_analysis` → `_compute_dupont_by_kind` → `_build_dupont_response`.
+        - **prev_period populated**: the response's `prev_period` was always `None` (computed but never passed to `_build_dupont_response`); now carried through.
+        - **No more internal-row leakage**: removed `_inc_cur`/`_bal_cur`/`_cur`/`_prev` keys injected into the HTTP response (full phoenixA raw rows were being returned to the frontend). Intermediate state is now passed explicitly via a `ctx` dict between `_compute_dupont_by_kind` and `_extrapolate_q3_full_year`.
+        - **Removed dead params**: dropped the unused `report_type` / `period_end` params from `get_dupont_analysis` and the `/bi/dupont/{symbol}` route (and the matching `getDupont` opts in cthulhu) — they were never used in the function body.
+        - **Removed dead fields**: dropped the always-`None` `BIDetailStackRow.prev_value` and `BIDetailStack.prev_total` from `bi_simple.py` (mirrored in cthulhu `bi-simple.models.ts`); `_build_stack` no longer takes a `prev_row` it always ignored.
+        - **Paged full-period fetch**: `_fetch_all_dupont_rows` paginates (200/page, total-aware, 200-page backstop) instead of a single `page_size=150` that silently truncated symbols with >150 periods.
+        - **Clearer caliber notes**: per-kind `kind_notes` now spell out the balance-sheet denominator endpoints per kind and note that TTM uses last year-end (not prior-year same-period) as a simplified denominator.
+        - **Tests**: added `tests/test_bi_dupont_service.py` covering single-quarter detail caliber, Q3 extrapolation detail scaling + prior-period annual baseline (P1 regression), `prev_period` population, and `statement_code` passthrough (P2 regression). Removed the stale `tests/test_bi_service.py` / `tests/test_bi_routes.py`, which imported the long-deleted legacy BI modules and could never be collected.
+- v0.38.0
+    - **DuPont analysis backend (artemis-owned computation)**
+        - New `BISimpleService.get_dupont_analysis` fetches all-period income + balance_sheet from phoenixA in one pass and computes the DuPont decomposition tree, headline drivers, relationship equations, and breakdown stacks in artemis — artemis is the BI backend and owns business computation when needed (not limited to passthrough).
+        - New endpoint `GET /bi/dupont/{symbol}` supports four period kinds via `period_kind`: `ttm` (rolling 12 months, default), `annual`, `single_quarter`, `ytd` (year-to-date cumulative, not annualized).
+        - New optional `target_reporting_period` to pin the report period (defaults to the latest available; annual falls back to the latest 年报).
+        - New optional `extrapolate_q4=true` for `ytd` + Q3 (三季报): linearly extrapolates the full year as Q3 YTD × 4/3, returning it in `extrapolated_full_year`.
+        - DuPont identity (net margin × asset turnover × equity multiplier = ROE) holds for all kinds. Balance-sheet items use period-start/end averages; income items use the kind-appropriate value (TTM = current YTD + prior full year − prior YTD; single quarter = current YTD − prior-quarter YTD).
+        - Prior-period (`prev_value` / `delta` / `direction`) computed per kind: annual & YTD use 同比 (prior year same period); single_quarter & TTM use 环比 (immediately preceding reporting period).
+        - New Pydantic models in `bi_simple.py`: `BIDupontMetricNode`, `BIDupontTreeNode`, `BIDriverItem`, `BIDetailEquation`, `BIDetailStack`, `BIDupontResponse`.
+        - Verified end-to-end against raw data for 深科技 000021: all four kinds + Q3 extrapolation match manual calculation and the identity holds.
+- v0.37.1
+    - **Preserved BI metric dictionary**
+        - New `artemis/models/metric_definitions.py` holds the 26 metric definitions (revenue_total, operating_profit, net_profit_parent, roe, roa, …) previously living in the deleted `bi_engine/contracts/metric_definitions.py`.
+        - New endpoint `GET /bi/meta/metrics` in `bi_simple_routes.py` exposes them so the dictionary isn't lost after the BI redesign.
+    - **Fixed profit_express / profit_notice date normalization on write side**
+        - `stock_zh_a_profit_express.py` and `stock_zh_a_profit_notice.py` now run `ann_date` / `actual_ann_date` through `normalize_date_yyyymmdd` so values are stored as `YYYY-MM-DD` instead of raw `YYYYMMDD`.
+        - Existing rows still carry the old format and need a re-download to be normalized.
+- v0.37.0
+    - **BI module redesign: light layer over phoenixA**
+        - **Removed legacy BI code**:
+            - Deleted `artemis/api/http_gateway/bi_routes.py`
+            - Deleted `artemis/services/bi_service.py`
+            - Deleted `artemis/models/bi.py`
+            - Deleted entire `artemis/engines/bi_engine/` directory
+        - **Added new light BI layer**:
+            - New `artemis/models/bi_simple.py`: light request/response models
+            - New `artemis/services/bi_simple_service.py`: thin layer passing through to phoenixA
+            - New `artemis/api/http_gateway/bi_simple_routes.py`: `/bi/*` route definitions
+            - No YoY/QoQ computation in artemis — only raw data pass-through
+        - **Updated main routes**:
+            - Modified `artemis/api/http_gateway/routes.py` to use new bi_simple_routes
+    - **Fixed data_json ingestion bug in corporate action**:
+        - Fixed `base_corporate_action.py`: `data_json` should be object, not JSON string
+        - Same fix pattern as financial statement tasks (no json.dumps)
+- v0.36.4
+    - **AmazingData long_hu_bang download task**
+        - Added `STOCK_ZH_A_LONG_HU_BANG` to download A-share 龙虎榜 detail rows via `AmazingData.InfoData.get_long_hu_bang()`.
+        - Implemented Artemis worker logic with PhoenixA-backed symbol resolution, date normalization, deduplication, and batch sink support.
+        - Added task config, CronJob export, and focused unit tests for long_hu_bang post-processing.
+- v0.36.3
+    - **Baostock adjust factor download task**
+        - Added `STOCK_ZH_A_BS_ADJUST_FACTOR_PARENT` / `STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD` to download A-share adjust factor data via `baostock.query_adjust_factor()`.
+        - Implemented plan/child orchestration that loads the security universe from PhoenixA and expands one child task per symbol.
+        - Added PhoenixA client support for the new standalone adjust factor ingestion API.
+        - Added task config and a new CronJob task export file for scheduled imports.
+- v0.36.2
+    - **BI review iteration (time axis + DuPont tree + trend horizon)**
+        - `bi_service.py` trend sections now output periods in chronological order (oldest -> newest) for chart rendering.
+        - Increased BI statement query window (`page_size`) and default trend horizon to support longer-term views (default 12 periods).
+        - Expanded DuPont response tree from shallow 1-level drivers to recursive nodes including formula operands (net profit/revenue/avg assets/avg equity).
+        - Updated BI design doc `docs/2026-05-19 BI_SERVICE_POSITIONING_AND_FINANCIAL_DASHBOARD_DESIGN.md` with review decisions and contract constraints.
+        - Refreshed BI service tests to validate chronological periods and deeper DuPont decomposition nodes.
+- v0.36.1
+    - Fixed bi_service.py for missing symbols.
+    - Filtered for merged financial statements only PhoenixA statement_code uses numeric codes: "1".
+    - PhonexA_client added `statement_code` in query_financial_statements parameters.
+- v0.36.0
+    - **BI MVP backend foundation**
+        - Added new `/bi` route group in Artemis for structured financial BI read models
+        - New endpoints:
+            - `GET /bi/financial/company/{symbol}/dashboard`
+            - `GET /bi/financial/company/{symbol}/dupont`
+            - `GET /bi/financial/company/{symbol}/quality`
+            - `GET /bi/meta/metrics`
+        - Added BI Pydantic models under `artemis/models/bi.py`
+        - Added BI service layer under `artemis/services/bi_service.py`
+        - Added BI metric contract definitions under `artemis/engines/bi_engine/contracts/metric_definitions.py`
+        - Implemented PhoenixA-backed Phase 1 financial metric computation for dashboard / dupont / quality panels
+        - Scope explicitly kept BI-only: no Atlas / narrative / LLM integration in this MVP implementation
+    - **BI documentation refinement**
+        - Updated `docs/2026-05-19 BI_SERVICE_POSITIONING_AND_FINANCIAL_DASHBOARD_DESIGN.md`
+        - Added MVP metric matrix table (`page -> module -> metric -> PhoenixA field -> phase`)
+        - Added detailed BI read-model schemas for Artemis API responses
+        - Added detailed Cthulhu route/page inventory and explicit BI-only scope statement
+    - **Tests**
+        - Added `tests/test_bi_service.py` for BI metric calculation / dupont / quality contract coverage
+        - Added `tests/test_bi_routes.py` for BI route smoke coverage
+        - Verified BI backend tests pass: `3 passed`
+- v0.36.1
+    - **Factor catalog merge logic fix**
+        - Fixed factor catalog loading to merge definitions from multiple YAML files instead of overriding
+        - `governance_seed.yaml` now supplements (not replaces) `fundamental_core.yaml` definitions
+        - Resolved issue where `asset_turnover`, `roic`, and other factors showed "0 field(s)" Required Fields and "No provenance yet"
+        - All factors now correctly retain `source_fields`, `availability`, and `provenance` information from core definitions
+        - `deploy_artemis.py` included supporting upload factor_catalog config.
+- v0.36.0
+    - **Factor Engine × PhoenixA follow-up review fixes**
+        - Fixed industry-map cache pollution: subset `get_industry_map(..., symbols=[...])` requests no longer poison the full-market cache; full-map cache and per-symbol industry-context cache are now separated
+        - Fixed `run_incremental()` tail logging crash caused by stale `skipped_symbols` reference; completion logs now keep only meaningful `failed_symbols` diagnostics
+        - Fixed `get_active_symbols(as_of_date)` survivorship issue: PhoenixA provider now preserves `list_date` / `delist_date` from `security_registry` and applies as-of filtering during historical rebuilds
+        - Improved `/factors/availability` runtime semantics: capabilities-unreachable / empty / untrusted states now surface as `unknown` instead of being flattened into `missing`
+        - Availability analysis now validates both required sources and required fields; source-present but field-incomplete factors are downgraded to `partial` / `missing` instead of false `available`
+        - Added source-scoped factor-engine runtime isolation across `/factors/availability`, `/factors/compute/*`, `/factors/snapshot`, and `/factors/rank`, so different Workbench sources no longer share in-memory provider/store/pipeline state
+        - PhoenixA taxonomy `derived_flags.financial_sector` is now used as the fallback signal for financial-sector exclusion when statement-level `comp_type_code` is unavailable
+    - **Regression coverage refresh**
+        - Added focused tests for unreachable capabilities → `unknown`, missing required-field detection, as-of active-symbol filtering, and industry subset/full cache separation
+- v0.35.0
+    - **Factor Engine Cache & Performance Improvements**
+        - Added TTL-based cache expiration with `CacheEntry` dataclass (`timestamp`, `ttl_seconds`, `is_expired()`)
+        - Defined cache TTL constants: `CACHE_TTL_SYMBOLS` (1h), `CACHE_TTL_INDUSTRY_MAP` (24h), `CACHE_TTL_FINANCIAL` (5m), `CACHE_TTL_MARKET_DATA` (5m), `CACHE_TTL_CORP_ACTION` (1h)
+        - Added concurrent batch query support for industry mapping with `get_industry_map_batch()` using ThreadPoolExecutor (10 workers, batch size 50)
+        - Added `symbols` parameter to `get_industry_map()` for incremental queries (only fetch needed symbols)
+        - All cache lookups now check `is_expired()` before returning cached values
+        - Fixed `get_industry_context()` to correctly extract `CacheEntry.value` from cache
+    - **Pipeline Error Handling & Logging**
+        - Enhanced `run_full()` with granular try-except blocks at symbol, group, and pipeline levels
+        - Added `skipped_symbols` and `failed_symbols` tracking for better pipeline diagnostics
+        - Added completion summary logging with total_symbols, skipped_count, failed_count
+        - Enhanced `run_incremental()` with batch industry queries (`use_batch=True`) and error handling
+    - **Factor Catalog Governance**
+        - Added comprehensive PEG factor definition to `governance_seed.yaml` with business logic documentation
+        - Specified growth definition (净利润单季度同比增长率), validity conditions (增长率 > 0 且 PE_TTM > 0), corner cases (扭亏为盈/盈转亏), and alternatives
+        - Verified dividend_yield, dps, and valuation factors match catalog definitions
+        - Verified EV/EBITDA fallback logic matches catalog (op_ttm + fin_ttm)
+    - **Tests**: 82/83 PASSED (1 unrelated failure in TestMarketAdjustPolicy)
+- v0.34.0
+    - Taxonomy matching now directly consumes PhoenixA `canonical_*` + `derived_flags` industry contract, and Artemis-side industry-prefix fallback has been removed before launch
+    - Factor-engine market-data retrieval now uses shared `ADJUST_*` constants and exposes explicit bars `adjust` control through the PhoenixA provider (default remains `ADJUST_NONE`)
+    - Factor-engine bars adjust is now governed only by factor catalog `market_adjust_policy`; runtime config defaults/overrides were removed to keep adjust tied to factor definition
+    - Cleaned factor catalog governance model: `phoenix_queries` no longer repeats `adjust=nf`, and bars adjust semantics now live only in `market_adjust_policy`
+- v0.33.0
+    - **Factor Engine × PhoenixA contract review and fixes**
+        - Normalized factor-engine `as_of_date`, `ann_date`, and `reporting_period` handling across `YYYYMMDD` and `YYYY-MM-DD`
+        - Factor formulas are now aligned directly to PhoenixA canonical field names (`INCOME_TAX`, `TOTAL_PROFIT`, `NET_CASH_FLOW_OPERA_ACT`) instead of relying on Artemis-side aliases
+        - Fixed PhoenixA bars integration bug: factor provider now requests raw `trade_date`/`symbol` fields (`normalize_for_cache=False`)
+        - Fixed valuation/per-share sourcing: `market_cap` now computed from `close × TOT_SHARE`, `dps`/`dividend_yield` now use `corporate-action/dividend`
+        - Implemented `PEG` calculation in `valuation.py` (using current net-profit YoY growth definition)
+        - `EV/EBITDA` now prefers PhoenixA `EBITDA` field when available
+        - `exclude_financial=True` factor policies now actually suppress unsupported factors for banks/insurers/brokers
+        - Factor ranking now honors `higher_is_better` metadata instead of always sorting descending
+    - **Factor registry metadata enrichment**
+        - `registry.py` now exposes `data_sources`, `ttm_required`, and `min_history_quarters`
+        - Added `get_factor_meta()` for policy-aware service logic
+        - Added YAML-backed factor catalog seed under `config/factor_catalog/` for governance-critical factors
+        - `/factors/meta` now exposes management description, LaTeX formula, PhoenixA lineage, dividend/market-cap governance, and financial policy metadata
+        - Expanded factor catalog coverage to all 39 registered factors via `config/factor_catalog/factors/fundamental_core.yaml`
+        - Added static `availability.expected` / `availability.requirements` metadata so factor management can distinguish ready vs conditional factors before runtime computation
+        - Added factor-level `required_fields`, `required_data_sources`, and structured `provenance` so the catalog can describe exact PhoenixA fields and query lineage per factor
+    - **Snapshot runtime management metadata**
+        - Full and incremental factor snapshots now persist `reporting_period`, `latest_ann_date`, `freshness`, `company_kind`, and per-factor `missing_reasons`
+        - Missing reasons currently classify common failure modes such as financial-sector exclusion, missing market data, missing statement sources, and insufficient history quarters
+        - Missing-reason classification is now more granular, including required-source gaps, required-field gaps, market-data frame gaps, and missing dividend enrichment
+    - **PhoenixA client enhancements for factor engine**
+        - `query_corporate_actions()` now supports `symbols`, `report_period`, `ann_date_before`, `progress_code`, and `fields`
+        - `query_financial_statements()` now mirrors the controller contract more completely (`symbols`, `market`, `reporting_period`, `fields`, `page`, `page_size`)
+        - Added `get_catalog_capabilities()` to consume PhoenixA `/api/v2/catalog/capabilities` for factor availability analysis
+    - **Availability endpoint**
+        - New `/factors/availability` API combines factor catalog metadata with PhoenixA catalog capabilities
+        - Returns factor-level provenance, required fields, required data sources, source availability, and per-factor availability status (`available` / `partial` / `missing` / `unknown`)
+    - **Tests**
+        - Expanded `test_factor_engine.py` with canonical-field and factor-catalog governance coverage
+        - Expanded `test_phoenixa_factor_provider.py` with canonical taxonomy / derived-flags coverage and configurable market-adjust assertions
+        - Added regression coverage for snapshot freshness / missing-reason metadata and store persistence
+        - Added dedicated availability service/route coverage (`test_factor_availability.py`)
+        - Verified factor-engine/provider/availability suite passes after this round of updates: 103 tests
+    - **Review & design docs**
+        - New doc: `docs/2026-05-14 [REVIEW] FACTOR_ENGINE_PHOENIXA_INTEGRATION_AND_FACTOR_MANAGEMENT.md`
+        - Documents PhoenixA contract audit, factor computability matrix, canonical field naming policy, standardized taxonomy recommendation, hybrid factor-catalog design, and Cthulhu presentation proposal
+        - Updated `docs/2026-05-08 [IMPLEMENTING] FEATURE_FUNDAMENTAL_FACTOR_ENGINE.md` with factor catalog / dividend / market-cap governance addendum
+        - Updated PhoenixA API docs and internal catalog metadata to match the actual financial controller contract
 - v0.32.0
     - **Fixed Baostock parent tasks parameter validation error**
         - Removed `parameter_check()` from `STOCK_ZH_A_BS_DIVIDEND_PARENT` and `STOCK_ZH_A_BS_BALANCE_PARENT`

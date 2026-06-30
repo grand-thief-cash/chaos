@@ -48,7 +48,7 @@ class QualityFactors(BaseFactor):
         period = current_period or ""
 
         ni_ttm = compute_ttm(income, "NET_PRO_EXCL_MIN_INT_INC", period) if income is not None else None
-        ocf_ttm = compute_ttm(cashflow, "NET_CASH_FLOWS_OPER_ACT", period) if cashflow is not None else None
+        ocf_ttm = compute_ttm(cashflow, "NET_CASH_FLOW_OPERA_ACT", period) if cashflow is not None else None
         assets_avg = avg_balance(balance, "TOTAL_ASSETS", period)
 
         # Accrual

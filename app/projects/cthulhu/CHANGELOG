@@ -1,7 +1,137 @@
 # VERSION
-v0.12.3
+v0.17.2
 
 # Changelog
+- v0.17.2
+    - **BI: removed dead `BiApiService` methods**
+        - Deleted 6 zero-caller methods from `bi-api.service.ts`: `getCompanyDashboard`, `getCompanyDupont`, `getCompanyQuality`, `getCompanyInsight`, `searchSecurities`, `getPeerComparison` — all targeted the long-deleted artemis old-BI endpoints (`/bi/financial/company/{symbol}/{dashboard,dupont,quality,insight}`, `/bi/search/securities`, `/bi/financial/peer-comparison`) and had no remaining caller in the codebase. The live `getMetricDefinitions` (used by the `metric-dictionary` page) is kept. Pruned the now-unused `HttpParams` import and 7 now-unused response-type imports from the service line; the type definitions remain in `bi-legacy.models.ts`.
+    - **BI models: dropped the `simple` qualifier, matching artemis v0.38.2**
+        - `bi-simple.models.ts` → `bi.models.ts` (the active redesigned-BI-layer models); all 5 importers updated (`company-overview`, `dupont-analysis`, `raw-data-explorer`, `stock-list` pages + `artemis-bi.service`).
+        - The pre-existing legacy `bi.models.ts` (old BI layer: dashboard/quality/insight/peer/metrics, still used by `metric-dictionary` page, `bi-api.service`, `company-context-bar`, `trend-chart`) → `bi-legacy.models.ts` to free the canonical `bi.models` name; its 5 importers updated.
+- v0.17.1
+    - **DuPont analysis page: caliber/UX fixes matching artemis v0.38.1**
+        - **Extrapolated view labels forecast correctly**: the "预测全年" view previously showed `报告期：2025-09-30` (the Q3 date) even though the numbers are a full-year forecast, which read as an actual report. `updateDate` now renders `预测全年（基于报告期 2025-09-30 × 4/3）` in the extrapolated view and `报告期：…` in the actual view.
+        - **Q3 extrapolation checkbox available for "最新"**: `canExtrapolate` only enabled the checkbox when an explicit 三季报 period was selected, so choosing "最新" hid it even when the latest period resolved to a Q3 report. Now also enables it when "最新" is selected and the loaded response's `report_type === '3'`.
+        - **Dropped dead `report_type` / `period_end` from `getDupont`**: `ArtemisBiService.getDupont` no longer accepts/sends `report_type` or `period_end` (removed from the artemis `/bi/dupont/{symbol}` endpoint — they were unused server-side). The page never sent them.
+        - **Dropped dead stack fields**: `BIDetailStackRow.prev_value` and `BIDetailStack.prev_total` removed from `bi-simple.models.ts` to match the artemis models (they were always `null` and never rendered).
+- v0.17.0
+    - **DuPont analysis page wired to artemis backend**
+        - Replaced the hard-coded mock data in `dupont-analysis.page.ts` with live data from `ArtemisBiService.getDupont()` → artemis `GET /bi/dupont/{symbol}`. First BI analysis page to consume a real artemis computation endpoint. Canvas layout, connectors, operators, and styles are unchanged.
+        - Added a period-kind selector (default TTM), a reporting-period selector, and a Q3 extrapolation checkbox (only shown for YTD + 三季报). A view toggle switches between actual YTD and predicted full-year (Q3 YTD × 4/3) when extrapolation is enabled.
+        - Reporting-period options filter by kind: annual only lists 年报 (12-31); other kinds list all periods. Selecting an incompatible period auto-falls back to "最新" to avoid 404s.
+        - Headline driver cards now show the prior-period value alongside the delta/direction; tree nodes show the delta. Prior period renders only when available.
+        - Added a "ROE 取数与计算说明" panel at the bottom documenting each period kind's numerator/denominator, the Q3 extrapolation rule, and the DuPont identity.
+        - Extended `ArtemisBiService.getDupont()` and `bi-simple.models.ts` with `period_kind`, `target_reporting_period`, `extrapolate_q4`, and `extrapolated_full_year`. Symbol is hard-coded to 000021 (深科技) for this first integration.
+- v0.16.2
+    - **BI static financial analysis dashboards**
+        - Added a static DuPont analysis page with hard-coded mock data, tree-style decomposition, trend indicators, and balance-sheet linkage.
+        - Added a static financial summary page with KPI cards, period comparison values, a metric selector, metric value comparison, trend comparison, cash-flow, balance-structure, expense, and tax sections.
+        - Added a financial ability analysis menu group with nested entries for profitability, growth, operating, and solvency analysis.
+        - Added the first financial ability dashboard: profitability analysis, including KPI cards, benchmark values, radar-style peer comparison, a trend selector, and a detail table.
+        - Added placeholder pages for the remaining financial ability subpages so the new nested navigation has stable routes.
+    - **BI navigation and layout updates**
+        - Extended the side-menu model and application layout to support nested menu items while preserving existing flat menu behavior.
+        - Registered missing Ant Design icons used by the top navigation to avoid runtime icon errors.
+        - Increased the Angular component style budget for Cthulhu so richer static BI dashboard styling can build without changing page structure.
+    - **BI dashboard readability**
+        - Increased small auxiliary text sizes across the financial summary and profitability dashboards, including comparison deltas, period labels, legends, chart labels, panel notes, and tables.
+- v0.16.1
+    - **Raw data explorer: enum rendering + routing fixes**
+        - **Enum code → label_zh rendering**: `formatCell(v, field?)` now consults a per-dataset `enumMaps` cache (pre-fetched once per field list via `ArtemisBiService.getEnum`) and renders the enum label instead of the raw code. Added `enum_ref?` to `BIFieldMeta`.
+        - **Enum cache in `ArtemisBiService`**: `getEnum()` now caches by `enumName:source` so repeat dataset views don't re-fetch.
+        - **Routing fix in `raw-data-explorer.page.ts`**: added `buildQuery()` dispatcher so corporate_action hits `/bi/corporate-action/...` and equity_structure hits `/bi/equity-structure/...` instead of always calling `queryFinancial()`.
+        - **Conditional filters**: report_type/statement_code selectors only show for `financial_statement`; equity_structure shows 变动日 date range labels.
+        - **Default `statement_code` = null** (was `'1'`) so profit_express/profit_notice rows with empty `statement_code` aren't filtered out.
+        - **Removed `progress_code` auto-preselect** for corporate_action per user feedback — fields start unselected.
+- v0.16.0
+    - **BI module redesign: 3-layer UI over artemis/phoenixA**
+        - **Removed legacy BI code**:
+            - Deleted old BI pages except `bi-overview.page.ts` and `bi-shell.component.ts`
+            - Deleted `features/bi/services/bi-api.service.ts`
+            - Deleted `features/bi/models/bi.models.ts`
+        - **Added new BI layer**:
+            - New `features/bi/services/artemis-bi.service.ts`: API client for artemis `/bi/*`
+            - New `features/bi/pages/stock-list.page.ts`: paginated stock list (layer 1)
+            - New `features/bi/pages/company-overview.page.ts`: company overview with datasets (layer 2)
+            - New `features/bi/pages/raw-data-explorer.page.ts`: raw data explorer with native HTML controls (layer 3)
+            - Updated `features/bi/bi.routes.ts`: new route structure
+            - No YoY/QoQ computation in frontend — only raw data display
+        - **Fixed company overview labels**:
+            - Corrected display text for dataset availability
+- v0.15.3
+    - **BI second/third iteration: trend interaction upgrade**
+        - Added reusable trend control component `ui/trend-controls.component.ts` for `季度/年度` view switch + `12/16/20` period selector.
+        - Updated `financial-dashboard.page.ts` to support trend controls and pass selected view options to all trend charts.
+        - Updated `financial-quality.page.ts` to support the same controls and align table rows with selected annual/quarterly mode + period window.
+        - Added local persistence for trend preferences via `localStorage` key `bi-trend-settings` for cross-page consistency.
+    - **BI chart behavior improvements**
+        - Enhanced `trend-chart.component.ts` to apply annual filtering and period tail slicing while preserving chronological rendering.
+        - Added test coverage `trend-chart.component.spec.ts` for chronological ordering, annual filtering, and period window behavior.
+- v0.15.2
+    - Updated Cthulhu BI charting:
+        - Trend chart now defensively reorders to chronological periods.
+        - Added chart zoom controls for long-horizon series.
+        - DuPont page now renders recursive tree-style decomposition instead of flat cards.
+- v0.15.1
+    - **Fix BI navigation parameter issue**
+        - Fixed issue where navigating from Company Financial Entry page to BI detail pages would redirect back to entry page
+        - Changed parameter access from `this.route.snapshot.paramMap.get('symbol')` to `this.route.parent?.paramMap.pipe(first()).subscribe()`
+        - This ensures child components can correctly access the `:symbol` parameter from parent route `/bi/financial/company/:symbol`
+        - Fixed by using RxJS `first()` operator to take only the first emission and proper parameter lookup
+    - **BI bug fixes and improvements**
+        - Fixed nested route parameter access issue where child components couldn't read parent route `symbol` parameter
+        - Added symbol validation in all BI page components - redirects to entry page when symbol is missing
+        - Added proper error handling with user-friendly error messages in all BI pages
+        - Backend now validates symbol parameter and returns 400 error for empty/invalid symbols
+        - Added "返回" (Back) button on error pages for better UX
+- v0.15.0
+      - **BI MVP frontend module**
+          - Added new top-level `BI` feature route group under `/bi`
+          - Added BI top-nav entry so the module is discoverable from the main product navigation
+          - Added BI pages:
+              - `BI Overview`
+              - `Company Financial Entry`
+              - `Company Financial Overview`
+              - `Dupont Analysis`
+              - `Financial Quality`
+              - `Metric Dictionary`
+          - Added BI API client wired to Artemis `/bi/*` endpoints
+          - Added company context header component for shared BI company metadata display
+          - Current scope is BI-only and intentionally excludes Atlas / narrative integration
+      - **Frontend validation & tests**
+          - Added `bi-api.service.spec.ts` for Artemis BI HTTP contract coverage
+          - Added `company-context-bar.component.spec.ts` for BI company header rendering coverage
+          - Updated outdated base tests (`AppComponent`, `AppLayoutComponent`) so the Angular suite matches the current app shell / icon runtime behavior
+          - Verified Cthulhu frontend tests pass: `12 SUCCESS`
+          - Verified Angular build succeeds with BI lazy route chunk generation
+- v0.14.0
+      - **Factor Engine follow-up usability fixes**
+          - Availability tab now shows hoverable `?` help on `Live`, `Expected`, `Source Readiness`, `Capability source`, `Selected source`, `Required Sources`, `Missing Sources`, `Required Fields`, and `Provenance`
+          - Added inline explanation that `Expected` is catalog design-time readiness while `Live` is current PhoenixA runtime proof
+          - Extracted Factor Engine help/legend copy into reusable shared constants under `workbench/ui/factor-engine.copy.ts`, so later pages can reuse the same status semantics and tooltip wording
+          - Factor Engine page now includes its own source selector, wired to the shared Workbench source store
+          - When Workbench source changes, Factor Engine now auto-refreshes Availability and clears stale Compute / Snapshot / Ranking results to avoid cross-environment confusion
+          - Availability header now shows source-aware labels using the currently selected Workbench source instead of an implicit default-only view
+          - Compute / Snapshot / Ranking tabs now explicitly show the currently selected source, reducing cross-environment misreads when operators jump between tabs
+          - Registry wording is less ambiguous: `H↑` / `Mkt Data` have been clarified into full labels with shared tooltip explanations
+          - Availability now shows inline live-status legends, capability-source trust hints, source coverage summaries, and direct `missing_fields` / `unknown_fields` previews before opening detail rows
+          - Refreshing Availability now clears stale table content first, so a failed reload no longer leaves users looking at old source/runtime evidence as if it were fresh
+- v0.13.0
+      - **Cthulhu workbench alignment**
+          - Updated factor metadata TypeScript model to accept enriched Artemis registry payload
+          - Corrected factor category color mapping to match Artemis categories
+          - Factor Registry tab now surfaces management policy and PhoenixA lineage from the factor catalog seed
+          - Factor Registry now shows static availability hints; Snapshot tab now shows runtime freshness and missing reasons
+          - Added a dedicated Availability tab in the factor-engine page, wired to `/factors/availability`
+          - Availability tab now shows platform summary, source readiness, factor-level live status, missing sources, required field count, and provenance preview
+          - Availability tab now supports search, category filter, and missing-source filter
+          - Availability table now renders full factor-level `required_fields` and full `provenance` details instead of preview-only snippets
+          - Availability table now supports expandable troubleshooting detail rows with longer notes, source-status details, and time-range display
+          - Added Availability sorting controls (`availability_status`, `required_field_count`, `category`, `name`)
+          - Added Availability jump actions to Registry, Ranking, and Snapshot for same-factor troubleshooting flow
+          - Added Source Readiness → Factor Availability linked filtering for source-centric troubleshooting
+          - Added Availability `Expand All` / `Collapse All` actions for faster multi-factor inspection
+          - Snapshot jump now highlights and auto-scrolls to the focused factor when matching rows are present
 - v0.12.3
     - New: Logo added to top navigation bar (cthulhu.png)
     - Fix: CronJob task.yaml editor now only shows/edits the specific task's config section, not the entire YAML file

@@ -98,6 +98,27 @@ func (c *PostgresGormComponent) Start(ctx context.Context) error {
 			cancel()
 		}
 
+		// Ensure schemas exist BEFORE migrations so schema-qualified and bare-name
+		// DDL in migration files resolve correctly. search_path is injected via DSN
+		// (buildDSN), so no session-level SET is needed here.
+		schema := strings.TrimSpace(ds.Schema)
+		if schema != "" {
+			if !isValidIdentifier(schema) {
+				_ = sqlDB.Close()
+				return fmt.Errorf("postgres_gorm datasource %s invalid schema name: %s", name, schema)
+			}
+			for _, s := range strings.Split(schema, ",") {
+				s = strings.TrimSpace(s)
+				if s == "" {
+					continue
+				}
+				if _, err := sqlDB.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", s)); err != nil {
+					logging.Warnf(ctx, "[postgres_gorm] create schema %s hint: %v (may require privileges)", s, err)
+				}
+			}
+			logging.Infof(ctx, "[postgres_gorm] datasource %s schemas ensured: %s", name, schema)
+		}
+
 		// Optional migrations (version-tracked via _migrations table)
 		if ds.MigrateEnabled {
 			if strings.TrimSpace(ds.MigrateBase) == "" {
@@ -106,7 +127,6 @@ func (c *PostgresGormComponent) Start(ctx context.Context) error {
 			}
 			migrateDir := migration.ResolveMigrateDir(ds.MigrateBase, migration.DialectPostgres, name)
 			migStart := time.Now()
-			schema := strings.TrimSpace(ds.Schema)
 			logging.Infof(ctx, "[postgres_gorm] datasource %s running migrations dir=%s schema=%s", name, migrateDir, schema)
 			result, err := migration.Run(ctx, sqlDB, migration.DialectPostgres, migrateDir, schema)
 			if err != nil {
@@ -120,25 +140,6 @@ func (c *PostgresGormComponent) Start(ctx context.Context) error {
 				logging.Infof(ctx, "[postgres_gorm] datasource %s all %d migrations already applied, nothing to do",
 					name, len(result.Skipped))
 			}
-		}
-
-		// Set search_path if schema is configured
-		if schema := strings.TrimSpace(ds.Schema); schema != "" {
-			if !isValidIdentifier(schema) {
-				_ = sqlDB.Close()
-				return fmt.Errorf("postgres_gorm datasource %s invalid schema name: %s", name, schema)
-			}
-			setPath := fmt.Sprintf("SET search_path TO %s", schema)
-			if _, err := sqlDB.ExecContext(ctx, setPath); err != nil {
-				_ = sqlDB.Close()
-				return fmt.Errorf("set search_path for %s failed: %w", name, err)
-			}
-			// Also ensure schema exists
-			createSchema := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schema)
-			if _, err := sqlDB.ExecContext(ctx, createSchema); err != nil {
-				logging.Warnf(ctx, "[postgres_gorm] create schema %s hint: %v (may require privileges)", schema, err)
-			}
-			logging.Infof(ctx, "[postgres_gorm] datasource %s search_path set to %s", name, schema)
 		}
 
 		// TimescaleDB extension handling

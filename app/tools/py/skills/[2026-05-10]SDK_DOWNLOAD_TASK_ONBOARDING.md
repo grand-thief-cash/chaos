@@ -59,6 +59,11 @@
    - **重要**：PhoenixA 所有表的 symbol 字段统一存**纯代码**（如 `000001`），交易所信息用 `market` 字段
    - 在 Artemis 的 `post_process()` 中做拆分：`"000001.SZ" → symbol="000001", market="zh_a"`
 
+5. **字段稳定性判断** — 是否应该建显式列，还是部分/全部放进 `JSONB`
+   - **字段少、结构稳定、查询会直接使用** → 优先建显式列（例如：龙虎榜的 `buy_amount` / `sell_amount` / `total_volume`）
+   - **字段很多、变化快、不同 type 结构差异大** → 再考虑 `data_json`
+   - **不要**因为模板里有 `data_json` 就默认新增 `data_json`
+
 ---
 
 ## 阶段 2：PhoenixA 数据库设计
@@ -90,7 +95,7 @@
 
 命名规范：`{NNNN}_{description}.sql`（N 为序号，如 `0009_your_new_table.sql`）
 
-Migration 模板：
+Migration 模板（通用模板，不是强制字段清单）：
 
 ```sql
 -- PhoenixA PostgreSQL Migration {NNNN}: {Description}
@@ -121,6 +126,15 @@ CREATE INDEX IF NOT EXISTS idx_{abbr}_data_gin
     ON {table_name} USING GIN (data_json) TABLESPACE {warm_storage / pg_default};
 ```
 
+> **重要纠偏**：上面的 SQL 只是**通用模板**，不是要求每张新表都必须有 `id` / `data_json` / `created_at` / `updated_at`。
+>
+> 在设计新表时，必须先根据 SDK 返回字段做判断：
+>
+> - **`data_json` 仅在字段很多、结构不稳定、或需要保留大量原始扩展字段时使用**
+> - **`id` 仅在确实需要单列主键时使用**（如内部引用、ORM 约束、独立对象生命周期）
+> - **`created_at` / `updated_at` 仅在明确需要审计字段时使用**；不是所有明细表都必须带
+> - 如果 SDK 输出字段**少而稳定**，应直接建**显式业务列**，不要机械套模板
+
 ### 2.4 字段设计规范
 
 | 规范 | 说明 |
@@ -129,8 +143,24 @@ CREATE INDEX IF NOT EXISTS idx_{abbr}_data_gin
 | `market` VARCHAR(16) | 交易所/市场标识：`zh_a`, `hk`, `us` 等 |
 | `source` VARCHAR(32) | 数据来源：`amazing_data`, `baostock` 等 |
 | 日期字段 VARCHAR(10) | 统一 `YYYY-MM-DD` 格式（如 `trade_date`, `ann_date`） |
-| 业务数据 JSONB | `data_json` 存所有非结构化字段 |
-| `created_at` / `updated_at` | TIMESTAMPTZ，标准审计字段 |
+| 业务数据 JSONB | **可选**。仅当字段很多/变化快/不适合全部建列时，才使用 `data_json` |
+| `id` 主键 | **可选**。仅当需要单列主键时添加；否则可直接使用业务唯一键 |
+| `created_at` / `updated_at` | **可选**。仅当需要审计/追踪更新时间时添加 |
+
+### 2.4.1 结构化列 vs JSONB 的决策规则（强制）
+
+在建表前，必须先做一次判断：
+
+| 场景 | 推荐设计 |
+|------|----------|
+| SDK 返回字段 ≤ 20 且字段名/含义稳定 | **全部建显式列** |
+| 主要查询会直接按这些字段过滤/排序/聚合 | **全部建显式列** |
+| 不同子类型字段差异很大，列会非常稀疏 | 公共字段建列，其余放 `data_json` |
+| 字段很多，且短期内可能频繁变更 | 可考虑 `data_json` |
+
+**反例（不要这样做）**：
+- SDK 明明只返回 8~15 个稳定字段，却仍然把金额/数量字段塞进 `data_json`
+- 仅因为模板里有 `id` / `created_at` / `updated_at`，就为每张表都机械加上
 
 ### 2.5 PhoenixA Service 层（如需新表）
 

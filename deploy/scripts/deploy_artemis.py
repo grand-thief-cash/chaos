@@ -33,6 +33,10 @@ BASE_IMAGE = "python:3.11-slim"
 FORCE_DOCKER_BUILD = True
 FORCE_DOCKER_COMPOSE_BUILD = True
 
+SKIP_UPLOAD_BINARY = False
+SKIP_UPLOAD_CONFIG = False
+SKIP_UPLOAD_FACTOR_CATALOG = False
+
 # Path to local folder containing wheel files that should be included in build context
 MINIUS_LOCAL_PATH = "../../minius"
 
@@ -328,49 +332,63 @@ def wait_container(ssh, timeout=60):
 
 
 def upload_files(compose_file):
-    print("⬆️ 上传构建产物和 docker 文件...")
-
     ssh = ssh_connect()
 
-    sftp_upload(ssh, PY_PROJECT_PATH, f"{REMOTE_DEPLOY_PATH}/artemis")
-    sftp_upload(ssh, PY_PROJECT_PATH+"/requirements.txt", f"{REMOTE_DEPLOY_PATH}/requirements.txt")
+    if not SKIP_UPLOAD_BINARY:
+        print("⬆️ 上传构建产物和 docker 文件...")
 
-    # Upload the canonical Dockerfile from the repo (we updated it to COPY minius and install wheels)
-    dockerfile_local_path = os.path.normpath(os.path.join(os.path.dirname(__file__), DOCKERFILE_PATH))
-    sftp_upload(ssh, dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
+        sftp_upload(ssh, PY_PROJECT_PATH, f"{REMOTE_DEPLOY_PATH}/artemis")
+        sftp_upload(ssh, PY_PROJECT_PATH+"/requirements.txt", f"{REMOTE_DEPLOY_PATH}/requirements.txt")
 
-    # Upload the base Dockerfile for deps caching
-    base_dockerfile_local_path = os.path.normpath(os.path.join(os.path.dirname(__file__), BASE_DOCKERFILE_PATH))
-    sftp_upload(ssh, base_dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile-base")
+        # Upload the canonical Dockerfile from the repo (we updated it to COPY minius and install wheels)
+        dockerfile_local_path = os.path.normpath(os.path.join(os.path.dirname(__file__), DOCKERFILE_PATH))
+        sftp_upload(ssh, dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
 
-    sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
-    sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-production.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
-    sftp_upload(ssh, PY_PROJECT_PATH+"/config/task.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
+        # Upload the base Dockerfile for deps caching
+        base_dockerfile_local_path = os.path.normpath(os.path.join(os.path.dirname(__file__), BASE_DOCKERFILE_PATH))
+        sftp_upload(ssh, base_dockerfile_local_path, f"{REMOTE_DEPLOY_PATH}/Dockerfile-base")
 
-    # 确保远程缓存目录存在
-    remote_exec(ssh, f"mkdir -p /home/machine/oss_volume/artemis_cache")
+        sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
 
-    # Upload only wheel files from local minius directory. Abort if minius missing or no wheels found.
-    local_minius = os.path.normpath(os.path.join(os.path.dirname(__file__), MINIUS_LOCAL_PATH))
-    if not os.path.exists(local_minius) or not os.path.isdir(local_minius):
-        print(f"❌ 本地依赖目录不存在或不是目录: {local_minius}，部署中止。请将 minius 目录放在项目根目录下并包含 wheel 文件。")
-        ssh.close()
-        sys.exit(1)
+        # 确保远程缓存目录存在
+        remote_exec(ssh, f"mkdir -p /home/machine/oss_volume/artemis_cache")
 
-    wheel_files = [f for f in os.listdir(local_minius) if f.lower().endswith('.whl')]
-    if not wheel_files:
-        print(f"❌ 在 {local_minius} 中未找到任何 .whl 文件，部署中止。请把需要的 wheels 放入该目录。")
-        ssh.close()
-        sys.exit(1)
+        # Upload only wheel files from local minius directory. Abort if minius missing or no wheels found.
+        local_minius = os.path.normpath(os.path.join(os.path.dirname(__file__), MINIUS_LOCAL_PATH))
+        if not os.path.exists(local_minius) or not os.path.isdir(local_minius):
+            print(f"❌ 本地依赖目录不存在或不是目录: {local_minius}，部署中止。请将 minius 目录放在项目根目录下并包含 wheel 文件。")
+            ssh.close()
+            sys.exit(1)
 
-    # ensure remote minius directory exists
-    remote_exec(ssh, f"mkdir -p {REMOTE_DEPLOY_PATH}/minius")
+        wheel_files = [f for f in os.listdir(local_minius) if f.lower().endswith('.whl')]
+        if not wheel_files:
+            print(f"❌ 在 {local_minius} 中未找到任何 .whl 文件，部署中止。请把需要的 wheels 放入该目录。")
+            ssh.close()
+            sys.exit(1)
 
-    for wf in wheel_files:
-        local_wheel = os.path.join(local_minius, wf)
-        remote_wheel = f"{REMOTE_DEPLOY_PATH}/minius/{wf}"
-        print(f"⬆️ 上传 wheel: {local_wheel} -> {remote_wheel}")
-        sftp_upload(ssh, local_wheel, remote_wheel)
+        # ensure remote minius directory exists
+        remote_exec(ssh, f"mkdir -p {REMOTE_DEPLOY_PATH}/minius")
+
+        for wf in wheel_files:
+            local_wheel = os.path.join(local_minius, wf)
+            remote_wheel = f"{REMOTE_DEPLOY_PATH}/minius/{wf}"
+            print(f"⬆️ 上传 wheel: {local_wheel} -> {remote_wheel}")
+            sftp_upload(ssh, local_wheel, remote_wheel)
+    else:
+        print("⏭️  跳过上传构建产物和 docker 文件")
+
+    if not SKIP_UPLOAD_CONFIG:
+        print("⬆️ 上传配置文件...")
+        sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-production.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
+        sftp_upload(ssh, PY_PROJECT_PATH+"/config/task.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
+    else:
+        print("⏭️  跳过上传配置文件（使用远程服务器上已有的配置）")
+
+    if not SKIP_UPLOAD_FACTOR_CATALOG:
+        print("⬆️ 上传因子目录配置...")
+        sftp_upload(ssh, PY_PROJECT_PATH+"/config/factor_catalog", f"{REMOTE_CONFIG_PATH}/factor_catalog")
+    else:
+        print("⏭️  跳过上传因子目录配置（使用远程服务器上已有的配置）")
 
     ssh.close()
 

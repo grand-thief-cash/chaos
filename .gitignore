@@ -58,6 +58,8 @@ __pycache__/
 /app/projects/artemis/whl/tgw-1.0.8.5-py3-none-any.whl
 /app/projects/artemis/cache/*
 /app/projects/artemis/dist/*
+/app/projects/artemis/config/config-production.yaml
+/app/projects/artemis/config/config-home.yaml
 /app/projects/phoenixA/vendor/*
 /app/projects/phoenixA/dist/*
 /app/projects/phoenixA/config/*
@@ -75,3 +77,5 @@ __pycache__/
 *.log
 go.sum
 *.whl
+
+/app/projects/phoenixA/bin/phoenixA

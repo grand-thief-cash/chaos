@@ -17,8 +17,10 @@ func TestFindMeta_ExactMatch(t *testing.T) {
 		{"public", "security_registry", "security", "证券注册表（股票/ETF/指数基础信息）"},
 		{"public", "financial_statement", "financial", "财务报表（三表+快报+预告）"},
 		{"public", "corporate_action", "financial", "公司行为（分红/配股）"},
+		{"public", "long_hu_bang", "regime", "龙虎榜营业部明细"},
 		{"public", "taxonomy_category", "taxonomy", "分类节点（行业/概念/地域）"},
 		{"public", "taxonomy_security_map", "taxonomy", "证券-分类映射关系"},
+		{"public", "taxonomy_category_derived_flags", "taxonomy", "分类语义派生标记（PhoenixA 维护）"},
 		{"public", "industry_weight", "taxonomy", "行业成分权重（日度）"},
 		{"public", "industry_daily", "taxonomy", "行业日行情"},
 		{"public", "strategy_run_summary", "strategy", "策略回测汇总"},
@@ -109,6 +111,7 @@ func TestGetColumnDescription_Wildcard(t *testing.T) {
 		{"financial_statement", "trade_date", "交易日期"},
 		{"any_table", "open", "开盘价"},
 		{"any_table", "data_json", "业务数据（JSONB 灵活字段）"},
+		{"taxonomy_category_derived_flags", "derived_flags", "PhoenixA 派生语义标记（JSONB）"},
 		{"any_table", "unknown_col", ""},
 	}
 
@@ -159,12 +162,14 @@ func TestFindMeta_HasTimeColumn(t *testing.T) {
 		{"public", "bars_stock_zh_a_daily_nf", "trade_date"},
 		{"public", "financial_statement", "reporting_period"},
 		{"public", "corporate_action", "ann_date"},
+		{"public", "long_hu_bang", "trade_date"},
 		{"public", "industry_weight", "trade_date"},
 		{"kg", "events", "first_seen_at"},
 		{"kg", "daily_runs", "run_date"},
 		// No time column
 		{"public", "security_registry", ""},
 		{"public", "taxonomy_category", ""},
+		{"public", "taxonomy_category_derived_flags", ""},
 	}
 
 	for _, c := range cases {

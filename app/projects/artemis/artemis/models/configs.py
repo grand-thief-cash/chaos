@@ -93,10 +93,16 @@ class CacheEngineCfg(BaseModel):
     partition_rules: list[PartitionRuleCfg] = Field(default_factory=list)
 
 
+class FactorEngineCfg(BaseModel):
+    """Factor engine configuration."""
+    pass
+
+
 class EngineCfg(BaseModel):
     """Top-level engine configuration."""
     task_engine: TaskEngineCfg = Field(default_factory=TaskEngineCfg)
     cache_engine: CacheEngineCfg = Field(default_factory=CacheEngineCfg)
+    factor_engine: FactorEngineCfg = Field(default_factory=FactorEngineCfg)
 
 
 class DeptServicesCfg(BaseModel):

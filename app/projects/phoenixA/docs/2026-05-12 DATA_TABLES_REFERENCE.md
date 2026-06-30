@@ -4,6 +4,60 @@
 
 ---
 
+## adjust_factor - 复权因子数据表
+
+### 概述
+
+`adjust_factor` 表存储证券在每次除权除息事件上的复权因子数据。该表独立于 `corporate_action`，定位为行情复权支撑数据，用于基于本地不复权日线重建前复权和后复权价格序列。
+
+### 表结构
+
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| id | BIGSERIAL | PRIMARY KEY | 自增主键 |
+| source | VARCHAR(32) | NOT NULL, UNIQUE | 数据源标识（如 `baostock`） |
+| symbol | VARCHAR(32) | NOT NULL, UNIQUE | 证券代码（纯代码） |
+| market | VARCHAR(16) | NOT NULL, DEFAULT 'zh_a', UNIQUE | 市场标识 |
+| divid_operate_date | VARCHAR(10) | NOT NULL, UNIQUE | 除权除息日期（YYYY-MM-DD） |
+| fore_adjust_factor | NUMERIC(20,8) | NULL | 向前复权因子 |
+| back_adjust_factor | NUMERIC(20,8) | NULL | 向后复权因子 |
+| adjust_factor | NUMERIC(20,8) | NULL | 本次复权因子 |
+
+### 唯一索引
+
+- `uk_adjust_factor`: (source, symbol, market, divid_operate_date)
+
+### B-tree 索引
+
+- `idx_af_symbol_date`: (symbol, market, divid_operate_date DESC)
+- `idx_af_operate_date`: (divid_operate_date DESC)
+
+### 数据说明
+
+- **数据源**: Baostock
+- **接口函数**: `bs.query_adjust_factor(code, start_date, end_date)`
+- **关键字段**:
+  - `fore_adjust_factor`: 向前复权因子
+  - `back_adjust_factor`: 向后复权因子
+  - `adjust_factor`: 本次复权因子
+  - `divid_operate_date`: 除权除息日期
+
+### 示例数据
+
+```json
+{
+  "source": "baostock",
+  "symbol": "600000",
+  "market": "zh_a",
+  "divid_operate_date": "2017-05-25",
+  "fore_adjust_factor": 0.989551,
+  "back_adjust_factor": 9.385732,
+  "adjust_factor": 9.385732
+}
+```
+
+---
+
 ## corporate_action - 公司行为数据表
 
 ### 概述
@@ -1412,6 +1466,7 @@ ORDER BY iw.weight DESC;
 - [x] corporate_action 表数据描述（已完成：dividend, right_issue, bs_dividend）
 - [x] financial_statement 表数据描述（已完成：balance_sheet, income, cashflow, profit_express, profit_notice）
 - [x] 行业指数数据表描述（已完成：industry_base_info, industry_constituent, industry_weight, industry_daily）
+- [x] adjust_factor 表数据描述（已完成：baostock query_adjust_factor）
 - [ ] bars 表数据描述
 - [ ] security_registry 表数据描述
 - [ ] 其他数据表的详细描述
@@ -1420,4 +1475,4 @@ ORDER BY iw.weight DESC;
 
 ---
 
-*文档最后更新: 2026-05-12*
+*文档最后更新: 2026-05-22*

@@ -128,3 +128,24 @@ func (c *CatalogController) Capabilities(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, caps)
 }
 
+// GET /api/v2/catalog/securities/{symbol}/datasets/summary
+// Returns per-dataset/data_type row counts and time ranges for a given symbol.
+// Generic discovery API — not BI-specific. Callers use it to learn what data
+// exists for a company without running raw queries.
+func (c *CatalogController) GetSymbolCoverage(w http.ResponseWriter, r *http.Request) {
+	symbol := chi.URLParam(r, "symbol")
+	if symbol == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "symbol is required"})
+		return
+	}
+	market := r.URL.Query().Get("market")
+	if market == "" {
+		market = "zh_a"
+	}
+	coverage, err := c.Svc.GetSymbolCoverage(r.Context(), symbol, market)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, coverage)
+}

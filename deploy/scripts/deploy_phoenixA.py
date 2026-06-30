@@ -22,10 +22,14 @@ DOCKERFILE_PATH = "../docker/dockerfile/Dockerfile-phoenixA"
 DOCKER_COMPOSE_FILE = "phoenixA.yaml"
 DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
-FORCE_GO_BUILD = True
-FORCE_DOCKER_COMPOSE_BUILD = True
-FORCE_DOCKER_BUILD = True
+FORCE_GO_BUILD = False
+FORCE_DOCKER_COMPOSE_BUILD = False
+FORCE_DOCKER_BUILD = False
 SERVICE_NAME = "phoenixa"
+
+SKIP_UPLOAD_BINARY = True
+SKIP_UPLOAD_CONFIG = True
+SKIP_UPLOAD_MIGRATIONS = False
 
 PRIMARY_PROXY = "http://192.168.31.170:7890"
 BACKUP_PROXY  = "http://192.168.31.169:7890"
@@ -180,17 +184,31 @@ def create_temp_compose(version):
 
 
 def upload_files(build_file, compose_file):
-    print("⬆️ 上传构建产物和 docker 文件...")
-
     ssh = ssh_connect()
 
-    sftp_upload(ssh, build_file, f"{REMOTE_DEPLOY_PATH}/{SERVICE_NAME}")
-    sftp_upload(ssh, DOCKERFILE_PATH, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
-    sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
+    if not SKIP_UPLOAD_BINARY:
+        print("⬆️ 上传构建产物和 docker 文件...")
+        sftp_upload(ssh, build_file, f"{REMOTE_DEPLOY_PATH}/{SERVICE_NAME}")
+        sftp_upload(ssh, DOCKERFILE_PATH, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
+        sftp_upload(ssh, compose_file, f"{REMOTE_DEPLOY_PATH}/docker-compose.yaml")
+    else:
+        print("⏭️  跳过上传构建产物和 docker 文件")
 
-    # 清理远程 migrations 目录中的旧文件，防止已删除的本地文件残留在服务器上
-    remote_exec(ssh, f"rm -rf {REMOTE_DEPLOY_PATH}/migrations")
-    sftp_upload(ssh, f"{GO_PROJECT_PATH}/migrations", f"{REMOTE_DEPLOY_PATH}/migrations")
+    if not SKIP_UPLOAD_MIGRATIONS:
+        # 清理远程 migrations 目录中的旧文件，防止已删除的本地文件残留在服务器上
+        remote_exec(ssh, f"rm -rf {REMOTE_DEPLOY_PATH}/migrations")
+        sftp_upload(ssh, f"{GO_PROJECT_PATH}/migrations", f"{REMOTE_DEPLOY_PATH}/migrations")
+    else:
+        print("⏭️  跳过上传 migrations")
+
+    if not SKIP_UPLOAD_CONFIG:
+        # 上传 production 配置文件到远程服务器
+        remote_config_dir = "/home/machine/data_volume/phoenixA/config"
+        print("⬆️ 上传配置文件...")
+        remote_exec(ssh, f"mkdir -p {remote_config_dir}")
+        sftp_upload(ssh, f"{GO_PROJECT_PATH}/config/config-production.yaml", f"{remote_config_dir}/config.yaml")
+    else:
+        print("⏭️  跳过上传配置文件（使用远程服务器上已有的配置）")
 
     ssh.close()
 

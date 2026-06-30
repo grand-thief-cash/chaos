@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -53,9 +54,52 @@ class FactorFreshness:
             return 0.5
         return 0.3
 
+    @property
+    def freshness_label(self) -> str:
+        if self.staleness_days <= 30:
+            return "fresh"
+        elif self.staleness_days <= 120:
+            return "acceptable"
+        elif self.staleness_days <= 210:
+            return "stale"
+        return "very_stale"
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "latest_reporting_period": self.latest_reporting_period,
+            "latest_ann_date": self.latest_ann_date,
+            "as_of_date": self.as_of_date,
+            "staleness_days": self.staleness_days,
+            "freshness_score": self.freshness_score,
+            "freshness_label": self.freshness_label,
+        }
+
+    @classmethod
+    def from_dates(
+        cls,
+        *,
+        latest_reporting_period: str,
+        latest_ann_date: str,
+        as_of_date: str,
+    ) -> "FactorFreshness":
+        staleness_days = 0
+        try:
+            if latest_ann_date and as_of_date:
+                ann_dt = datetime.strptime(latest_ann_date, "%Y%m%d")
+                as_of_dt = datetime.strptime(as_of_date, "%Y%m%d")
+                staleness_days = max((as_of_dt - ann_dt).days, 0)
+        except ValueError:
+            staleness_days = 0
+        return cls(
+            latest_reporting_period=latest_reporting_period,
+            latest_ann_date=latest_ann_date,
+            as_of_date=as_of_date,
+            staleness_days=staleness_days,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Version tracking
 # ---------------------------------------------------------------------------
-FACTOR_VERSION = "v1.0"
+FACTOR_VERSION = "v1.1"
 

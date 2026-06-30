@@ -226,8 +226,15 @@ def get_market_cap(symbol: str, as_of_date: str) -> Optional[float]:
 
 **使用规则**:
 - 因子引擎使用申万一级行业 (sw_l1)
-- `taxonomy = "industry"`, `source = "sw"`
-- 使用第一个匹配的 `category_code` 作为行业代码
+- PhoenixA 现在会同时返回原始字段与标准化字段：
+  - 原始字段：`source`, `taxonomy`, `category_code`, `category_name`, `level`, `parent_code`
+  - 标准化字段：`canonical_source`, `canonical_taxonomy`, `canonical_level`, `canonical_category_code`, `canonical_category_name`, `canonical_parent_code`, `canonical_index_code`, `derived_flags`
+- Artemis 直接使用 PhoenixA 提供的 `canonical_*` 与 `derived_flags`，不再维护 taxonomy 客户端 fallback
+- 对于 `source=sw/citics + taxonomy=industry`、`taxonomy=sw_l1/sw_l2/...`、`taxonomy=citics_l1/...` 等组合，PhoenixA 会统一输出：
+  - `canonical_source = sw|citics`
+  - `canonical_taxonomy = sw|citics`
+  - `canonical_level = 1|2|3`
+- 因子引擎应优先使用第一个满足目标体系/层级的 `canonical_category_code` 作为行业代码
 
 ### 3.2 金融行业过滤
 
@@ -237,7 +244,8 @@ def get_market_cap(symbol: str, as_of_date: str) -> Optional[float]:
 
 **排除规则**:
 - `exclude_financial = True` 的因子（如 ROIC）不计算金融行业股票
-- 根据 `comp_type_code` 或行业代码判断
+- 优先根据 `derived_flags.financial_sector` 判断是否属于金融行业；若需要区分银行/保险/券商，再结合 `comp_type_code`
+- PhoenixA `by_security` 响应通过 `derived_flags` 暴露统一派生语义，Artemis 不再依赖行业代码前缀做金融行业回退判断
 
 ---
 

@@ -14,8 +14,8 @@ Usage:
     for f in fields:
         print(f.name, f.cn_desc, f.dtype)
 """
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from typing import Dict, List
 
 
 @dataclass(frozen=True)
