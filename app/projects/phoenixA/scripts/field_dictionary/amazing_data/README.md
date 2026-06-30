@@ -12,6 +12,15 @@
 | `equity_structure.fields.jsonl` | 股本结构字段，来自 AmazingData `get_equity_structure` |
 | `enums.jsonl` | 字段枚举，包括 `REPORT_TYPE`、`COMP_TYPE_CODE`、`DIV_PROGRESS`、`PROGRESS`、`P_TYPECODE` 等 |
 
+维护脚本（同目录）:
+
+| 脚本 | 说明 |
+|------|------|
+| `regenerate_seed_sql.py` | 读取 jsonl + datasets.json，生成 `migrations/postgresql/security/0004_govern_seed.sql`（jsonl → seed SQL 的唯一转换器）|
+| `update_version.py` | 把所有 jsonl + datasets.json 的 `contract_version` 统一刷成新值（升版本时用）|
+
+字段内容（单位、口径、`comp_type_scope`、PDF 断行校正等）直接编辑对应的 `*.fields.jsonl` 单行记录，再用 `regenerate_seed_sql.py` 重新生成 seed。历史上一次性治理用的 `fix_dictionary.py` / `fix_all_dictionaries.py` 已删除，治理结果已固化进 jsonl。
+
 JSONL 中每一行是一条可直接映射到 `data_field_dictionary` 或 `data_enum_dictionary` 的记录。选择 JSONL 是为了让 Go 可以用标准库直接读取，也方便 diff 单行字段变化。
 
 ## 来源和校对规则
@@ -39,14 +48,25 @@ AmazingData SDK 原文
     ↓
 scripts/generate_field_dictionary_from_docs.ps1
     ↓
-config/field_dictionary/amazing_data/*.jsonl
+scripts/field_dictionary/amazing_data/*.jsonl
     ↓
-migrations/postgresql/security/0013_seed_amazing_data_field_dictionary.sql
+scripts/field_dictionary/amazing_data/regenerate_seed_sql.py
     ↓
-data_dataset_dictionary / data_field_dictionary / data_enum_dictionary
+migrations/postgresql/security/0004_govern_seed.sql
+    ↓
+govern.data_dataset_dictionary / govern.data_field_dictionary / govern.data_enum_dictionary
 ```
 
-需要重新生成时执行:
+需要重新生成 seed SQL 时执行:
+
+```bash
+cd app/projects/phoenixA/scripts/field_dictionary/amazing_data
+python3 regenerate_seed_sql.py
+```
+
+`regenerate_seed_sql.py` 只负责把 jsonl + datasets.json 转换成 seed migration（`DELETE` + `INSERT`，对同一 `contract_version` 幂等）。它**不**改动字段内容，字段内容的来源是 jsonl 本身（由 `scripts/generate_field_dictionary_from_docs.*` 从 SDK 文档半自动抽取并人工校对后产出）。
+
+需要从 SDK 文档重新 bootstrap 字段时执行:
 
 ```bash
 cd app/projects/phoenixA
@@ -67,11 +87,13 @@ python app/projects/phoenixA/scripts/generate_field_dictionary_from_docs.py --pr
 
 `generate_field_dictionary_from_docs.ps1` 现在也是薄包装器，会调用同一份 Python 主脚本。生成和测试环境推荐使用 `.sh`，Windows 本地可以使用 `.ps1`。
 
-生成后必须 review `config/field_dictionary/amazing_data/*.jsonl` 和 `migrations/postgresql/security/0013_seed_amazing_data_field_dictionary.sql` 的 diff。
+生成后必须 review `scripts/field_dictionary/amazing_data/*.jsonl` 和 `migrations/postgresql/security/0004_govern_seed.sql` 的 diff。
 
 ## 使用流程
 
 ### 1. 生成或刷新字典源文件
+
+从 SDK 文档 bootstrap 字段内容:
 
 ```bash
 cd app/projects/phoenixA
@@ -81,19 +103,32 @@ sh scripts/generate_field_dictionary_from_docs.sh
 这一步会刷新:
 
 ```text
-config/field_dictionary/amazing_data/*.jsonl
-config/field_dictionary/amazing_data/datasets.json
-migrations/postgresql/security/0013_seed_amazing_data_field_dictionary.sql
+scripts/field_dictionary/amazing_data/*.jsonl
+scripts/field_dictionary/amazing_data/datasets.json
+```
+
+jsonl 是字段内容的唯一事实源；之后再用 `regenerate_seed_sql.py` 把它们转成 seed migration:
+
+```bash
+cd app/projects/phoenixA/scripts/field_dictionary/amazing_data
+python3 regenerate_seed_sql.py
+```
+
+这一步会刷新:
+
+```text
+migrations/postgresql/security/0004_govern_seed.sql
 ```
 
 ### 2. 运行 PostgreSQL migration
 
-PhoenixA 的 `config/config.yaml` 中 `postgres_gorm.data_sources.security.migrate_enabled=true` 时，服务启动会按文件名顺序执行:
+PhoenixA 的 `config/config.yaml` 中 `postgres_gorm.data_sources.security.migrate_enabled=true` 时，服务启动会按文件名顺序执行 `migrations/postgresql/security/` 下的迁移。当前该目录的迁移按 warehouse layer 分层:
 
 ```text
-0012_field_dictionary.sql
-0013_seed_amazing_data_field_dictionary.sql
-0014_equity_structure.sql
+0001_ods.sql
+0002_dwd.sql
+0003_govern.sql
+0004_govern_seed.sql
 ```
 
 也可以用你们现有的 migration 执行方式手动跑 `app/projects/phoenixA/migrations/postgresql/security` 目录。
@@ -102,17 +137,19 @@ PhoenixA 的 `config/config.yaml` 中 `postgres_gorm.data_sources.security.migra
 
 | migration | 作用 | tablespace |
 |----------|------|------------|
-| `0012_field_dictionary.sql` | 创建 dataset/field/enum 字典表 | `pg_default` |
-| `0013_seed_amazing_data_field_dictionary.sql` | 导入 AmazingData 字典数据 | 写入 `pg_default` 上的字典表 |
-| `0014_equity_structure.sql` | 创建股本结构业务表 | `warm_storage` |
+| `0003_govern.sql` | 创建 dataset/field/enum 字典表（`govern` schema） | `pg_default` |
+| `0004_govern_seed.sql` | 导入 AmazingData 字典数据 | 写入 `pg_default` 上的 `govern.*` 字典表 |
+| `0001_ods.sql` | 创建财务报表 / 公司行为 / 股本结构等 ODS 落地表 | `warm_storage`（明细）|
+
+seed migration 用 `DELETE WHERE source='amazing_data' AND contract_version=...` + `INSERT` 写入，对同一 `contract_version` 幂等，可重跑。
 
 ### 3. 验证字典是否入库
 
 ```sql
 SELECT dataset, data_type, COUNT(*)
-FROM data_field_dictionary
+FROM govern.data_field_dictionary
 WHERE source = 'amazing_data'
-  AND contract_version = '2026-06-25'
+  AND contract_version = '2026-06-27'
 GROUP BY dataset, data_type
 ORDER BY dataset, data_type;
 ```
@@ -130,11 +167,13 @@ ORDER BY dataset, data_type;
 | `financial_statement` | `profit_express` | 33 |
 | `financial_statement` | `profit_notice` | 15 |
 
+合计 565 条字段记录。枚举字典共 56 条，覆盖 `REPORT_TYPE`、`STATEMENT_TYPE`、`COMP_TYPE_CODE`、`DIV_PROGRESS`、`PROGRESS`、`P_TYPECODE`、`BOOLEAN_FLAG`。
+
 验证字段发现:
 
 ```sql
 SELECT raw_field, canonical_field, label_zh, unit, storage_location, is_core
-FROM data_field_dictionary
+FROM govern.data_field_dictionary
 WHERE source = 'amazing_data'
   AND dataset = 'financial_statement'
   AND data_type = 'balance_sheet'
@@ -145,7 +184,7 @@ WHERE source = 'amazing_data'
 
 ```sql
 SELECT dataset, data_type, raw_field, label_zh, unit, scale
-FROM data_field_dictionary
+FROM govern.data_field_dictionary
 WHERE source = 'amazing_data'
   AND raw_field = 'TOT_SHARE'
 ORDER BY dataset, data_type;
@@ -155,13 +194,13 @@ ORDER BY dataset, data_type;
 
 ## tablespace 约定
 
-字典表是小型元数据，migration 中显式使用 `TABLESPACE pg_default`。
+字典表是小型元数据，`0003_govern.sql` 中显式使用 `TABLESPACE pg_default`，位于 `govern` schema。
 
 底层业务数据仍按已有规划落盘:
 
 | 数据 | 表 | tablespace |
 |------|----|------------|
-| 财务报表明细 | `financial_statement` | `warm_storage` |
-| 公司行为明细 | `corporate_action` | `warm_storage` |
-| 股本结构明细 | `equity_structure` | `warm_storage` |
-| 字段字典和枚举 | `data_*_dictionary` | `pg_default` |
+| 财务报表明细 | `financial_statement`（ods） | `warm_storage` |
+| 公司行为明细 | `corporate_action`（ods） | `warm_storage` |
+| 股本结构明细 | `equity_structure`（ods） | `warm_storage` |
+| 字段字典和枚举 | `govern.data_*_dictionary` | `pg_default` |
