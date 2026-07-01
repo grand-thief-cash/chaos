@@ -1,7 +1,9 @@
 # VERSION
-- v0.38.2
+- v0.38.3
 
 # Changelog
+- v0.38.3
+    - **Fixed SWHY industry-constituent `in_date`/`out_date` JSON key mismatch that left columns empty** — `stock_zh_a_industry_constituent_swhy.py`'s `post_process` previously sent JSON keys `indate`/`outdate` (no underscore) to phoenixA, but the phoenixA `IndustryConstituent` model json tags are `in_date`/`out_date` (`internal/model/taxonomy.go:66-67`). Go `encoding/json` is case-insensitive but underscore-sensitive, so `indate` could not bind to `in_date`, leaving the `in_date`/`out_date` columns in `ods.industry_constituent` always empty via the SWHY path. Now sends `in_date`/`out_date` to align with the phoenixA API contract (consumer contract unchanged; producer-only fix). The phoenixA-side `TestIndustryConstituentJSONDeserialization` was updated in lockstep to add `InDate`/`OutDate` assertions as regression coverage (see phoenixA v1.26.3).
 - v0.38.2
     - **BI service: split into `bi/` package and renamed off the `bi_simple` name**
         - Split the single-file `artemis/services/bi_simple_service.py` (~1195 lines) into an `artemis/services/bi/` package organized by business area: `base.py` (phoenixA client + numeric helpers as `BIServiceBase`), `securities.py`, `discovery.py`, `raw_queries.py` (raw-passthrough mixins), and `dupont.py` (DuPont analytical-computation mixin), combined in `service.py` as `BIService`. Behavior-preserving: all 38 method bodies and field-constant lists are byte-identical to the original (verified via AST equivalence + `tests/test_bi_dupont_service.py`).
