@@ -73,15 +73,15 @@ func (IndustryConstituent) TableName() string { return "ods.industry_constituent
 
 // IndustryWeight represents a daily weight of a constituent in an industry index.
 // Table: industry_weight
+// Primary key is composite (source, taxonomy, index_code, symbol, market, trade_date) for TimescaleDB hypertable.
 type IndustryWeight struct {
-	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
-	Source    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"source"`
-	Taxonomy  string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"taxonomy"`
-	Market    string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_idx_sym_dt" json:"market"`
-	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"index_code"`
+	Source    string    `gorm:"type:varchar(32);not null;primaryKey" json:"source"`
+	Taxonomy  string    `gorm:"type:varchar(32);not null;primaryKey" json:"taxonomy"`
+	Market    string    `gorm:"type:varchar(16);not null;default:'zh_a';primaryKey" json:"market"`
+	IndexCode string    `gorm:"type:varchar(64);not null;primaryKey" json:"index_code"`
+	Symbol    string    `gorm:"type:varchar(32);not null;primaryKey" json:"symbol"`
+	TradeDate string    `gorm:"type:date;not null;primaryKey" json:"trade_date"`
 	ConCode   string    `gorm:"type:varchar(64);not null;default:''" json:"con_code"`
-	Symbol    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"symbol"`
-	TradeDate string    `gorm:"type:date;not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"trade_date"`
 	Weight    float64   `gorm:"type:decimal(10,6)" json:"weight"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
@@ -91,13 +91,13 @@ func (IndustryWeight) TableName() string { return "ods.industry_weight" }
 
 // IndustryDaily represents daily OHLCV + valuation data for an industry index.
 // Table: industry_daily
+// Primary key is composite (source, taxonomy, index_code, market, trade_date) for TimescaleDB hypertable.
 type IndustryDaily struct {
-	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
-	Source    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"source"`
-	Taxonomy  string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"taxonomy"`
-	Market    string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_idx_mkt_dt" json:"market"`
-	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"index_code"`
-	TradeDate string    `gorm:"type:date;not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"trade_date"`
+	Source    string    `gorm:"type:varchar(32);not null;primaryKey" json:"source"`
+	Taxonomy  string    `gorm:"type:varchar(32);not null;primaryKey" json:"taxonomy"`
+	Market    string    `gorm:"type:varchar(16);not null;default:'zh_a';primaryKey" json:"market"`
+	IndexCode string    `gorm:"type:varchar(64);not null;primaryKey" json:"index_code"`
+	TradeDate string    `gorm:"type:date;not null;primaryKey" json:"trade_date"`
 	Open      float64   `gorm:"type:decimal(20,4)" json:"open"`
 	High      float64   `gorm:"type:decimal(20,4)" json:"high"`
 	Close     float64   `gorm:"type:decimal(20,4)" json:"close"`

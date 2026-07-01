@@ -6,16 +6,16 @@ import (
 )
 
 const (
-	RedisCacheKeyPrefixSecurityList                 = "phoenixa:cache:v1:security:list"
-	RedisCacheKeyPrefixSecurityCount                = "phoenixa:cache:v1:security:count"
-	RedisCacheKeyPrefixSchemaFields                 = "phoenixa:cache:v1:schema:fields"
-	RedisCacheKeyPrefixJSONBKeys                    = "phoenixa:cache:v1:schema:jsonb_keys"
-	RedisCacheKeyPrefixTaxonomyCategoryList         = "phoenixa:cache:v1:taxonomy:category:list"
-	RedisCacheKeyPrefixTaxonomyCategoryGet          = "phoenixa:cache:v1:taxonomy:category:get"
-	RedisCacheKeyPrefixTaxonomyMappingBySymbol      = "phoenixa:cache:v1:taxonomy:mapping:by_symbol"
-	RedisCacheKeyPrefixTaxonomyMappingByCategory    = "phoenixa:cache:v1:taxonomy:mapping:by_category"
-	RedisCacheKeyPrefixTaxonomyConstituentsByIndex  = "phoenixa:cache:v1:taxonomy:constituents:by_index"
-	RedisCacheKeyPrefixTaxonomyConstituentsBySymbol = "phoenixa:cache:v1:taxonomy:constituents:by_symbol"
+	RedisCacheKeyPrefixSecurityList                 = "phoenixa:v1:security:list"
+	RedisCacheKeyPrefixSecurityCount                = "phoenixa:v1:security:count"
+	RedisCacheKeyPrefixSchemaFields                 = "phoenixa:v1:schema:fields"
+	RedisCacheKeyPrefixJSONBKeys                    = "phoenixa:v1:schema:jsonb_keys"
+	RedisCacheKeyPrefixTaxonomyCategoryList         = "phoenixa:v1:taxonomy:category:list"
+	RedisCacheKeyPrefixTaxonomyCategoryGet          = "phoenixa:v1:taxonomy:category:get"
+	RedisCacheKeyPrefixTaxonomyMappingBySymbol      = "phoenixa:v1:taxonomy:mapping:by_symbol"
+	RedisCacheKeyPrefixTaxonomyMappingByCategory    = "phoenixa:v1:taxonomy:mapping:by_category"
+	RedisCacheKeyPrefixTaxonomyConstituentsByIndex  = "phoenixa:v1:taxonomy:constituents:by_index"
+	RedisCacheKeyPrefixTaxonomyConstituentsBySymbol = "phoenixa:v1:taxonomy:constituents:by_symbol"
 
 	RedisCacheTTLSecondsSecurityList                 = 6 * 60 * 60
 	RedisCacheTTLSecondsSecurityCount                = 30 * 60

@@ -89,7 +89,6 @@ CREATE INDEX IF NOT EXISTS idx_ic_symbol ON ods.industry_constituent (symbol, ma
 -- 4. industry_weight  (trade_date is DATE — folded from former 0003)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.industry_weight (
-    id           BIGSERIAL      PRIMARY KEY,
     source       VARCHAR(32)    NOT NULL,
     taxonomy     VARCHAR(32)    NOT NULL,
     market       VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
@@ -100,16 +99,20 @@ CREATE TABLE IF NOT EXISTS ods.industry_weight (
     weight       NUMERIC(10,6),
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_src_tax_idx_sym_dt UNIQUE (source, taxonomy, index_code, symbol, market, trade_date)
+    PRIMARY KEY (source, taxonomy, index_code, symbol, market, trade_date)
 ) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_iw_index_date ON ods.industry_weight (source, taxonomy, index_code, trade_date) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_iw_symbol_date ON ods.industry_weight (symbol, market, trade_date) TABLESPACE warm_storage;
+
+-- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
+SELECT create_hypertable('ods.industry_weight', 'trade_date',
+                         if_not_exists => TRUE,
+                         chunk_time_interval => INTERVAL '1 year');
 
 -- ──────────────────────────────────────────────────────────
 -- 5. industry_daily  (trade_date is DATE — folded from former 0003)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.industry_daily (
-    id           BIGSERIAL      PRIMARY KEY,
     source       VARCHAR(32)    NOT NULL,
     taxonomy     VARCHAR(32)    NOT NULL,
     market       VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
@@ -128,10 +131,15 @@ CREATE TABLE IF NOT EXISTS ods.industry_daily (
     a_float_cap  NUMERIC(20,4),
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_src_tax_idx_mkt_dt UNIQUE (source, taxonomy, index_code, market, trade_date)
+    PRIMARY KEY (source, taxonomy, index_code, market, trade_date)
 ) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_id_index_date ON ods.industry_daily (source, taxonomy, index_code, trade_date) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_id_trade_date ON ods.industry_daily (source, taxonomy, trade_date) TABLESPACE warm_storage;
+
+-- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
+SELECT create_hypertable('ods.industry_daily', 'trade_date',
+                         if_not_exists => TRUE,
+                         chunk_time_interval => INTERVAL '1 year');
 
 -- ──────────────────────────────────────────────────────────
 -- 6. financial_statement
@@ -220,6 +228,11 @@ CREATE INDEX IF NOT EXISTS idx_bdnf_trade_date
 CREATE INDEX IF NOT EXISTS idx_bdnf_symbol
     ON ods.bars_stock_zh_a_daily_nf (symbol) TABLESPACE warm_storage;
 
+-- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
+SELECT create_hypertable('ods.bars_stock_zh_a_daily_nf', 'trade_date',
+                         if_not_exists => TRUE,
+                         chunk_time_interval => INTERVAL '1 year');
+
 -- ──────────────────────────────────────────────────────────
 -- 9. bars_stock_zh_a_daily_hfq  (A股日线前复权)
 -- ──────────────────────────────────────────────────────────
@@ -240,6 +253,11 @@ CREATE INDEX IF NOT EXISTS idx_bdhfq_trade_date
     ON ods.bars_stock_zh_a_daily_hfq (trade_date) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_bdhfq_symbol
     ON ods.bars_stock_zh_a_daily_hfq (symbol) TABLESPACE warm_storage;
+
+-- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
+SELECT create_hypertable('ods.bars_stock_zh_a_daily_hfq', 'trade_date',
+                         if_not_exists => TRUE,
+                         chunk_time_interval => INTERVAL '1 year');
 
 -- ──────────────────────────────────────────────────────────
 -- 10. bars_index_zh_a_daily_nf  (A股指数日线不复权)
@@ -262,6 +280,11 @@ CREATE INDEX IF NOT EXISTS idx_bidnf_trade_date
 CREATE INDEX IF NOT EXISTS idx_bidnf_symbol
     ON ods.bars_index_zh_a_daily_nf (symbol) TABLESPACE warm_storage;
 
+-- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
+SELECT create_hypertable('ods.bars_index_zh_a_daily_nf', 'trade_date',
+                         if_not_exists => TRUE,
+                         chunk_time_interval => INTERVAL '1 year');
+
 -- ──────────────────────────────────────────────────────────
 -- 11. bars_ext_baostock_stock_zh_a_daily
 -- ──────────────────────────────────────────────────────────
@@ -279,6 +302,11 @@ CREATE INDEX IF NOT EXISTS idx_beb_trade_date
     ON ods.bars_ext_baostock_stock_zh_a_daily (trade_date) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_beb_symbol
     ON ods.bars_ext_baostock_stock_zh_a_daily (symbol) TABLESPACE warm_storage;
+
+-- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
+SELECT create_hypertable('ods.bars_ext_baostock_stock_zh_a_daily', 'trade_date',
+                         if_not_exists => TRUE,
+                         chunk_time_interval => INTERVAL '1 year');
 
 -- ──────────────────────────────────────────────────────────
 -- 12. adjust_factor
