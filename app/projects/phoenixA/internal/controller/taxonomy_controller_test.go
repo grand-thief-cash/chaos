@@ -112,8 +112,8 @@ func TestIndustryConstituentJSONDeserialization(t *testing.T) {
 		"index_code": "801010.SI",
 		"con_code": "688526.SH",
 		"symbol": "688526",
-		"indate": "20220101",
-		"outdate": "",
+		"in_date": "20220101",
+		"out_date": "",
 		"index_name": "银行I"
 	}]`
 
@@ -136,6 +136,12 @@ func TestIndustryConstituentJSONDeserialization(t *testing.T) {
 	}
 	if c.IndexName != "银行I" {
 		t.Errorf("expected index_name=银行I, got %s", c.IndexName)
+	}
+	if c.InDate == nil || *c.InDate != "20220101" {
+		t.Errorf("expected in_date=20220101, got %v", c.InDate)
+	}
+	if c.OutDate != nil && *c.OutDate != "" {
+		t.Errorf("expected out_date empty, got %q", *c.OutDate)
 	}
 }
 
