@@ -70,7 +70,7 @@ test_and_print("Bars Last Update", f"{BASE_URL}/api/v2/bars/stock/zh_a/last_upda
     "symbols": "000001"
 })
 
-test_and_print("Taxonomy by_security", f"{BASE_URL}/api/v2/taxonomy/by_security/000001")
+test_and_print("Taxonomy by_security", f"{BASE_URL}/api/v2/taxonomy/by_security/{_sec_id}")
 test_and_print("Taxonomy Categories", f"{BASE_URL}/api/v2/taxonomy/amazing_data/swhy/zh_a/categories", {"limit": "1"})
 
 test_and_print("Financial Statements", f"{BASE_URL}/api/v2/financial/amazing_data/balance_sheet", {

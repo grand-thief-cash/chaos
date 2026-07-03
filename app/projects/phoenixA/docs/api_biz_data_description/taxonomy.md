@@ -4,15 +4,25 @@
 
 提供证券分类、行业分类、行业成分股、行业权重、行业行情等数据查询。
 
+> **Phase 2 surrogate-key 重构**：映射 / 成分 / 权重 / 日行情接口已迁至 `security_id` / `category_id`
+> 代理主键（路径参数与响应均为 id）。行业 upsert 接口仍**接受** SDK 自然键（`index_code` / `con_code`），
+> 由 phoenixA 在入口解析为 id 后落库。`taxonomy_category` 基表保持自然键身份不变。
+
 ## API 端点
 
 ### 分类映射
 
 | 方法 | 端点 | 说明 |
 |------|-------|------|
-| GET | `/api/v2/taxonomy/by_security/{symbol}` | 获取证券的所有分类映射 |
+| GET | `/api/v2/taxonomy/by_security/{security_id}` | 获取证券的所有分类映射 |
+| POST | `/api/v2/taxonomy/{source}/{taxonomy}/mapping/upsert` | 批量写入映射（body: `[{security_id, category_id}]`） |
+| POST | `/api/v2/taxonomy/{source}/{taxonomy}/mapping/replace/by_security` | 替换证券的分类集（body: `{security_id: [category_id]}`） |
+| POST | `/api/v2/taxonomy/{source}/{taxonomy}/mapping/replace/by_category` | 替换分类的证券集（body: `{category_id: [security_id]}`） |
+| GET | `/api/v2/taxonomy/{source}/{taxonomy}/mapping/by_category/{category_id}` | 按分类查映射 |
+| DELETE | `/api/v2/taxonomy/{source}/{taxonomy}/mapping/{category_id}/{security_id}` | 删除单条映射 |
+| POST | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/mapping/sync_from_constituents` | 从成分股派生映射（单表 SELECT DISTINCT，无 JOIN） |
 
-### 分类定义
+### 分类定义（基表，自然键身份不变）
 
 | 方法 | 端点 | 说明 |
 |------|-------|------|
@@ -23,29 +33,31 @@
 
 | 方法 | 端点 | 说明 |
 |------|-------|------|
-| GET | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{indexCode}` | 按指数查询成分股 |
-| GET | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_stock/{symbol}` | 按股票查询所属指数 |
+| GET | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_category/{category_id}` | 按分类查成分股 |
+| GET | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_security/{security_id}` | 按证券查所属分类 |
+| POST | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/upsert` | 写入成分股（body 含 SDK 自然键，phoenixA 解析为 id） |
 
 ### 行业权重
 
 | 方法 | 端点 | 说明 |
 |------|-------|------|
-| GET | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{indexCode}` | 查询指数成分股权重 |
+| GET | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{category_id}` | 查询分类成分股权重 |
+| POST | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/upsert` | 写入权重（body 含 SDK 自然键） |
 
 ### 行业行情
 
 | 方法 | 端点 | 说明 |
 |------|-------|------|
-| GET | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily` | 查询行业日行情 |
+| GET | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily` | 查询行业日行情（`category_id` 必传） |
+| POST | `/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily/upsert` | 写入日行情（body 含 SDK 自然键） |
 
 ## 查询参数
 
-### GET /api/v2/taxonomy/by_security/{symbol}
+### GET /api/v2/taxonomy/by_security/{security_id}
 
 | 参数名 | 类型 | 必需 | 说明 |
 |--------|------|------|------|
-| source | string | 否 | 按数据源过滤 |
-| taxonomy | string | 否 | 按分类体系过滤 |
+| security_id | integer | 是 | 证券代理主键（path） |
 
 ### GET /api/v2/taxonomy/{source}/{taxonomy}/{market}/categories
 
@@ -89,7 +101,7 @@
 
 | 参数名 | 类型 | 必需 | 说明 |
 |--------|------|------|------|
-| index_code | string | 否 | 按指数代码过滤 |
+| category_id | integer | 是 | 行业分类节点代理主键 |
 | start_date | string | 否 | 起始日期（格式 YYYY-MM-DD） |
 | end_date | string | 否 | 截止日期（格式 YYYY-MM-DD） |
 | limit | integer | 否 | 返回数量限制 |
@@ -101,20 +113,23 @@
 | source | string | 数据源（amazing_data, baostock 等） |
 | taxonomy | string | 分类体系（sw_l1, sw_l2, sw_l3, citics 等） |
 | market | string | 市场（zh_a, hk, us 等） |
+| security_id | integer | 证券代理主键（→ `security_registry.id`） |
+| category_id | integer | 行业分类节点代理主键（→ `taxonomy_category.id`） |
 
 ## 响应数据
 
-### 分类映射对象
+### 分类映射对象（`by_security` 富响应）
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| id | integer | 主键 ID |
-| source | string | 数据源 |
+| security_id | integer | 证券代理主键 |
+| category_id | integer | 分类节点代理主键 |
+| source | string | 数据源（由 category_id 反查 taxonomy_category 得到） |
 | taxonomy | string | 分类体系 |
 | category_code | string | 分类代码 |
 | category_name | string | 分类名称 |
 | level | integer | 分类层级（1, 2, 3） |
-| parent_code | string | 父分类代码（可能为 null） |
+| parent_code | string | 父分类代码（可能为空） |
 | index_code | string | 原始分类记录对应的行业指数代码（可能为空） |
 | canonical_source | string | 标准化分类来源，仅表达体系提供方，例如 `sw` / `citics` |
 | canonical_taxonomy | string | 标准化体系根，例如 `sw` / `citics` |
@@ -124,9 +139,9 @@
 | canonical_parent_code | string | 父层级标准化分类代码（可能为空） |
 | canonical_index_code | string | 当前层级对应行业指数代码（可能为空） |
 | derived_flags | object | PhoenixA 统一派生语义容器，当前包含 `financial_sector` 布尔标记 |
-| symbol | string | 证券代码 |
-| asset_type | string | 资产类型 |
-| market | string | 市场标识 |
+| symbol | string | 证券代码（display，由 resolve cache 反查填充） |
+| asset_type | string | 资产类型（display） |
+| market | string | 市场标识（display） |
 | created_at | string | 创建时间（ISO 8601 格式） |
 | updated_at | string | 更新时间（ISO 8601 格式） |
 
@@ -142,7 +157,7 @@
 | name | string | 分类名称 |
 | level | integer | 分类层级（1, 2, 3） |
 | parent_code | string | 父分类代码（可能为 null） |
-| is_leaf | boolean | 是否为叶子节点 |
+| is_leaf | boolean | 是否叶子节点 |
 | index_code | string | 关联的指数代码（可能为 null） |
 | created_at | string | 创建时间（ISO 8601 格式） |
 | updated_at | string | 更新时间（ISO 8601 格式） |
@@ -151,11 +166,9 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| id | integer | 主键 ID |
-| index_code | string | 指数代码 |
-| con_code | string | 成分股代码 |
-| symbol | string | 成分股代码 |
-| index_name | string | 指数名称 |
+| id | integer | 自增主键 |
+| category_id | integer | 分类节点代理主键 |
+| security_id | integer | 证券代理主键 |
 | in_date | string | 纳入日期（格式 YYYY-MM-DD，可能为 null） |
 | out_date | string | 剔除日期（格式 YYYY-MM-DD，可能为 null） |
 | created_at | string | 创建时间（ISO 8601 格式） |
@@ -165,10 +178,8 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| id | integer | 主键 ID |
-| index_code | string | 指数代码 |
-| con_code | string | 成分股代码 |
-| symbol | string | 成分股代码 |
+| category_id | integer | 分类节点代理主键 |
+| security_id | integer | 证券代理主键 |
 | trade_date | string | 交易日期（格式 YYYY-MM-DD） |
 | weight | float64 | 权重（%） |
 | created_at | string | 创建时间（ISO 8601 格式） |
@@ -178,8 +189,7 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| id | integer | 主键 ID |
-| index_code | string | 指数代码 |
+| category_id | integer | 分类节点代理主键 |
 | trade_date | string | 交易日期（格式 YYYY-MM-DD） |
 | open | float64 | 开盘价（点数） |
 | high | float64 | 最高价（点数） |
@@ -206,7 +216,7 @@
 
 ## 标准化行业层级字段
 
-`GET /api/v2/taxonomy/by_security/{symbol}` 现在已经补充了一组稳定的标准化字段，供 Artemis / Cthulhu / 其他策略系统直接消费，而不必再分别解析 `sw_l1/sw_l2/...` 或依赖 `source=sw/citics` 的组合判断。
+`GET /api/v2/taxonomy/by_security/{security_id}` 现在已经补充了一组稳定的标准化字段，供 Artemis / Cthulhu / 其他策略系统直接消费，而不必再分别解析 `sw_l1/sw_l2/...` 或依赖 `source=sw/citics` 的组合判断。
 
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
@@ -237,46 +247,22 @@
 ```json
 [
   {
-    "id": 1,
+    "security_id": 42,
+    "category_id": 7,
     "source": "amazing_data",
     "taxonomy": "sw_l1",
     "category_code": "801000",
     "category_name": "银行",
     "level": 1,
-    "parent_code": null,
+    "parent_code": "",
     "index_code": "801000.SI",
     "canonical_source": "sw",
     "canonical_taxonomy": "sw",
     "canonical_level": 1,
     "canonical_category_code": "801000",
     "canonical_category_name": "银行",
-    "canonical_parent_code": null,
+    "canonical_parent_code": "",
     "canonical_index_code": "801000.SI",
-    "derived_flags": {
-      "financial_sector": true
-    },
-    "symbol": "000001",
-    "asset_type": "stock",
-    "market": "zh_a",
-    "created_at": "2024-01-01T00:00:00Z",
-    "updated_at": "2024-05-12T00:00:00Z"
-  },
-  {
-    "id": 2,
-    "source": "amazing_data",
-    "taxonomy": "sw_l2",
-    "category_code": "801010",
-    "category_name": "全国性股份制银行",
-    "level": 2,
-    "parent_code": "801000",
-    "index_code": "801010.SI",
-    "canonical_source": "sw",
-    "canonical_taxonomy": "sw",
-    "canonical_level": 2,
-    "canonical_category_code": "801010",
-    "canonical_category_name": "全国性股份制银行",
-    "canonical_parent_code": "801000",
-    "canonical_index_code": "801010.SI",
     "derived_flags": {
       "financial_sector": true
     },
@@ -294,8 +280,7 @@
 ```json
 [
   {
-    "id": 100001,
-    "index_code": "801010",
+    "category_id": 7,
     "trade_date": "2024-05-10",
     "open": 1250.5,
     "high": 1270,
@@ -316,4 +301,4 @@
 
 ---
 
-*文档最后更新: 2026-05-14*
+*文档最后更新: 2026-07-03（Phase 2 surrogate-key 重构：迁移至 security_id / category_id）*

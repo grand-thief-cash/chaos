@@ -154,7 +154,7 @@ func (c *SecurityController) DeleteAll(w http.ResponseWriter, r *http.Request) {
 	market := q.Get("market")
 	affected, err := c.Svc.DeleteAll(ctx, assetType, market)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		writeServiceError(w, err) // ConflictError (referenced) → 409; other → 500
 		return
 	}
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"rows": affected}})

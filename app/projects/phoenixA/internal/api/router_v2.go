@@ -56,33 +56,33 @@ func init() {
 		taxonomyCtrl := taxonomyCtrlComp.(*controller.TaxonomyController)
 
 		r.Route("/api/v2/taxonomy", func(r chi.Router) {
-			r.Get("/by_security/{symbol}", taxonomyCtrl.ListMappingsBySymbol)
+			r.Get("/by_security/{security_id}", taxonomyCtrl.ListMappingsBySecurity)
 			r.Route("/{source}/{taxonomy}", func(r chi.Router) {
-				// Mapping endpoints (no market in path)
+				// Mapping endpoints (id-keyed; no market in path)
 				r.Post("/mapping/upsert", taxonomyCtrl.BatchUpsertMappings)
-				r.Post("/mapping/replace/by_symbol", taxonomyCtrl.ReplaceCategoriesForSymbols)
-				r.Post("/mapping/replace/by_category", taxonomyCtrl.ReplaceStocksForCategories)
-				r.Get("/mapping/by_category/{categoryCode}", taxonomyCtrl.ListMappingsByCategory)
-				r.Delete("/mapping/{categoryCode}/{symbol}", taxonomyCtrl.DeleteMapping)
+				r.Post("/mapping/replace/by_security", taxonomyCtrl.ReplaceCategoriesForSecurities)
+				r.Post("/mapping/replace/by_category", taxonomyCtrl.ReplaceSecuritiesForCategories)
+				r.Get("/mapping/by_category/{category_id}", taxonomyCtrl.ListMappingsByCategory)
+				r.Delete("/mapping/{category_id}/{security_id}", taxonomyCtrl.DeleteMapping)
 
 				r.Route("/{market}", func(r chi.Router) {
-					// Categories
+					// Categories (natural-key base table, unchanged)
 					r.Get("/categories", taxonomyCtrl.ListCategories)
 					r.Post("/categories/upsert", taxonomyCtrl.BatchUpsertCategories)
 					r.Get("/categories/{code}", taxonomyCtrl.GetCategory)
 					r.Delete("/categories/{code}", taxonomyCtrl.DeleteCategory)
 
-					// Mapping sync (derives from constituents + categories)
+					// Mapping sync (single-table SELECT DISTINCT, no JOIN — refactor §2.3)
 					r.Post("/mapping/sync_from_constituents", taxonomyCtrl.SyncMappingsFromConstituents)
 
-					// Industry Constituents
+					// Industry Constituents (body carries SDK natural keys; phoenixA resolves to ids)
 					r.Post("/industry-constituents/upsert", taxonomyCtrl.BatchUpsertConstituents)
-					r.Get("/industry-constituents/by_index/{indexCode}", taxonomyCtrl.ListConstituentsByIndex)
-					r.Get("/industry-constituents/by_stock/{symbol}", taxonomyCtrl.ListConstituentsBySymbol)
+					r.Get("/industry-constituents/by_category/{category_id}", taxonomyCtrl.ListConstituentsByCategory)
+					r.Get("/industry-constituents/by_security/{security_id}", taxonomyCtrl.ListConstituentsBySecurity)
 
 					// Industry Weights
 					r.Post("/industry-weights/upsert", taxonomyCtrl.BatchUpsertWeights)
-					r.Get("/industry-weights/{indexCode}", taxonomyCtrl.ListWeightsByIndexAndDate)
+					r.Get("/industry-weights/{category_id}", taxonomyCtrl.ListWeightsByCategoryAndDate)
 
 					// Industry Daily
 					r.Post("/industry-daily/upsert", taxonomyCtrl.BatchUpsertIndustryDaily)
@@ -328,20 +328,11 @@ func init() {
 			r.Get("/get_data", barsCtrl.Query)
 		})
 
-		// Taxonomy legacy routes
-		r.Route("/api/v1/market_category", func(r chi.Router) {
-			r.Post("/upsert/{source}", taxonomyCtrl.BatchUpsertCategories)
-			r.Get("/{source}", taxonomyCtrl.ListCategories)
-		})
-		r.Route("/api/v1/category_stock_map", func(r chi.Router) {
-			r.Post("/upsert", taxonomyCtrl.BatchUpsertMappings)
-			r.Post("/replace/by_stock", func(w http.ResponseWriter, req *http.Request) {
-				taxonomyCtrl.ReplaceCategoriesForSymbols(w, req)
-			})
-			r.Post("/replace/by_category", func(w http.ResponseWriter, req *http.Request) {
-				taxonomyCtrl.ReplaceStocksForCategories(w, req)
-			})
-		})
+		// Legacy v1 taxonomy routes (market_category / category_stock_map) removed in
+		// Phase 2 surrogate-key refactor — no caller (artemis uses /api/v2/taxonomy/*;
+		// grep of /api/v1/(market_category|category_stock_map) hits only this file and
+		// stale design docs). Per the "no legacy / no dual-track" principle (Phase 1
+		// already removed /api/v1/stock/list/*).
 
 		// OpenAPI spec endpoint
 		r.Get("/openapi.yaml", func(w http.ResponseWriter, req *http.Request) {

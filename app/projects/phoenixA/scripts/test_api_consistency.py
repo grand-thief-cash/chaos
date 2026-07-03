@@ -153,43 +153,50 @@ class APITester:
         """测试 Taxonomy API"""
         print("\n=== Testing Taxonomy API ===")
 
-        # Test 1: by_security
+        # Test 1: by_security (Phase 2: path param is security_id, not symbol)
         try:
-            resp = requests.get(f"{self.BASE_URL}/api/v2/taxonomy/by_security/000001")
-            data = resp.json()
-            if isinstance(data, list) and len(data) > 0:
-                item = data[0]
-                # 预期字段（来自 TaxonomySecurityMapWithDetail）
-                expected_fields = [
-                    "id", "source", "taxonomy", "category_code", "category_name",
-                    "level", "parent_code", "index_code",
-                    "canonical_source", "canonical_taxonomy", "canonical_level",
-                    "canonical_category_code", "canonical_category_name", "canonical_parent_code",
-                    "canonical_index_code", "derived_flags",
-                    "symbol", "asset_type", "market",
-                    "created_at", "updated_at",
-                ]
-                actual_fields = list(item.keys())
-                missing = set(expected_fields) - set(actual_fields)
-
-                if missing:
-                    self.add_result(
-                        "Taxonomy by_security",
-                        "/api/v2/taxonomy/by_security/{symbol}",
-                        APIStatus.FAIL,
-                        f"字段缺失: {missing}",
-                        {
-                            "expected": expected_fields,
-                            "actual": actual_fields,
-                            "missing": list(missing)
-                        }
-                    )
-                else:
-                    self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{symbol}", APIStatus.PASS, "字段符合文档")
+            sec_resp = requests.get(f"{self.BASE_URL}/api/v2/securities", params={"limit": "1"})
+            sec_data = sec_resp.json() if sec_resp.status_code == 200 else {}
+            sec_rows = sec_data.get("data") if isinstance(sec_data, dict) else sec_data
+            _sec_id = (sec_rows or [{}])[0].get("security_id") if sec_rows else None
+            if not _sec_id:
+                self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{security_id}", APIStatus.WARN, "无可用 security_id（security_registry 为空）")
             else:
-                self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{symbol}", APIStatus.WARN, "无数据返回")
+                resp = requests.get(f"{self.BASE_URL}/api/v2/taxonomy/by_security/{_sec_id}")
+                data = resp.json()
+                if isinstance(data, list) and len(data) > 0:
+                    item = data[0]
+                    # 预期字段（来自 TaxonomySecurityMapWithDetail，Phase 2 id-keyed）
+                    expected_fields = [
+                        "security_id", "category_id", "source", "taxonomy", "category_code", "category_name",
+                        "level", "parent_code", "index_code",
+                        "canonical_source", "canonical_taxonomy", "canonical_level",
+                        "canonical_category_code", "canonical_category_name", "canonical_parent_code",
+                        "canonical_index_code", "derived_flags",
+                        "symbol", "asset_type", "market",
+                        "created_at", "updated_at",
+                    ]
+                    actual_fields = list(item.keys())
+                    missing = set(expected_fields) - set(actual_fields)
+
+                    if missing:
+                        self.add_result(
+                            "Taxonomy by_security",
+                            "/api/v2/taxonomy/by_security/{security_id}",
+                            APIStatus.FAIL,
+                            f"字段缺失: {missing}",
+                            {
+                                "expected": expected_fields,
+                                "actual": actual_fields,
+                                "missing": list(missing)
+                            }
+                        )
+                    else:
+                        self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{security_id}", APIStatus.PASS, "字段符合文档")
+                else:
+                    self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{security_id}", APIStatus.WARN, "无数据返回")
         except Exception as e:
-            self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{symbol}", APIStatus.FAIL, str(e))
+            self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{security_id}", APIStatus.FAIL, str(e))
 
         # Test 2: Categories - 响应格式检查
         try:

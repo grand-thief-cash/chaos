@@ -107,6 +107,9 @@ func TestIndustryDailyJSONDeserialization(t *testing.T) {
 }
 
 // TestIndustryConstituentJSONDeserialization verifies constituent payload.
+// Phase 2: the model accepts SDK natural keys (index_code, con_code, symbol) as input-only
+// fields (gorm:"-"); phoenixA resolves them to category_id/security_id at upsert. index_name
+// is no longer a model field (dropped from the compressed table) and is silently ignored.
 func TestIndustryConstituentJSONDeserialization(t *testing.T) {
 	artemisPayload := `[{
 		"index_code": "801010.SI",
@@ -134,14 +137,15 @@ func TestIndustryConstituentJSONDeserialization(t *testing.T) {
 	if c.Symbol != "688526" {
 		t.Errorf("expected symbol=688526, got %s", c.Symbol)
 	}
-	if c.IndexName != "银行I" {
-		t.Errorf("expected index_name=银行I, got %s", c.IndexName)
-	}
 	if c.InDate == nil || *c.InDate != "20220101" {
 		t.Errorf("expected in_date=20220101, got %v", c.InDate)
 	}
 	if c.OutDate != nil && *c.OutDate != "" {
 		t.Errorf("expected out_date empty, got %q", *c.OutDate)
+	}
+	// Resolved id fields start zero; the service resolve cache populates them at upsert.
+	if c.CategoryID != 0 || c.SecurityID != 0 {
+		t.Errorf("expected zero ids before resolve, got category_id=%d security_id=%d", c.CategoryID, c.SecurityID)
 	}
 }
 
@@ -213,7 +217,8 @@ func TestTaxonomyCategoryJSONDeserialization(t *testing.T) {
 
 func TestTaxonomySecurityMapWithDetailJSONSerialization(t *testing.T) {
 	payload := &model.TaxonomySecurityMapWithDetail{
-		ID:                    1,
+		SecurityID:            42,
+		CategoryID:            7,
 		Source:                "amazing_data",
 		Taxonomy:              "sw_l1",
 		CategoryCode:          "801010",
@@ -245,6 +250,8 @@ func TestTaxonomySecurityMapWithDetailJSONSerialization(t *testing.T) {
 	}
 
 	for _, field := range []string{
+		"security_id",
+		"category_id",
 		"index_code",
 		"canonical_source",
 		"canonical_taxonomy",
@@ -260,6 +267,12 @@ func TestTaxonomySecurityMapWithDetailJSONSerialization(t *testing.T) {
 		}
 	}
 
+	if got := data["security_id"]; got != float64(42) {
+		t.Fatalf("security_id = %v, want 42", got)
+	}
+	if got := data["category_id"]; got != float64(7) {
+		t.Fatalf("category_id = %v, want 7", got)
+	}
 	if got := data["canonical_source"]; got != "sw" {
 		t.Fatalf("canonical_source = %v, want sw", got)
 	}

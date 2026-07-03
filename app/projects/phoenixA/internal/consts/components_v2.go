@@ -25,6 +25,7 @@ const (
 	COMP_SVC_SECURITY         = "svc_security"
 	COMP_SVC_BARS             = "svc_bars"
 	COMP_SVC_TAXONOMY         = "svc_taxonomy"
+	COMP_SVC_RESOLVE_CACHE    = "svc_resolve_cache"
 	COMP_SVC_STRATEGY_RUN     = "svc_strategy_run"
 	COMP_SVC_FINANCIAL_STMT   = "svc_financial_stmt"
 	COMP_SVC_CORP_ACTION      = "svc_corp_action"

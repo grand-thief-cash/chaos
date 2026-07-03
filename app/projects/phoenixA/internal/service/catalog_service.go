@@ -519,18 +519,18 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert", Description: "写入分类节点"},
 	},
 	"taxonomy_security_map": {
-		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/mapping/by_category/{code}", Description: "按分类查映射"},
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/mapping/by_category/{category_id}", Description: "按分类查映射"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/mapping/upsert", Description: "写入映射"},
 	},
 	"industry_constituent": {
-		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{code}", Description: "查询行业成分"},
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_category/{category_id}", Description: "查询行业成分"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/upsert", Description: "写入行业成分"},
 	},
 	"industry_weight": {
-		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{code}", Description: "查询行业权重"},
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{category_id}", Description: "查询行业权重"},
 	},
 	"industry_daily": {
-		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily", Description: "查询行业日线"},
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily?category_id=", Description: "查询行业日线"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily/upsert", Description: "写入行业日线"},
 	},
 	"strategy_run_summary": {
@@ -578,10 +578,11 @@ var domainApiRegistry = map[string]struct {
 		Description: "行业分类数据，包含行业节点、证券映射、行业成分、权重、日线行情",
 		ExampleCalls: []model.ExampleCall{
 			{Title: "查询申万行业分类", URL: "GET /api/v2/taxonomy/sw/industry/zh_a/categories"},
-			{Title: "按股票查所属行业", URL: "GET /api/v2/taxonomy/by_security/000001"},
+			{Title: "按 security_id 查所属行业", URL: "GET /api/v2/taxonomy/by_security/{security_id}"},
 		},
 		CrossRefs: []model.CrossRef{
-			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（Phase 2 surrogate-key 重构后映射表经 security_id 关联）"},
+			{ToTable: "taxonomy_category", JoinKey: "category_id", Description: "行业分类节点"},
 		},
 	},
 	"financial": {

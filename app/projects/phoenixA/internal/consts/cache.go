@@ -6,27 +6,29 @@ import (
 )
 
 const (
-	RedisCacheKeyPrefixSecurityList                 = "phoenixa:v1:security:list"
-	RedisCacheKeyPrefixSecurityCount                = "phoenixa:v1:security:count"
-	RedisCacheKeyPrefixSchemaFields                 = "phoenixa:v1:schema:fields"
-	RedisCacheKeyPrefixJSONBKeys                    = "phoenixa:v1:schema:jsonb_keys"
-	RedisCacheKeyPrefixTaxonomyCategoryList         = "phoenixa:v1:taxonomy:category:list"
-	RedisCacheKeyPrefixTaxonomyCategoryGet          = "phoenixa:v1:taxonomy:category:get"
-	RedisCacheKeyPrefixTaxonomyMappingBySymbol      = "phoenixa:v1:taxonomy:mapping:by_symbol"
-	RedisCacheKeyPrefixTaxonomyMappingByCategory    = "phoenixa:v1:taxonomy:mapping:by_category"
-	RedisCacheKeyPrefixTaxonomyConstituentsByIndex  = "phoenixa:v1:taxonomy:constituents:by_index"
-	RedisCacheKeyPrefixTaxonomyConstituentsBySymbol = "phoenixa:v1:taxonomy:constituents:by_symbol"
+	RedisCacheKeyPrefixSecurityList         = "phoenixa:v1:security:list"
+	RedisCacheKeyPrefixSecurityCount        = "phoenixa:v1:security:count"
+	RedisCacheKeyPrefixSchemaFields         = "phoenixa:v1:schema:fields"
+	RedisCacheKeyPrefixJSONBKeys            = "phoenixa:v1:schema:jsonb_keys"
+	RedisCacheKeyPrefixTaxonomyCategoryList = "phoenixa:v1:taxonomy:category:list"
+	RedisCacheKeyPrefixTaxonomyCategoryGet  = "phoenixa:v1:taxonomy:category:get"
+	// Phase 2 surrogate-key refactor: taxonomy mapping/constituent caches are keyed by
+	// security_id / category_id (was symbol / index_code).
+	RedisCacheKeyPrefixTaxonomyMappingBySecurity      = "phoenixa:v1:taxonomy:mapping:by_security"
+	RedisCacheKeyPrefixTaxonomyMappingByCategory      = "phoenixa:v1:taxonomy:mapping:by_category"
+	RedisCacheKeyPrefixTaxonomyConstituentsByCategory = "phoenixa:v1:taxonomy:constituents:by_category"
+	RedisCacheKeyPrefixTaxonomyConstituentsBySecurity = "phoenixa:v1:taxonomy:constituents:by_security"
 
-	RedisCacheTTLSecondsSecurityList                 = 6 * 60 * 60
-	RedisCacheTTLSecondsSecurityCount                = 30 * 60
-	RedisCacheTTLSecondsSchemaFields                 = 30 * 60
-	RedisCacheTTLSecondsJSONBKeys                    = 30 * 60
-	RedisCacheTTLSecondsTaxonomyCategoryList         = 30 * 24 * 60 * 60
-	RedisCacheTTLSecondsTaxonomyCategoryGet          = 30 * 24 * 60 * 60
-	RedisCacheTTLSecondsTaxonomyMappingBySymbol      = 14 * 24 * 60 * 60
-	RedisCacheTTLSecondsTaxonomyMappingByCategory    = 14 * 24 * 60 * 60
-	RedisCacheTTLSecondsTaxonomyConstituentsByIndex  = 14 * 24 * 60 * 60
-	RedisCacheTTLSecondsTaxonomyConstituentsBySymbol = 14 * 24 * 60 * 60
+	RedisCacheTTLSecondsSecurityList                   = 6 * 60 * 60
+	RedisCacheTTLSecondsSecurityCount                  = 30 * 60
+	RedisCacheTTLSecondsSchemaFields                   = 30 * 60
+	RedisCacheTTLSecondsJSONBKeys                      = 30 * 60
+	RedisCacheTTLSecondsTaxonomyCategoryList           = 30 * 24 * 60 * 60
+	RedisCacheTTLSecondsTaxonomyCategoryGet            = 30 * 24 * 60 * 60
+	RedisCacheTTLSecondsTaxonomyMappingBySecurity      = 14 * 24 * 60 * 60
+	RedisCacheTTLSecondsTaxonomyMappingByCategory      = 14 * 24 * 60 * 60
+	RedisCacheTTLSecondsTaxonomyConstituentsByCategory = 14 * 24 * 60 * 60
+	RedisCacheTTLSecondsTaxonomyConstituentsBySecurity = 14 * 24 * 60 * 60
 )
 
 func BuildSecurityListCacheKey(assetType, market string) string {
@@ -69,36 +71,39 @@ func BuildTaxonomyCategoryGetCachePattern(source, taxonomy, market string) strin
 	return fmt.Sprintf("%s:%s:%s:%s:*", RedisCacheKeyPrefixTaxonomyCategoryGet, normalizeCachePatternPart(source), normalizeCachePatternPart(taxonomy), normalizeCachePatternPart(market))
 }
 
-func BuildTaxonomyMappingBySymbolCacheKey(symbol string) string {
-	return fmt.Sprintf("%s:%s", RedisCacheKeyPrefixTaxonomyMappingBySymbol, normalizeCachePart(symbol))
+// Phase 2: taxonomy mapping/constituent cache keys are keyed by surrogate id.
+// normalizeCachePart on a uint64 just stringifies it.
+
+func BuildTaxonomyMappingBySecurityCacheKey(securityID uint64) string {
+	return fmt.Sprintf("%s:%d", RedisCacheKeyPrefixTaxonomyMappingBySecurity, securityID)
 }
 
-func BuildTaxonomyMappingBySymbolCachePattern() string {
-	return RedisCacheKeyPrefixTaxonomyMappingBySymbol + ":*"
+func BuildTaxonomyMappingBySecurityCachePattern() string {
+	return RedisCacheKeyPrefixTaxonomyMappingBySecurity + ":*"
 }
 
-func BuildTaxonomyMappingByCategoryCacheKey(source, taxonomy, categoryCode string) string {
-	return fmt.Sprintf("%s:%s:%s:%s", RedisCacheKeyPrefixTaxonomyMappingByCategory, normalizeCachePart(source), normalizeCachePart(taxonomy), normalizeCachePart(categoryCode))
+func BuildTaxonomyMappingByCategoryCacheKey(categoryID uint64) string {
+	return fmt.Sprintf("%s:%d", RedisCacheKeyPrefixTaxonomyMappingByCategory, categoryID)
 }
 
-func BuildTaxonomyMappingByCategoryCachePattern(source, taxonomy, categoryCode string) string {
-	return fmt.Sprintf("%s:%s:%s:%s", RedisCacheKeyPrefixTaxonomyMappingByCategory, normalizeCachePatternPart(source), normalizeCachePatternPart(taxonomy), normalizeCachePatternPart(categoryCode))
+func BuildTaxonomyMappingByCategoryCachePattern() string {
+	return RedisCacheKeyPrefixTaxonomyMappingByCategory + ":*"
 }
 
-func BuildTaxonomyConstituentsByIndexCacheKey(source, taxonomy, market, indexCode string) string {
-	return fmt.Sprintf("%s:%s:%s:%s:%s", RedisCacheKeyPrefixTaxonomyConstituentsByIndex, normalizeCachePart(source), normalizeCachePart(taxonomy), normalizeCachePart(market), normalizeCachePart(indexCode))
+func BuildTaxonomyConstituentsByCategoryCacheKey(categoryID uint64) string {
+	return fmt.Sprintf("%s:%d", RedisCacheKeyPrefixTaxonomyConstituentsByCategory, categoryID)
 }
 
-func BuildTaxonomyConstituentsByIndexCachePattern(source, taxonomy, market, indexCode string) string {
-	return fmt.Sprintf("%s:%s:%s:%s:%s", RedisCacheKeyPrefixTaxonomyConstituentsByIndex, normalizeCachePatternPart(source), normalizeCachePatternPart(taxonomy), normalizeCachePatternPart(market), normalizeCachePatternPart(indexCode))
+func BuildTaxonomyConstituentsByCategoryCachePattern() string {
+	return RedisCacheKeyPrefixTaxonomyConstituentsByCategory + ":*"
 }
 
-func BuildTaxonomyConstituentsBySymbolCacheKey(source, taxonomy, market, symbol string) string {
-	return fmt.Sprintf("%s:%s:%s:%s:%s", RedisCacheKeyPrefixTaxonomyConstituentsBySymbol, normalizeCachePart(source), normalizeCachePart(taxonomy), normalizeCachePart(market), normalizeCachePart(symbol))
+func BuildTaxonomyConstituentsBySecurityCacheKey(securityID uint64) string {
+	return fmt.Sprintf("%s:%d", RedisCacheKeyPrefixTaxonomyConstituentsBySecurity, securityID)
 }
 
-func BuildTaxonomyConstituentsBySymbolCachePattern(source, taxonomy, market, symbol string) string {
-	return fmt.Sprintf("%s:%s:%s:%s:%s", RedisCacheKeyPrefixTaxonomyConstituentsBySymbol, normalizeCachePatternPart(source), normalizeCachePatternPart(taxonomy), normalizeCachePatternPart(market), normalizeCachePatternPart(symbol))
+func BuildTaxonomyConstituentsBySecurityCachePattern() string {
+	return RedisCacheKeyPrefixTaxonomyConstituentsBySecurity + ":*"
 }
 
 func normalizeCachePart(v string) string {

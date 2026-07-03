@@ -65,136 +65,106 @@ COMMENT ON COLUMN ods.taxonomy_category.created_at IS '记录创建时间。';
 COMMENT ON COLUMN ods.taxonomy_category.updated_at IS '记录更新时间。';
 
 -- ──────────────────────────────────────────────────────────
--- 2. taxonomy_security_map
+-- 2. taxonomy_security_map  (Phase 2: pure (security_id, category_id) join table)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.taxonomy_security_map (
-    source        VARCHAR(32) NOT NULL,
-    taxonomy      VARCHAR(32) NOT NULL,
-    category_code VARCHAR(64) NOT NULL,
-    symbol        VARCHAR(32) NOT NULL,
-    asset_type    VARCHAR(16) NOT NULL DEFAULT 'stock',
-    market        VARCHAR(16) NOT NULL DEFAULT 'zh_a',
-    CONSTRAINT uk_src_tax_cat_sec UNIQUE (source, taxonomy, category_code, symbol, asset_type, market)
+    security_id   BIGINT         NOT NULL,
+    category_id   BIGINT         NOT NULL,
+    created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (security_id, category_id)
 ) TABLESPACE pg_default;
-CREATE INDEX IF NOT EXISTS idx_tsm_symbol ON ods.taxonomy_security_map (symbol, asset_type, market);
-CREATE INDEX IF NOT EXISTS idx_tsm_category ON ods.taxonomy_security_map (source, taxonomy, category_code);
+CREATE INDEX IF NOT EXISTS idx_tsm_category ON ods.taxonomy_security_map (category_id);
 
-COMMENT ON TABLE ods.taxonomy_security_map IS '证券↔行业分类节点映射表。非下载任务直接写入，由 PhoenixA 从 industry_constituent × taxonomy_category JOIN 派生（taxonomy_dao.go SyncMappingsFromConstituents）。';
-COMMENT ON COLUMN ods.taxonomy_security_map.source IS '数据源标识，沿用成分股表 source（如 amazing_data）。';
-COMMENT ON COLUMN ods.taxonomy_security_map.taxonomy IS '分类体系标识，沿用成分股表 taxonomy（如 swhy）。';
-COMMENT ON COLUMN ods.taxonomy_security_map.category_code IS '行业分类节点代码，等于 taxonomy_category.code（= SDK INDUSTRY_CODE）。';
-COMMENT ON COLUMN ods.taxonomy_security_map.symbol IS '证券代码（纯代码，不含交易所后缀）。';
-COMMENT ON COLUMN ods.taxonomy_security_map.asset_type IS '资产类型，派生时固定为 stock。';
-COMMENT ON COLUMN ods.taxonomy_security_map.market IS '市场标识，沿用成分股表 market（如 zh_a）。';
+COMMENT ON TABLE ods.taxonomy_security_map IS '证券↔行业分类节点映射表（纯中间表）。Phase 2 surrogate-key 重构后仅保留 (security_id, category_id) 两列；由 PhoenixA 从 industry_constituent 单表 SELECT DISTINCT 派生（taxonomy_dao.go SyncMappingsFromConstituents，无 JOIN）。security_id → ods.security_registry.id；category_id → ods.taxonomy_category.id（逻辑外键，不建真实 FK 约束，refactor §6 R9）。';
+COMMENT ON COLUMN ods.taxonomy_security_map.security_id IS '证券代理主键；→ ods.security_registry.id。';
+COMMENT ON COLUMN ods.taxonomy_security_map.category_id IS '行业分类节点代理主键；→ ods.taxonomy_category.id。';
+COMMENT ON COLUMN ods.taxonomy_security_map.created_at IS '记录创建时间。';
+COMMENT ON COLUMN ods.taxonomy_security_map.updated_at IS '记录更新时间。';
 
 -- ──────────────────────────────────────────────────────────
--- 3. industry_constituent
+-- 3. industry_constituent  (Phase 2: compressed to category_id + security_id)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.industry_constituent (
-    id           BIGSERIAL      PRIMARY KEY,
-    source       VARCHAR(32)    NOT NULL,
-    taxonomy     VARCHAR(32)    NOT NULL,
-    market       VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
-    index_code   VARCHAR(64)    NOT NULL,
-    con_code     VARCHAR(64)    NOT NULL DEFAULT '',
-    symbol       VARCHAR(32)    NOT NULL,
-    index_name   VARCHAR(255)   NOT NULL DEFAULT '',
-    in_date      VARCHAR(10),
-    out_date     VARCHAR(10),
-    created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_src_tax_idx_sym UNIQUE (source, taxonomy, index_code, symbol, market)
+    id            BIGSERIAL      PRIMARY KEY,
+    category_id   BIGINT         NOT NULL,
+    security_id   BIGINT         NOT NULL,
+    in_date       VARCHAR(10),
+    out_date      VARCHAR(10),
+    created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_cat_sec UNIQUE (category_id, security_id)
 ) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_ic_index_code ON ods.industry_constituent (source, taxonomy, index_code) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_ic_symbol ON ods.industry_constituent (symbol, market) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_ic_security ON ods.industry_constituent (security_id) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_ic_category ON ods.industry_constituent (category_id) TABLESPACE warm_storage;
 
-COMMENT ON TABLE ods.industry_constituent IS '行业指数成分股。ODS 落地表，由 artemis 从 AmazingData get_industry_constituent（SWHY 申万，指南 3.5.13.2）下载后 POST 落地。';
+COMMENT ON TABLE ods.industry_constituent IS '行业指数成分股。ODS 落地表，由 artemis 从 AmazingData get_industry_constituent（SWHY 申万，指南 3.5.13.2）下载后 POST 落地。Phase 2 surrogate-key 重构后压缩为 (category_id, security_id, in_date, out_date)：SDK 的 INDEX_CODE→category_id、CON_CODE→security_id 由 phoenixA 在写入时用内存缓存解析（refactor §2.3/§10.c），con_code/symbol/source/taxonomy/market/index_name 不再冗余存储。';
 COMMENT ON COLUMN ods.industry_constituent.id IS '自增主键。';
-COMMENT ON COLUMN ods.industry_constituent.source IS '数据源标识，如 amazing_data。';
-COMMENT ON COLUMN ods.industry_constituent.taxonomy IS '分类体系标识，如 swhy（申万宏源）。';
-COMMENT ON COLUMN ods.industry_constituent.market IS '市场标识，如 zh_a。';
-COMMENT ON COLUMN ods.industry_constituent.index_code IS '行业指数代码；SDK INDEX_CODE。';
-COMMENT ON COLUMN ods.industry_constituent.con_code IS '成分股代码（含交易所后缀，如 688526.SH）；SDK CON_CODE。';
-COMMENT ON COLUMN ods.industry_constituent.symbol IS '证券代码（纯代码，con_code 去交易所后缀）。';
-COMMENT ON COLUMN ods.industry_constituent.index_name IS '指数名称；SDK INDEX_NAME。';
+COMMENT ON COLUMN ods.industry_constituent.category_id IS '行业分类节点代理主键；由 INDEX_CODE 经 taxonomy_category 缓存解析。→ ods.taxonomy_category.id。';
+COMMENT ON COLUMN ods.industry_constituent.security_id IS '证券代理主键；由 CON_CODE（含交易所后缀）经 security_registry 缓存解析。→ ods.security_registry.id。';
 COMMENT ON COLUMN ods.industry_constituent.in_date IS '纳入日期；SDK INDATE。';
 COMMENT ON COLUMN ods.industry_constituent.out_date IS '剔除日期；SDK OUTDATE，未剔除时为空。';
 COMMENT ON COLUMN ods.industry_constituent.created_at IS '记录创建时间。';
 COMMENT ON COLUMN ods.industry_constituent.updated_at IS '记录更新时间。';
 
 -- ──────────────────────────────────────────────────────────
--- 4. industry_weight  (trade_date is DATE — folded from former 0003)
+-- 4. industry_weight  (Phase 2: compressed to category_id + security_id; trade_date is DATE — folded from former 0003)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.industry_weight (
-    source       VARCHAR(32)    NOT NULL,
-    taxonomy     VARCHAR(32)    NOT NULL,
-    market       VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
-    index_code   VARCHAR(64)    NOT NULL,
-    con_code     VARCHAR(64)    NOT NULL DEFAULT '',
-    symbol       VARCHAR(32)    NOT NULL,
-    trade_date   DATE           NOT NULL,
-    weight       NUMERIC(10,6),
-    created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (source, taxonomy, index_code, symbol, market, trade_date)
+    category_id   BIGINT         NOT NULL,
+    security_id   BIGINT         NOT NULL,
+    trade_date    DATE           NOT NULL,
+    weight        NUMERIC(10,6),
+    created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (category_id, security_id, trade_date)
 ) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_iw_index_date ON ods.industry_weight (source, taxonomy, index_code, trade_date) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_iw_symbol_date ON ods.industry_weight (symbol, market, trade_date) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_iw_category_date ON ods.industry_weight (category_id, trade_date) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_iw_security_date ON ods.industry_weight (security_id, trade_date) TABLESPACE warm_storage;
 
 -- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
 SELECT create_hypertable('ods.industry_weight', 'trade_date',
                          if_not_exists => TRUE,
                          chunk_time_interval => INTERVAL '1 year');
 
-COMMENT ON TABLE ods.industry_weight IS '行业指数成分股日权重。ODS 落地表，由 artemis 从 AmazingData get_industry_weight（SWHY 申万，指南 3.5.13.3）下载后 POST 落地。';
-COMMENT ON COLUMN ods.industry_weight.source IS '数据源标识，如 amazing_data。';
-COMMENT ON COLUMN ods.industry_weight.taxonomy IS '分类体系标识，如 swhy（申万宏源）。';
-COMMENT ON COLUMN ods.industry_weight.market IS '市场标识，如 zh_a。';
-COMMENT ON COLUMN ods.industry_weight.index_code IS '行业指数代码；SDK INDEX_CODE。';
-COMMENT ON COLUMN ods.industry_weight.con_code IS '成分股代码（含交易所后缀）；SDK CON_CODE。';
-COMMENT ON COLUMN ods.industry_weight.symbol IS '证券代码（纯代码，con_code 去交易所后缀）。';
+COMMENT ON TABLE ods.industry_weight IS '行业指数成分股日权重。ODS 落地表，由 artemis 从 AmazingData get_industry_weight（SWHY 申万，指南 3.5.13.3）下载后 POST 落地。Phase 2 surrogate-key 重构后压缩为 (category_id, security_id, trade_date, weight)：INDEX_CODE→category_id、CON_CODE→security_id 由 phoenixA 写入时缓存解析（refactor §2.3/§10.c）；hypertable 无真实 FK 约束（§6 R9）。';
+COMMENT ON COLUMN ods.industry_weight.category_id IS '行业分类节点代理主键；由 INDEX_CODE 经 taxonomy_category 缓存解析。→ ods.taxonomy_category.id。';
+COMMENT ON COLUMN ods.industry_weight.security_id IS '证券代理主键；由 CON_CODE 经 security_registry 缓存解析。→ ods.security_registry.id。';
 COMMENT ON COLUMN ods.industry_weight.trade_date IS '交易日期；SDK TRADE_DATE。';
 COMMENT ON COLUMN ods.industry_weight.weight IS '权重；SDK WEIGHT。';
 COMMENT ON COLUMN ods.industry_weight.created_at IS '记录创建时间。';
 COMMENT ON COLUMN ods.industry_weight.updated_at IS '记录更新时间。';
 
 -- ──────────────────────────────────────────────────────────
--- 5. industry_daily  (trade_date is DATE — folded from former 0003)
+-- 5. industry_daily  (Phase 2: compressed to category_id; trade_date is DATE — folded from former 0003)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.industry_daily (
-    source       VARCHAR(32)    NOT NULL,
-    taxonomy     VARCHAR(32)    NOT NULL,
-    market       VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
-    index_code   VARCHAR(64)    NOT NULL,
-    trade_date   DATE           NOT NULL,
-    open         NUMERIC(20,4),
-    high         NUMERIC(20,4),
-    close        NUMERIC(20,4),
-    low          NUMERIC(20,4),
-    pre_close    NUMERIC(20,4),
-    amount       NUMERIC(20,4),
-    volume       NUMERIC(20,4),
-    pb           NUMERIC(20,4),
-    pe           NUMERIC(20,4),
-    total_cap    NUMERIC(20,4),
-    a_float_cap  NUMERIC(20,4),
-    created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (source, taxonomy, index_code, market, trade_date)
+    category_id   BIGINT         NOT NULL,
+    trade_date    DATE           NOT NULL,
+    open          NUMERIC(20,4),
+    high          NUMERIC(20,4),
+    close         NUMERIC(20,4),
+    low           NUMERIC(20,4),
+    pre_close     NUMERIC(20,4),
+    amount        NUMERIC(20,4),
+    volume        NUMERIC(20,4),
+    pb            NUMERIC(20,4),
+    pe            NUMERIC(20,4),
+    total_cap     NUMERIC(20,4),
+    a_float_cap   NUMERIC(20,4),
+    created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (category_id, trade_date)
 ) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_id_index_date ON ods.industry_daily (source, taxonomy, index_code, trade_date) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_id_trade_date ON ods.industry_daily (source, taxonomy, trade_date) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_id_trade_date ON ods.industry_daily (trade_date) TABLESPACE warm_storage;
 
 -- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
 SELECT create_hypertable('ods.industry_daily', 'trade_date',
                          if_not_exists => TRUE,
                          chunk_time_interval => INTERVAL '1 year');
 
-COMMENT ON TABLE ods.industry_daily IS '行业指数日行情（OHLCV + 估值）。ODS 落地表，由 artemis 从 AmazingData get_industry_daily（SWHY 申万，指南 3.5.13.4）下载后 POST 落地。';
-COMMENT ON COLUMN ods.industry_daily.source IS '数据源标识，如 amazing_data。';
-COMMENT ON COLUMN ods.industry_daily.taxonomy IS '分类体系标识，如 swhy（申万宏源）。';
-COMMENT ON COLUMN ods.industry_daily.market IS '市场标识，如 zh_a。';
-COMMENT ON COLUMN ods.industry_daily.index_code IS '行业指数代码；SDK INDEX_CODE。';
+COMMENT ON TABLE ods.industry_daily IS '行业指数日行情（OHLCV + 估值）。ODS 落地表，由 artemis 从 AmazingData get_industry_daily（SWHY 申万，指南 3.5.13.4）下载后 POST 落地。Phase 2 surrogate-key 重构后压缩为 (category_id, trade_date, ...)：INDEX_CODE→category_id 由 phoenixA 写入时缓存解析（refactor §2.3/§10.c）；指数级数据无 security_id。';
+COMMENT ON COLUMN ods.industry_daily.category_id IS '行业分类节点代理主键；由 INDEX_CODE 经 taxonomy_category 缓存解析。→ ods.taxonomy_category.id。';
 COMMENT ON COLUMN ods.industry_daily.trade_date IS '交易日期；SDK TRADE_DATE。';
 COMMENT ON COLUMN ods.industry_daily.open IS '开盘价；SDK OPEN。';
 COMMENT ON COLUMN ods.industry_daily.high IS '最高价；SDK HIGH。';

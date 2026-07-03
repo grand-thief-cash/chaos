@@ -21,6 +21,13 @@ func init() {
 		return true, service.NewTaxonomyService(), nil
 	})
 
+	// Shared resolve cache (security_registry + taxonomy_category natural-key → id).
+	// Depends only on DAOs; TaxonomyService resolves/validates against it, SecurityService
+	// invalidates it on security_registry upsert/delete (refactor §8.bis-1).
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, service.NewResolveCache(), nil
+	})
+
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, service.NewStrategyRunService(), nil
 	})

@@ -20,6 +20,7 @@ import (
 type SecurityService struct {
 	*core.BaseComponent
 	Dao       *dao.SecurityRegistryDao   `infra:"dep:dao_security_registry"`
+	Resolve   *ResolveCache              `infra:"dep:svc_resolve_cache?"`
 	RedisComp *infraRedis.RedisComponent `infra:"dep:redis?"`
 }
 
@@ -45,6 +46,12 @@ func (s *SecurityService) BatchUpsert(ctx context.Context, list []*model.Securit
 		return affected, err
 	}
 	s.invalidateAggregateCaches(ctx, list)
+	// New securities (or reassignment after a delete+reimport) change the natural-key → id
+	// map the taxonomy resolve cache holds; invalidate so industry writes don't resolve to
+	// stale/missing ids within the TTL window (refactor §8.bis-1).
+	if s.Resolve != nil {
+		s.Resolve.Invalidate()
+	}
 	return affected, nil
 }
 
@@ -113,9 +120,25 @@ func (s *SecurityService) CountFiltered(ctx context.Context, f *model.SecurityFi
 
 func (s *SecurityService) DeleteAll(ctx context.Context, assetType, market string) (int64, error) {
 	logging.Infof(ctx, "SecurityService DeleteAll asset_type=%s market=%s", assetType, market)
+	// Refuse if downstream tables still reference securities in this scope — with no real FK
+	// (§6 R9) a bare delete would leave dangling security_id refs in taxonomy_security_map /
+	// industry_constituent / industry_weight. Operator must clear dependents first (this is
+	// a rebuild-only op; refactor §5.1.1/§8.bis). Mirrors TaxonomyService.DeleteCategory.
+	referenced, err := s.Dao.SecurityScopeHasReferences(ctx, assetType, market)
+	if err != nil {
+		return 0, err
+	}
+	if referenced {
+		return 0, NewConflictError("securities in scope (asset_type=%s market=%s) are referenced by taxonomy_security_map/industry_constituent/industry_weight; remove dependents first", assetType, market)
+	}
 	affected, err := s.Dao.DeleteAll(ctx, assetType, market)
 	if err != nil {
 		return affected, err
+	}
+	// A delete+reimport reassigns BIGSERIAL ids; the taxonomy resolve cache MUST be cleared
+	// so industry writes don't resolve to now-reassigned ids (refactor §8.bis-1).
+	if s.Resolve != nil {
+		s.Resolve.Invalidate()
 	}
 	if assetType == "" || market == "" {
 		if err := s.invalidateAggregateCachesByScope(ctx, assetType, market); err != nil {
