@@ -53,6 +53,7 @@ func (d *SecurityRegistryDao) BatchUpsert(ctx context.Context, list []*model.Sec
 		chunkSize = 200
 	}
 	for _, s := range list {
+		s.ID = 0 // id is surrogate, auto-assigned; ignore any client-supplied value on upsert
 		s.Symbol = strings.TrimSpace(s.Symbol)
 		s.Exchange = strings.ToUpper(strings.TrimSpace(s.Exchange))
 		s.Name = strings.TrimSpace(s.Name)
@@ -75,8 +76,8 @@ func (d *SecurityRegistryDao) BatchUpsert(ctx context.Context, list []*model.Sec
 		batch := list[i:end]
 		res := d.db.WithContext(ctx).
 			Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "symbol"}, {Name: "asset_type"}, {Name: "market"}},
-				DoUpdates: clause.AssignmentColumns([]string{"exchange", "name", "full_name", "status", "list_date", "delist_date", "updated_at"}),
+				Columns:   []clause.Column{{Name: "exchange"}, {Name: "asset_type"}, {Name: "symbol"}},
+				DoUpdates: clause.AssignmentColumns([]string{"name", "full_name", "status", "list_date", "delist_date", "market", "updated_at"}),
 			}).Create(&batch)
 		if res.Error != nil {
 			return affected, res.Error
@@ -86,15 +87,36 @@ func (d *SecurityRegistryDao) BatchUpsert(ctx context.Context, list []*model.Sec
 	return affected, nil
 }
 
-func (d *SecurityRegistryDao) Get(ctx context.Context, symbol, assetType, market string) (*model.SecurityRegistry, error) {
+// Get retrieves a security by its natural key (exchange, asset_type, symbol).
+// asset_type is expected to be passed explicitly (callers use consts.ASSET_TYPE_STOCK).
+// exchange/symbol are normalized to match BatchUpsert's storage form, so callers
+// may pass "sz"/" 000001 " and still resolve the row.
+func (d *SecurityRegistryDao) Get(ctx context.Context, exchange, assetType, symbol string) (*model.SecurityRegistry, error) {
+	exchange = strings.ToUpper(strings.TrimSpace(exchange))
+	symbol = strings.TrimSpace(symbol)
 	var s model.SecurityRegistry
 	err := d.db.WithContext(ctx).
-		Where("symbol = ? AND asset_type = ? AND market = ?", symbol, assetType, market).
+		Where("exchange = ? AND asset_type = ? AND symbol = ?", exchange, assetType, symbol).
 		First(&s).Error
 	if err != nil {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// GetByID retrieves a security by its surrogate id.
+func (d *SecurityRegistryDao) GetByID(ctx context.Context, id uint64) (*model.SecurityRegistry, error) {
+	var s model.SecurityRegistry
+	err := d.db.WithContext(ctx).Where("id = ?", id).First(&s).Error
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// GetAll returns all securities (ordered by symbol), used to build resolve caches.
+func (d *SecurityRegistryDao) GetAll(ctx context.Context) ([]*model.SecurityRegistry, error) {
+	return d.ListFiltered(ctx, nil, 0, 0)
 }
 
 func (d *SecurityRegistryDao) ListFiltered(ctx context.Context, f *model.SecurityFilters, limit, offset int) ([]*model.SecurityRegistry, error) {
@@ -138,6 +160,9 @@ func (d *SecurityRegistryDao) DeleteAll(ctx context.Context, assetType, market s
 func applySecurityFilters(q *gorm.DB, f *model.SecurityFilters) *gorm.DB {
 	if f == nil {
 		return q
+	}
+	if f.SecurityID != 0 {
+		q = q.Where("id = ?", f.SecurityID)
 	}
 	if f.AssetType != "" {
 		q = q.Where("asset_type = ?", f.AssetType)

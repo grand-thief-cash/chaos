@@ -50,7 +50,7 @@ class APITester:
             data = resp.json()
             if "data" in data and len(data["data"]) > 0:
                 security = data["data"][0]
-                expected_fields = ["symbol", "asset_type", "market", "exchange", "name", "status", "created_at", "updated_at"]
+                expected_fields = ["security_id", "symbol", "asset_type", "market", "exchange", "name", "status", "created_at", "updated_at"]
                 actual_fields = list(security.keys())
                 missing = set(expected_fields) - set(actual_fields)
                 extra = set(actual_fields) - set(expected_fields)
@@ -70,16 +70,23 @@ class APITester:
         except Exception as e:
             self.add_result("Securities List", "/api/v2/securities", APIStatus.FAIL, str(e))
 
-        # Test 2: Get single security
+        # Test 2: Get single security by security_id (fetched from list)
         try:
-            resp = requests.get(f"{self.BASE_URL}/api/v2/securities/000001?asset_type=stock&market=zh_a")
-            data = resp.json()
-            if "data" in data:
-                self.add_result("Securities Get", "/api/v2/securities/{symbol}", APIStatus.PASS, "返回格式正确")
+            list_resp = requests.get(f"{self.BASE_URL}/api/v2/securities?limit=1")
+            list_data = list_resp.json()
+            rows = (list_data.get("data") or []) if isinstance(list_data, dict) else []
+            if not rows or "security_id" not in rows[0]:
+                self.add_result("Securities Get", "/api/v2/securities/{security_id}", APIStatus.WARN, "无法获取 security_id 用于测试")
             else:
-                self.add_result("Securities Get", "/api/v2/securities/{symbol}", APIStatus.FAIL, "响应缺少 data 字段")
+                sid = rows[0]["security_id"]
+                resp = requests.get(f"{self.BASE_URL}/api/v2/securities/{sid}")
+                data = resp.json()
+                if "data" in data:
+                    self.add_result("Securities Get", "/api/v2/securities/{security_id}", APIStatus.PASS, "返回格式正确")
+                else:
+                    self.add_result("Securities Get", "/api/v2/securities/{security_id}", APIStatus.FAIL, "响应缺少 data 字段")
         except Exception as e:
-            self.add_result("Securities Get", "/api/v2/securities/{symbol}", APIStatus.FAIL, str(e))
+            self.add_result("Securities Get", "/api/v2/securities/{security_id}", APIStatus.FAIL, str(e))
 
         # Test 3: Count securities
         try:

@@ -573,10 +573,11 @@ COMMENT ON COLUMN ods.equity_structure.updated_at IS '记录更新时间。';
 --    No `source` column — single source, normalized master data.
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.security_registry (
-    symbol       VARCHAR(32)    NOT NULL,
-    asset_type   VARCHAR(16)    NOT NULL,
-    market       VARCHAR(16)    NOT NULL,
+    id           BIGSERIAL      PRIMARY KEY,
     exchange     VARCHAR(8)     NOT NULL,
+    asset_type   VARCHAR(16)    NOT NULL,
+    symbol       VARCHAR(32)    NOT NULL,
+    market       VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
     name         VARCHAR(128)   NOT NULL DEFAULT '',
     full_name    VARCHAR(256),
     status       VARCHAR(16)    NOT NULL DEFAULT 'active',
@@ -584,22 +585,22 @@ CREATE TABLE IF NOT EXISTS ods.security_registry (
     delist_date  DATE,
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT pk_security_registry PRIMARY KEY (symbol, asset_type, market)
+    CONSTRAINT uk_sr_exchange_asset_symbol UNIQUE (exchange, asset_type, symbol)
 ) TABLESPACE pg_default;
 
+-- idx_sr_exchange 已删除：uk_sr_exchange_asset_symbol 唯一约束索引以 exchange 为前导列，已覆盖按 exchange 的查询。
 CREATE INDEX IF NOT EXISTS idx_sr_asset_market
     ON ods.security_registry (asset_type, market);
-CREATE INDEX IF NOT EXISTS idx_sr_exchange
-    ON ods.security_registry (exchange);
 CREATE INDEX IF NOT EXISTS idx_sr_status
     ON ods.security_registry (status)
     WHERE status != 'active';
 
-COMMENT ON TABLE ods.security_registry IS '统一证券注册表（股票/ETF/指数基础信息）。单一外部来源：artemis 从 AmazingData get_code_info 下载，POST /api/v2/securities/upsert 落地。单源主数据，无 source 列。';
-COMMENT ON COLUMN ods.security_registry.symbol IS '证券代码（纯代码，不含交易所后缀）；来自 AmazingData get_code_info。';
-COMMENT ON COLUMN ods.security_registry.asset_type IS '资产类型，当前固定为 stock。';
-COMMENT ON COLUMN ods.security_registry.market IS '市场标识，当前固定为 zh_a。';
-COMMENT ON COLUMN ods.security_registry.exchange IS '交易所（SH/SZ/BJ），由代码后缀派生。';
+COMMENT ON TABLE ods.security_registry IS '统一证券注册表（股票/ETF/指数基础信息）。代理主键 id (BIGSERIAL) 是 (exchange, asset_type, symbol) 自然键的代理，作为其他表逻辑外键 security_id 的引用目标（不建真实 FK 约束）。单一外部来源：artemis 从 AmazingData get_code_info 下载，POST /api/v2/securities/upsert 按自然键 upsert（id 自增）。单源主数据，无 source 列。';
+COMMENT ON COLUMN ods.security_registry.id IS '代理主键 (BIGSERIAL)，仅在当前重建周期内稳定；是 (exchange, asset_type, symbol) 自然键的代理，被其他表 security_id 逻辑引用。';
+COMMENT ON COLUMN ods.security_registry.exchange IS '交易所（SH/SZ/BJ 大写），由代码后缀派生，phoenixA 落库时统一 ToUpper；与 asset_type、symbol 共同构成自然唯一键。';
+COMMENT ON COLUMN ods.security_registry.asset_type IS '资产类型，当前固定为 stock；与 exchange、symbol 共同构成自然唯一键。';
+COMMENT ON COLUMN ods.security_registry.symbol IS '证券代码（纯代码，不含交易所后缀）；来自 AmazingData get_code_info；与 exchange、asset_type 共同构成自然唯一键。';
+COMMENT ON COLUMN ods.security_registry.market IS '市场标识（普通属性列，不参与自然唯一键），当前固定为 zh_a。';
 COMMENT ON COLUMN ods.security_registry.name IS '证券简称；来自 get_code_info 的 symbol 列。';
 COMMENT ON COLUMN ods.security_registry.full_name IS '证券全称（预留字段，当前无数据源填充）。';
 COMMENT ON COLUMN ods.security_registry.status IS '证券状态，当前固定为 active。';

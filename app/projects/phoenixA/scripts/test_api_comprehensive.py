@@ -215,7 +215,7 @@ class PhoenixAAPITester:
                 first_security = data["data"][0]
 
                 expected_fields = {
-                    "id": "integer",
+                    "security_id": "integer",
                     "symbol": "string",
                     "asset_type": "string",
                     "market": "string",
@@ -251,7 +251,15 @@ class PhoenixAAPITester:
 
     def test_securities_detail(self) -> APITestResult:
         """测试单个证券详情 API"""
-        endpoint = "/api/v2/securities/000001"
+        # 路径参数已从 symbol 迁移到 security_id，先从列表取一个真实 id
+        try:
+            _list_resp = self._make_request("/api/v2/securities", {"limit": "1"})
+            _list_data = _list_resp.json() if _list_resp.status_code == 200 else {}
+            _rows = (_list_data.get("data") or []) if isinstance(_list_data, dict) else []
+            _sid = str(_rows[0].get("security_id", "1")) if _rows else "1"
+        except Exception:
+            _sid = "1"
+        endpoint = f"/api/v2/securities/{_sid}"
         result = APITestResult(
             api_name="Securities - 详情",
             endpoint=endpoint,
@@ -279,7 +287,7 @@ class PhoenixAAPITester:
             security = data["data"]
 
             expected_fields = {
-                "id": "integer",
+                "security_id": "integer",
                 "symbol": "string",
                 "asset_type": "string",
                 "market": "string",

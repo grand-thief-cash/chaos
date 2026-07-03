@@ -30,8 +30,8 @@ func init() {
 			r.Post("/upsert", securityCtrl.BatchUpsert)
 			r.Get("/count", securityCtrl.Count)
 			r.Delete("/all", securityCtrl.DeleteAll)
-			r.Get("/{symbol}", func(w http.ResponseWriter, req *http.Request) {
-				securityCtrl.Get(w, req, chi.URLParam(req, "symbol"))
+			r.Get("/{security_id}", func(w http.ResponseWriter, req *http.Request) {
+				securityCtrl.Get(w, req, chi.URLParam(req, "security_id"))
 			})
 		})
 
@@ -321,22 +321,6 @@ func init() {
 		})
 
 		// ====== Legacy v1 routes (backward compatible - proxied to v2 logic) ======
-		// Securities legacy routes
-		r.Route("/api/v1/stock/list", func(r chi.Router) {
-			r.Get("/", securityCtrl.List)
-			r.Post("/", func(w http.ResponseWriter, req *http.Request) {
-				securityCtrl.BatchUpsert(w, req)
-			})
-			r.Get("/count", securityCtrl.Count)
-			r.Post("/batch_upsert", securityCtrl.BatchUpsert)
-			r.Delete("/all", securityCtrl.DeleteAll)
-			r.Get("/listFiltered", securityCtrl.List)
-			r.Get("/countFiltered", securityCtrl.Count)
-			r.Get("/{code}", func(w http.ResponseWriter, req *http.Request) {
-				securityCtrl.Get(w, req, chi.URLParam(req, "code"))
-			})
-		})
-
 		// Bars legacy routes
 		r.Route("/api/v1/stock/hist", func(r chi.Router) {
 			r.Post("/upsert", barsCtrl.Upsert)

@@ -4,11 +4,17 @@ import "time"
 
 // SecurityRegistry represents a tradable instrument in the unified security registry.
 // Table: security_registry
+//
+// id is the surrogate primary key (BIGSERIAL), a proxy for the natural key
+// (exchange, asset_type, symbol). Other tables reference it via security_id as
+// a logical foreign key (no real FK constraint). id is stable only within the
+// current rebuild cycle.
 type SecurityRegistry struct {
-	Symbol     string    `gorm:"primaryKey;type:varchar(32);not null" json:"symbol"`
-	AssetType  string    `gorm:"primaryKey;type:varchar(16);not null" json:"asset_type"`
-	Market     string    `gorm:"primaryKey;type:varchar(16);not null" json:"market"`
-	Exchange   string    `gorm:"type:varchar(8);not null" json:"exchange"`
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"security_id,omitempty"`
+	Exchange   string    `gorm:"type:varchar(8);not null;uniqueIndex:uk_sr_exchange_asset_symbol" json:"exchange"`
+	AssetType  string    `gorm:"type:varchar(16);not null;uniqueIndex:uk_sr_exchange_asset_symbol" json:"asset_type"`
+	Symbol     string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_sr_exchange_asset_symbol" json:"symbol"`
+	Market     string    `gorm:"type:varchar(16);not null;default:'zh_a'" json:"market"`
 	Name       string    `gorm:"type:varchar(128);not null;default:''" json:"name"`
 	FullName   *string   `gorm:"type:varchar(256)" json:"full_name,omitempty"`
 	Status     string    `gorm:"type:varchar(16);not null;default:'active'" json:"status"`
@@ -22,12 +28,13 @@ func (SecurityRegistry) TableName() string { return "ods.security_registry" }
 
 // SecurityFilters for querying the security registry.
 type SecurityFilters struct {
-	Symbol    string
-	Symbols   []string
-	AssetType string
-	Market    string
-	Exchange  string
-	Exchanges []string
-	Name      string
-	Status    string
+	SecurityID uint64
+	Symbol     string
+	Symbols    []string
+	AssetType  string
+	Market     string
+	Exchange   string
+	Exchanges  []string
+	Name       string
+	Status     string
 }

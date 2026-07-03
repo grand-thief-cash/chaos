@@ -474,8 +474,9 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 	},
 	"security_registry": {
 		Provider:            "证券注册表",
-		ProviderDescription: "统一的证券基础信息注册表，包含代码、名称、市场、上市日期、资产类型等。是所有其他数据表通过 symbol 字段关联的核心维度表。",
+		ProviderDescription: "统一的证券基础信息注册表，代理主键 security_id 是 (exchange, asset_type, symbol) 自然键的代理，作为其他表逻辑外键的引用目标。包含代码、名称、市场、上市日期、资产类型等。",
 		OutputFields: []model.FieldDesc{
+			{Name: "security_id", Type: "bigint", Description: "代理主键 (BIGSERIAL)，被其他表 security_id 逻辑引用"},
 			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
 			{Name: "name", Type: "varchar(128)", Description: "证券名称"},
 			{Name: "exchange", Type: "varchar(16)", Description: "交易所（SH/SZ/BJ）"},
@@ -494,7 +495,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 var tableApiMap = map[string][]model.ApiEndpointRef{
 	"security_registry": {
 		{Method: "GET", Path: "/api/v2/securities", Description: "查询证券列表"},
-		{Method: "GET", Path: "/api/v2/securities/{symbol}", Description: "查询单个证券"},
+		{Method: "GET", Path: "/api/v2/securities/{security_id}", Description: "按 security_id 查询单个证券"},
 		{Method: "POST", Path: "/api/v2/securities/upsert", Description: "批量写入证券"},
 	},
 	"financial_statement": {
@@ -570,7 +571,7 @@ var domainApiRegistry = map[string]struct {
 		Description: "证券基础信息注册表，统一的证券代码、名称、市场、上市日期等",
 		ExampleCalls: []model.ExampleCall{
 			{Title: "查询A股证券列表", URL: "GET /api/v2/securities?market=zh_a"},
-			{Title: "查询单个证券", URL: "GET /api/v2/securities/000001"},
+			{Title: "按 security_id 查询单个证券", URL: "GET /api/v2/securities/{security_id}"},
 		},
 	},
 	"taxonomy": {

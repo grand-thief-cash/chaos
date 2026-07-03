@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -54,12 +55,26 @@ func (c *SecurityController) List(w http.ResponseWriter, r *http.Request) {
 		Name:      q.Get("name"),
 		Status:    q.Get("status"),
 	}
-	// Defaults
-	if f.AssetType == "" {
-		f.AssetType = bizConsts.ASSET_TYPE_STOCK
+	hasSecurityID := false
+	if sid := q.Get("security_id"); sid != "" {
+		id, err := strconv.ParseUint(sid, 10, 64)
+		if err != nil || id == 0 {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id"})
+			return
+		}
+		f.SecurityID = id
+		hasSecurityID = true
 	}
-	if f.Market == "" {
-		f.Market = bizConsts.MARKET_ZH_A
+	// Defaults: only apply when not querying by id — id uniquely identifies the
+	// row, and coupling an id query to default asset_type/market would silently
+	// filter out non-stock rows once more asset types exist.
+	if !hasSecurityID {
+		if f.AssetType == "" {
+			f.AssetType = bizConsts.ASSET_TYPE_STOCK
+		}
+		if f.Market == "" {
+			f.Market = bizConsts.MARKET_ZH_A
+		}
 	}
 
 	list, err := c.Svc.ListFiltered(ctx, f, limit, offset)
@@ -70,14 +85,15 @@ func (c *SecurityController) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: list})
 }
 
-// GET /api/v2/securities/{symbol}
-func (c *SecurityController) Get(w http.ResponseWriter, r *http.Request, symbol string) {
+// GET /api/v2/securities/{security_id}
+func (c *SecurityController) Get(w http.ResponseWriter, r *http.Request, securityIDStr string) {
 	ctx := r.Context()
-	q := r.URL.Query()
-	assetType := q.Get("asset_type")
-	market := q.Get("market")
-
-	s, err := c.Svc.Get(ctx, symbol, assetType, market)
+	securityID, err := strconv.ParseUint(securityIDStr, 10, 64)
+	if err != nil || securityID == 0 {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id"})
+		return
+	}
+	s, err := c.Svc.GetByID(ctx, securityID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, apiError{Error: "not found"})

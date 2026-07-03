@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
@@ -49,14 +48,23 @@ func (s *SecurityService) BatchUpsert(ctx context.Context, list []*model.Securit
 	return affected, nil
 }
 
-func (s *SecurityService) Get(ctx context.Context, symbol, assetType, market string) (*model.SecurityRegistry, error) {
+// Get retrieves a security by its natural key (exchange, asset_type, symbol).
+// asset_type defaults to stock. Used for resolve (natural key -> row with id).
+func (s *SecurityService) Get(ctx context.Context, exchange, assetType, symbol string) (*model.SecurityRegistry, error) {
 	if assetType == "" {
 		assetType = bizConsts.ASSET_TYPE_STOCK
 	}
-	if market == "" {
-		market = bizConsts.MARKET_ZH_A
-	}
-	return s.Dao.Get(ctx, symbol, assetType, market)
+	return s.Dao.Get(ctx, exchange, assetType, symbol)
+}
+
+// GetByID retrieves a security by its surrogate id.
+func (s *SecurityService) GetByID(ctx context.Context, id uint64) (*model.SecurityRegistry, error) {
+	return s.Dao.GetByID(ctx, id)
+}
+
+// GetAll returns all securities, used to build resolve caches.
+func (s *SecurityService) GetAll(ctx context.Context) ([]*model.SecurityRegistry, error) {
+	return s.Dao.GetAll(ctx)
 }
 
 func (s *SecurityService) ListFiltered(ctx context.Context, f *model.SecurityFilters, limit, offset int) ([]*model.SecurityRegistry, error) {
@@ -173,7 +181,7 @@ func securityAggregateCacheScope(f *model.SecurityFilters, limit, offset int) (s
 		return assetType, market, true
 	}
 	assetType, market = normalizeSecurityAggregateScope(f.AssetType, f.Market)
-	if f.Symbol != "" || len(f.Symbols) > 0 || f.Exchange != "" || len(f.Exchanges) > 0 || f.Name != "" || f.Status != "" {
+	if f.SecurityID != 0 || f.Symbol != "" || len(f.Symbols) > 0 || f.Exchange != "" || len(f.Exchanges) > 0 || f.Name != "" || f.Status != "" {
 		return "", "", false
 	}
 	return assetType, market, true
@@ -187,56 +195,4 @@ func normalizeSecurityAggregateScope(assetType, market string) (string, string) 
 		market = bizConsts.MARKET_ZH_A
 	}
 	return assetType, market
-}
-
-// ConvertFromLegacy creates a SecurityRegistry from legacy StockZhAList fields.
-func ConvertFromLegacy(symbol, name, exchange string) *model.SecurityRegistry {
-	return &model.SecurityRegistry{
-		Symbol:    symbol,
-		AssetType: bizConsts.ASSET_TYPE_STOCK,
-		Market:    bizConsts.MARKET_ZH_A,
-		Exchange:  exchange,
-		Name:      name,
-		Status:    "active",
-	}
-}
-
-// ConvertToLegacy converts a SecurityRegistry to legacy StockZhAList format.
-func ConvertToLegacy(s *model.SecurityRegistry) map[string]any {
-	return map[string]any{
-		"code":     s.Symbol,
-		"company":  s.Name,
-		"exchange": s.Exchange,
-	}
-}
-
-// ConvertToLegacyList converts a list of SecurityRegistry to legacy format.
-func ConvertToLegacyList(list []*model.SecurityRegistry) []map[string]any {
-	out := make([]map[string]any, 0, len(list))
-	for _, s := range list {
-		out = append(out, map[string]any{
-			"code":     s.Symbol,
-			"company":  s.Name,
-			"exchange": s.Exchange,
-		})
-	}
-	return out
-}
-
-// LegacyBatchUpsertFromStockList handles legacy /api/v1/stock/list/batch_upsert payload.
-func (s *SecurityService) LegacyBatchUpsertFromStockList(ctx context.Context, legacyList []map[string]any) (int64, error) {
-	var list []*model.SecurityRegistry
-	for _, item := range legacyList {
-		symbol, _ := item["code"].(string)
-		name, _ := item["company"].(string)
-		exchange, _ := item["exchange"].(string)
-		if symbol == "" {
-			continue
-		}
-		list = append(list, ConvertFromLegacy(symbol, name, exchange))
-	}
-	if len(list) == 0 {
-		return 0, fmt.Errorf("no valid items in batch")
-	}
-	return s.BatchUpsert(ctx, list, 200)
 }

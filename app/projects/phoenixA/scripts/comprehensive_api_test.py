@@ -47,7 +47,13 @@ def test_and_print(name, url, params=None):
 
 # Test all APIs
 test_and_print("Securities List", f"{BASE_URL}/api/v2/securities", {"limit": "1"})
-test_and_print("Securities Get", f"{BASE_URL}/api/v2/securities/000001")
+# Securities Get 路径参数已从 symbol 迁移到 security_id，先从列表取一个真实 id
+try:
+    _sec_list = requests.get(f"{BASE_URL}/api/v2/securities", params={"limit": "1"}).json()
+    _sec_id = ((_sec_list.get("data") or [{}])[0]).get("security_id", "1")
+except Exception:
+    _sec_id = "1"
+test_and_print("Securities Get", f"{BASE_URL}/api/v2/securities/{_sec_id}")
 test_and_print("Securities Count", f"{BASE_URL}/api/v2/securities/count")
 
 test_and_print("Bars Query", f"{BASE_URL}/api/v2/bars/stock/zh_a", {
