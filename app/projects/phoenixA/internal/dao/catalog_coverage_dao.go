@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	bizConsts "github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/consts"
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 )
 
@@ -29,7 +30,7 @@ func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market strin
 		return nil, fmt.Errorf("symbol is required")
 	}
 	if market == "" {
-		market = "zh_a"
+		market = bizConsts.MARKET_ZH_A
 	}
 
 	var rows []rawCoverageRow

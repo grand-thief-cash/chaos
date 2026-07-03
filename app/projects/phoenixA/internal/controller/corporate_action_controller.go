@@ -48,7 +48,7 @@ func (c *CorporateActionController) BatchUpsert(w http.ResponseWriter, r *http.R
 		item.Source = source
 		item.ActionType = actionType
 		if item.Market == "" {
-			item.Market = "zh_a"
+			item.Market = bizConsts.MARKET_ZH_A
 		}
 	}
 	if err := c.Svc.BatchUpsert(r.Context(), list); err != nil {

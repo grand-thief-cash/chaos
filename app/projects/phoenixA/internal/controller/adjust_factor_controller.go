@@ -41,7 +41,7 @@ func (c *AdjustFactorController) BatchUpsert(w http.ResponseWriter, r *http.Requ
 	for _, item := range list {
 		item.Source = source
 		if item.Market == "" {
-			item.Market = "zh_a"
+			item.Market = bizConsts.MARKET_ZH_A
 		}
 		item.DividOperateDate = normalizeDateYYYYMMDD(item.DividOperateDate)
 	}

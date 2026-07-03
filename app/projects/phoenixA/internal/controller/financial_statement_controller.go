@@ -49,7 +49,7 @@ func (c *FinancialStatementController) BatchUpsert(w http.ResponseWriter, r *htt
 		item.Source = source
 		item.StatementType = stmtType
 		if item.Market == "" {
-			item.Market = "zh_a"
+			item.Market = bizConsts.MARKET_ZH_A
 		}
 	}
 	if err := c.Svc.BatchUpsert(r.Context(), list); err != nil {

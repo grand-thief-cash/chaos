@@ -129,6 +129,7 @@ PhoenixA 的 `config/config.yaml` 中 `postgres_gorm.data_sources.security.migra
 0002_dwd.sql
 0003_govern.sql
 0004_govern_seed.sql
+0005_govern_phoenixa_meta_enums.sql
 ```
 
 也可以用你们现有的 migration 执行方式手动跑 `app/projects/phoenixA/migrations/postgresql/security` 目录。
@@ -139,6 +140,7 @@ PhoenixA 的 `config/config.yaml` 中 `postgres_gorm.data_sources.security.migra
 |----------|------|------------|
 | `0003_govern.sql` | 创建 dataset/field/enum 字典表（`govern` schema） | `pg_default` |
 | `0004_govern_seed.sql` | 导入 AmazingData 字典数据 | 写入 `pg_default` 上的 `govern.*` 字典表 |
+| `0005_govern_phoenixa_meta_enums.sql` | 导入 phoenixA 平台元枚举（`asset_type`/`exchange`/`market`/`source`，source=`phoenixa`） | 写入 `pg_default` 上的 `govern.data_enum_dictionary` |
 | `0001_ods.sql` | 创建财务报表 / 公司行为 / 股本结构等 ODS 落地表 | `warm_storage`（明细）|
 
 seed migration 用 `DELETE WHERE source='amazing_data' AND contract_version=...` + `INSERT` 写入，对同一 `contract_version` 幂等，可重跑。

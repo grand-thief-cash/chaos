@@ -140,7 +140,7 @@ func (c *CatalogController) GetSymbolCoverage(w http.ResponseWriter, r *http.Req
 	}
 	market := r.URL.Query().Get("market")
 	if market == "" {
-		market = "zh_a"
+		market = bizConsts.MARKET_ZH_A
 	}
 	coverage, err := c.Svc.GetSymbolCoverage(r.Context(), symbol, market)
 	if err != nil {

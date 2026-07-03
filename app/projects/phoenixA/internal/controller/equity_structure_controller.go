@@ -45,7 +45,7 @@ func (c *EquityStructureController) BatchUpsert(w http.ResponseWriter, r *http.R
 	for _, item := range list {
 		item.Source = source
 		if item.Market == "" {
-			item.Market = "zh_a"
+			item.Market = bizConsts.MARKET_ZH_A
 		}
 	}
 	if err := c.Svc.BatchUpsert(r.Context(), list); err != nil {
