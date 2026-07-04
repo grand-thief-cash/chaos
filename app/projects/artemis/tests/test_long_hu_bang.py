@@ -6,6 +6,11 @@ from artemis.core import TaskContext
 from artemis.engines.task_engine.download.zh.stock_zh_a_long_hu_bang import StockZHALongHuBang
 
 
+SECURITY_MAP = {
+    '000001.SZ': {'symbol': '000001', 'exchange': 'SZ', 'security_id': 1},
+}
+
+
 class _FakeLogger:
     def __init__(self):
         self.messages = []
@@ -58,6 +63,7 @@ def _make_df():
 class TestLongHuBangPostProcess:
     def test_basic_transform(self):
         task = StockZHALongHuBang()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
 
         processed = task.post_process(_as_task_context(ctx), _make_df())
@@ -65,8 +71,7 @@ class TestLongHuBangPostProcess:
         assert len(processed) == 1
         rec = processed[0]
         assert rec['source'] == 'amazing_data'
-        assert rec['symbol'] == '000001'
-        assert rec['market'] == 'zh_a'
+        assert rec['security_id'] == 1
         assert rec['trade_date'] == '2026-05-27'
         assert rec['reason_type'] == '1001'
         assert rec['trader_name'] == '国泰君安证券上海分公司'
@@ -81,6 +86,7 @@ class TestLongHuBangPostProcess:
 
     def test_deduplicate_last_record_wins(self):
         task = StockZHALongHuBang()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         df = pd.concat([_make_df(), _make_df()], ignore_index=True)
         df.at[1, 'BUY_AMOUNT'] = 999.0
@@ -92,6 +98,7 @@ class TestLongHuBangPostProcess:
 
     def test_invalid_rows_are_skipped(self):
         task = StockZHALongHuBang()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         df = _make_df()
         df.at[0, 'TRADER_NAME'] = ''

@@ -8,11 +8,9 @@ from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.engines.task_engine.download.zh.utils import (
-    get_code_list_from_phoenixa,
+    get_security_map_for_task,
     get_sdk_date_kwargs,
-    get_symbols_from_params,
     normalize_date_yyyymmdd,
-    split_market_code,
 )
 from artemis.engines.task_engine.worker_unit import WorkerUnit
 
@@ -46,27 +44,21 @@ class StockZHALongHuBang(WorkerUnit):
         os.makedirs(cache_dir, exist_ok=True)
 
         try:
-            explicit_symbols = get_symbols_from_params(ctx)
-            if explicit_symbols is not None:
-                code_list = explicit_symbols
-                mode = 'incremental'
-            else:
-                code_list = get_code_list_from_phoenixa(ctx)
-                mode = 'full'
-
-            if not code_list:
+            security_map = get_security_map_for_task(ctx)
+            if not security_map:
                 ctx.fail(
-                    f"empty code_list for {self.DATASET_TYPE} (mode={mode}; check PhoenixA /api/v2/securities)",
+                    f"empty security_map for {self.DATASET_TYPE} (check PhoenixA /api/v2/securities)",
                     phase='execute',
                 )
                 return None
+            self._security_map = security_map
+            code_list = list(security_map.keys())
 
             sdk_date_kwargs = get_sdk_date_kwargs(ctx)
             ctx.logger.info({
                 'event': f'{self.DATASET_TYPE}_execute_start',
                 'code_count': len(code_list),
                 'sdk_date_kwargs': sdk_date_kwargs,
-                'mode': mode,
                 'run_id': ctx.run_id,
             })
 
@@ -114,6 +106,8 @@ class StockZHALongHuBang(WorkerUnit):
     def post_process(self, ctx: TaskContext, result) -> List[Dict[str, Any]]:
         processed: List[Dict[str, Any]] = []
         skipped_invalid = 0
+        skipped_no_security_id = 0
+        security_map = getattr(self, '_security_map', {})
 
         for df in self._normalize_result(result):
             if not isinstance(df, pd.DataFrame) or df.empty:
@@ -130,11 +124,17 @@ class StockZHALongHuBang(WorkerUnit):
                     skipped_invalid += 1
                     continue
 
-                symbol, market = split_market_code(market_code)
+                sec_info = security_map.get(market_code)
+                if not sec_info:
+                    # MARKET_CODE not in registry → cannot resolve security_id.
+                    # Skip (Phase 3 orphan defense: registry is the only source).
+                    skipped_no_security_id += 1
+                    continue
+                security_id = sec_info["security_id"]
+
                 processed.append({
+                    'security_id': security_id,
                     'source': consts.DataSource.DS_AMAZING_DATA.value,
-                    'symbol': symbol,
-                    'market': market,
                     'trade_date': trade_date,
                     'security_name': self._to_str(row.get('SECURITY_NAME')),
                     'reason_type': reason_type,
@@ -151,7 +151,7 @@ class StockZHALongHuBang(WorkerUnit):
         seen = {}
         for i, rec in enumerate(processed):
             key = (
-                rec.get('source', ''), rec.get('symbol', ''), rec.get('market', ''),
+                rec.get('security_id', 0), rec.get('source', ''),
                 rec.get('trade_date', ''), rec.get('reason_type', ''),
                 rec.get('trader_name', ''), rec.get('flow_mark', 0),
             )
@@ -170,8 +170,16 @@ class StockZHALongHuBang(WorkerUnit):
             'event': f'{self.DATASET_TYPE}_post_process_done',
             'total_records': len(processed),
             'skipped_invalid_rows': skipped_invalid,
+            'skipped_no_security_id': skipped_no_security_id,
             'run_id': ctx.run_id,
         })
+        if skipped_no_security_id > 0:
+            ctx.logger.warning({
+                'event': f'{self.DATASET_TYPE}_skipped_no_security_id',
+                'skipped_count': skipped_no_security_id,
+                'run_id': ctx.run_id,
+                'reason': 'MARKET_CODE not in security_registry; ensure STOCK_ZH_A_LIST has upserted it',
+            })
         return processed
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):

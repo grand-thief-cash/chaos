@@ -68,6 +68,12 @@ class StockZhABsDividendChild(WorkerUnit):
         if result is None or (isinstance(result, pd.DataFrame) and result.empty):
             return []
 
+        security_id = ctx.params.get("security_id")
+        if not security_id:
+            # No security_id forwarded by parent → cannot write (Phase 3).
+            ctx.fail("bs_dividend child missing security_id param", phase='post_process')
+            return []
+
         df = result
         processed = []
 
@@ -75,10 +81,6 @@ class StockZhABsDividendChild(WorkerUnit):
         meta_fields = {'code', 'symbol'}
 
         for row in df.to_dict('records'):
-            symbol = str(row.get('symbol', '')).strip()
-            if not symbol:
-                continue
-
             # Use dividPlanAnnounceDate as ann_date (most reliable date)
             ann_date = ''
             for date_field in ['dividPlanAnnounceDate', 'dividPlanDate', 'dividOperateDate']:
@@ -122,9 +124,8 @@ class StockZhABsDividendChild(WorkerUnit):
                     data_fields[col] = s
 
             record = {
+                'security_id': int(security_id),
                 'source': consts.DataSource.DS_BAOSTOCK.value,
-                'symbol': symbol,
-                'market': 'zh_a',
                 'action_type': 'bs_dividend',
                 'report_period': report_period,
                 'ann_date': ann_date,
@@ -136,7 +137,7 @@ class StockZhABsDividendChild(WorkerUnit):
         # Deduplicate by unique key (last occurrence wins)
         seen = {}
         for i, rec in enumerate(processed):
-            key = (rec['source'], rec['symbol'], rec['market'],
+            key = (rec['security_id'], rec['source'],
                    rec['action_type'], rec['ann_date'])
             seen[key] = i
         if len(seen) < len(processed):

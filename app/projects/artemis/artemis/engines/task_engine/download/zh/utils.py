@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
@@ -99,21 +99,6 @@ def get_sdk_date_kwargs(ctx: TaskContext) -> Dict[str, int]:
 # ─────────── Data Normalization Helpers ───────────
 
 
-def split_market_code(market_code: str) -> tuple:
-    """Split AmazingData MARKET_CODE into (symbol, market).
-
-    "000001.SZ" → ("000001", "zh_a")
-    "600519.SH" → ("600519", "zh_a")
-    "000001"     → ("000001", "zh_a")
-
-    All A-share stocks map to market='zh_a'.
-    """
-    code = str(market_code).strip()
-    if '.' in code:
-        return code.split('.', 1)[0], 'zh_a'
-    return code, 'zh_a'
-
-
 def normalize_date_yyyymmdd(date_str: str) -> str:
     """Convert YYYYMMDD string to YYYY-MM-DD.
 
@@ -135,11 +120,20 @@ def normalize_date_yyyymmdd(date_str: str) -> str:
     return s  # return as-is if unrecognizable
 
 
-def get_code_list_from_phoenixa(ctx: TaskContext, asset_type: str = "stock", market: str = "zh_a") -> List[str]:
-    """Fetch all security codes from PhoenixA and convert to SDK format.
+def get_security_map_from_phoenixa(
+    ctx: TaskContext,
+    asset_type: str = "stock",
+    market: str = "zh_a",
+    symbols: Optional[List[str]] = None,
+    exchanges: Optional[List[str]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch securities from PhoenixA and return a map keyed by AmazingData
+    code ("SYMBOL.EXCHANGE") → {symbol, exchange, security_id}.
 
-    Returns code_list in AmazingData format: ["000001.SZ", "600519.SH"]
-    Falls back to empty list on failure.
+    Phase 3: download tasks use this both to iterate SDK codes and to resolve
+    each SDK response row's MARKET_CODE → security_id for the upsert payload
+    (the data-table APIs are security_id-only). Returns {} on failure or if
+    the registry is empty.
     """
     phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
     if phoenixA_client is None or not hasattr(phoenixA_client, 'get_securities'):
@@ -148,31 +142,69 @@ def get_code_list_from_phoenixa(ctx: TaskContext, asset_type: str = "stock", mar
             'run_id': ctx.run_id,
             'reason': 'client is None or missing get_securities method',
         })
-        return []
+        return {}
     try:
         securities = phoenixA_client.get_securities(
             asset_type=asset_type,
             market=market,
+            symbols=symbols,
+            exchanges=exchanges,
         )
     except Exception as e:
         ctx.logger.warning({
-            'event': 'get_code_list_from_phoenixa_failed',
+            'event': 'get_security_map_from_phoenixa_failed',
             'error': str(e),
             'run_id': ctx.run_id,
         })
-        return []
-    code_list = []
+        return {}
+    security_map: Dict[str, Dict[str, Any]] = {}
     for sym, info in securities.items():
-        exchange = info.get('exchange', '').upper()
-        if sym and exchange:
-            code_list.append(f"{sym}.{exchange}")
-    if not code_list:
+        exchange = (info.get('exchange') or '').upper()
+        sid = info.get('security_id', 0)
+        if sym and exchange and sid:
+            security_map[f"{sym}.{exchange}"] = {
+                "symbol": sym,
+                "exchange": exchange,
+                "security_id": int(sid),
+            }
+    if not security_map:
         ctx.logger.warning({
             'event': 'phoenixa_securities_empty',
             'run_id': ctx.run_id,
             'hint': 'PhoenixA registry may be empty or API returned no data',
         })
-    return code_list
+    return security_map
+
+
+def get_security_map_for_task(
+    ctx: TaskContext, asset_type: str = "stock", market: str = "zh_a"
+) -> Dict[str, Dict[str, Any]]:
+    """Resolve the security map for a download task.
+
+    Uses explicit symbols+exchange from ctx.params (resolved to security_id via
+    the registry) when present, otherwise the full registry. Securities not in
+    the registry are dropped — Phase 3 requires a security_id (refactor §10.c:
+    registry is the only source; a symbol not yet upserted by STOCK_ZH_A_LIST
+    cannot be written and must fail rather than produce an orphan).
+    """
+    explicit_codes = get_symbols_from_params(ctx)  # None or ["SYMBOL.EXCHANGE", ...]
+    if explicit_codes is None:
+        return get_security_map_from_phoenixa(ctx, asset_type, market)
+    # Explicit path: split codes into symbols + exchanges for the resolve.
+    syms: List[str] = []
+    exs: set = set()
+    for c in explicit_codes:
+        if '.' in c:
+            s, e = c.split('.', 1)
+            syms.append(s.strip())
+            exs.add(e.strip().upper())
+    full = get_security_map_from_phoenixa(
+        ctx, asset_type, market,
+        symbols=syms or None,
+        exchanges=sorted(exs) or None,
+    )
+    # Keep only the explicitly-requested codes that resolved to a security_id.
+    return {c: full[c] for c in explicit_codes if c in full}
 
 
 # ─────────── Baostock Helpers ───────────

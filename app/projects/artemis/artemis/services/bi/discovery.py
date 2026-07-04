@@ -58,10 +58,22 @@ class DiscoveryMixin(BIServiceBase):
     # ─── Per-symbol coverage ───
 
     def get_symbol_coverage(self, symbol: str, market: str = "zh_a") -> Dict[str, Any]:
+        """Per-security data coverage summary.
+
+        PhoenixA's coverage endpoint is security_id-only (Phase 3); this method
+        keeps a symbol interface for cthulhu and resolves symbol→security_id via
+        the PhoenixAClient before the call (refactor §8.bis-5). Raises if the
+        symbol cannot be resolved (not in registry).
+        """
         client = self._client()
+        security_id = client.resolve_security_id(symbol, asset_type="stock", market=market)
+        if not security_id:
+            raise ValueError(
+                f"cannot resolve security_id for symbol={symbol!r} (market={market}); "
+                "ensure STOCK_ZH_A_LIST has upserted it to security_registry"
+            )
         resp = client.get(
-            f"/api/v2/catalog/securities/{symbol}/datasets/summary",
-            params={"market": market},
+            f"/api/v2/catalog/securities/{security_id}/datasets/summary",
         )
         resp.raise_for_status()
         return resp.json()

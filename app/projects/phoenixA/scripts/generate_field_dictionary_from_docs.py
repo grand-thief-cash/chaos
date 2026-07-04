@@ -67,7 +67,6 @@ CORPORATE_TYPE_META: dict[str, dict[str, str]] = {
 }
 
 TOP_LEVEL_FINANCIAL = {
-    "MARKET_CODE": "symbol",
     "SECURITY_NAME": "security_name",
     "STATEMENT_TYPE": "statement_code",
     "REPORT_TYPE": "report_type",
@@ -78,7 +77,6 @@ TOP_LEVEL_FINANCIAL = {
 }
 
 TOP_LEVEL_CORPORATE = {
-    "MARKET_CODE": "symbol",
     "ANN_DATE": "ann_date",
     "REPORT_PERIOD": "report_period",
     "RIGHTSISSUE_YEAR": "report_period",
@@ -87,10 +85,20 @@ TOP_LEVEL_CORPORATE = {
 }
 
 TOP_LEVEL_EQUITY = {
-    "MARKET_CODE": "symbol",
     "ANN_DATE": "ann_date",
     "CHANGE_DATE": "change_date",
 }
+
+# security_id is a synthetic top-level field (not an SDK raw field) added per
+# data_type in Phase 3 of the security_registry surrogate-key refactor: the
+# MARKET_CODE → symbol mapping was removed (the symbol column is gone), and
+# security_id is now the identity column on financial_statement / corporate_action
+# / equity_structure. raw_field/canonical_field/aliases are all "security_id" so
+# `fields=security_id` resolves to the real column, while legacy `fields=symbol`
+# or `fields=MARKET_CODE` return 400 (unknown field). value_type=integer,
+# source_value_type empty (system surrogate key, not an SDK field).
+SECURITY_ID_LABEL_ZH = "证券ID"
+SECURITY_ID_DESCRIPTION = "系统代理键，逻辑外键 → ods.security_registry.id（无真实 FK，refactor §6 R9）；由 artemis 写入前 resolve"
 
 DATE_FIELDS = {
     "REPORTING_PERIOD",
@@ -137,6 +145,13 @@ ENUM_REFS = {
 }
 
 STRING_FIELDS = {"CURRENCY_CODE"}
+
+# SKIP_FIELDS are SDK fields the system no longer stores as columns or in
+# data_json, so they must not appear in the field dictionary at all. MARKET_CODE
+# (the SDK's symbol.exchange code) was the old identity mapping; Phase 3 replaced
+# it with the synthetic security_id top-level field, so exposing MARKET_CODE
+# would point Raw Data Explorer at a value that does not exist in the table.
+SKIP_FIELDS = {"MARKET_CODE"}
 
 CORE_FIELDS: dict[str, set[str]] = {
     "balance_sheet": {
@@ -234,7 +249,6 @@ ALIASES = {
 }
 
 EQUITY_RAW_FIELDS: list[tuple[str, str, str, str]] = [
-    ("MARKET_CODE", "string", "证券代码", "映射到表 symbol"),
     ("ANN_DATE", "string", "公告日期", "映射到表 ann_date"),
     ("CHANGE_DATE", "string", "变动日期", "映射到表 change_date"),
     ("SHARE_CHANGE_REASON_STR", "string", "股本变动原因描述", "PDF Markdown 断行为 SHARE_CHANGE_REA SON_STR，已校正"),
@@ -397,6 +411,61 @@ FIELD_RE = re.compile(r"^\|\s*([A-Z][A-Z0-9_]+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\
 TYPE_HEADER_RE = re.compile(r"^##\s+\d+\.\s+([a-z_]+)\s+-\s+(.+)$")
 
 
+# security_id_field_row builds the synthetic top-level security_id row for a
+# dataset/data_type (Phase 3). It is NOT an SDK raw field — it is the system
+# surrogate key that replaced the old MARKET_CODE → symbol mapping. aliases is
+# empty so legacy `fields=symbol` / `fields=MARKET_CODE` resolve to unknown
+# (→ 400) rather than silently resolving to security_id.
+def security_id_field_row(dataset: str, data_type: str, meta: dict[str, str], source_path: str) -> dict[str, Any]:
+    return {
+        "contract_version": CONTRACT_VERSION,
+        "source": SOURCE,
+        "dataset": dataset,
+        "data_type": data_type,
+        "data_type_label_zh": meta["label"],
+        "sdk_section": meta["sdk_section"],
+        "sdk_function": meta["sdk_function"],
+        "raw_field": "security_id",
+        "canonical_field": "security_id",
+        "label_zh": SECURITY_ID_LABEL_ZH,
+        "description": SECURITY_ID_DESCRIPTION,
+        "value_type": "integer",
+        "source_value_type": "",
+        "unit": "",
+        "scale": None,
+        "enum_ref": "",
+        "storage_location": "top_level",
+        "is_metadata": True,
+        "is_core": False,
+        "comp_type_scope": "all",
+        "aliases": [],
+        "source_doc": f"AmazingData {meta['sdk_section']} {meta['sdk_function']}",
+        "source_path": source_path,
+        "review_status": "synthetic_phase3_security_id",
+        "deprecated": False,
+    }
+
+
+# prepend_security_id inserts a synthetic security_id row at the top of each
+# data_type's field list. Rows keep their original relative order; security_id
+# becomes the first field per data_type (the identity column).
+def prepend_security_id(rows: list[dict[str, Any]], dataset: str, type_meta: dict[str, dict[str, str]], source_path: str) -> list[dict[str, Any]]:
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for r in rows:
+        dt = r["data_type"]
+        if dt not in by_type:
+            by_type[dt] = []
+            order.append(dt)
+        by_type[dt].append(r)
+    out: list[dict[str, Any]] = []
+    for dt in order:
+        meta = type_meta[dt]
+        out.append(security_id_field_row(dataset, dt, meta, source_path))
+        out.extend(by_type[dt])
+    return out
+
+
 def read_table_fields(
     path: Path,
     project_root: Path,
@@ -421,6 +490,8 @@ def read_table_fields(
             continue
         raw_field, source_type, label, remark = [part.strip() for part in match.groups()]
         if raw_field == "字段名":
+            continue
+        if raw_field in SKIP_FIELDS:
             continue
         rows.append(
             new_field_row(
@@ -468,6 +539,8 @@ def enum_rows() -> list[dict[str, Any]]:
         ("COMP_TYPE_CODE", "2", "银行", "银行类企业", 2, "AmazingData 财务字段备注"),
         ("COMP_TYPE_CODE", "3", "保险", "保险类企业", 3, "AmazingData 财务字段备注"),
         ("COMP_TYPE_CODE", "4", "证券", "证券类企业", 4, "AmazingData 财务字段备注"),
+        ("STATEMENT_TYPE", "1", "合并报表", "合并财务报表", 1, "AmazingData 财务字段备注"),
+        ("STATEMENT_TYPE", "2", "母公司报表", "母公司财务报表", 2, "AmazingData 财务字段备注"),
         ("BOOLEAN_FLAG", "0", "否", "否/无效/非最新", 0, "AmazingData 字段备注"),
         ("BOOLEAN_FLAG", "1", "是", "是/有效/最新", 1, "AmazingData 字段备注"),
         ("DIV_PROGRESS", "1", "董事会预案", "公司董事会提出分红方案", 1, "AmazingData 4.1.10"),
@@ -580,21 +653,37 @@ def generate(project_root: Path) -> None:
     tables_dir = project_root / "docs" / "tables_description"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    financial_rows = read_table_fields(
-        tables_dir / "financial_statement.md",
-        project_root,
+    financial_rows = prepend_security_id(
+        read_table_fields(
+            tables_dir / "financial_statement.md",
+            project_root,
+            "financial_statement",
+            FINANCIAL_TYPE_META,
+            TOP_LEVEL_FINANCIAL,
+        ),
         "financial_statement",
         FINANCIAL_TYPE_META,
-        TOP_LEVEL_FINANCIAL,
+        "docs/tables_description/financial_statement.md",
     )
-    corporate_rows = read_table_fields(
-        tables_dir / "corporate_action.md",
-        project_root,
+    corporate_rows = prepend_security_id(
+        read_table_fields(
+            tables_dir / "corporate_action.md",
+            project_root,
+            "corporate_action",
+            CORPORATE_TYPE_META,
+            TOP_LEVEL_CORPORATE,
+        ),
         "corporate_action",
         CORPORATE_TYPE_META,
-        TOP_LEVEL_CORPORATE,
+        "docs/tables_description/corporate_action.md",
     )
-    equity = equity_rows()
+    equity_meta = {"equity_structure": {"label": "股本结构", "sdk_section": "3.5.6.3", "sdk_function": "get_equity_structure"}}
+    equity = prepend_security_id(
+        equity_rows(),
+        "equity_structure",
+        equity_meta,
+        "docs/third_party_sdk/AmazingData_development_guide.md",
+    )
     enums = enum_rows()
     datasets = dataset_rows()
 

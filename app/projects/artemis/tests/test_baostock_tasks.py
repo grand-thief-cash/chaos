@@ -7,7 +7,6 @@ Tests cover:
   - Dividend child: post_process logic (date selection, dedup, progress codes)
   - Parent: plan logic (year_quarters/years generation, child spec creation)
 """
-import json
 import pandas as pd
 import pytest
 
@@ -131,20 +130,19 @@ class TestBsBalanceChildPostProcess:
 
     def test_normal_data(self):
         task = StockZhABsBalanceChild()
-        ctx = _FakeCtx()
+        ctx = _FakeCtx(params={"security_id": 100, "symbol": "600000"})
         df = self._make_balance_df()
         result = task.post_process(ctx, df)
         assert len(result) == 1
 
         rec = result[0]
         assert rec['source'] == 'baostock'
-        assert rec['symbol'] == '600000'
-        assert rec['market'] == 'zh_a'
+        assert rec['security_id'] == 100
         assert rec['statement_type'] == 'bs_balance'
         assert rec['reporting_period'] == '2024-06-30'
         assert rec['ann_date'] == '2024-08-30'
 
-        data = json.loads(rec['data_json'])
+        data = rec['data_json']
         assert data['currentRatio'] == 1.5
         assert data['quickRatio'] == 1.2
         assert data['cashRatio'] == 0.8
@@ -164,7 +162,7 @@ class TestBsBalanceChildPostProcess:
 
     def test_empty_stat_date_skipped(self):
         task = StockZhABsBalanceChild()
-        ctx = _FakeCtx()
+        ctx = _FakeCtx(params={"security_id": 100, "symbol": "600000"})
         df = self._make_balance_df(stat_date="")
         result = task.post_process(ctx, df)
         assert len(result) == 0
@@ -172,11 +170,11 @@ class TestBsBalanceChildPostProcess:
     def test_empty_values_excluded_from_json(self):
         """Empty string values should be excluded from data_json."""
         task = StockZhABsBalanceChild()
-        ctx = _FakeCtx()
+        ctx = _FakeCtx(params={"security_id": 100, "symbol": "600000"})
         df = self._make_balance_df(current_ratio="", quick_ratio="")
         result = task.post_process(ctx, df)
         assert len(result) == 1
-        data = json.loads(result[0]['data_json'])
+        data = result[0]['data_json']
         assert 'currentRatio' not in data
         assert 'quickRatio' not in data
         # Other fields should still be present
@@ -185,7 +183,7 @@ class TestBsBalanceChildPostProcess:
     def test_missing_pub_date(self):
         """Missing pubDate should result in empty ann_date."""
         task = StockZhABsBalanceChild()
-        ctx = _FakeCtx()
+        ctx = _FakeCtx(params={"security_id": 100, "symbol": "600000"})
         df = self._make_balance_df(pub_date="")
         result = task.post_process(ctx, df)
         assert len(result) == 1
@@ -194,10 +192,10 @@ class TestBsBalanceChildPostProcess:
     def test_meta_fields_excluded_from_data_json(self):
         """code, symbol, pubDate, statDate should NOT appear in data_json."""
         task = StockZhABsBalanceChild()
-        ctx = _FakeCtx()
+        ctx = _FakeCtx(params={"security_id": 100, "symbol": "600000"})
         df = self._make_balance_df()
         result = task.post_process(ctx, df)
-        data = json.loads(result[0]['data_json'])
+        data = result[0]['data_json']
         assert 'code' not in data
         assert 'symbol' not in data
         assert 'pubDate' not in data
@@ -232,15 +230,14 @@ class TestBsDividendChildPostProcess:
 
     def test_normal_data(self):
         task = StockZhABsDividendChild()
-        ctx = _FakeCtx(params={"year": "2024"})
+        ctx = _FakeCtx(params={"year": "2024", "security_id": 100, "symbol": "600000"})
         df = self._make_dividend_df()
         result = task.post_process(ctx, df)
         assert len(result) == 1
 
         rec = result[0]
         assert rec['source'] == 'baostock'
-        assert rec['symbol'] == '600000'
-        assert rec['market'] == 'zh_a'
+        assert rec['security_id'] == 100
         assert rec['action_type'] == 'bs_dividend'
         assert rec['ann_date'] == '2024-03-19'  # uses dividPlanAnnounceDate first
         assert rec['report_period'] == '2024-12-31'
@@ -255,7 +252,7 @@ class TestBsDividendChildPostProcess:
     def test_no_ann_date_skipped(self):
         """Records without any announcement date should be skipped."""
         task = StockZhABsDividendChild()
-        ctx = _FakeCtx(params={"year": "2024"})
+        ctx = _FakeCtx(params={"year": "2024", "security_id": 100, "symbol": "600000"})
         df = self._make_dividend_df(
             dividPlanAnnounceDate='',
             dividPlanDate='',
@@ -267,7 +264,7 @@ class TestBsDividendChildPostProcess:
     def test_progress_code_announced(self):
         """When only dividPlanDate is set, progress should be 'announced'."""
         task = StockZhABsDividendChild()
-        ctx = _FakeCtx(params={"year": "2024"})
+        ctx = _FakeCtx(params={"year": "2024", "security_id": 100, "symbol": "600000"})
         df = self._make_dividend_df(
             dividOperateDate='',
             dividPlanDate='2024-06-16',
@@ -279,7 +276,7 @@ class TestBsDividendChildPostProcess:
     def test_progress_code_planned(self):
         """When only dividPlanAnnounceDate is set, progress should be 'planned'."""
         task = StockZhABsDividendChild()
-        ctx = _FakeCtx(params={"year": "2024"})
+        ctx = _FakeCtx(params={"year": "2024", "security_id": 100, "symbol": "600000"})
         df = self._make_dividend_df(
             dividOperateDate='',
             dividPlanDate='',
@@ -291,10 +288,10 @@ class TestBsDividendChildPostProcess:
     def test_data_json_contains_values(self):
         """Numeric fields should be float-converted in data_json."""
         task = StockZhABsDividendChild()
-        ctx = _FakeCtx(params={"year": "2024"})
+        ctx = _FakeCtx(params={"year": "2024", "security_id": 100, "symbol": "600000"})
         df = self._make_dividend_df()
         result = task.post_process(ctx, df)
-        data = json.loads(result[0]['data_json'])
+        data = result[0]['data_json']
         assert data['dividCashPsBeforeTax'] == 0.757
         assert data['dividCashPsAfterTax'] == 0.6813
         assert data['dividStocksPs'] == 0.0
@@ -304,7 +301,7 @@ class TestBsDividendChildPostProcess:
     def test_dedup_by_ann_date(self):
         """Duplicate records with same ann_date should be deduped."""
         task = StockZhABsDividendChild()
-        ctx = _FakeCtx(params={"year": "2024"})
+        ctx = _FakeCtx(params={"year": "2024", "security_id": 100, "symbol": "600000"})
         row = {
             'code': 'sh.600000',
             'dividPreNoticeDate': '',
@@ -329,25 +326,25 @@ class TestBsDividendChildPostProcess:
         result = task.post_process(ctx, df)
         # Should dedup to 1 record (last wins)
         assert len(result) == 1
-        data = json.loads(result[0]['data_json'])
+        data = result[0]['data_json']
         assert data['dividCashPsBeforeTax'] == 0.6
 
     def test_none_values_excluded(self):
         """Fields with value 'None' should be excluded from data_json."""
         task = StockZhABsDividendChild()
-        ctx = _FakeCtx(params={"year": "2024"})
+        ctx = _FakeCtx(params={"year": "2024", "security_id": 100, "symbol": "600000"})
         df = self._make_dividend_df(dividStockMarketDate='None')
         result = task.post_process(ctx, df)
-        data = json.loads(result[0]['data_json'])
+        data = result[0]['data_json']
         assert 'dividStockMarketDate' not in data
 
     def test_meta_fields_excluded(self):
         """code and symbol should not appear in data_json."""
         task = StockZhABsDividendChild()
-        ctx = _FakeCtx(params={"year": "2024"})
+        ctx = _FakeCtx(params={"year": "2024", "security_id": 100, "symbol": "600000"})
         df = self._make_dividend_df()
         result = task.post_process(ctx, df)
-        data = json.loads(result[0]['data_json'])
+        data = result[0]['data_json']
         assert 'code' not in data
         assert 'symbol' not in data
 

@@ -101,6 +101,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     if isinstance(item, dict) and "symbol" in item:
                         sym = str(item["symbol"])
                         result[sym] = {
+                            "security_id": int(item["security_id"]) if item.get("security_id") is not None else 0,
                             "symbol": sym,
                             "name": str(item.get("name", "")),
                             "full_name": str(item.get("full_name", "")) if item.get("full_name") is not None else "",
@@ -116,6 +117,120 @@ class PhoenixAClient(HTTPDeptServiceClient):
             if self.logger:
                 self.logger.error({'event': 'phoenixA_get_securities_failed', 'error': str(e)})
             return {}
+
+    # ──────────── Security-id resolve (Phase 3 convenience layer, §8.bis-5) ────────────
+    #
+    # The phoenixA data-table APIs (financial / corporate-action / equity-structure /
+    # adjust-factors / long-hu-bang) are security_id-only after Phase 3. These helpers
+    # let symbol-keyed callers (factor_engine, BI) keep passing symbol/symbols by
+    # resolving them to security_ids via get_securities before the call. Symbol input
+    # is convenience, not a parallel contract — it always resolves to security_id.
+
+    def resolve_security_ids(
+        self,
+        *,
+        symbols: Optional[List[str]],
+        exchange: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+    ) -> List[int]:
+        """Resolve a list of symbols → security_ids via the securities API."""
+        if not symbols:
+            return []
+        sym_list = [str(s).strip() for s in symbols if str(s).strip()]
+        if not sym_list:
+            return []
+        exchanges = [exchange.strip().upper()] if exchange else None
+        secs = self.get_securities(symbols=sym_list, exchanges=exchanges, asset_type=asset_type, market=market)
+        ids: List[int] = []
+        for s in sym_list:
+            info = secs.get(s)
+            if info and info.get("security_id"):
+                ids.append(int(info["security_id"]))
+        return ids
+
+    def resolve_security_id(
+        self,
+        symbol: str,
+        *,
+        exchange: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+    ) -> Optional[int]:
+        """Resolve a single symbol → security_id (None if not found)."""
+        ids = self.resolve_security_ids(symbols=[symbol], exchange=exchange, asset_type=asset_type, market=market)
+        return ids[0] if ids else None
+
+    def security_id_query_params(
+        self,
+        *,
+        security_id: Optional[int],
+        security_ids: Optional[List[int]],
+        symbol: str,
+        symbols: Optional[List[str]],
+        exchange: Optional[str],
+        asset_type: str,
+        market: str,
+    ) -> Dict[str, str]:
+        """Coalesce explicit security_id(s) and symbol convenience input into the
+        query params sent to a security_id-only phoenixA endpoint.
+
+        Strict identity contract — never silently degrade to an unfiltered query:
+          - Explicit ids: a supplied id must be positive. `security_id=0` /
+            `security_ids=[...,0,...]` raise (0 is invalid, NOT "not supplied" —
+            None means not supplied).
+          - Symbol/symbols: resolved via the registry. An unresolved symbol, or
+            a `symbols` list where any entry fails to resolve (partial), raises.
+          - Only when NO identity is supplied at all is `{}` returned (unfiltered
+            is intentional).
+
+        Query methods catch the ValueError and return empty so callers (factor
+        engine) degrade gracefully instead of receiving unrelated rows.
+        """
+        ids: List[int] = []
+        if security_id is not None:
+            if security_id <= 0:
+                raise ValueError(f"security_id must be a positive integer, got {security_id}")
+            ids.append(int(security_id))
+        # `is not None` (not truthiness) so an explicit empty list is treated as
+        # "supplied" — it contributes no ids but is NOT silently treated as
+        # "no identity" (which would degrade to an unfiltered query).
+        if security_ids is not None:
+            for i in security_ids:
+                if i <= 0:
+                    raise ValueError(f"security_ids contains a non-positive value: {i}")
+                ids.append(int(i))
+
+        symbol_supplied = bool(symbol) or (symbols is not None)
+        if not ids and symbol:
+            sid = self.resolve_security_id(symbol, exchange=exchange, asset_type=asset_type, market=market)
+            if sid:
+                ids.append(sid)
+        if not ids and symbols is not None:
+            sym_list = list(dict.fromkeys(str(s).strip() for s in symbols if str(s).strip()))
+            if sym_list:
+                resolved = self.resolve_security_ids(symbols=sym_list, exchange=exchange, asset_type=asset_type, market=market)
+                if len(resolved) != len(sym_list):
+                    raise ValueError(
+                        f"could not resolve all {len(sym_list)} symbol(s); only {len(resolved)} found "
+                        f"in security_registry (symbols={sym_list}); ensure STOCK_ZH_A_LIST has upserted them"
+                    )
+                ids.extend(resolved)
+            # else: symbols=[] or all-empty → ids unchanged; final check raises.
+
+        if not ids:
+            supplied = (security_id is not None) or (security_ids is not None) or symbol_supplied
+            if supplied:
+                raise ValueError(
+                    f"could not resolve security_id from supplied identity "
+                    f"(symbol={symbol!r}, symbols={symbols!r}, security_id={security_id!r}, security_ids={security_ids!r}); "
+                    "ensure the security exists in security_registry (run STOCK_ZH_A_LIST first), "
+                    "or omit the identity param to query unfiltered"
+                )
+            return {}
+        if len(ids) == 1:
+            return {"security_id": str(ids[0])}
+        return {"security_ids": ",".join(str(i) for i in ids)}
 
     # ──────────── Bars (v2) ────────────
 
@@ -586,9 +701,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         *,
         source: str,
         statement_type: str,
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         symbol: str = "",
         symbols: Optional[List[str]] = None,
-        market: str = "",
+        exchange: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
         period_start: str = "",
         period_end: str = "",
         ann_date_before: str = "",
@@ -603,19 +722,29 @@ class PhoenixAClient(HTTPDeptServiceClient):
     ) -> Dict[str, Any]:
         """Query financial statements via v2 API.
 
-        Mirrors PhoenixA controller query params:
-        `symbol`, `symbols`, `market`, `period_start`, `period_end`, `ann_date_before`,
-        `reporting_period`, `reporting_periods`, `report_type`, `statement_code`, `comp_type_code`,
-        `fields`, `page`, and `page_size`.
+        Identity is security_id (Phase 3). symbol/symbols are convenience input
+        that resolves to security_id via the securities API before the call
+        (refactor §8.bis-5); exchange/asset_type/market scope the resolve only.
         """
         path = f"/api/v2/financial/{source}/{statement_type}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
-        if market:
-            params["market"] = market
+        try:
+            params.update(self.security_id_query_params(
+                security_id=security_id, security_ids=security_ids,
+                symbol=symbol, symbols=symbols, exchange=exchange,
+                asset_type=asset_type, market=market,
+            ))
+        except Exception as resolve_err:
+            # Symbol supplied but unresolved (or /securities failed) — must NOT
+            # fall back to an unfiltered query. Return empty so callers (factor
+            # engine) degrade gracefully instead of receiving unrelated rows.
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {"data": [], "total": 0}
         if period_start:
             params["period_start"] = period_start
         if period_end:
@@ -690,8 +819,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         *,
         source: str,
         action_type: str,
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         symbol: str = "",
         symbols: Optional[List[str]] = None,
+        exchange: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
         period_start: str = "",
         period_end: str = "",
         report_period: str = "",
@@ -701,13 +835,27 @@ class PhoenixAClient(HTTPDeptServiceClient):
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
-        """Query corporate actions via v2 API."""
+        """Query corporate actions via v2 API. Identity is security_id (Phase 3);
+        symbol/symbols are convenience input resolved before the call."""
         path = f"/api/v2/corporate-action/{source}/{action_type}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        try:
+            params.update(self.security_id_query_params(
+                security_id=security_id, security_ids=security_ids,
+                symbol=symbol, symbols=symbols, exchange=exchange,
+                asset_type=asset_type, market=market,
+            ))
+        except Exception as resolve_err:
+            # Symbol supplied but unresolved (or /securities failed) — must NOT
+            # fall back to an unfiltered query. Return empty so callers (factor
+            # engine) degrade gracefully instead of receiving unrelated rows.
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {"data": [], "total": 0}
         if period_start:
             params["period_start"] = period_start
         if period_end:
@@ -772,24 +920,40 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str,
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         symbol: str = "",
         symbols: Optional[List[str]] = None,
-        market: str = "",
+        exchange: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
         start_date: str = "",
         end_date: str = "",
         fields: Optional[List[str]] = None,
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
-        """Query adjust factor rows via v2 API."""
+        """Query adjust factor rows via v2 API. Identity is security_id (Phase 3);
+        symbol/symbols are convenience input resolved before the call."""
         path = f"/api/v2/adjust-factors/{source}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
-        if market:
-            params["market"] = market
+        try:
+            params.update(self.security_id_query_params(
+                security_id=security_id, security_ids=security_ids,
+                symbol=symbol, symbols=symbols, exchange=exchange,
+                asset_type=asset_type, market=market,
+            ))
+        except Exception as resolve_err:
+            # Symbol supplied but unresolved (or /securities failed) — must NOT
+            # fall back to an unfiltered query. Return empty so callers (factor
+            # engine) degrade gracefully instead of receiving unrelated rows.
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {"data": [], "total": 0}
         if start_date:
             params["start_date"] = start_date
         if end_date:
@@ -847,9 +1011,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str,
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         symbol: str = "",
         symbols: Optional[List[str]] = None,
-        market: str = "",
+        exchange: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
         trade_date: str = "",
         start_date: str = "",
         end_date: str = "",
@@ -860,15 +1028,27 @@ class PhoenixAClient(HTTPDeptServiceClient):
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
-        """Query long hu bang rows via v2 API."""
+        """Query long hu bang rows via v2 API. Identity is security_id (Phase 3);
+        symbol/symbols are convenience input resolved before the call."""
         path = f"/api/v2/long-hu-bang/{source}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
-        if market:
-            params["market"] = market
+        try:
+            params.update(self.security_id_query_params(
+                security_id=security_id, security_ids=security_ids,
+                symbol=symbol, symbols=symbols, exchange=exchange,
+                asset_type=asset_type, market=market,
+            ))
+        except Exception as resolve_err:
+            # Symbol supplied but unresolved (or /securities failed) — must NOT
+            # fall back to an unfiltered query. Return empty so callers (factor
+            # engine) degrade gracefully instead of receiving unrelated rows.
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {"data": [], "total": 0}
         if trade_date:
             params["trade_date"] = trade_date
         if start_date:

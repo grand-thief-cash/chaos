@@ -1,7 +1,6 @@
 """
 Unit tests for corporate action task post_process logic (dividend, right_issue).
 """
-import json
 from typing import cast
 import pandas as pd
 import pytest
@@ -9,6 +8,12 @@ import pytest
 from artemis.core import TaskContext
 from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHADividend
 from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
+
+
+SECURITY_MAP = {
+    '600519.SH': {'symbol': '600519', 'exchange': 'SH', 'security_id': 2},
+    '601988.SH': {'symbol': '601988', 'exchange': 'SH', 'security_id': 3},
+}
 
 
 # ── Helpers ──────────────────────────────────────────
@@ -92,6 +97,7 @@ class TestDividendPostProcess:
 
     def test_basic_transform(self):
         task = StockZHADividend()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = _make_dividend_df()
 
@@ -99,14 +105,13 @@ class TestDividendPostProcess:
 
         assert len(processed) == 1
         rec = processed[0]
-        assert rec['symbol'] == '600519'
-        assert rec['market'] == 'zh_a'
+        assert rec['security_id'] == 2
         assert rec['action_type'] == 'dividend'
         assert rec['report_period'] == '2023-12-31'
         assert rec['ann_date'] == '2024-06-18'
         assert rec['progress_code'] == '3'
 
-        data = json.loads(rec['data_json'])
+        data = rec['data_json']
         assert data['DVD_PER_SHARE_PRE_TAX_CASH'] == 27.46
         assert data['DVD_PER_SHARE_AFTER_TAX_CASH'] == 24.714
         assert data['CURRENCY_CODE'] == 'CNY'
@@ -114,11 +119,12 @@ class TestDividendPostProcess:
 
     def test_metadata_excluded_from_data_json(self):
         task = StockZHADividend()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = _make_dividend_df()
 
         processed = task.post_process(_as_task_context(ctx), result)
-        data = json.loads(processed[0]['data_json'])
+        data = processed[0]['data_json']
 
         # MARKET_CODE, ANN_DATE are base metadata
         assert 'MARKET_CODE' not in data
@@ -139,6 +145,7 @@ class TestDividendPostProcess:
 
     def test_missing_market_code_skipped(self):
         task = StockZHADividend()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         df = _make_dividend_df()
         df.at[0, 'MARKET_CODE'] = ''
@@ -151,6 +158,7 @@ class TestRightIssuePostProcess:
 
     def test_basic_transform(self):
         task = StockZHARightIssue()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = _make_right_issue_df()
 
@@ -158,13 +166,13 @@ class TestRightIssuePostProcess:
 
         assert len(processed) == 1
         rec = processed[0]
-        assert rec['symbol'] == '601988'
+        assert rec['security_id'] == 3
         assert rec['action_type'] == 'right_issue'
         assert rec['report_period'] == '2024'
         assert rec['ann_date'] == '2024-01-15'
         assert rec['progress_code'] == '3'
 
-        data = json.loads(rec['data_json'])
+        data = rec['data_json']
         assert data['PRICE'] == 3.12
         assert data['RATIO'] == 0.18
         assert data['COLLECTION_FUND'] == 1497600000.0
@@ -172,11 +180,12 @@ class TestRightIssuePostProcess:
 
     def test_metadata_excluded_from_data_json(self):
         task = StockZHARightIssue()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = _make_right_issue_df()
 
         processed = task.post_process(_as_task_context(ctx), result)
-        data = json.loads(processed[0]['data_json'])
+        data = processed[0]['data_json']
 
         assert 'MARKET_CODE' not in data
         assert 'ANN_DATE' not in data
@@ -190,7 +199,7 @@ class TestCorporateActionFieldMapping:
     """Verify Artemis output fields match PhoenixA CorporateAction model."""
 
     PHOENIXA_JSON_FIELDS = {
-        'source', 'symbol', 'market', 'action_type',
+        'source', 'security_id', 'action_type',
         'report_period', 'ann_date', 'progress_code', 'data_json',
     }
 
@@ -200,6 +209,7 @@ class TestCorporateActionFieldMapping:
     ])
     def test_output_fields_match_phoenixa_model(self, task_cls, result_factory):
         task = task_cls()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = result_factory()
 
@@ -219,10 +229,11 @@ class TestCorporateActionFieldMapping:
     ])
     def test_data_json_is_valid_json(self, task_cls, result_factory):
         task = task_cls()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         processed = task.post_process(_as_task_context(ctx), result_factory())
         for rec in processed:
-            data = json.loads(rec['data_json'])
+            data = rec['data_json']
             assert isinstance(data, dict)
 
     @pytest.mark.parametrize("task_cls,result_factory", [
@@ -231,11 +242,12 @@ class TestCorporateActionFieldMapping:
     ])
     def test_data_json_excludes_all_metadata(self, task_cls, result_factory):
         task = task_cls()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         processed = task.post_process(_as_task_context(ctx), result_factory())
         all_meta = task._get_all_metadata_fields()
         for rec in processed:
-            data = json.loads(rec['data_json'])
+            data = rec['data_json']
             for field in all_meta:
                 assert field not in data, f"{task_cls.__name__}: {field} in data_json"
 

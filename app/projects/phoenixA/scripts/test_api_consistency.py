@@ -4,11 +4,11 @@
 """
 
 import json
-import requests
-import sys
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+import requests
 
 
 class APIStatus(Enum):

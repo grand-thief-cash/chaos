@@ -30,7 +30,7 @@ from artemis import consts
 from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.engines.task_engine.worker_unit import WorkerUnit
-from artemis.engines.task_engine.download.zh.utils import get_symbols_from_params, get_sdk_date_kwargs, split_market_code, normalize_date_yyyymmdd, get_code_list_from_phoenixa
+from artemis.engines.task_engine.download.zh.utils import get_security_map_for_task, get_sdk_date_kwargs, normalize_date_yyyymmdd
 
 
 # Fields extracted as structured DB columns; excluded from data_json.
@@ -66,18 +66,14 @@ class BaseCorporateActionTask(WorkerUnit):
         os.makedirs(cache_dir, exist_ok=True)
 
         try:
-            # Resolve code_list: explicit symbols or PhoenixA registry
-            explicit_symbols = get_symbols_from_params(ctx)
-            if explicit_symbols is not None:
-                code_list = explicit_symbols
-                mode = 'incremental'
-            else:
-                code_list = get_code_list_from_phoenixa(ctx)
-                mode = 'full'
-
-            if not code_list:
-                ctx.fail(f"empty code_list for {self.ACTION_TYPE} (mode={mode}; check PhoenixA /api/v2/securities)", phase='execute')
+            # Resolve security_map: explicit symbols (resolved to security_id) or
+            # the full PhoenixA registry. code_list (SDK input) is its keys.
+            security_map = get_security_map_for_task(ctx)
+            if not security_map:
+                ctx.fail(f"empty security_map for {self.ACTION_TYPE} (check PhoenixA /api/v2/securities)", phase='execute')
                 return None
+            self._security_map = security_map
+            code_list = list(security_map.keys())
 
             # Convert our start_date/end_date to SDK begin_date/end_date
             sdk_date_kwargs = get_sdk_date_kwargs(ctx)
@@ -86,7 +82,6 @@ class BaseCorporateActionTask(WorkerUnit):
                 'event': f'{self.ACTION_TYPE}_execute_start',
                 'code_count': len(code_list),
                 'sdk_date_kwargs': sdk_date_kwargs,
-                'mode': mode,
                 'run_id': ctx.run_id,
             })
 
@@ -123,8 +118,10 @@ class BaseCorporateActionTask(WorkerUnit):
     def post_process(self, ctx: TaskContext, result) -> List[Dict[str, Any]]:
         processed = []
         skipped_empty_ann = 0
+        skipped_no_security_id = 0
         frames = self._normalize_result(result)
         all_meta = self._get_all_metadata_fields()
+        security_map = getattr(self, '_security_map', {})
 
         for df in frames:
             if not isinstance(df, pd.DataFrame) or df.empty:
@@ -136,7 +133,13 @@ class BaseCorporateActionTask(WorkerUnit):
                 market_code = str(symbol_val).strip()
                 if not market_code:
                     continue
-                symbol, market = split_market_code(market_code)
+                sec_info = security_map.get(market_code)
+                if not sec_info:
+                    # MARKET_CODE not in registry → cannot resolve security_id.
+                    # Skip (Phase 3 orphan defense: registry is the only source).
+                    skipped_no_security_id += 1
+                    continue
+                security_id = sec_info["security_id"]
 
                 ann_date_val = row.get('ANN_DATE', '')
                 ann_date = normalize_date_yyyymmdd('' if pd.isna(ann_date_val) else str(ann_date_val).strip())
@@ -164,9 +167,8 @@ class BaseCorporateActionTask(WorkerUnit):
                     data_fields[col] = val
 
                 processed.append({
+                    'security_id': security_id,
                     'source': consts.DataSource.DS_AMAZING_DATA.value,
-                    'symbol': symbol,
-                    'market': market,
                     'action_type': self.ACTION_TYPE,
                     'report_period': report_period,
                     'ann_date': ann_date,
@@ -177,7 +179,7 @@ class BaseCorporateActionTask(WorkerUnit):
         # Deduplicate by unique key (last occurrence wins).
         seen = {}
         for i, rec in enumerate(processed):
-            key = (rec.get('source', ''), rec.get('symbol', ''), rec.get('market', ''),
+            key = (rec.get('security_id', 0), rec.get('source', ''),
                    rec.get('action_type', ''), rec.get('report_period', ''),
                    rec.get('ann_date', ''))
             seen[key] = i
@@ -195,6 +197,7 @@ class BaseCorporateActionTask(WorkerUnit):
             'event': f'{self.ACTION_TYPE}_post_process_done',
             'total_records': len(processed),
             'skipped_empty_ann_date': skipped_empty_ann,
+            'skipped_no_security_id': skipped_no_security_id,
             'run_id': ctx.run_id,
         })
         if skipped_empty_ann > 0:
@@ -203,6 +206,13 @@ class BaseCorporateActionTask(WorkerUnit):
                 'skipped_count': skipped_empty_ann,
                 'run_id': ctx.run_id,
                 'reason': 'ann_date is empty, skipping to avoid unique key collision',
+            })
+        if skipped_no_security_id > 0:
+            ctx.logger.warning({
+                'event': f'{self.ACTION_TYPE}_skipped_no_security_id',
+                'skipped_count': skipped_no_security_id,
+                'run_id': ctx.run_id,
+                'reason': 'MARKET_CODE not in security_registry; ensure STOCK_ZH_A_LIST has upserted it',
             })
         return processed
 
