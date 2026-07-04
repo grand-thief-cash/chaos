@@ -444,14 +444,15 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 	},
 	"bars_": {
 		Provider:            "K线行情",
-		ProviderDescription: "股票/指数/ETF的OHLCV行情数据，支持日/周/月/分钟级别，前复权/后复权/不复权。附带估值指标扩展数据（PE/PB/PS/PCF/换手率）。",
+		ProviderDescription: "股票/指数/ETF的OHLCV行情数据，支持日/周/月/分钟级别，前复权/后复权/不复权。附带估值指标扩展数据（PE/PB/PS/PCF/换手率）。Phase 4: API 契约迁 security_id（物理表仍存 symbol，§3.2）。",
 		DataTypes: []model.DataTypeInfo{
 			{TypeValue: "daily_nf", Label: "日K线（不复权）", Description: "日频OHLCV + 估值指标"},
 			{TypeValue: "daily_hfq", Label: "日K线（后复权）", Description: "日频OHLCV后复权 + 估值指标"},
 		},
 		OutputFields: []model.FieldDesc{
+			{Name: "security_id", Type: "bigint", Description: "证券ID（响应装饰，→ security_registry.id；物理表存 symbol，§3.2）"},
 			{Name: "trade_date", Type: "varchar(10)", Description: "交易日期（YYYY-MM-DD）"},
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（响应装饰）"},
 			{Name: "open/high/low/close", Type: "numeric", Description: "OHLC价格"},
 			{Name: "volume", Type: "bigint", Description: "成交量"},
 			{Name: "amount", Type: "bigint", Description: "成交额"},
@@ -459,9 +460,11 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{Name: "pe_ttm/pb_mrq/ps_ttm", Type: "numeric", Description: "估值指标（扩展表）", InJSONB: false},
 		},
 		QueryParams: []model.ParamDesc{
-			{Name: "symbol", Type: "string", Required: true, Description: "证券代码"},
-			{Name: "start_date", Type: "string", Required: false, Description: "起始日期"},
-			{Name: "end_date", Type: "string", Required: false, Description: "截止日期"},
+			{Name: "security_id", Type: "integer", Required: true, Description: "证券ID（security_registry.id）；symbol/symbols 已废弃"},
+			{Name: "period", Type: "string", Required: true, Description: "周期（daily/weekly/...）"},
+			{Name: "adjust", Type: "string", Required: true, Description: "复权（nf/qfq/hfq）"},
+			{Name: "start_date", Type: "string", Required: true, Description: "起始日期（YYYY-MM-DD）"},
+			{Name: "end_date", Type: "string", Required: true, Description: "截止日期（YYYY-MM-DD）"},
 		},
 		RefreshSchedule:     "每日增量（交易日18:00后）",
 		CoverageDescription: "A股全量（SH/SZ/BJ），2009至今（后复权）/ 2016至今（不复权）",
@@ -551,14 +554,14 @@ var domainApiRegistry = map[string]struct {
 	CrossRefs    []model.CrossRef
 }{
 	"bars": {
-		Description: "K线行情数据与复权支撑数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织",
+		Description: "K线行情数据与复权支撑数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织。Phase 4: API 契约已迁 security_id（物理表仍存 symbol，§3.2）。",
 		ExampleCalls: []model.ExampleCall{
-			{Title: "查询A股日线行情", URL: "GET /api/v2/bars/stock/zh_a?symbol=000001&start_date=2026-01-01"},
-			{Title: "查询指数行情", URL: "GET /api/v2/bars/index/zh_a?symbol=000001&start_date=2026-01-01"},
+			{Title: "查询A股日线行情", URL: "GET /api/v2/bars/stock/zh_a?security_id=1&period=daily&adjust=nf&start_date=2026-01-01&end_date=2026-06-01"},
+			{Title: "查询指数行情", URL: "GET /api/v2/bars/index/zh_a?security_id=1&period=daily&adjust=nf&start_date=2026-01-01"},
 			{Title: "查询复权因子", URL: "GET /api/v2/adjust-factors/baostock?security_id=1&start_date=2024-01-01"},
 		},
 		CrossRefs: []model.CrossRef{
-			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（adjust_factor 经 security_id 关联；bars_* 物理表仍存 symbol，API 将在 Phase 4 迁 security_id）"},
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（API 经 security_id 关联；bars_* 物理表仍存 symbol，§3.2 永久存储特例）"},
 		},
 	},
 	"security": {
@@ -654,7 +657,8 @@ func (s *CatalogService) queryDataSources(ctx context.Context, schema, table, ti
 	// Check which identity column the table exposes: Phase 3 data tables
 	// (financial_statement / corporate_action / equity_structure / adjust_factor /
 	// long_hu_bang) use security_id; bars_* physical tables still use symbol
-	// (storage exception, §3.2; bars API migrates to security_id in Phase 4).
+	// (storage exception, §3.2 — bars API is security_id-native in Phase 4 but
+	// the physical table keeps symbol, so coverage introspection counts symbol).
 	type colCheck struct {
 		ColName string
 	}
