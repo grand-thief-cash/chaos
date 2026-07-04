@@ -36,9 +36,10 @@ class SoftFailParent(OrchestratorUnit):
 
 class FakePhoenixBadLastUpdateClient(NoopDeptServiceClient):
     def get_securities(self, *, symbols=None, asset_type="stock", market="zh_a", exchanges=None, limit=20000):
-        return {"600000": {"symbol": "600000", "exchange": "SH"}}
+        return {"600000": {"symbol": "600000", "exchange": "SH", "security_id": 1}}
 
-    def get_bars_last_update(self, *, asset_type="stock", market="zh_a", period="daily", adjust="nf", symbols=None):
+    def get_bars_last_update(self, *, asset_type="stock", market="zh_a", period="daily",
+                             adjust="nf", security_ids=None, symbols=None, exchange=None):
         return {"600000": "bad-date"}
 
 def build_req(task_code: str) -> TaskRunReq:

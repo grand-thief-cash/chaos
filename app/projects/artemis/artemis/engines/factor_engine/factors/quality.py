@@ -37,7 +37,7 @@ class QualityFactors(BaseFactor):
 
     def compute(
         self,
-        symbol: str,
+        security_id: int,
         financial_data: Dict[str, pd.DataFrame],
         market_data: Optional[pd.DataFrame] = None,
         current_period: Optional[str] = None,

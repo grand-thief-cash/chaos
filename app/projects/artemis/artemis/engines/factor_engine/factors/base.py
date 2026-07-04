@@ -75,26 +75,26 @@ class BaseFactor(ABC):
     @abstractmethod
     def compute(
         self,
-        symbol: str,
+        security_id: int,
         financial_data: Dict[str, pd.DataFrame],
         market_data: Optional[pd.DataFrame] = None,
         current_period: Optional[str] = None,
     ) -> Dict[str, Optional[float]]:
-        """计算单只股票的因子值。"""
+        """计算单只股票的因子值。security_id is the registry identity (Phase 4)."""
 
     def compute_batch(
         self,
-        symbols: List[str],
-        financial_data: Dict[str, Dict[str, pd.DataFrame]],
-        market_data: Optional[Dict[str, pd.DataFrame]] = None,
-        current_periods: Optional[Dict[str, str]] = None,
+        security_ids: List[int],
+        financial_data: Dict[int, Dict[str, pd.DataFrame]],
+        market_data: Optional[Dict[int, pd.DataFrame]] = None,
+        current_periods: Optional[Dict[int, str]] = None,
     ) -> pd.DataFrame:
         """批量计算多只股票的因子值。"""
         rows = {}
-        for sym in symbols:
-            sym_fin = financial_data.get(sym, {})
-            sym_mkt = market_data.get(sym) if market_data else None
-            period = current_periods.get(sym) if current_periods else None
-            rows[sym] = self.compute(sym, sym_fin, sym_mkt, period)
+        for sec_id in security_ids:
+            sym_fin = financial_data.get(sec_id, {})
+            sym_mkt = market_data.get(sec_id) if market_data else None
+            period = current_periods.get(sec_id) if current_periods else None
+            rows[sec_id] = self.compute(sec_id, sym_fin, sym_mkt, period)
         return pd.DataFrame.from_dict(rows, orient="index")
 

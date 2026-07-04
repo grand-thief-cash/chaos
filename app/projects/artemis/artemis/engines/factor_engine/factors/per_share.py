@@ -29,7 +29,7 @@ class PerShareFactors(BaseFactor):
     def factor_metas(self) -> list:
         return list(_METAS)
 
-    def compute(self, symbol: str, financial_data: Dict[str, pd.DataFrame],
+    def compute(self, security_id: int, financial_data: Dict[str, pd.DataFrame],
                 market_data: Optional[pd.DataFrame] = None, current_period: Optional[str] = None) -> Dict[str, Optional[float]]:
         income = financial_data.get("income")
         balance = financial_data.get("balance_sheet")

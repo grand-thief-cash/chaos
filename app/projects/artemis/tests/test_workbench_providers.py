@@ -159,9 +159,10 @@ def test_phoenix_stock_client_paginates_until_last_page(monkeypatch):
 
     monkeypatch.setattr(client, "get", fake_get)
 
-    # Use v2 API directly: get_bars with normalize_for_cache=True
+    # Use v2 API directly: get_bars with security_id (Phase 4; skips symbol
+    # resolve) + normalize_for_cache=True.
     rows = client.get_bars(
-        symbol="000001",
+        security_id=1,
         start_date="2024-01-01",
         end_date="2024-01-31",
         period="daily",

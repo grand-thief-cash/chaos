@@ -2,6 +2,12 @@
 
 Implements FactorDataProvider protocol using PhoenixA HTTP APIs.
 See docs/2026-05-11 FACTOR_ENGINE_DATA_CONTRACT.md for contract details.
+
+Phase 4: identity is security_id throughout (refactor §3.6 / §10.c). The
+provider resolves active securities from the registry, keys every cache and
+in-memory structure by security_id, and calls PhoenixA with `security_id=`
+directly (no symbol resolve on the wire). symbol is kept only as response
+decoration in snapshot meta (the pipeline stamps it from the registry map).
 """
 
 from __future__ import annotations
@@ -44,10 +50,10 @@ class PhoenixADataProvider:
     """FactorDataProvider implementation using PhoenixA APIs.
 
     Provides financial data, market data, securities, and taxonomy
-    for factor engine calculations.
+    for factor engine calculations. Identity is security_id (Phase 4).
 
     Cache TTL configuration (in seconds):
-    - active_symbols: 3600 (1 hour)
+    - active_securities: 3600 (1 hour)
     - industry_map: 86400 (24 hours)
     - financial_data: 3600 (1 hour)
     - market_data: 300 (5 minutes)
@@ -56,7 +62,7 @@ class PhoenixADataProvider:
     """
 
     # Cache TTL settings (in seconds)
-    TTL_ACTIVE_SYMBOLS = 3600
+    TTL_ACTIVE_SECURITIES = 3600
     TTL_INDUSTRY_MAP = 86400
     TTL_FINANCIAL_DATA = 3600
     TTL_MARKET_DATA = 300
@@ -76,17 +82,21 @@ class PhoenixADataProvider:
         self.market_adjust = market_adjust
         self._cache: Dict[tuple, CacheEntry] = {}
 
-    def get_active_symbols(self, market: str, as_of_date: str) -> List[str]:
-        """Get list of active symbols for a market.
+    def get_active_securities(
+        self, market: str, as_of_date: str,
+    ) -> Dict[int, Dict[str, Any]]:
+        """Get active securities for a market as of a reference date.
 
         Args:
             market: Market code (e.g., "zh_a")
-            as_of_date: Reference date (not used currently)
+            as_of_date: Reference date for list/delist filtering (YYYYMMDD or ISO)
 
         Returns:
-            List of active symbol codes (e.g., ["000001", "600000"])
+            Dict mapping security_id -> security info ({symbol, exchange, ...}).
+            Only securities active (listed, not delisted) as of `as_of_date` are
+            included. When `as_of_date` is empty, list/delist filtering is skipped.
         """
-        cache_key = ("active_symbols", market, as_of_date)
+        cache_key = ("active_securities", market, as_of_date)
         entry = self._cache.get(cache_key)
         if entry is not None:
             if entry.is_expired():
@@ -102,38 +112,41 @@ class PhoenixADataProvider:
                 limit=10000,
             )
             normalized_as_of = normalize_date(as_of_date)
-            symbols = [
-                symbol
-                for symbol, info in securities.items()
-                if self._security_active_as_of(info, normalized_as_of)
-            ]
+            active: Dict[int, Dict[str, Any]] = {}
+            for _symbol, info in securities.items():
+                security_id = info.get("security_id")
+                if not security_id:
+                    continue
+                if not self._security_active_as_of(info, normalized_as_of):
+                    continue
+                active[int(security_id)] = info
             self._cache[cache_key] = CacheEntry(
-                value=symbols,
+                value=active,
                 timestamp=time.time(),
-                ttl_seconds=self.TTL_ACTIVE_SYMBOLS,
+                ttl_seconds=self.TTL_ACTIVE_SECURITIES,
             )
             logger.info({
-                "event": "phoenixa_get_active_symbols",
+                "event": "phoenixa_get_active_securities",
                 "market": market,
-                "count": len(symbols),
+                "count": len(active),
             })
-            return symbols
+            return active
         except Exception as e:
             logger.error({
-                "event": "phoenixa_get_active_symbols_failed",
+                "event": "phoenixa_get_active_securities_failed",
                 "market": market,
                 "error": str(e),
             })
-            return []
+            return {}
 
     def get_industry_map(
         self,
         taxonomy: str,
         market: str,
         use_batch: bool = True,
-        symbols: Optional[List[str]] = None,
-    ) -> Dict[str, str]:
-        """Get industry classification mapping for symbols.
+        security_ids: Optional[List[int]] = None,
+    ) -> Dict[int, str]:
+        """Get industry classification mapping for securities.
 
         Supports multiple taxonomy systems (extensible):
           - "sw_l1" or "sw": Shenwan Level-1 (申万一级行业)
@@ -145,51 +158,51 @@ class PhoenixADataProvider:
             taxonomy: Taxonomy name (e.g., "sw_l1" for Shenwan L1)
             market: Market code
             use_batch: Whether to use batch concurrent queries (default True)
-            symbols: Optional list of symbols to query. If None, fetch all active symbols.
+            security_ids: Optional list of security_ids. If None, fetch all active.
 
         Returns:
-            Dict mapping symbol -> industry_code
+            Dict mapping security_id -> industry_code
         """
         full_map_entry = self._cache.get(self._industry_map_cache_key(taxonomy, market))
         if full_map_entry is not None:
             if full_map_entry.is_expired():
                 self._drop_industry_full_cache(taxonomy, market)
             else:
-                if symbols is None:
+                if security_ids is None:
                     return full_map_entry.value
-                return {k: v for k, v in full_map_entry.value.items() if k in symbols}
+                return {k: v for k, v in full_map_entry.value.items() if k in security_ids}
 
-        if symbols is not None:
-            cached_subset = self._get_cached_industry_subset(taxonomy, market, symbols)
+        if security_ids is not None:
+            cached_subset = self._get_cached_industry_subset(taxonomy, market, security_ids)
             if cached_subset is not None:
                 return cached_subset
 
         try:
             if use_batch:
-                return self.get_industry_map_batch(taxonomy, market, symbols)
+                return self.get_industry_map_batch(taxonomy, market, security_ids)
             else:
-                is_full_request = symbols is None
-                symbols = symbols or self._get_active_symbols_for_market(market)
+                is_full_request = security_ids is None
+                security_ids = security_ids or self._get_active_securities_for_market(market)
 
-                # Build industry map by querying each symbol (legacy, slower)
-                industry_map: Dict[str, str] = {}
-                industry_context_map: Dict[str, Dict[str, Any]] = {}
+                # Build industry map by querying each security (legacy, slower)
+                industry_map: Dict[int, str] = {}
+                industry_context_map: Dict[int, Dict[str, Any]] = {}
                 taxonomy_lower = taxonomy.lower()
 
-                for symbol in symbols:
+                for security_id in security_ids:
                     try:
-                        mappings = self.client.get_taxonomy_by_security(symbol)
+                        mappings = self.client.get_taxonomy_by_security(security_id=security_id)
                         for m in mappings:
                             industry_context = self._match_industry_mapping(m, taxonomy_lower)
                             industry_code = industry_context.get("industry_code", "")
                             if industry_code:
-                                industry_map[symbol] = industry_code
-                                industry_context_map[symbol] = industry_context
+                                industry_map[security_id] = industry_code
+                                industry_context_map[security_id] = industry_context
                                 break
                     except Exception as e:
                         logger.warning({
                             "event": "phoenixa_get_industry_failed",
-                            "symbol": symbol,
+                            "security_id": security_id,
                             "error": str(e),
                         })
 
@@ -218,20 +231,20 @@ class PhoenixADataProvider:
             return {}
 
     def get_financial_data(
-        self, symbol: str, as_of_date: str,
+        self, security_id: int, as_of_date: str,
     ) -> Dict[str, pd.DataFrame]:
-        """Get financial data for a symbol with PIT filtering.
+        """Get financial data for a security with PIT filtering.
 
         Returns data for 3 statement types: balance_sheet, income, cashflow.
 
         Args:
-            symbol: Stock symbol (e.g., "000001")
+            security_id: Registry security_id
             as_of_date: Reference date for PIT filtering
 
         Returns:
             Dict mapping statement_type -> DataFrame with reporting_period as index
         """
-        cache_key = ("financial_data", symbol, as_of_date)
+        cache_key = ("financial_data", security_id, as_of_date)
         entry = self._cache.get(cache_key)
         if entry is not None:
             if entry.is_expired():
@@ -250,7 +263,7 @@ class PhoenixADataProvider:
                 response = self.client.query_financial_statements(
                     source=SOURCE,
                     statement_type=stmt_type,
-                    symbol=symbol,
+                    security_id=security_id,
                     ann_date_before=api_as_of_date,  # PIT filtering
                     page_size=24,  # Get enough periods for TTM/CAGR
                 )
@@ -260,14 +273,14 @@ class PhoenixADataProvider:
                     result[stmt_type] = df
                     logger.debug({
                         "event": "phoenixa_get_financial_data",
-                        "symbol": symbol,
+                        "security_id": security_id,
                         "stmt_type": stmt_type,
                         "periods_count": len(df),
                     })
             except Exception as e:
                 logger.warning({
                     "event": "phoenixa_get_financial_data_failed",
-                    "symbol": symbol,
+                    "security_id": security_id,
                     "stmt_type": stmt_type,
                     "error": str(e),
                 })
@@ -279,18 +292,18 @@ class PhoenixADataProvider:
         )
         return result
 
-    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]:
-        """Get market data (OHLCV) for a symbol.
+    def get_market_data(self, security_id: int, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]:
+        """Get market data (OHLCV) for a security.
 
         Args:
-            symbol: Stock symbol
+            security_id: Registry security_id
             as_of_date: Reference date
 
         Returns:
             DataFrame with trade_date as index, columns: open, high, low, close, volume
         """
         resolved_adjust = adjust or self.market_adjust
-        cache_key = ("market_data", symbol, as_of_date, resolved_adjust)
+        cache_key = ("market_data", security_id, as_of_date, resolved_adjust)
         entry = self._cache.get(cache_key)
         if entry is not None:
             if entry.is_expired():
@@ -303,7 +316,7 @@ class PhoenixADataProvider:
             bars = self.client.get_bars(
                 asset_type="stock",
                 market=self.market,
-                symbol=symbol,
+                security_id=security_id,
                 start_date=self._to_api_date(as_of_date),
                 end_date=self._to_api_date(as_of_date),
                 period="daily",
@@ -322,13 +335,13 @@ class PhoenixADataProvider:
                 df = df[keep_cols]
                 df["adjust"] = resolved_adjust
 
-                total_share = self._get_latest_balance_value(symbol, as_of_date, "TOT_SHARE")
+                total_share = self._get_latest_balance_value(security_id, as_of_date, "TOT_SHARE")
                 if total_share is not None:
                     df["total_share"] = float(total_share)
                     if "close" in df.columns:
                         df["market_cap"] = df["close"].astype(float) * float(total_share)
 
-                dps = self._get_latest_dividend_per_share(symbol, as_of_date)
+                dps = self._get_latest_dividend_per_share(security_id, as_of_date)
                 if dps is not None:
                     df["dps"] = float(dps)
 
@@ -341,24 +354,24 @@ class PhoenixADataProvider:
         except Exception as e:
             logger.warning({
                 "event": "phoenixa_get_market_data_failed",
-                "symbol": symbol,
+                "security_id": security_id,
                 "as_of_date": as_of_date,
                 "error": str(e),
             })
 
         return None
 
-    def get_current_period(self, symbol: str, as_of_date: str) -> Optional[str]:
+    def get_current_period(self, security_id: int, as_of_date: str) -> Optional[str]:
         """Get the latest reporting period available as of a date.
 
         Args:
-            symbol: Stock symbol
+            security_id: Registry security_id
             as_of_date: Reference date for PIT filtering
 
         Returns:
             Latest reporting_period string (e.g., "2024-12-31") or None
         """
-        cache_key = ("current_period", symbol, as_of_date)
+        cache_key = ("current_period", security_id, as_of_date)
         entry = self._cache.get(cache_key)
         if entry is not None:
             if entry.is_expired():
@@ -372,7 +385,7 @@ class PhoenixADataProvider:
             response = self.client.query_financial_statements(
                 source=SOURCE,
                 statement_type="balance_sheet",
-                symbol=symbol,
+                security_id=security_id,
                 ann_date_before=self._to_api_date(as_of_date),
                 page_size=1,
             )
@@ -391,7 +404,7 @@ class PhoenixADataProvider:
         except Exception as e:
             logger.warning({
                 "event": "phoenixa_get_current_period_failed",
-                "symbol": symbol,
+                "security_id": security_id,
                 "as_of_date": as_of_date,
                 "error": str(e),
             })
@@ -402,12 +415,12 @@ class PhoenixADataProvider:
         """Clear internal cache."""
         self._cache.clear()
 
-    def get_industry_context(self, symbol: str, taxonomy: str, market: str) -> Dict[str, Any]:
-        symbol_key = self._industry_symbol_context_cache_key(taxonomy, market, symbol)
-        entry = self._cache.get(symbol_key)
+    def get_industry_context(self, security_id: int, taxonomy: str, market: str) -> Dict[str, Any]:
+        sec_key = self._industry_security_context_cache_key(taxonomy, market, security_id)
+        entry = self._cache.get(sec_key)
         if entry is not None:
             if entry.is_expired():
-                del self._cache[symbol_key]
+                del self._cache[sec_key]
             else:
                 return dict(entry.value or {})
 
@@ -416,30 +429,30 @@ class PhoenixADataProvider:
             if context_map_entry.is_expired():
                 self._drop_industry_full_cache(taxonomy, market)
             else:
-                value = (context_map_entry.value or {}).get(symbol) or {}
+                value = (context_map_entry.value or {}).get(security_id) or {}
                 if value:
-                    self._cache[symbol_key] = CacheEntry(
+                    self._cache[sec_key] = CacheEntry(
                         value=dict(value),
                         timestamp=time.time(),
                         ttl_seconds=self.TTL_INDUSTRY_MAP,
                     )
                 return dict(value)
 
-        self.get_industry_map(taxonomy, market, symbols=[symbol])
-        entry = self._cache.get(symbol_key)
+        self.get_industry_map(taxonomy, market, security_ids=[security_id])
+        entry = self._cache.get(sec_key)
         return dict(entry.value or {}) if entry and not entry.is_expired() else {}
 
-    def _get_active_symbols_for_market(self, market: str) -> List[str]:
+    def _get_active_securities_for_market(self, market: str) -> List[int]:
         for key, entry in self._cache.items():
-            if len(key) == 3 and key[0] == "active_symbols" and key[1] == market:
+            if len(key) == 3 and key[0] == "active_securities" and key[1] == market:
                 if entry.is_expired():
                     del self._cache[key]
                 else:
-                    return entry.value
-        return self.get_active_symbols(market, "")
+                    return list(entry.value.keys())
+        return list(self.get_active_securities(market, "").keys())
 
-    def _get_latest_balance_value(self, symbol: str, as_of_date: str, field: str) -> Optional[float]:
-        fin = self.get_financial_data(symbol, as_of_date)
+    def _get_latest_balance_value(self, security_id: int, as_of_date: str, field: str) -> Optional[float]:
+        fin = self.get_financial_data(security_id, as_of_date)
         balance = fin.get("balance_sheet")
         if balance is None or balance.empty or field not in balance.columns:
             return None
@@ -448,8 +461,8 @@ class PhoenixADataProvider:
             return None
         return float(series.iloc[0])
 
-    def _get_latest_dividend_per_share(self, symbol: str, as_of_date: str) -> Optional[float]:
-        cache_key = ("dividend_per_share", symbol, as_of_date)
+    def _get_latest_dividend_per_share(self, security_id: int, as_of_date: str) -> Optional[float]:
+        cache_key = ("dividend_per_share", security_id, as_of_date)
         entry = self._cache.get(cache_key)
         if entry is not None:
             if entry.is_expired():
@@ -467,7 +480,7 @@ class PhoenixADataProvider:
             response = self.client.query_corporate_actions(
                 source=SOURCE,
                 action_type="dividend",
-                symbol=symbol,
+                security_id=security_id,
                 ann_date_before=api_as_of_date,
                 page_size=20,
                 **extra,
@@ -520,8 +533,8 @@ class PhoenixADataProvider:
         return ("industry_context_map", taxonomy, market, "__all__")
 
     @staticmethod
-    def _industry_symbol_context_cache_key(taxonomy: str, market: str, symbol: str) -> tuple:
-        return ("industry_context", taxonomy, market, symbol)
+    def _industry_security_context_cache_key(taxonomy: str, market: str, security_id: int) -> tuple:
+        return ("industry_context", taxonomy, market, security_id)
 
     def _drop_industry_full_cache(self, taxonomy: str, market: str) -> None:
         for key in [
@@ -535,10 +548,10 @@ class PhoenixADataProvider:
         self,
         taxonomy: str,
         market: str,
-        symbols: Iterable[str],
-    ) -> Optional[Dict[str, str]]:
-        subset, _, missing_symbols = self._split_cached_industry_subset(taxonomy, market, symbols)
-        if missing_symbols:
+        security_ids: Iterable[int],
+    ) -> Optional[Dict[int, str]]:
+        subset, _, missing = self._split_cached_industry_subset(taxonomy, market, security_ids)
+        if missing:
             return None
         return subset
 
@@ -546,40 +559,40 @@ class PhoenixADataProvider:
         self,
         taxonomy: str,
         market: str,
-        symbols: Iterable[str],
-    ) -> tuple[Dict[str, str], Dict[str, Dict[str, Any]], List[str]]:
-        subset: Dict[str, str] = {}
-        context_map: Dict[str, Dict[str, Any]] = {}
-        missing_symbols: List[str] = []
-        for symbol in symbols:
-            cache_key = self._industry_symbol_context_cache_key(taxonomy, market, symbol)
+        security_ids: Iterable[int],
+    ) -> tuple[Dict[int, str], Dict[int, Dict[str, Any]], List[int]]:
+        subset: Dict[int, str] = {}
+        context_map: Dict[int, Dict[str, Any]] = {}
+        missing: List[int] = []
+        for security_id in security_ids:
+            cache_key = self._industry_security_context_cache_key(taxonomy, market, security_id)
             ctx_entry = self._cache.get(cache_key)
             if ctx_entry is None:
-                missing_symbols.append(symbol)
+                missing.append(security_id)
                 continue
             if ctx_entry.is_expired():
                 del self._cache[cache_key]
-                missing_symbols.append(symbol)
+                missing.append(security_id)
                 continue
             context = dict(ctx_entry.value or {})
             industry_code = str(context.get("industry_code") or "")
             if industry_code:
-                subset[symbol] = industry_code
-            context_map[symbol] = context
-        return subset, context_map, missing_symbols
+                subset[security_id] = industry_code
+            context_map[security_id] = context
+        return subset, context_map, missing
 
     def _cache_industry_results(
         self,
         taxonomy: str,
         market: str,
-        industry_map: Dict[str, str],
-        industry_context_map: Dict[str, Dict[str, Any]],
+        industry_map: Dict[int, str],
+        industry_context_map: Dict[int, Dict[str, Any]],
         *,
         complete: bool,
     ) -> None:
         timestamp = time.time()
-        for symbol, context in industry_context_map.items():
-            self._cache[self._industry_symbol_context_cache_key(taxonomy, market, symbol)] = CacheEntry(
+        for security_id, context in industry_context_map.items():
+            self._cache[self._industry_security_context_cache_key(taxonomy, market, security_id)] = CacheEntry(
                 value=dict(context),
                 timestamp=timestamp,
                 ttl_seconds=self.TTL_INDUSTRY_MAP,
@@ -591,7 +604,7 @@ class PhoenixADataProvider:
                 ttl_seconds=self.TTL_INDUSTRY_MAP,
             )
             self._cache[self._industry_context_map_cache_key(taxonomy, market)] = CacheEntry(
-                value={symbol: dict(context) for symbol, context in industry_context_map.items()},
+                value={security_id: dict(context) for security_id, context in industry_context_map.items()},
                 timestamp=timestamp,
                 ttl_seconds=self.TTL_INDUSTRY_MAP,
             )
@@ -689,21 +702,21 @@ class PhoenixADataProvider:
         self,
         taxonomy: str,
         market: str,
-        symbols: Optional[List[str]] = None,
-    ) -> Dict[str, str]:
-        """Batch query industry classification for symbols.
+        security_ids: Optional[List[int]] = None,
+    ) -> Dict[int, str]:
+        """Batch query industry classification for securities.
 
         This method uses concurrent requests for better performance when
-        querying many symbols. For small batches (< 50 symbols),
+        querying many securities. For small batches (< 50 securities),
         the performance gain may be negligible compared to the overhead.
 
         Args:
             taxonomy: Taxonomy name (e.g., "sw_l1" for Shenwan L1)
             market: Market code
-            symbols: Optional list of symbols. If None, fetch all active symbols.
+            security_ids: Optional list of security_ids. If None, fetch all active.
 
         Returns:
-            Dict mapping symbol -> industry_code
+            Dict mapping security_id -> industry_code
         """
         full_map_key = self._industry_map_cache_key(taxonomy, market)
         entry = self._cache.get(full_map_key)
@@ -712,48 +725,48 @@ class PhoenixADataProvider:
                 self._drop_industry_full_cache(taxonomy, market)
                 logger.info({"event": "cache_expired", "key": full_map_key})
             else:
-                if symbols is None:
+                if security_ids is None:
                     return entry.value
-                return {k: v for k, v in entry.value.items() if k in symbols}
+                return {k: v for k, v in entry.value.items() if k in security_ids}
 
-        full_request = symbols is None
-        requested_symbols = list(symbols or self._get_active_symbols_for_market(market))
+        full_request = security_ids is None
+        requested_ids = list(security_ids or self._get_active_securities_for_market(market))
 
         taxonomy_lower = taxonomy.lower()
-        industry_map, industry_context_map, missing_symbols = self._split_cached_industry_subset(
+        industry_map, industry_context_map, missing = self._split_cached_industry_subset(
             taxonomy,
             market,
-            requested_symbols,
+            requested_ids,
         )
 
         # Use ThreadPoolExecutor for concurrent queries
-        def fetch_industry_for_symbol(symbol: str) -> tuple:
+        def fetch_industry_for_security(security_id: int) -> tuple:
             try:
-                mappings = self.client.get_taxonomy_by_security(symbol)
+                mappings = self.client.get_taxonomy_by_security(security_id=security_id)
                 for m in mappings:
                     industry_context = self._match_industry_mapping(m, taxonomy_lower)
                     industry_code = industry_context.get("industry_code", "")
                     if industry_code:
-                        return symbol, industry_code, industry_context
-                return symbol, "", {}
+                        return security_id, industry_code, industry_context
+                return security_id, "", {}
             except Exception as e:
                 logger.warning({
                     "event": "phoenixa_get_industry_failed",
-                    "symbol": symbol,
+                    "security_id": security_id,
                     "error": str(e),
                 })
-                return symbol, "", {}
+                return security_id, "", {}
 
-        # Process symbols in batches
+        # Process securities in batches
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            for i in range(0, len(missing_symbols), BATCH_SIZE):
-                batch = missing_symbols[i:i + BATCH_SIZE]
-                futures = [executor.submit(fetch_industry_for_symbol, sym) for sym in batch]
+            for i in range(0, len(missing), BATCH_SIZE):
+                batch = missing[i:i + BATCH_SIZE]
+                futures = [executor.submit(fetch_industry_for_security, sid) for sid in batch]
                 for future in concurrent.futures.as_completed(futures):
-                    symbol, industry_code, industry_context = future.result()
+                    security_id, industry_code, industry_context = future.result()
                     if industry_code:
-                        industry_map[symbol] = industry_code
-                        industry_context_map[symbol] = industry_context
+                        industry_map[security_id] = industry_code
+                        industry_context_map[security_id] = industry_context
 
         self._cache_industry_results(
             taxonomy,
@@ -767,8 +780,8 @@ class PhoenixADataProvider:
             "event": "phoenixa_get_industry_map_batch",
             "taxonomy": taxonomy,
             "market": market,
-            "requested_count": len(requested_symbols) if requested_symbols else "all",
-            "cache_hits": len(requested_symbols) - len(missing_symbols),
+            "requested_count": len(requested_ids) if requested_ids else "all",
+            "cache_hits": len(requested_ids) - len(missing),
             "mapped_count": len(industry_map),
         })
         return industry_map

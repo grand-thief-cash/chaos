@@ -517,17 +517,17 @@ class TestSnapshotRuntimeMetadata:
 
     def test_factor_store_persists_snapshot_meta(self):
         store = FactorStore()
-        raw = pd.DataFrame({"roe": [0.1]}, index=["000001"])
-        norm = pd.DataFrame({"roe": [1.0]}, index=["000001"])
+        raw = pd.DataFrame({"roe": [0.1]}, index=[1])
+        norm = pd.DataFrame({"roe": [1.0]}, index=[1])
         store.save_factor_snapshot(
             "20250501",
             "zh_a",
             raw,
             norm,
-            snapshot_meta={"000001": {"version": "v1.0", "reporting_period": "20241231"}},
+            snapshot_meta={1: {"version": "v1.0", "reporting_period": "20241231"}},
         )
 
-        snap = store.get_factor_snapshot("000001", "20250501", "zh_a")
+        snap = store.get_factor_snapshot(1, "20250501", "zh_a")
         assert snap is not None
         assert snap["meta"]["reporting_period"] == "20241231"
 
@@ -541,7 +541,7 @@ class _AdjustAwareFactor(BaseFactor):
 
     def compute(
         self,
-        symbol: str,
+        security_id: int,
         financial_data: Dict[str, pd.DataFrame],
         market_data: Optional[pd.DataFrame] = None,
         current_period: Optional[str] = None,
@@ -564,7 +564,7 @@ class _MixedAdjustAwareFactor(BaseFactor):
 
     def compute(
         self,
-        symbol: str,
+        security_id: int,
         financial_data: Dict[str, pd.DataFrame],
         market_data: Optional[pd.DataFrame] = None,
         current_period: Optional[str] = None,
@@ -579,23 +579,23 @@ class _AdjustAwareProvider:
     def __init__(self):
         self.adjust_requests = []
 
-    def get_active_symbols(self, market: str, as_of_date: str):
-        return ["000001"]
+    def get_active_securities(self, market: str, as_of_date: str):
+        return {1: {"symbol": "000001"}}
 
-    def get_industry_map(self, taxonomy: str, market: str, use_batch: bool = True, symbols: Optional[List[str]] = None):
-        return {"000001": "801010"}
+    def get_industry_map(self, taxonomy: str, market: str, use_batch: bool = True, security_ids: Optional[List[int]] = None):
+        return {1: "801010"}
 
-    def get_industry_context(self, symbol: str, taxonomy: str, market: str):
+    def get_industry_context(self, security_id: int, taxonomy: str, market: str):
         return {"derived_flags": {"financial_sector": False}}
 
-    def get_financial_data(self, symbol: str, as_of_date: str):
+    def get_financial_data(self, security_id: int, as_of_date: str):
         return {"balance_sheet": pd.DataFrame({"reporting_period": ["20241231"], "ann_date": ["20250321"]})}
 
-    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None):
+    def get_market_data(self, security_id: int, as_of_date: str, adjust: Optional[str] = None):
         self.adjust_requests.append(adjust)
         return pd.DataFrame({"close": [10.0], "adjust": [adjust or ADJUST_NONE]}, index=pd.Index(["20250501"], name="trade_date"))
 
-    def get_current_period(self, symbol: str, as_of_date: str):
+    def get_current_period(self, security_id: int, as_of_date: str):
         return "20241231"
 
 
@@ -648,9 +648,9 @@ class TestMarketAdjustPolicy:
         pipeline = FactorPipeline(provider, store)
         pipeline.factor_groups = []
 
-        pipeline.run_incremental(["000001"], "20250501", "zh_a")
+        pipeline.run_incremental([1], "20250501", "zh_a")
 
-        snap = store.get_factor_snapshot("000001", "20250501", "zh_a")
+        snap = store.get_factor_snapshot(1, "20250501", "zh_a")
         assert snap is not None
         assert snap["meta"]["incremental"] is True
 
@@ -724,7 +724,7 @@ class TestValuationAndPerShareFactors:
         }, index=pd.Index(["20250501"], name="trade_date"))
 
     def test_valuation_uses_market_cap_total_share_and_dividend(self, financial_data, market_data):
-        result = ValuationFactors().compute("000001", financial_data, market_data, "2025-03-31")
+        result = ValuationFactors().compute(1, financial_data, market_data, "2025-03-31")
 
         assert result["pe_ttm"] == pytest.approx(10000.0 / 1100.0)
         assert result["pb"] == pytest.approx(10000.0 / 4200.0)
@@ -732,7 +732,7 @@ class TestValuationAndPerShareFactors:
         assert result["peg"] is not None
 
     def test_per_share_uses_tot_share_and_market_dividend(self, financial_data, market_data):
-        result = PerShareFactors().compute("000001", financial_data, market_data, "2025-03-31")
+        result = PerShareFactors().compute(1, financial_data, market_data, "2025-03-31")
 
         assert result["eps_ttm"] == pytest.approx(1.1)
         assert result["cfps"] == pytest.approx(0.95)

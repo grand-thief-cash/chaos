@@ -27,29 +27,34 @@ from artemis.engines.factor_engine.models import FACTOR_VERSION, FactorFreshness
 # ---------------------------------------------------------------------------
 
 class FactorDataProvider(Protocol):
-    """因子数据源协议，MVP 可用 Mock 实现。"""
+    """因子数据源协议，MVP 可用 Mock 实现。
 
-    def get_active_symbols(self, market: str, as_of_date: str) -> List[str]: ...
+    Phase 4: identity is security_id throughout (refactor §3.6 / §10.c).
+    """
+
+    def get_active_securities(self, market: str, as_of_date: str) -> Dict[int, Dict[str, Any]]:
+        """Return {security_id -> security info ({symbol, exchange, ...})} active as of date."""
+        ...
 
     def get_industry_map(
         self,
         taxonomy: str,
         market: str,
         use_batch: bool = True,
-        symbols: Optional[List[str]] = None,
-    ) -> Dict[str, str]: ...
+        security_ids: Optional[List[int]] = None,
+    ) -> Dict[int, str]: ...
 
-    def get_industry_context(self, symbol: str, taxonomy: str, market: str) -> Dict[str, Any]: ...
+    def get_industry_context(self, security_id: int, taxonomy: str, market: str) -> Dict[str, Any]: ...
 
     def get_financial_data(
-        self, symbol: str, as_of_date: str,
+        self, security_id: int, as_of_date: str,
     ) -> Dict[str, pd.DataFrame]:
         """返回 {statement_type: DataFrame}，已做 PIT 过滤。"""
         ...
 
-    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]: ...
+    def get_market_data(self, security_id: int, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]: ...
 
-    def get_current_period(self, symbol: str, as_of_date: str) -> Optional[str]: ...
+    def get_current_period(self, security_id: int, as_of_date: str) -> Optional[str]: ...
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +96,9 @@ class FactorPipeline:
         from artemis.log.logger import get_logger
         logger = get_logger("factor_pipeline")
 
-        # 1. 获取活跃股票列表
-        symbols = self.provider.get_active_symbols(market, as_of_date)
-        if not symbols:
+        # 1. 获取活跃股票列表 (security_id → info)
+        securities = self.provider.get_active_securities(market, as_of_date)
+        if not securities:
             logger.warning({"event": "factor_pipeline_no_symbols", "market": market, "as_of_date": as_of_date})
             return pd.DataFrame()
 
@@ -106,26 +111,26 @@ class FactorPipeline:
             return pd.DataFrame()
 
         # 3‑4. 计算原始因子
-        raw_rows: Dict[str, dict] = {}
-        snapshot_meta: Dict[str, dict] = {}
-        skipped_symbols = []
-        failed_symbols = []
+        raw_rows: Dict[int, dict] = {}
+        snapshot_meta: Dict[int, dict] = {}
+        failed_securities = []
 
-        for sym in symbols:
+        for sec_id, sec_info in securities.items():
+            symbol = sec_info.get("symbol", "")
             try:
-                fin_data = self.provider.get_financial_data(sym, as_of_date)
-                period = self.provider.get_current_period(sym, as_of_date)
-                industry_context = self.provider.get_industry_context(sym, taxonomy, market)
+                fin_data = self.provider.get_financial_data(sec_id, as_of_date)
+                period = self.provider.get_current_period(sec_id, as_of_date)
+                industry_context = self.provider.get_industry_context(sec_id, taxonomy, market)
                 market_data_cache: Dict[str, Optional[pd.DataFrame]] = {}
                 primary_market_data: Optional[pd.DataFrame] = None
 
                 sym_factors: dict = {}
                 for group in self.factor_groups:
                     try:
-                        mkt_data = self._market_data_for_group(group, sym, as_of_date, market_data_cache)
+                        mkt_data = self._market_data_for_group(group, sec_id, as_of_date, market_data_cache)
                         if primary_market_data is None and mkt_data is not None:
                             primary_market_data = mkt_data
-                        result = group.compute(sym, fin_data, mkt_data, period)
+                        result = group.compute(sec_id, fin_data, mkt_data, period)
                         sym_factors.update(result)
                     except ValueError as e:
                         # Re-raise configuration errors
@@ -133,23 +138,25 @@ class FactorPipeline:
                     except Exception as e:
                         logger.warning({
                             "event": "factor_group_compute_failed",
-                            "symbol": sym,
+                            "security_id": sec_id,
                             "group": group.__class__.__name__,
                             "error": str(e),
                         })
                 self._apply_factor_policies(sym_factors, fin_data, industry_context)
-                raw_rows[sym] = sym_factors
-                snapshot_meta[sym] = self._build_snapshot_meta(sym_factors, fin_data, primary_market_data, period, as_of_date, industry_map.get(sym), industry_context)
+                raw_rows[sec_id] = sym_factors
+                meta = self._build_snapshot_meta(sym_factors, fin_data, primary_market_data, period, as_of_date, industry_map.get(sec_id), industry_context)
+                meta["symbol"] = symbol
+                snapshot_meta[sec_id] = meta
             except ValueError as e:
                 # Re-raise configuration errors
                 raise
             except Exception as e:
                 logger.error({
                     "event": "factor_compute_symbol_failed",
-                    "symbol": sym,
+                    "security_id": sec_id,
                     "error": str(e),
                 })
-                failed_symbols.append(sym)
+                failed_securities.append(sec_id)
 
         raw_factors = pd.DataFrame.from_dict(raw_rows, orient="index")
 
@@ -177,23 +184,22 @@ class FactorPipeline:
             logger.error({
                 "event": "factor_pipeline_storage_failed",
                 "error": str(e),
-                "symbols_count": len(symbols),
+                "securities_count": len(securities),
             })
 
         logger.info({
             "event": "factor_pipeline_completed",
             "as_of_date": as_of_date,
             "market": market,
-            "total_symbols": len(symbols),
-            "skipped_count": len(skipped_symbols),
-            "failed_count": len(failed_symbols),
+            "total_securities": len(securities),
+            "failed_count": len(failed_securities),
         })
 
         return normalized
 
     def run_incremental(
         self,
-        symbols: List[str],
+        security_ids: List[int],
         as_of_date: str,
         market: str = "zh_a",
     ) -> None:
@@ -206,7 +212,7 @@ class FactorPipeline:
             # 没有历史统计量 → 降级全量
             logger.warning({
                 "event": "incremental_no_history_stats",
-                "symbols_count": len(symbols),
+                "securities_count": len(security_ids),
                 "action": "downgrade_to_full",
             })
             self.run_full(as_of_date, market)
@@ -214,75 +220,80 @@ class FactorPipeline:
 
         taxonomy = "sw_l1"
         try:
-            industry_map = self.provider.get_industry_map(taxonomy, market, True, symbols)
+            industry_map = self.provider.get_industry_map(taxonomy, market, True, security_ids)
         except Exception as e:
             logger.error({
                 "event": "factor_pipeline_industry_map_batch_failed",
-                "symbols_count": len(symbols),
+                "securities_count": len(security_ids),
                 "error": str(e),
             })
             return
-        failed_symbols = []
+        # symbol decoration for snapshot meta (cached; may miss ids not in the active map)
+        securities = self.provider.get_active_securities(market, as_of_date)
+        failed_securities = []
 
-        for sym in symbols:
+        for sec_id in security_ids:
+            symbol = securities.get(sec_id, {}).get("symbol", "")
             try:
-                fin_data = self.provider.get_financial_data(sym, as_of_date)
-                period = self.provider.get_current_period(sym, as_of_date)
-                industry_context = self.provider.get_industry_context(sym, taxonomy, market)
+                fin_data = self.provider.get_financial_data(sec_id, as_of_date)
+                period = self.provider.get_current_period(sec_id, as_of_date)
+                industry_context = self.provider.get_industry_context(sec_id, taxonomy, market)
                 market_data_cache: Dict[str, Optional[pd.DataFrame]] = {}
                 primary_market_data: Optional[pd.DataFrame] = None
 
                 raw: dict = {}
                 for group in self.factor_groups:
                     try:
-                        mkt_data = self._market_data_for_group(group, sym, as_of_date, market_data_cache)
+                        mkt_data = self._market_data_for_group(group, sec_id, as_of_date, market_data_cache)
                         if primary_market_data is None and mkt_data is not None:
                             primary_market_data = mkt_data
-                        result = group.compute(sym, fin_data, mkt_data, period)
+                        result = group.compute(sec_id, fin_data, mkt_data, period)
                         raw.update(result)
                     except Exception as e:
                         logger.warning({
                             "event": "factor_group_compute_failed",
-                            "symbol": sym,
+                            "security_id": sec_id,
                             "group": group.__class__.__name__,
                             "error": str(e),
                         })
                 self._apply_factor_policies(raw, fin_data, industry_context)
 
-                ind_code = industry_map.get(sym, "unknown")
+                ind_code = industry_map.get(sec_id, "unknown")
                 norm = self.normalizer.zscore_incremental(raw, ind_code, industry_stats)
-                snapshot_meta = self._build_snapshot_meta(raw, fin_data, primary_market_data, period, as_of_date, ind_code, industry_context)
+                meta = self._build_snapshot_meta(raw, fin_data, primary_market_data, period, as_of_date, ind_code, industry_context)
+                meta["symbol"] = symbol
+                meta["incremental"] = True
 
                 self.store.save_single_factor(
-                    symbol=sym,
+                    security_id=sec_id,
                     as_of_date=as_of_date,
                     raw_factors=raw,
                     norm_factors=norm,
-                    meta={**snapshot_meta, "incremental": True},
+                    meta=meta,
                     market=market,
                 )
             except Exception as e:
                 logger.error({
                     "event": "incremental_compute_symbol_failed",
-                    "symbol": sym,
+                    "security_id": sec_id,
                     "error": str(e),
                     "traceback": logger.format_exc() if hasattr(logger, 'format_exc') else None,
                 })
-                failed_symbols.append(sym)
+                failed_securities.append(sec_id)
 
         logger.info({
             "event": "incremental_pipeline_completed",
             "as_of_date": as_of_date,
             "market": market,
-            "total_symbols": len(symbols),
-            "failed_count": len(failed_symbols),
+            "total_securities": len(security_ids),
+            "failed_count": len(failed_securities),
             "batch_industry_map_used": True,
         })
 
     def _market_data_for_group(
         self,
         group: BaseFactor,
-        symbol: str,
+        security_id: int,
         as_of_date: str,
         market_data_cache: Dict[str, Optional[pd.DataFrame]],
     ) -> Optional[pd.DataFrame]:
@@ -290,7 +301,7 @@ class FactorPipeline:
         if adjust is None:
             return None
         if adjust not in market_data_cache:
-            market_data_cache[adjust] = self.provider.get_market_data(symbol, as_of_date, adjust=adjust)
+            market_data_cache[adjust] = self.provider.get_market_data(security_id, as_of_date, adjust=adjust)
         return market_data_cache[adjust]
 
     def _market_adjust_for_group(self, group: BaseFactor) -> Optional[str]:

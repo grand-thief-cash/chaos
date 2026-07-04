@@ -4,8 +4,11 @@ from artemis.consts.task_params import ADJUST_NONE
 from artemis.core.clients.dept_clients import HTTPDeptServiceClient
 
 
-# Unified field name constants (matching PhoenixA v2)
+# Unified field name constants (matching PhoenixA v2). security_id is the
+# Phase 4 identity (response decoration; bars_* physical tables still store
+# symbol, §3.2).
 _V2_BARS_FIELDS = [
+    "security_id",
     "trade_date",
     "symbol",
     "open",
@@ -233,6 +236,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         return {"security_ids": ",".join(str(i) for i in ids)}
 
     # ──────────── Bars (v2) ────────────
+    #
+    # Phase 4: bars API contract is security_id-native (§3.6, §3.2). Query
+    # methods take security_id/security_ids (primary) with symbol/symbols as
+    # convenience input that resolves via the securities API (§8.bis-5); market
+    # is no longer sent (resolve-scope only). upsert_bars receives rows that
+    # already carry security_id — the download task resolves symbol→security_id
+    # via get_security_map_for_task before calling (§10.d.2).
 
     def upsert_bars(
         self,
@@ -246,7 +256,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         ext: Optional[List[Dict[str, Any]]] = None,
         run_id: Optional[int | str] = None,
     ) -> bool:
-        """Upsert bars via v2 API."""
+        """Upsert bars via v2 API.
+
+        Each bar/ext row MUST carry a security_id resolved from security_registry
+        (Phase 4); phoenixA resolves security_id → physical symbol before writing
+        the bars_* table (§3.2). The caller (download task) is responsible for
+        putting security_id on each row.
+        """
         path = f"/api/v2/bars/{asset_type}/{market}/upsert"
         payload = {
             "meta": {
@@ -286,7 +302,9 @@ class PhoenixAClient(HTTPDeptServiceClient):
         *,
         asset_type: str = "stock",
         market: str = "zh_a",
-        symbol: str,
+        security_id: Optional[int] = None,
+        symbol: str = "",
+        exchange: Optional[str] = None,
         start_date: str,
         end_date: str,
         period: str = "daily",
@@ -298,13 +316,20 @@ class PhoenixAClient(HTTPDeptServiceClient):
     ) -> List[Dict[str, Any]]:
         """Unified bars query via v2 API with pagination.
 
-        If normalize_for_cache=True, renames trade_date→date and symbol→code
-        for CacheEngine compatibility.
+        Identity is security_id (Phase 4); the bars endpoint is single-security
+        (GET /api/v2/bars/{asset_type}/{market} reads `security_id` only), so
+        only `security_id` (primary) or `symbol` (convenience, resolved to
+        security_id via the securities API, §8.bis-5) is accepted — plural
+        forms are not supported (use get_bars_last_update for batch). If
+        normalize_for_cache=True, renames trade_date→date and symbol→code for
+        CacheEngine compatibility (security_id is preserved on each row).
         """
         return list(self.iter_bars(
             asset_type=asset_type,
             market=market,
+            security_id=security_id,
             symbol=symbol,
+            exchange=exchange,
             start_date=start_date,
             end_date=end_date,
             period=period,
@@ -320,7 +345,9 @@ class PhoenixAClient(HTTPDeptServiceClient):
         *,
         asset_type: str = "stock",
         market: str = "zh_a",
-        symbol: str,
+        security_id: Optional[int] = None,
+        symbol: str = "",
+        exchange: Optional[str] = None,
         start_date: str,
         end_date: str,
         period: str = "daily",
@@ -330,16 +357,66 @@ class PhoenixAClient(HTTPDeptServiceClient):
         limit: int = 5000,
         normalize_for_cache: bool = True,
     ) -> Iterator[Dict[str, Any]]:
-        """Paginated bars iterator via v2 API."""
+        """Paginated bars iterator via v2 API.
+
+        Identity is security_id (Phase 4); the bars endpoint is single-security,
+        so only `security_id` (primary) or `symbol` (convenience, resolved to
+        security_id via the securities API, §8.bis-5) is accepted. A
+        supplied-but-unresolvable identity returns empty (no silent degradation
+        to an unfiltered query); no identity at all also returns empty (bars
+        requires an identity).
+        """
         path = f"/api/v2/bars/{asset_type}/{market}"
         request_fields = fields or _V2_BARS_FIELDS
         page_size = max(int(limit or 0), 1)
         offset = 0
 
         try:
+            id_params = self.security_id_query_params(
+                security_id=security_id, security_ids=None,
+                symbol=symbol, symbols=None, exchange=exchange,
+                asset_type=asset_type, market=market,
+            )
+        except Exception as resolve_err:
+            # Supplied but unresolved (or /securities failed) — must NOT fall
+            # back to an unfiltered query. Return empty so callers degrade
+            # gracefully instead of receiving unrelated rows.
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return
+        if not id_params:
+            # No identity supplied — bars requires one. Return empty rather
+            # than send a request phoenixA would reject with 400.
+            if self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_get_bars_no_identity',
+                    'path': path,
+                    'period': period,
+                })
+            return
+        # Defensive: the bars endpoint is single-security (GET /bars reads
+        # `security_id` only, not `security_ids`). With only single inputs
+        # (security_id / symbol) this branch is unreachable, but guard so any
+        # future misuse fails closed (empty) instead of sending a request
+        # phoenixA would 400 on.
+        if "security_ids" in id_params:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_bars_multi_identity_unsupported',
+                    'path': path,
+                    'id_params': id_params,
+                    'period': period,
+                })
+            return
+
+        try:
             while True:
                 params: Dict[str, Any] = {
-                    "symbol": symbol,
+                    **id_params,
                     "start_date": start_date,
                     "end_date": end_date,
                     "period": period,
@@ -358,7 +435,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
                             'event': 'phoenixA_get_bars_failed',
                             'path': path,
                             'status': resp.status_code,
-                            'symbol': symbol,
+                            'id_params': id_params,
                             'period': period,
                             'offset': offset,
                             'body_snippet': resp.text[:120],
@@ -383,7 +460,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
             if self.logger:
                 self.logger.error({
                     'event': 'phoenixA_get_bars_exception',
-                    'symbol': symbol,
+                    'id_params': id_params,
                     'period': period,
                     'error': str(e),
                 })
@@ -396,20 +473,43 @@ class PhoenixAClient(HTTPDeptServiceClient):
         market: str = "zh_a",
         period: str,
         adjust: str,
+        security_ids: Optional[List[int]] = None,
         symbols: Optional[List[str]] = None,
+        exchange: Optional[str] = None,
     ) -> Dict[str, str]:
-        """Query last update dates for symbols via v2 API."""
-        path = f"/api/v2/bars/{asset_type}/{market}/last_update"
-        params: Dict[str, Any] = {"period": period, "adjust": adjust}
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        """Query last update dates for securities via v2 API.
 
+        Identity is security_id (Phase 4). symbols are convenience input that
+        resolves to security_ids. Returns {symbol: last_update_date} (symbol is
+        the physical key bars stores, §3.2); callers that passed security_ids
+        can map back via the securities registry.
+        """
+        path = f"/api/v2/bars/{asset_type}/{market}/last_update"
+        try:
+            id_params = self.security_id_query_params(
+                security_id=None, security_ids=security_ids,
+                symbol="", symbols=symbols, exchange=exchange,
+                asset_type=asset_type, market=market,
+            )
+        except Exception as resolve_err:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {}
+        if not id_params:
+            return {}
+
+        params: Dict[str, Any] = {"period": period, "adjust": adjust, **id_params}
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
-                data = resp.json()
-                if isinstance(data, dict):
-                    return data
+                # phoenixA returns {data: [{security_id, symbol, last_update}, ...]}.
+                rows = self._coerce_hist_rows(resp.json())
+                return {str(r.get("symbol", "")): str(r.get("last_update", ""))
+                        for r in rows if r.get("symbol")}
             return {}
         except Exception as e:
             if self.logger:
@@ -1200,8 +1300,21 @@ class PhoenixAClient(HTTPDeptServiceClient):
 
     # ──────────── Taxonomy Mappings (for factor engine) ────────────
 
-    def get_taxonomy_by_security(self, symbol: str) -> List[Dict[str, Any]]:
+    def get_taxonomy_by_security(
+        self,
+        *,
+        security_id: Optional[int] = None,
+        symbol: str = "",
+        exchange: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+    ) -> List[Dict[str, Any]]:
         """Query all taxonomy mappings for a security via v2 API.
+
+        Identity is security_id (Phase 2 migrated the path to
+        `/api/v2/taxonomy/by_security/{security_id}`). symbol is convenience
+        input that resolves to security_id via the securities API before the
+        call (§8.bis-5); exchange/asset_type/market scope the resolve only.
 
         Returns list of TaxonomySecurityMap entries with fields:
         - source, taxonomy, category_code, category_name, level, parent_code, index_code, symbol, asset_type, market
@@ -1212,7 +1325,23 @@ class PhoenixAClient(HTTPDeptServiceClient):
 
         Factor engine should consume PhoenixA canonical/derived fields directly.
         """
-        path = f"/api/v2/taxonomy/by_security/{symbol}"
+        sid = security_id
+        if sid is None:
+            if not symbol:
+                return []
+            try:
+                sid = self.resolve_security_id(symbol, exchange=exchange, asset_type=asset_type, market=market)
+            except Exception as e:
+                if self.logger:
+                    self.logger.error({
+                        'event': 'phoenixA_get_taxonomy_by_security_failed',
+                        'symbol': symbol,
+                        'error': str(e),
+                    })
+                return []
+            if not sid:
+                return []
+        path = f"/api/v2/taxonomy/by_security/{sid}"
         try:
             resp = self.get(path, {})
             if 200 <= resp.status_code < 300:
@@ -1225,7 +1354,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
             if self.logger:
                 self.logger.error({
                     'event': 'phoenixA_get_taxonomy_by_security_failed',
-                    'symbol': symbol,
+                    'security_id': sid,
                     'error': str(e),
                 })
             return []

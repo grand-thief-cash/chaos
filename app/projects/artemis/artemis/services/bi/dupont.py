@@ -70,7 +70,8 @@ class DupontMixin(BIServiceBase):
     def get_dupont_analysis(
         self,
         *,
-        symbol: str,
+        symbol: str = "",
+        security_id: Optional[int] = None,
         source: str = "amazing_data",
         market: str = "zh_a",
         statement_code: str = "1",
@@ -78,21 +79,28 @@ class DupontMixin(BIServiceBase):
         target_reporting_period: Optional[str] = None,
         extrapolate_q4: bool = False,
     ) -> Dict[str, Any]:
-        """Compute a DuPont decomposition for one symbol/period.
+        """Compute a DuPont decomposition for one security/period.
+
+        Identity is security_id (Phase 4); `symbol` is convenience input
+        resolved to security_id by query_financial (refactor §8.bis-5). One of
+        security_id/symbol is required. `symbol` is also carried in the response
+        for display (empty when only security_id is supplied).
 
         Parameters:
             period_kind: "annual" (全年)/"single_quarter" (单季度)/"ytd" (年初至今)/"ttm" (滚动12个月，默认)
             target_reporting_period: 指定目标报告期YYYY-MM-DD，默认取最新可用期
             extrapolate_q4: 仅当period_kind=ytd且target_period是Q3(report_type=3)时生效，按Q3YTD×4/3外推全年预测
         """
+        if not security_id and not symbol:
+            raise ValueError("get_dupont_analysis requires security_id or symbol")
         # Step 1: fetch all periods (all report_type)
         income_rows = self._fetch_all_dupont_rows(
-            source=source, statement_type="income", symbol=symbol,
+            source=source, statement_type="income", security_id=security_id, symbol=symbol,
             market=market, statement_code=statement_code,
             fields=self._DUPONT_INCOME_FIELDS,
         )
         balance_rows = self._fetch_all_dupont_rows(
-            source=source, statement_type="balance_sheet", symbol=symbol,
+            source=source, statement_type="balance_sheet", security_id=security_id, symbol=symbol,
             market=market, statement_code=statement_code,
             fields=self._DUPONT_BALANCE_FIELDS,
         )
@@ -142,6 +150,7 @@ class DupontMixin(BIServiceBase):
         market: str,
         statement_code: str,
         fields: List[str],
+        security_id: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Fetch all report_type periods, sorted newest first.
 
@@ -153,7 +162,8 @@ class DupontMixin(BIServiceBase):
         page, page_size = 1, 200
         while True:
             resp = self.query_financial(
-                source=source, statement_type=statement_type, symbol=symbol,
+                source=source, statement_type=statement_type,
+                security_id=security_id, symbol=symbol,
                 market=market, fields=",".join(fields), format="flat",
                 period_start=None, period_end=None,
                 report_type=None, statement_code=statement_code,

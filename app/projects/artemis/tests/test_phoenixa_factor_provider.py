@@ -2,6 +2,9 @@
 
 Tests factor engine data provider using PhoenixA APIs.
 Requires PhoenixA service to be running.
+
+Phase 4: identity is security_id throughout (refactor §3.6 / §10.c). The mock
+securities map carries `security_id`; provider methods take security_id.
 """
 
 import pytest
@@ -23,8 +26,8 @@ def mock_phoenixa_client():
     """Mock PhoenixA client for unit tests."""
     client = Mock(spec=PhoenixAClient)
     client.get_securities.return_value = {
-        "000001": {"symbol": "000001", "name": "平安银行", "exchange": "SZ"},
-        "600000": {"symbol": "600000", "name": "浦发银行", "exchange": "SH"},
+        "000001": {"symbol": "000001", "security_id": 1, "name": "平安银行", "exchange": "SZ"},
+        "600000": {"symbol": "600000", "security_id": 2, "name": "浦发银行", "exchange": "SH"},
     }
     return client
 
@@ -39,47 +42,49 @@ def provider(mock_phoenixa_client):
 # Unit Tests (with mock client)
 # ============================================================================
 
-class TestGetActiveSymbols:
-    """Test get_active_symbols method."""
+class TestGetActiveSecurities:
+    """Test get_active_securities method."""
 
-    def test_returns_symbol_list(self, provider, mock_phoenixa_client):
-        """Should return list of active symbols from PhoenixA."""
-        result = provider.get_active_symbols("zh_a", "2025-05-01")
+    def test_returns_security_id_map(self, provider, mock_phoenixa_client):
+        """Should return {security_id -> info} for active securities."""
+        result = provider.get_active_securities("zh_a", "2025-05-01")
 
-        assert isinstance(result, list)
+        assert isinstance(result, dict)
         assert len(result) == 2
-        assert "000001" in result
-        assert "600000" in result
+        assert 1 in result
+        assert 2 in result
+        assert result[1]["symbol"] == "000001"
 
         # Verify cache was used on second call
         mock_phoenixa_client.get_securities.assert_called_once()
-        result2 = provider.get_active_symbols("zh_a", "2025-05-01")
+        result2 = provider.get_active_securities("zh_a", "2025-05-01")
         mock_phoenixa_client.get_securities.assert_called_once()
+        assert result2 == result
 
     def test_uses_market_parameter(self, provider, mock_phoenixa_client):
         """Should pass market parameter to PhoenixA client."""
-        provider.get_active_symbols("zh_a", "2025-05-01")
+        provider.get_active_securities("zh_a", "2025-05-01")
 
         call_args = mock_phoenixa_client.get_securities.call_args
         assert call_args[1]["market"] == "zh_a"
 
-    def test_filters_symbols_by_list_and_delist_dates(self, provider, mock_phoenixa_client):
+    def test_filters_securities_by_list_and_delist_dates(self, provider, mock_phoenixa_client):
         mock_phoenixa_client.get_securities.return_value = {
-            "000001": {"symbol": "000001", "list_date": "1991-04-03", "status": "active"},
-            "300001": {"symbol": "300001", "list_date": "2025-06-01", "status": "active"},
-            "600001": {"symbol": "600001", "list_date": "2000-01-01", "delist_date": "2024-12-31", "status": "delisted"},
+            "000001": {"symbol": "000001", "security_id": 1, "list_date": "1991-04-03", "status": "active"},
+            "300001": {"symbol": "300001", "security_id": 3, "list_date": "2025-06-01", "status": "active"},
+            "600001": {"symbol": "600001", "security_id": 6, "list_date": "2000-01-01", "delist_date": "2024-12-31", "status": "delisted"},
         }
 
-        result = provider.get_active_symbols("zh_a", "2025-05-01")
+        result = provider.get_active_securities("zh_a", "2025-05-01")
 
-        assert result == ["000001"]
+        assert set(result.keys()) == {1}
 
 
 class TestGetIndustryMap:
     """Test get_industry_map method."""
 
     def test_returns_industry_mapping(self, provider, mock_phoenixa_client):
-        """Should return symbol -> industry_code mapping."""
+        """Should return security_id -> industry_code mapping."""
         # Mock taxonomy query response
         mock_phoenixa_client.get_taxonomy_by_security.side_effect = [
             [{
@@ -105,8 +110,8 @@ class TestGetIndustryMap:
         result = provider.get_industry_map("sw_l1", "zh_a")
 
         assert isinstance(result, dict)
-        assert result.get("000001") == "801010"
-        assert result.get("600000") == "801020"
+        assert result.get(1) == "801010"
+        assert result.get(2) == "801020"
 
     def test_filters_by_source(self, provider, mock_phoenixa_client):
         """Should filter mappings by source."""
@@ -148,8 +153,8 @@ class TestGetIndustryMap:
         result = provider.get_industry_map("sw_l1", "zh_a")
 
         # Should only use sw mappings
-        assert result.get("000001") == "801010"
-        assert result.get("600000") == "801020"
+        assert result.get(1) == "801010"
+        assert result.get(2) == "801020"
 
     def test_uses_cache(self, provider, mock_phoenixa_client):
         """Should cache industry map for repeated calls."""
@@ -177,12 +182,12 @@ class TestGetIndustryMap:
         provider.get_industry_map("sw_l1", "zh_a")
         provider.get_industry_map("sw_l1", "zh_a")
 
-        # Should only call once (cached on second call)
-        total_calls = sum(
-            call_args[0][0] == "000001"
-            for call_args in mock_phoenixa_client.get_taxonomy_by_security.call_args_list
+        # Each security should be queried exactly once (cached on second call)
+        calls_for_sec_1 = sum(
+            1 for call_args in mock_phoenixa_client.get_taxonomy_by_security.call_args_list
+            if call_args[1].get("security_id") == 1
         )
-        assert total_calls == 1
+        assert calls_for_sec_1 == 1
 
     def test_handles_different_taxonomies(self, provider, mock_phoenixa_client):
         """Should support different taxonomy systems (extensibility)."""
@@ -200,10 +205,10 @@ class TestGetIndustryMap:
 
         result = provider.get_industry_map("citics_l1", "zh_a")
 
-        # Should query each symbol and preserve citics mapping
+        # Should query each security and preserve citics mapping
         assert mock_phoenixa_client.get_taxonomy_by_security.call_count == 2
         assert isinstance(result, dict)
-        assert result.get("000001") == "C10001"
+        assert result.get(1) == "C10001"
 
     def test_uses_canonical_hierarchy_and_derived_flags(self, provider, mock_phoenixa_client):
         mock_phoenixa_client.get_taxonomy_by_security.return_value = [
@@ -225,8 +230,8 @@ class TestGetIndustryMap:
 
         result = provider.get_industry_map("sw_l1", "zh_a")
 
-        assert result.get("000001") == "801010"
-        context = provider.get_industry_context("000001", "sw_l1", "zh_a")
+        assert result.get(1) == "801010"
+        context = provider.get_industry_context(1, "sw_l1", "zh_a")
         assert context["canonical_index_code"] == "801010.SI"
         assert context["derived_flags"]["financial_sector"] is True
 
@@ -257,11 +262,11 @@ class TestGetIndustryMap:
             }],
         ]
 
-        subset = provider.get_industry_map("sw_l1", "zh_a", symbols=["000001"])
+        subset = provider.get_industry_map("sw_l1", "zh_a", security_ids=[1])
         full = provider.get_industry_map("sw_l1", "zh_a")
 
-        assert subset == {"000001": "801010"}
-        assert full == {"000001": "801010", "600000": "801020"}
+        assert subset == {1: "801010"}
+        assert full == {1: "801010", 2: "801020"}
         assert mock_phoenixa_client.get_taxonomy_by_security.call_count == 2
 
 
@@ -287,7 +292,7 @@ class TestGetFinancialData:
         }
         mock_phoenixa_client.query_financial_statements.return_value = mock_response
 
-        result = provider.get_financial_data("000001", "2025-04-01")
+        result = provider.get_financial_data(1, "2025-04-01")
 
         assert isinstance(result, dict)
         assert "balance_sheet" in result
@@ -296,10 +301,11 @@ class TestGetFinancialData:
 
     def test_applies_pit_filter(self, provider, mock_phoenixa_client):
         """Should apply PIT (ann_date_before) filtering."""
-        provider.get_financial_data("000001", "2025-04-01")
+        provider.get_financial_data(1, "2025-04-01")
 
         call_args = mock_phoenixa_client.query_financial_statements.call_args
         assert call_args[1]["ann_date_before"] == "2025-04-01"
+        assert call_args[1]["security_id"] == 1
 
     def test_expands_data_json(self, provider, mock_phoenixa_client):
         """Should expand data_json fields into DataFrame columns."""
@@ -317,7 +323,7 @@ class TestGetFinancialData:
         }
         mock_phoenixa_client.query_financial_statements.return_value = mock_response
 
-        result = provider.get_financial_data("000001", "2025-04-01")
+        result = provider.get_financial_data(1, "2025-04-01")
         df = result["balance_sheet"]
 
         # data_json fields should be expanded as columns
@@ -342,7 +348,7 @@ class TestGetFinancialData:
         }
         mock_phoenixa_client.query_financial_statements.return_value = mock_response
 
-        result = provider.get_financial_data("000001", "2025-04-01")
+        result = provider.get_financial_data(1, "2025-04-01")
         df = result["balance_sheet"]
 
         # Should be sorted with newest first
@@ -368,7 +374,7 @@ class TestGetMarketData:
         ]
         mock_phoenixa_client.get_bars.return_value = mock_bars
 
-        result = provider.get_market_data("000001", "2025-04-01")
+        result = provider.get_market_data(1, "2025-04-01")
 
         assert result is not None
         assert isinstance(result, pd.DataFrame)
@@ -406,7 +412,7 @@ class TestGetMarketData:
             "total": 1,
         }
 
-        result = provider.get_market_data("000001", "2025-04-01")
+        result = provider.get_market_data(1, "2025-04-01")
 
         assert result is not None
         assert result["total_share"].iloc[-1] == 1000
@@ -415,16 +421,18 @@ class TestGetMarketData:
 
     def test_passes_correct_params(self, provider, mock_phoenixa_client):
         """Should pass correct parameters to PhoenixA client."""
-        provider.get_market_data("000001", "2025-04-01")
+        provider.get_market_data(1, "2025-04-01")
 
         call_args = mock_phoenixa_client.get_bars.call_args
-        assert call_args[1]["symbol"] == "000001"
+        assert call_args[1]["security_id"] == 1
         assert call_args[1]["start_date"] == "2025-04-01"
         assert call_args[1]["end_date"] == "2025-04-01"
         assert call_args[1]["asset_type"] == "stock"
         assert call_args[1]["market"] == "zh_a"
         assert call_args[1]["period"] == "daily"
         assert call_args[1]["adjust"] == ADJUST_NONE
+        # symbol is NOT sent (security_id-native, §3.6)
+        assert "symbol" not in call_args[1] or not call_args[1].get("symbol")
 
     def test_supports_configurable_market_adjust_mode(self, mock_phoenixa_client):
         provider = PhoenixADataProvider(mock_phoenixa_client, market="zh_a", market_adjust=ADJUST_FORWARD)
@@ -439,7 +447,7 @@ class TestGetMarketData:
         mock_phoenixa_client.query_financial_statements.return_value = {"data": [], "total": 0}
         mock_phoenixa_client.query_corporate_actions.return_value = {"data": [], "total": 0}
 
-        result = provider.get_market_data("000001", "2025-04-01")
+        result = provider.get_market_data(1, "2025-04-01")
 
         assert result is not None
         assert result["adjust"].iloc[-1] == ADJUST_FORWARD
@@ -450,7 +458,7 @@ class TestGetMarketData:
         """Should return None when no bars data."""
         mock_phoenixa_client.get_bars.return_value = []
 
-        result = provider.get_market_data("000001", "2025-04-01")
+        result = provider.get_market_data(1, "2025-04-01")
 
         assert result is None
 
@@ -475,22 +483,23 @@ class TestGetCurrentPeriod:
         }
         mock_phoenixa_client.query_financial_statements.return_value = mock_response
 
-        result = provider.get_current_period("000001", "2025-04-01")
+        result = provider.get_current_period(1, "2025-04-01")
 
         assert result == "20241231"
 
     def test_applies_pit_filter(self, provider, mock_phoenixa_client):
         """Should apply PIT (ann_date_before) filtering."""
-        provider.get_current_period("000001", "2025-04-01")
+        provider.get_current_period(1, "2025-04-01")
 
         call_args = mock_phoenixa_client.query_financial_statements.call_args
         assert call_args[1]["ann_date_before"] == "2025-04-01"
+        assert call_args[1]["security_id"] == 1
 
     def test_returns_none_on_empty_response(self, provider, mock_phoenixa_client):
         """Should return None when no data."""
         mock_phoenixa_client.query_financial_statements.return_value = {"data": [], "total": 0}
 
-        result = provider.get_current_period("000001", "2025-04-01")
+        result = provider.get_current_period(1, "2025-04-01")
 
         assert result is None
 
@@ -511,18 +520,18 @@ class TestCacheManagement:
         }]
 
         # Populate cache
-        provider.get_active_symbols("zh_a", "2025-04-01")
+        provider.get_active_securities("zh_a", "2025-04-01")
         provider.get_industry_map("sw_l1", "zh_a")
 
         # Clear cache
         provider.clear_cache()
 
         # Should make fresh calls next time
-        provider.get_active_symbols("zh_a", "2025-04-01")
+        provider.get_active_securities("zh_a", "2025-04-01")
         assert mock_phoenixa_client.get_securities.call_count == 2
 
         provider.get_industry_map("sw_l1", "zh_a")
-        # Each symbol would be queried again
+        # Each security would be queried again
         assert mock_phoenixa_client.get_taxonomy_by_security.call_count > 2
 
 

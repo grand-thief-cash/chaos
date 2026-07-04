@@ -24,31 +24,31 @@ _DEFAULT_RUNTIME_KEY = "__default__"
 # ---------------------------------------------------------------------------
 
 class MockFactorDataProvider:
-    """占位数据源 — 返回空数据，用于流程验证。"""
+    """占位数据源 — 返回空数据，用于流程验证。Phase 4: security_id identity."""
 
-    def get_active_symbols(self, market: str, as_of_date: str) -> List[str]:
-        logger.warning("MockFactorDataProvider: returning empty symbol list")
-        return []
+    def get_active_securities(self, market: str, as_of_date: str) -> Dict[int, Dict[str, Any]]:
+        logger.warning("MockFactorDataProvider: returning empty securities map")
+        return {}
 
     def get_industry_map(
         self,
         taxonomy: str,
         market: str,
         use_batch: bool = True,
-        symbols: Optional[List[str]] = None,
-    ) -> Dict[str, str]:
+        security_ids: Optional[List[int]] = None,
+    ) -> Dict[int, str]:
         return {}
 
-    def get_industry_context(self, symbol: str, taxonomy: str, market: str) -> Dict[str, Any]:
+    def get_industry_context(self, security_id: int, taxonomy: str, market: str) -> Dict[str, Any]:
         return {}
 
-    def get_financial_data(self, symbol: str, as_of_date: str) -> Dict[str, pd.DataFrame]:
+    def get_financial_data(self, security_id: int, as_of_date: str) -> Dict[str, pd.DataFrame]:
         return {}
 
-    def get_market_data(self, symbol: str, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]:
+    def get_market_data(self, security_id: int, as_of_date: str, adjust: Optional[str] = None) -> Optional[pd.DataFrame]:
         return None
 
-    def get_current_period(self, symbol: str, as_of_date: str) -> Optional[str]:
+    def get_current_period(self, security_id: int, as_of_date: str) -> Optional[str]:
         return None
 
 
@@ -124,19 +124,109 @@ def compute_full(as_of_date: str, market: str = "zh_a", source: str | None = Non
     return {"status": "ok", "symbols_count": len(result), "as_of_date": as_of_date, "source": source or "default"}
 
 
-def compute_incremental(symbols: List[str], as_of_date: str, market: str = "zh_a", source: str | None = None) -> dict:
-    """增量因子计算。"""
+def _get_client(source: str | None = None) -> Optional[PhoenixAClient]:
+    """Return the runtime's PhoenixA client if available, else build one, else None."""
+    runtime = _runtimes.get(_runtime_key(source))
+    if runtime is not None and isinstance(runtime[1], PhoenixADataProvider):
+        return runtime[1].client
+    try:
+        return _build_phoenix_client(source)
+    except Exception as exc:
+        logger.warning({"event": "factor_service_client_unavailable", "source": source or "default", "error": str(exc)})
+        return None
+
+
+def _resolve_security_ids(symbols: List[str], source: str | None = None) -> List[int]:
+    """Resolve symbol convenience input → security_ids (strict, §8.bis-5).
+
+    Raises ValueError if ANY supplied symbol cannot be resolved (partial or
+    all-miss) — matches the Phase 3 rule that explicit identity must not
+    silently degrade or partially execute. Also raises if the phoenixA client
+    is unavailable (cannot resolve).
+    """
+    sym_list = [str(s).strip() for s in symbols if str(s).strip()]
+    if not sym_list:
+        raise ValueError("no non-empty symbols supplied")
+    client = _get_client(source)
+    if client is None:
+        raise ValueError("cannot resolve symbols: phoenixA client unavailable")
+    resolved = client.resolve_security_ids(symbols=sym_list)
+    if len(resolved) != len(sym_list):
+        raise ValueError(
+            f"could not resolve all {len(sym_list)} symbol(s); only {len(resolved)} found "
+            f"in security_registry (symbols={sym_list}); ensure STOCK_ZH_A_LIST has upserted them"
+        )
+    return resolved
+
+
+def _resolve_security_id(symbol: str, source: str | None = None) -> int:
+    """Resolve a single symbol → security_id (strict; raises on unresolvable)."""
+    return _resolve_security_ids([symbol], source)[0]
+
+
+def compute_incremental(
+    security_ids: Optional[List[int]] = None,
+    as_of_date: str = "",
+    market: str = "zh_a",
+    source: str | None = None,
+    symbols: Optional[List[str]] = None,
+) -> dict:
+    """增量因子计算。Identity is security_id (Phase 4); `symbols` is convenience
+    input resolved to security_ids via the registry before the call (§8.bis-5).
+
+    Strict (Phase 3): an explicit empty/non-positive security_ids, or a symbols
+    list where any entry fails to resolve (partial), raises ValueError — never
+    silently computes a subset."""
     as_of_date = normalize_date(as_of_date)
+    # Validate / resolve identity BEFORE building the runtime (fail fast on bad
+    # input; avoids a phoenixA connection attempt for malformed requests).
+    if security_ids is not None:
+        if not security_ids:
+            raise ValueError("security_ids is empty")
+        if any(i <= 0 for i in security_ids):
+            raise ValueError("security_ids must be positive integers")
+        resolved = list(security_ids)
+    elif symbols:
+        resolved = _resolve_security_ids(symbols, source)  # strict — raises on partial
+    else:
+        raise ValueError("compute_incremental requires security_ids or symbols")
     _, _, pipeline = _get_runtime(source)
-    logger.info({"event": "factor_compute_incr", "symbols": symbols[:5], "as_of_date": as_of_date, "source": source or "default"})
-    pipeline.run_incremental(symbols, as_of_date, market)
-    return {"status": "ok", "symbols_count": len(symbols), "source": source or "default"}
+    logger.info({"event": "factor_compute_incr", "security_ids": resolved[:5], "as_of_date": as_of_date, "source": source or "default"})
+    pipeline.run_incremental(resolved, as_of_date, market)
+    return {"status": "ok", "securities_count": len(resolved), "source": source or "default"}
 
 
-def get_snapshot(symbol: str, as_of_date: str, market: str = "zh_a", source: str | None = None) -> Optional[dict]:
+def get_snapshot(
+    security_id: Optional[int] = None,
+    as_of_date: str = "",
+    market: str = "zh_a",
+    source: str | None = None,
+    symbol: Optional[str] = None,
+) -> Optional[dict]:
+    """Query a single-security factor snapshot. Identity is security_id (Phase 4);
+    `symbol` is convenience input resolved via the registry (§8.bis-5).
+
+    Strict (Phase 3): a non-positive security_id or an unresolvable symbol
+    raises ValueError. Returns None only if no identity is supplied (the route
+    400s before that) or the snapshot does not exist."""
     as_of_date = normalize_date(as_of_date)
+    # Validate / resolve identity BEFORE building the runtime (fail fast on bad
+    # input; avoids a phoenixA connection attempt for malformed requests).
+    if security_id is not None:
+        if security_id <= 0:
+            raise ValueError("security_id must be a positive integer")
+        resolved = security_id
+    elif symbol:
+        resolved = _resolve_security_id(symbol, source)  # strict — raises on unresolvable
+    else:
+        return None
     store, _, _ = _get_runtime(source)
-    return store.get_factor_snapshot(symbol, as_of_date, market)
+    snap = store.get_factor_snapshot(resolved, as_of_date, market)
+    if snap is None:
+        return None
+    snap = dict(snap)
+    snap["security_id"] = int(resolved)
+    return snap
 
 
 def get_ranking(factor_name: str, as_of_date: str, market: str = "zh_a", top_n: int = 50, source: str | None = None) -> List[dict]:
@@ -148,7 +238,11 @@ def get_ranking(factor_name: str, as_of_date: str, market: str = "zh_a", top_n: 
     meta = get_factor_meta(factor_name)
     ascending = False if meta is None else not meta.higher_is_better
     s = df[factor_name].dropna().sort_values(ascending=ascending).head(top_n)
-    return [{"symbol": sym, factor_name: float(val)} for sym, val in s.items()]
+    labels = store.get_security_labels(as_of_date, market)
+    return [
+        {"security_id": int(sec_id), "symbol": labels.get(int(sec_id), ""), factor_name: float(val)}
+        for sec_id, val in s.items()
+    ]
 
 
 def get_meta() -> List[dict]:

@@ -45,7 +45,13 @@ class StockZhAHistParent(OrchestratorUnit):
         period = params.get("period")
         adjust = params.get("adjust")
 
-        last_updates_map = client.get_bars_last_update(period=period, adjust=adjust, symbols=symbols or None)
+        # Phase 4: query last_update by security_id (the registry already gave us
+        # security_id on each info row; passing security_ids avoids a redundant
+        # symbol→id resolve inside the client). The response stays {symbol: date}.
+        security_ids = [int(i.get("security_id")) for i in symbol_infos.values() if i.get("security_id")]
+        last_updates_map = client.get_bars_last_update(
+            period=period, adjust=adjust, security_ids=security_ids or None,
+        )
 
         ctx.params["last_updates_map"] = last_updates_map
         ctx.params["symbol_infos"] = symbol_infos
@@ -118,10 +124,11 @@ class StockZhAHistParent(OrchestratorUnit):
         for _, info in symbol_infos.items():
             symbol = info.get("symbol")
             exchange = info.get("exchange")
+            security_id = info.get("security_id")
             item_start_date = base_start_date
 
-            if not symbol or not exchange:
-                ctx.fail(f"Missing stock info from PhoenixA: symbol={symbol}, exchange={exchange}", phase='plan')
+            if not symbol or not exchange or not security_id:
+                ctx.fail(f"Missing stock info from PhoenixA: symbol={symbol}, exchange={exchange}, security_id={security_id}", phase='plan')
                 return []
 
             if exchange in ["SH", "SZ","BJ"]:
@@ -152,6 +159,7 @@ class StockZhAHistParent(OrchestratorUnit):
             child_params = {
                 "bs_code": bs_code,
                 "symbol": symbol,
+                "security_id": int(security_id),
                 "start_date": item_start_date,
                 "end_date": today_str,
                 "adjust": adjust,

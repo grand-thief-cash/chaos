@@ -1,4 +1,10 @@
-"""因子快照读写 — MVP 使用内存存储，后续切换到 PhoenixA。"""
+"""因子快照读写 — MVP 使用内存存储，后续切换到 PhoenixA。
+
+Phase 4: identity key is security_id (refactor §3.6). symbol is kept only as
+a display label (`_security_labels`) stamped from snapshot meta at write time,
+so `get_ranking` can decorate rows for symbol-keyed callers (cthulhu) without
+reverse-resolving.
+"""
 
 from __future__ import annotations
 
@@ -15,10 +21,12 @@ class FactorStore:
     """
 
     def __init__(self) -> None:
-        # {(symbol, market, as_of_date): {raw_factors, norm_factors, meta}}
+        # {(security_id, market, as_of_date): {raw_factors, norm_factors, meta}}
         self._snapshots: Dict[tuple, dict] = {}
         # {(as_of_date, market): industry_stats_dict}
         self._industry_stats: Dict[tuple, dict] = {}
+        # {(as_of_date, market): {security_id -> symbol}} display labels
+        self._security_labels: Dict[tuple, Dict[int, str]] = {}
 
     # ------------------------------------------------------------------
     # Write
@@ -29,32 +37,42 @@ class FactorStore:
         market: str,
         raw_factors: pd.DataFrame,
         normalized_factors: pd.DataFrame,
-        snapshot_meta: Optional[Dict[str, dict]] = None,
+        snapshot_meta: Optional[Dict[int, dict]] = None,
     ) -> None:
         snapshot_meta = snapshot_meta or {}
-        for sym in raw_factors.index:
-            key = (sym, market, as_of_date)
+        labels = self._security_labels.setdefault((as_of_date, market), {})
+        for sec_id in raw_factors.index:
+            key = (sec_id, market, as_of_date)
+            meta = snapshot_meta.get(sec_id, {"version": "v1.0"})
             self._snapshots[key] = {
-                "raw_factors": raw_factors.loc[sym].dropna().to_dict(),
-                "norm_factors": normalized_factors.loc[sym].dropna().to_dict() if sym in normalized_factors.index else {},
-                "meta": snapshot_meta.get(sym, {"version": "v1.0"}),
+                "raw_factors": raw_factors.loc[sec_id].dropna().to_dict(),
+                "norm_factors": normalized_factors.loc[sec_id].dropna().to_dict() if sec_id in normalized_factors.index else {},
+                "meta": meta,
             }
+            symbol = str((meta or {}).get("symbol") or "")
+            if symbol:
+                labels[sec_id] = symbol
 
     def save_single_factor(
         self,
-        symbol: str,
+        security_id: int,
         as_of_date: str,
         raw_factors: dict,
         norm_factors: dict,
         meta: Optional[dict] = None,
         market: str = "zh_a",
     ) -> None:
-        key = (symbol, market, as_of_date)
+        key = (security_id, market, as_of_date)
+        meta = meta or {}
         self._snapshots[key] = {
             "raw_factors": {k: v for k, v in raw_factors.items() if v is not None},
             "norm_factors": {k: v for k, v in norm_factors.items() if v is not None},
-            "meta": meta or {},
+            "meta": meta,
         }
+        symbol = str(meta.get("symbol") or "")
+        if symbol:
+            labels = self._security_labels.setdefault((as_of_date, market), {})
+            labels[security_id] = symbol
 
     def save_industry_stats(self, as_of_date: str, market: str, stats: dict) -> None:
         self._industry_stats[(as_of_date, market)] = stats
@@ -67,17 +85,20 @@ class FactorStore:
 
     def get_normalized_snapshot(self, as_of_date: str, market: str = "zh_a") -> pd.DataFrame:
         rows = {}
-        for (sym, mkt, d), snap in self._snapshots.items():
+        for (sec_id, mkt, d), snap in self._snapshots.items():
             if d == as_of_date and mkt == market:
-                rows[sym] = snap.get("norm_factors", {})
+                rows[sec_id] = snap.get("norm_factors", {})
         if not rows:
             return pd.DataFrame()
         return pd.DataFrame.from_dict(rows, orient="index")
 
-    def get_factor_snapshot(self, symbol: str, as_of_date: str, market: str = "zh_a") -> Optional[dict]:
-        return self._snapshots.get((symbol, market, as_of_date))
+    def get_security_labels(self, as_of_date: str, market: str = "zh_a") -> Dict[int, str]:
+        """security_id -> symbol display labels for the snapshot batch."""
+        return dict(self._security_labels.get((as_of_date, market), {}))
+
+    def get_factor_snapshot(self, security_id: int, as_of_date: str, market: str = "zh_a") -> Optional[dict]:
+        return self._snapshots.get((security_id, market, as_of_date))
 
     def list_dates(self, market: str = "zh_a") -> List[str]:
         dates = sorted({d for (_, m, d) in self._snapshots if m == market})
         return dates
-
