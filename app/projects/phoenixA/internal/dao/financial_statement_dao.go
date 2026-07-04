@@ -47,7 +47,7 @@ func (d *FinancialStatementDao) Stop(ctx context.Context) error {
 }
 
 // BatchUpsert upserts financial statements. The unique key is
-// (source, symbol, market, statement_type, reporting_period, report_type, statement_code).
+// (security_id, source, statement_type, reporting_period, report_type, statement_code).
 func (d *FinancialStatementDao) BatchUpsert(ctx context.Context, list []*model.FinancialStatement) error {
 	if len(list) == 0 {
 		return nil
@@ -55,7 +55,7 @@ func (d *FinancialStatementDao) BatchUpsert(ctx context.Context, list []*model.F
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
-				{Name: "source"}, {Name: "symbol"}, {Name: "market"},
+				{Name: "security_id"}, {Name: "source"},
 				{Name: "statement_type"}, {Name: "reporting_period"},
 				{Name: "report_type"}, {Name: "statement_code"},
 			},
@@ -71,7 +71,7 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 	var list []*model.FinancialStatement
 	q := d.db.WithContext(ctx).Model(&model.FinancialStatement{}).
 		Where("source = ?", source).
-		Order("symbol ASC, reporting_period DESC")
+		Order("security_id ASC, reporting_period DESC")
 
 	// Handle field selection
 	if f != nil && len(f.Fields) > 0 {
@@ -89,14 +89,11 @@ func (d *FinancialStatementDao) Query(ctx context.Context, source string, f *mod
 	}
 
 	if f != nil {
-		if f.Symbol != "" {
-			q = q.Where("symbol = ?", f.Symbol)
+		if f.SecurityID != 0 {
+			q = q.Where("security_id = ?", f.SecurityID)
 		}
-		if f.Market != "" {
-			if len(f.Symbols) > 0 {
-				q = q.Where("symbol IN ?", f.Symbols)
-			}
-			q = q.Where("market = ?", f.Market)
+		if len(f.SecurityIDs) > 0 {
+			q = q.Where("security_id IN ?", f.SecurityIDs)
 		}
 		if f.StatementType != "" {
 			q = q.Where("statement_type = ?", f.StatementType)
@@ -154,14 +151,11 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 	var cnt int64
 	q := d.db.WithContext(ctx).Model(&model.FinancialStatement{}).Where("source = ?", source)
 	if f != nil {
-		if f.Symbol != "" {
-			q = q.Where("symbol = ?", f.Symbol)
+		if f.SecurityID != 0 {
+			q = q.Where("security_id = ?", f.SecurityID)
 		}
-		if len(f.Symbols) > 0 {
-			q = q.Where("symbol IN ?", f.Symbols)
-		}
-		if f.Market != "" {
-			q = q.Where("market = ?", f.Market)
+		if len(f.SecurityIDs) > 0 {
+			q = q.Where("security_id IN ?", f.SecurityIDs)
 		}
 		if f.StatementType != "" {
 			q = q.Where("statement_type = ?", f.StatementType)
@@ -206,20 +200,19 @@ func (d *FinancialStatementDao) Count(ctx context.Context, source string, f *mod
 	return cnt, nil
 }
 
-// applyFinStmtFilters mutates the gorm query with financial-statement WHERE
-// clauses. Shared between QueryFlat and QueryNested.
-func applyFinStmtFilters(q *gorm.DB, f *model.FinancialStatementFilters) {
+// applyFinStmtFilters returns the gorm query with financial-statement WHERE
+// clauses applied. Shared between QueryFlat and QueryNested. MUST return the
+// *gorm.DB (gorm v2 Where returns a new session; reassigning the local param
+// would silently drop every filter — callers must reassign: q = applyFinStmtFilters(q, f)).
+func applyFinStmtFilters(q *gorm.DB, f *model.FinancialStatementFilters) *gorm.DB {
 	if f == nil {
-		return
+		return q
 	}
-	if f.Symbol != "" {
-		q = q.Where("symbol = ?", f.Symbol)
+	if f.SecurityID != 0 {
+		q = q.Where("security_id = ?", f.SecurityID)
 	}
-	if len(f.Symbols) > 0 {
-		q = q.Where("symbol IN ?", f.Symbols)
-	}
-	if f.Market != "" {
-		q = q.Where("market = ?", f.Market)
+	if len(f.SecurityIDs) > 0 {
+		q = q.Where("security_id IN ?", f.SecurityIDs)
 	}
 	if f.StatementType != "" {
 		q = q.Where("statement_type = ?", f.StatementType)
@@ -256,6 +249,7 @@ func applyFinStmtFilters(q *gorm.DB, f *model.FinancialStatementFilters) {
 	if f.DataHasKey != "" {
 		q = q.Where("data_json ?? ?", f.DataHasKey)
 	}
+	return q
 }
 
 // ResolveQueryFields resolves user-supplied field names against the field
@@ -274,8 +268,8 @@ func (d *FinancialStatementDao) ResolveQueryFields(ctx context.Context, source, 
 func (d *FinancialStatementDao) QueryFlat(ctx context.Context, source string, f *model.FinancialStatementFilters, resolved []ResolvedField, limit, offset int) ([]map[string]any, error) {
 	selectClause, _ := BuildFlatSelect(resolved)
 	q := d.db.WithContext(ctx).Table("ods.financial_statement").Where("source = ?", source)
-	applyFinStmtFilters(q, f)
-	q = q.Order("symbol ASC, reporting_period DESC")
+	q = applyFinStmtFilters(q, f)
+	q = q.Order("security_id ASC, reporting_period DESC")
 	if selectClause != "" {
 		q = q.Select(selectClause)
 	}
@@ -303,7 +297,7 @@ func (d *FinancialStatementDao) QueryNested(ctx context.Context, source string, 
 	// make sense for nested output, plus any explicitly requested top_level
 	// fields, plus either the full or filtered data_json.
 	selectParts := []string{
-		"source", "symbol", "market", "statement_type", "reporting_period",
+		"security_id", "source", "statement_type", "reporting_period",
 		"report_type", "statement_code", "security_name", "ann_date",
 		"actual_ann_date", "comp_type_code",
 	}
@@ -329,8 +323,8 @@ func (d *FinancialStatementDao) QueryNested(ctx context.Context, source string, 
 		Table("financial_statement").
 		Select(strings.Join(selectParts, ", ")).
 		Where("source = ?", source)
-	applyFinStmtFilters(q, f)
-	q = q.Order("symbol ASC, reporting_period DESC")
+	q = applyFinStmtFilters(q, f)
+	q = q.Order("security_id ASC, reporting_period DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -339,9 +333,8 @@ func (d *FinancialStatementDao) QueryNested(ctx context.Context, source string, 
 	}
 
 	type rawNestedRow struct {
+		SecurityID      uint64 `gorm:"column:security_id"`
 		Source          string `gorm:"column:source"`
-		Symbol          string `gorm:"column:symbol"`
-		Market          string `gorm:"column:market"`
 		StatementType   string `gorm:"column:statement_type"`
 		ReportingPeriod string `gorm:"column:reporting_period"`
 		ReportType      string `gorm:"column:report_type"`
@@ -361,9 +354,8 @@ func (d *FinancialStatementDao) QueryNested(ctx context.Context, source string, 
 	for _, r := range rawRows {
 		row := model.NestedRow{
 			TopLevel: map[string]any{
+				"security_id":      r.SecurityID,
 				"source":           r.Source,
-				"symbol":           r.Symbol,
-				"market":           r.Market,
 				"statement_type":   r.StatementType,
 				"reporting_period": r.ReportingPeriod,
 				"report_type":      r.ReportType,

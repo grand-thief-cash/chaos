@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -95,4 +96,33 @@ func parseFieldsParam(raw string) []string {
 		out = append(out, f)
 	}
 	return out
+}
+
+// parseUint64ListStrict parses a comma-separated list of uint64 values (e.g.
+// "1,2,3") into a deduped []uint64. It is strict on purpose: any empty token
+// (leading/trailing/consecutive comma, or a whitespace-only value) or any
+// non-positive token returns an error, so a present-but-garbage `security_ids`
+// param surfaces a 400 rather than silently degrading to an unfiltered query
+// (same strictness as the Phase 1 securities ?security_id= validation).
+// Whitespace around tokens ("1, 2, 3") is tolerated.
+func parseUint64ListStrict(raw string) ([]uint64, error) {
+	parts := strings.Split(strings.TrimSpace(raw), ",")
+	out := make([]uint64, 0, len(parts))
+	seen := make(map[uint64]struct{})
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return nil, fmt.Errorf("invalid security_ids: empty token (leading/trailing/consecutive comma) — expected comma-separated positive integers")
+		}
+		v, err := strconv.ParseUint(p, 10, 64)
+		if err != nil || v == 0 {
+			return nil, fmt.Errorf("invalid security_id %q in security_ids: must be a positive integer", p)
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out, nil
 }

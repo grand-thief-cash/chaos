@@ -233,6 +233,37 @@ func (c *ResolveCache) SecurityExists(ctx context.Context, id uint64) (bool, err
 	return found, err
 }
 
+// ValidateSecurityIDsExist checks that every security_id in ids exists in the cache, rejecting
+// orphan-id writes on the Phase 3 data tables (financial_statement / corporate_action /
+// equity_structure / adjust_factor / long_hu_bang) — no real FK, §6 R9 → app-layer defense,
+// §10.c. A cache/DB load failure is returned as a plain error (→ 500, not the caller's fault);
+// a genuine miss (including id==0) is a ValidationError (→ 400). Dedupes ids before checking so
+// a large batch with repeated securities does not redo work.
+func (c *ResolveCache) ValidateSecurityIDsExist(ctx context.Context, ids []uint64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := c.ensureLoaded(ctx); err != nil {
+		return fmt.Errorf("resolve cache unavailable: %w", err)
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	seen := make(map[uint64]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			return NewValidationError("security_id is required (got 0); ensure the row carries a valid security_id resolved from security_registry")
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		if _, ok := c.secByID[id]; !ok {
+			return NewValidationError("security_id %d does not exist in security_registry; ensure STOCK_ZH_A_LIST has upserted it", id)
+		}
+	}
+	return nil
+}
+
 // CategoryExists reports whether a category_id is known to the cache (orphan defense).
 // Same (found, err) contract as SecurityExists.
 func (c *ResolveCache) CategoryExists(ctx context.Context, id uint64) (bool, error) {

@@ -15,7 +15,8 @@ import (
 
 type EquityStructureService struct {
 	*core.BaseComponent
-	Dao *dao.EquityStructureDao `infra:"dep:dao_equity_structure"`
+	Dao     *dao.EquityStructureDao `infra:"dep:dao_equity_structure"`
+	Resolve *ResolveCache           `infra:"dep:svc_resolve_cache"`
 }
 
 func NewEquityStructureService() *EquityStructureService {
@@ -28,6 +29,9 @@ func (s *EquityStructureService) Start(ctx context.Context) error {
 	if s.Dao == nil {
 		return errors.New("dao_equity_structure is nil")
 	}
+	if s.Resolve == nil {
+		return errors.New("svc_resolve_cache is nil (required for Phase 3 orphan defense)")
+	}
 	return s.BaseComponent.Start(ctx)
 }
 
@@ -36,6 +40,13 @@ func (s *EquityStructureService) Stop(ctx context.Context) error { return s.Base
 func (s *EquityStructureService) BatchUpsert(ctx context.Context, list []*model.EquityStructure) error {
 	if len(list) == 0 {
 		return nil
+	}
+	ids := make([]uint64, 0, len(list))
+	for _, item := range list {
+		ids = append(ids, item.SecurityID)
+	}
+	if err := s.Resolve.ValidateSecurityIDsExist(ctx, ids); err != nil {
+		return err
 	}
 	logging.Infof(ctx, "EquityStructureService BatchUpsert count=%d", len(list))
 	return s.Dao.BatchUpsert(ctx, list)

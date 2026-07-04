@@ -2,19 +2,18 @@ package model
 
 import "time"
 
-// ─── Per-symbol data coverage models ───
+// ─── Per-security data coverage models ───
 //
-// Returned by GET /api/v2/catalog/securities/{symbol}/datasets/summary.
-// Describes how many rows of each dataset/data_type exist for a given symbol,
+// Returned by GET /api/v2/catalog/securities/{security_id}/datasets/summary.
+// Describes how many rows of each dataset/data_type exist for a given security,
 // plus the time range. This is a generic data-discovery API — not BI-specific.
 // Callers (e.g., artemis BI layer) use it to show "this company has N quarterly
 // balance sheets, M annual income statements" without running raw queries.
 
-// CatalogSymbolCoverage is the top-level response.
-type CatalogSymbolCoverage struct {
+// CatalogSecurityCoverage is the top-level response.
+type CatalogSecurityCoverage struct {
 	GeneratedAt time.Time                `json:"generated_at"`
-	Symbol      string                   `json:"symbol"`
-	Market      string                   `json:"market"`
+	SecurityID  uint64                   `json:"security_id"`
 	Datasets    []CatalogDatasetCoverage `json:"datasets"`
 }
 

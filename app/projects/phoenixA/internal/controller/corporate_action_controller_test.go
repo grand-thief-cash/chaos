@@ -13,11 +13,11 @@ import (
 // TestCorporateActionJSONDeserialization verifies that the JSON payload
 // Artemis sends can be correctly deserialized into CorporateAction model.
 func TestCorporateActionJSONDeserialization(t *testing.T) {
-	// This is what Artemis sends (from base_corporate_action.py post_process)
+	// This is what Artemis sends (from base_corporate_action.py post_process,
+	// Phase 3: security_id replaces symbol/market).
 	artemisPayload := `[{
+		"security_id": 1,
 		"source": "amazing_data",
-		"symbol": "600519.SH",
-		"market": "zh_a",
 		"action_type": "dividend",
 		"report_period": "20231231",
 		"ann_date": "20240618",
@@ -36,12 +36,13 @@ func TestCorporateActionJSONDeserialization(t *testing.T) {
 
 	rec := list[0]
 	assertEqual(t, "source", rec.Source, "amazing_data")
-	assertEqual(t, "symbol", rec.Symbol, "600519.SH")
-	assertEqual(t, "market", rec.Market, "zh_a")
 	assertEqual(t, "action_type", rec.ActionType, "dividend")
 	assertEqual(t, "report_period", rec.ReportPeriod, "20231231")
 	assertEqual(t, "ann_date", rec.AnnDate, "20240618")
 	assertEqual(t, "progress_code", rec.ProgressCode, "3")
+	if rec.SecurityID != 1 {
+		t.Errorf("security_id: got %d, want 1", rec.SecurityID)
+	}
 
 	// Verify data_json is valid JSON
 	var dataMap map[string]any
@@ -66,9 +67,8 @@ func TestCorporateActionJSONDeserialization(t *testing.T) {
 // TestCorporateActionRightIssueDeserialization verifies right_issue payload.
 func TestCorporateActionRightIssueDeserialization(t *testing.T) {
 	artemisPayload := `[{
+		"security_id": 2,
 		"source": "amazing_data",
-		"symbol": "601988.SH",
-		"market": "zh_a",
 		"action_type": "right_issue",
 		"report_period": "2024",
 		"ann_date": "20240115",
@@ -105,9 +105,8 @@ func TestCorporateActionRightIssueDeserialization(t *testing.T) {
 // and no unexpected fields exist in the JSON wire format.
 func TestCorporateActionFieldMapping(t *testing.T) {
 	expectedFields := map[string]bool{
-		"source": true, "symbol": true, "market": true,
-		"action_type": true, "report_period": true, "ann_date": true,
-		"progress_code": true, "data_json": true,
+		"security_id": true, "source": true, "action_type": true,
+		"report_period": true, "ann_date": true, "progress_code": true, "data_json": true,
 	}
 	// Optional fields that PhoenixA adds (not from Artemis)
 	optionalFields := map[string]bool{
@@ -115,9 +114,8 @@ func TestCorporateActionFieldMapping(t *testing.T) {
 	}
 
 	rec := &model.CorporateAction{
+		SecurityID:   1,
 		Source:       "amazing_data",
-		Symbol:       "600519.SH",
-		Market:       "zh_a",
 		ActionType:   "dividend",
 		ReportPeriod: "20231231",
 		AnnDate:      "20240618",
@@ -148,11 +146,12 @@ func TestCorporateActionFieldMapping(t *testing.T) {
 	}
 }
 
-// TestCorporateActionDefaultMarket verifies controller sets default market.
-func TestCorporateActionDefaultMarket(t *testing.T) {
-	// Payload without market field
+// TestCorporateActionSecurityIDParsed verifies security_id deserializes as a
+// uint64 (Phase 3 replaced the symbol/market defaulting test — security_id is
+// now the required identity field, no market defaulting occurs).
+func TestCorporateActionSecurityIDParsed(t *testing.T) {
 	payload := `[{
-		"symbol": "600519.SH",
+		"security_id": 600519,
 		"report_period": "20231231",
 		"ann_date": "20240618",
 		"progress_code": "3",
@@ -164,16 +163,15 @@ func TestCorporateActionDefaultMarket(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// Simulate controller logic (lines 45-50 of corporate_action_controller.go)
+	// Simulate controller logic (source/action_type enforced from URL).
 	for _, item := range list {
 		item.Source = "amazing_data"
 		item.ActionType = "dividend"
-		if item.Market == "" {
-			item.Market = "zh_a"
-		}
 	}
 
-	assertEqual(t, "market", list[0].Market, "zh_a")
+	if list[0].SecurityID != 600519 {
+		t.Errorf("expected security_id=600519, got %d", list[0].SecurityID)
+	}
 	assertEqual(t, "source", list[0].Source, "amazing_data")
 	assertEqual(t, "action_type", list[0].ActionType, "dividend")
 }
@@ -192,9 +190,9 @@ func TestCorporateActionEmptyPayload(t *testing.T) {
 // TestCorporateActionBatchPayload tests multi-record payload.
 func TestCorporateActionBatchPayload(t *testing.T) {
 	payload := `[
-		{"symbol":"600519.SH","report_period":"20231231","ann_date":"20240101","progress_code":"1","data_json":"{}"},
-		{"symbol":"600519.SH","report_period":"20231231","ann_date":"20240301","progress_code":"2","data_json":"{}"},
-		{"symbol":"600519.SH","report_period":"20231231","ann_date":"20240618","progress_code":"3","data_json":"{}"}
+		{"security_id":1,"report_period":"20231231","ann_date":"20240101","progress_code":"1","data_json":"{}"},
+		{"security_id":1,"report_period":"20231231","ann_date":"20240301","progress_code":"2","data_json":"{}"},
+		{"security_id":1,"report_period":"20231231","ann_date":"20240618","progress_code":"3","data_json":"{}"}
 	]`
 
 	var list []*model.CorporateAction
@@ -205,7 +203,7 @@ func TestCorporateActionBatchPayload(t *testing.T) {
 		t.Errorf("expected 3 records, got %d", len(list))
 	}
 
-	// Verify different progress stages for same symbol+period
+	// Verify different progress stages for same security+period
 	codes := map[string]bool{}
 	for _, r := range list {
 		codes[r.ProgressCode] = true
@@ -292,9 +290,8 @@ func TestCorporateActionDataJSONIntegrity(t *testing.T) {
 
 	// Put into model
 	rec := &model.CorporateAction{
+		SecurityID:   1,
 		Source:       "amazing_data",
-		Symbol:       "600519.SH",
-		Market:       "zh_a",
 		ActionType:   "dividend",
 		ReportPeriod: "20231231",
 		AnnDate:      "20240618",

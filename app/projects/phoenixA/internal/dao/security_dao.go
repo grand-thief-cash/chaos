@@ -157,11 +157,14 @@ func (d *SecurityRegistryDao) DeleteAll(ctx context.Context, assetType, market s
 	return res.RowsAffected, res.Error
 }
 
-// SecurityScopeHasReferences reports whether any taxonomy_security_map / industry_constituent /
-// industry_weight row references a security_id in the given (asset_type, market) scope — the
-// same scope DeleteAll would remove. Guards delete against leaving dangling security_id
-// references (no real FK, §6 R9 → app-layer defense; mirrors TaxonomyDao.CategoryHasReferences).
-// Empty assetType/market means "all securities". Hypertables are queried by security_id index.
+// SecurityScopeHasReferences reports whether any downstream row references a
+// security_id in the given (asset_type, market) scope — the same scope DeleteAll
+// would remove. Guards delete against leaving dangling security_id references
+// (no real FK, §6 R9 → app-layer defense; mirrors TaxonomyDao.CategoryHasReferences).
+// Empty assetType/market means "all securities". Covers the Phase 2 taxonomy chain
+// (taxonomy_security_map / industry_constituent / industry_weight) AND the Phase 3
+// data tables (financial_statement / corporate_action / equity_structure /
+// adjust_factor / long_hu_bang), all of which now reference security_id.
 func (d *SecurityRegistryDao) SecurityScopeHasReferences(ctx context.Context, assetType, market string) (bool, error) {
 	scope := func() *gorm.DB {
 		q := d.db.WithContext(ctx).Model(&model.SecurityRegistry{}).Select("id")
@@ -173,17 +176,26 @@ func (d *SecurityRegistryDao) SecurityScopeHasReferences(ctx context.Context, as
 		}
 		return q
 	}
-	var c1, c2, c3 int64
-	if err := d.db.WithContext(ctx).Table("ods.taxonomy_security_map").Where("security_id IN (?)", scope()).Count(&c1).Error; err != nil {
-		return false, err
+	tables := []string{
+		"ods.taxonomy_security_map",
+		"ods.industry_constituent",
+		"ods.industry_weight",
+		"ods.financial_statement",
+		"ods.corporate_action",
+		"ods.equity_structure",
+		"ods.adjust_factor",
+		"ods.long_hu_bang",
 	}
-	if err := d.db.WithContext(ctx).Table("ods.industry_constituent").Where("security_id IN (?)", scope()).Count(&c2).Error; err != nil {
-		return false, err
+	for _, tbl := range tables {
+		var c int64
+		if err := d.db.WithContext(ctx).Table(tbl).Where("security_id IN (?)", scope()).Count(&c).Error; err != nil {
+			return false, err
+		}
+		if c > 0 {
+			return true, nil
+		}
 	}
-	if err := d.db.WithContext(ctx).Table("ods.industry_weight").Where("security_id IN (?)", scope()).Count(&c3).Error; err != nil {
-		return false, err
-	}
-	return c1+c2+c3 > 0, nil
+	return false, nil
 }
 
 func applySecurityFilters(q *gorm.DB, f *model.SecurityFilters) *gorm.DB {

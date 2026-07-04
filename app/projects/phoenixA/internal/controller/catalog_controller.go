@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -128,21 +129,22 @@ func (c *CatalogController) Capabilities(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, caps)
 }
 
-// GET /api/v2/catalog/securities/{symbol}/datasets/summary
-// Returns per-dataset/data_type row counts and time ranges for a given symbol.
+// GET /api/v2/catalog/securities/{security_id}/datasets/summary
+// Returns per-dataset/data_type row counts and time ranges for a given security.
 // Generic discovery API — not BI-specific. Callers use it to learn what data
 // exists for a company without running raw queries.
-func (c *CatalogController) GetSymbolCoverage(w http.ResponseWriter, r *http.Request) {
-	symbol := chi.URLParam(r, "symbol")
-	if symbol == "" {
-		writeJSON(w, http.StatusBadRequest, apiError{Error: "symbol is required"})
+func (c *CatalogController) GetSecurityCoverage(w http.ResponseWriter, r *http.Request) {
+	securityIDStr := chi.URLParam(r, "security_id")
+	if securityIDStr == "" {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "security_id is required"})
 		return
 	}
-	market := r.URL.Query().Get("market")
-	if market == "" {
-		market = bizConsts.MARKET_ZH_A
+	securityID, err := strconv.ParseUint(securityIDStr, 10, 64)
+	if err != nil || securityID == 0 {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id"})
+		return
 	}
-	coverage, err := c.Svc.GetSymbolCoverage(r.Context(), symbol, market)
+	coverage, err := c.Svc.GetSecurityCoverage(r.Context(), securityID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return

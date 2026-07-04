@@ -32,6 +32,10 @@ func (c *CorporateActionController) Stop(ctx context.Context) error {
 }
 
 // POST /api/v2/corporate-action/{source}/{action_type}/upsert
+//
+// Request body: JSON array of corporate-action rows. Each row MUST carry a
+// security_id resolved from security_registry; rows with a missing/unknown
+// security_id are rejected with 400 (orphan defense, refactor §10.c).
 func (c *CorporateActionController) BatchUpsert(w http.ResponseWriter, r *http.Request) {
 	source := chi.URLParam(r, "source")
 	actionType := chi.URLParam(r, "action_type")
@@ -47,12 +51,9 @@ func (c *CorporateActionController) BatchUpsert(w http.ResponseWriter, r *http.R
 	for _, item := range list {
 		item.Source = source
 		item.ActionType = actionType
-		if item.Market == "" {
-			item.Market = bizConsts.MARKET_ZH_A
-		}
 	}
 	if err := c.Svc.BatchUpsert(r.Context(), list); err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
@@ -66,7 +67,7 @@ func (c *CorporateActionController) BatchUpsert(w http.ResponseWriter, r *http.R
 //	fields          - comma-separated raw/canonical field names; resolved
 //	                  through the field dictionary. Unknown fields return 400
 //	                  with suggestions.
-//	symbol / symbols / market / report_period / period_start / period_end /
+//	security_id / security_ids / report_period / period_start / period_end /
 //	ann_date_before / progress_code / page / page_size
 func (c *CorporateActionController) Query(w http.ResponseWriter, r *http.Request) {
 	source := chi.URLParam(r, "source")
@@ -81,21 +82,33 @@ func (c *CorporateActionController) Query(w http.ResponseWriter, r *http.Request
 
 	f := &model.CorporateActionFilters{
 		ActionType:    actionType,
-		Symbol:        q.Get("symbol"),
-		Market:        q.Get("market"),
 		ReportPeriod:  q.Get("report_period"),
 		PeriodStart:   q.Get("period_start"),
 		PeriodEnd:     q.Get("period_end"),
 		AnnDateBefore: q.Get("ann_date_before"),
 		ProgressCode:  q.Get("progress_code"),
 	}
+	if q.Has("security_id") {
+		v := q.Get("security_id")
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || id == 0 {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id: must be a positive integer"})
+			return
+		}
+		f.SecurityID = id
+	}
+	if q.Has("security_ids") {
+		ids, err := parseUint64ListStrict(q.Get("security_ids"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+			return
+		}
+		f.SecurityIDs = ids
+	}
 	var requestedFields []string
 	if v := q.Get("fields"); v != "" {
 		requestedFields = strings.Split(v, ",")
 		f.Fields = requestedFields
-	}
-	if v := q.Get("symbols"); v != "" {
-		f.Symbols = strings.Split(v, ",")
 	}
 
 	switch format {

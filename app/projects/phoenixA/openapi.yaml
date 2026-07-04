@@ -125,31 +125,28 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
 
-  # ─── Discovery: per-symbol data coverage ───
-  /api/v2/catalog/securities/{symbol}/datasets/summary:
+  # ─── Discovery: per-security data coverage ───
+  /api/v2/catalog/securities/{security_id}/datasets/summary:
     get:
       tags: [Discovery]
-      summary: Per-symbol data coverage summary
+      summary: Per-security data coverage summary
       description: |
         Returns row counts and time ranges for each dataset/data_type that
-        exists for a given symbol. Covers financial_statement (by
+        exists for a given security_id. Covers financial_statement (by
         statement_type × report_type), corporate_action (by action_type),
         and equity_structure. Generic discovery API — not BI-specific.
       parameters:
         - in: path
-          name: symbol
+          name: security_id
           required: true
-          schema: { type: string }
-          description: Security code (e.g. "000001").
-        - in: query
-          name: market
-          schema: { type: string, default: zh_a }
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: security_registry.id (Phase 3 surrogate key).
       responses:
         '200':
           description: Coverage summary.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SymbolCoverageResponse' }
+              schema: { $ref: '#/components/schemas/SecurityCoverageResponse' }
 
   # ─── Discovery: field coverage ───
   /api/v2/catalog/field-coverage/scan:
@@ -243,15 +240,13 @@ paths:
             Ignored for nested format (which returns full data_json).
             Unknown fields return 400 with suggestions.
         - in: query
-          name: symbol
-          schema: { type: string }
+          name: security_id
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Single security_id (Phase 3 surrogate key) to filter on.
         - in: query
-          name: symbols
+          name: security_ids
           schema: { type: string }
-          description: Comma-separated list of symbols.
-        - in: query
-          name: market
-          schema: { type: string, default: zh_a }
+          description: Comma-separated list of security_ids.
         - in: query
           name: report_period
           schema: { type: string }
@@ -338,14 +333,13 @@ paths:
           schema: { type: string }
           description: Comma-separated raw/canonical field names for flat projection.
         - in: query
-          name: symbol
-          schema: { type: string }
+          name: security_id
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Single security_id (Phase 3 surrogate key) to filter on.
         - in: query
-          name: symbols
+          name: security_ids
           schema: { type: string }
-        - in: query
-          name: market
-          schema: { type: string }
+          description: Comma-separated list of security_ids.
         - in: query
           name: report_period
           schema: { type: string }
@@ -427,14 +421,13 @@ paths:
           name: fields
           schema: { type: string }
         - in: query
-          name: symbol
-          schema: { type: string }
+          name: security_id
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Single security_id (Phase 3 surrogate key) to filter on.
         - in: query
-          name: symbols
+          name: security_ids
           schema: { type: string }
-        - in: query
-          name: market
-          schema: { type: string }
+          description: Comma-separated list of security_ids.
         - in: query
           name: change_date
           schema: { type: string }
@@ -510,16 +503,15 @@ components:
         status: { type: string, example: ok }
         count: { type: integer }
 
-    SymbolCoverageResponse:
+    SecurityCoverageResponse:
       type: object
       description: |
-        Per-symbol data coverage. Lists each dataset that has rows for this
-        symbol, broken down by data_type. For financial_statement, each
+        Per-security data coverage. Lists each dataset that has rows for this
+        security_id, broken down by data_type. For financial_statement, each
         data_type further breaks down by report_type (1=Q1, 2=H1, 3=Q3, 4=FY).
       properties:
         generated_at: { type: string, format: date-time }
-        symbol: { type: string }
-        market: { type: string }
+        security_id: { type: integer, format: int64 }
         datasets:
           type: array
           items: { $ref: '#/components/schemas/SymbolCoverageDataset' }

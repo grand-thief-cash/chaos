@@ -16,7 +16,8 @@ import (
 // FinancialStatementService handles business logic for financial statement data.
 type FinancialStatementService struct {
 	*core.BaseComponent
-	Dao *dao.FinancialStatementDao `infra:"dep:dao_financial_stmt"`
+	Dao     *dao.FinancialStatementDao `infra:"dep:dao_financial_stmt"`
+	Resolve *ResolveCache              `infra:"dep:svc_resolve_cache"`
 }
 
 func NewFinancialStatementService() *FinancialStatementService {
@@ -29,6 +30,9 @@ func (s *FinancialStatementService) Start(ctx context.Context) error {
 	if s.Dao == nil {
 		return errors.New("dao_financial_stmt is nil")
 	}
+	if s.Resolve == nil {
+		return errors.New("svc_resolve_cache is nil (required for Phase 3 orphan defense)")
+	}
 	return s.BaseComponent.Start(ctx)
 }
 
@@ -36,10 +40,18 @@ func (s *FinancialStatementService) Stop(ctx context.Context) error {
 	return s.BaseComponent.Stop(ctx)
 }
 
-// BatchUpsert upserts financial statements.
+// BatchUpsert upserts financial statements. Validates every security_id exists in
+// security_registry before writing (orphan defense, refactor §6 R9 / §10.c).
 func (s *FinancialStatementService) BatchUpsert(ctx context.Context, list []*model.FinancialStatement) error {
 	if len(list) == 0 {
 		return nil
+	}
+	ids := make([]uint64, 0, len(list))
+	for _, item := range list {
+		ids = append(ids, item.SecurityID)
+	}
+	if err := s.Resolve.ValidateSecurityIDsExist(ctx, ids); err != nil {
+		return err
 	}
 	logging.Infof(ctx, "FinancialStatementService BatchUpsert count=%d", len(list))
 	return s.Dao.BatchUpsert(ctx, list)

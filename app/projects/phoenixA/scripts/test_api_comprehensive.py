@@ -525,7 +525,7 @@ class PhoenixAAPITester:
         """测试资产负债表 API"""
         endpoint = "/api/v2/financial/amazing_data/balance_sheet"
         params = {
-            "symbols": "000001",
+            "security_id": "1",
             "limit": 1
         }
         result = APITestResult(
@@ -559,8 +559,7 @@ class PhoenixAAPITester:
             outer_expected_fields = {
                 "id": "integer",
                 "source": "string",
-                "symbol": "string",
-                "market": "string",
+                "security_id": "integer",
                 "statement_type": "string",
                 "report_period": "string",
                 "report_type": "string",
@@ -582,7 +581,6 @@ class PhoenixAAPITester:
 
                 # 检查一些关键字段
                 key_data_json_fields = {
-                    "MARKET_CODE": "string",
                     "SECURITY_NAME": "string",
                     "STATEMENT_TYPE": "string",
                     "REPORT_TYPE": "string",
@@ -617,7 +615,7 @@ class PhoenixAAPITester:
         """测试利润表 API"""
         endpoint = "/api/v2/financial/amazing_data/income"
         params = {
-            "symbols": "000001",
+            "security_id": "1",
             "limit": 1
         }
         result = APITestResult(
@@ -650,8 +648,7 @@ class PhoenixAAPITester:
             outer_expected_fields = {
                 "id": "integer",
                 "source": "string",
-                "symbol": "string",
-                "market": "string",
+                "security_id": "integer",
                 "statement_type": "string",
                 "report_period": "string",
                 "report_type": "string",
@@ -671,7 +668,6 @@ class PhoenixAAPITester:
                 data_json = first_item["data_json"]
 
                 key_data_json_fields = {
-                    "MARKET_CODE": "string",
                     "SECURITY_NAME": "string",
                     "STATEMENT_TYPE": "string",
                     "REPORT_TYPE": "string",
@@ -708,7 +704,7 @@ class PhoenixAAPITester:
         """测试分红数据 API"""
         endpoint = "/api/v2/corporate-action/amazing_data/dividend"
         params = {
-            "symbols": "000001",
+            "security_id": "1",
             "limit": 1
         }
         result = APITestResult(
@@ -741,8 +737,7 @@ class PhoenixAAPITester:
             outer_expected_fields = {
                 "id": "integer",
                 "source": "string",
-                "symbol": "string",
-                "market": "string",
+                "security_id": "integer",
                 "action_type": "string",
                 "report_period": "string",
                 "ann_date": "string",
@@ -758,7 +753,6 @@ class PhoenixAAPITester:
                 data_json = first_item["data_json"]
 
                 key_data_json_fields = {
-                    "MARKET_CODE": "string",
                     "DIV_PROGRESS": "string",
                     "DVD_PER_SHARE_STK": "float64",
                     "DVD_PER_SHARE_PRE_TAX_CASH": "float64",
@@ -1194,7 +1188,7 @@ class PhoenixAAPITester:
         """测试现金流量表 API"""
         endpoint = "/api/v2/financial/amazing_data/cashflow"
         params = {
-            "symbols": "000001",
+            "security_id": "1",
             "limit": 1
         }
         result = APITestResult(
@@ -1227,8 +1221,7 @@ class PhoenixAAPITester:
             outer_expected_fields = {
                 "id": "integer",
                 "source": "string",
-                "symbol": "string",
-                "market": "string",
+                "security_id": "integer",
                 "statement_type": "string",
                 "report_period": "string",
                 "report_type": "string",
@@ -1248,7 +1241,6 @@ class PhoenixAAPITester:
                 data_json = first_item["data_json"]
 
                 key_data_json_fields = {
-                    "MARKET_CODE": "string",
                     "SECURITY_NAME": "string",
                     "STATEMENT_TYPE": "string",
                     "REPORT_TYPE": "string",

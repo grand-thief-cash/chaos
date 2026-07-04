@@ -224,14 +224,14 @@ class APITester:
         print("\n=== Testing Financial Statements API ===")
 
         try:
-            params = {"symbol": "000001", "limit": "1"}
+            params = {"security_id": "1", "limit": "1"}
             resp = requests.get(f"{self.BASE_URL}/api/v2/financial/amazing_data/balance_sheet", params=params)
             data = resp.json()
             # 返回格式: {"data": [...], "total": ...}
             if "data" in data and "total" in data:
                 if len(data["data"]) > 0:
                     item = data["data"][0]
-                    expected_main_fields = ["id", "source", "symbol", "market", "statement_type", "reporting_period",
+                    expected_main_fields = ["id", "security_id", "source", "statement_type", "reporting_period",
                                           "report_type", "statement_code", "security_name", "ann_date", "actual_ann_date",
                                           "comp_type_code", "data_json", "created_at", "updated_at"]
                     actual_fields = list(item.keys())
@@ -256,14 +256,14 @@ class APITester:
         print("\n=== Testing Corporate Actions API ===")
 
         try:
-            params = {"symbol": "000001", "limit": "1"}
+            params = {"security_id": "1", "limit": "1"}
             resp = requests.get(f"{self.BASE_URL}/api/v2/corporate-action/amazing_data/dividend", params=params)
             data = resp.json()
             # 返回格式: {"data": [...], "total": ...}
             if "data" in data and "total" in data:
                 if len(data["data"]) > 0:
                     item = data["data"][0]
-                    expected_main_fields = ["id", "source", "symbol", "market", "action_type", "report_period",
+                    expected_main_fields = ["id", "security_id", "source", "action_type", "report_period",
                                           "ann_date", "progress_code", "data_json", "created_at", "updated_at"]
                     actual_fields = list(item.keys())
                     missing = set(expected_main_fields) - set(actual_fields)

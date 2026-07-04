@@ -32,6 +32,10 @@ func (c *FinancialStatementController) Stop(ctx context.Context) error {
 }
 
 // POST /api/v2/financial/{source}/{statement_type}/upsert
+//
+// Request body: JSON array of financial-statement rows. Each row MUST carry a
+// security_id resolved from security_registry; rows with a missing/unknown
+// security_id are rejected with 400 (orphan defense, refactor §10.c).
 func (c *FinancialStatementController) BatchUpsert(w http.ResponseWriter, r *http.Request) {
 	source := chi.URLParam(r, "source")
 	stmtType := chi.URLParam(r, "statement_type")
@@ -44,16 +48,13 @@ func (c *FinancialStatementController) BatchUpsert(w http.ResponseWriter, r *htt
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
-	// Enforce source and statement_type from URL
+	// Enforce source and statement_type from URL.
 	for _, item := range list {
 		item.Source = source
 		item.StatementType = stmtType
-		if item.Market == "" {
-			item.Market = bizConsts.MARKET_ZH_A
-		}
 	}
 	if err := c.Svc.BatchUpsert(r.Context(), list); err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
@@ -67,7 +68,7 @@ func (c *FinancialStatementController) BatchUpsert(w http.ResponseWriter, r *htt
 //	fields          - comma-separated raw/canonical field names; resolved
 //	                  through the field dictionary. Unknown fields return 400
 //	                  with suggestions.
-//	symbol / symbols / market / period_start / period_end / reporting_period /
+//	security_id / security_ids / period_start / period_end / reporting_period /
 //	reporting_periods / ann_date_before / report_type / statement_code /
 //	comp_type_code / page / page_size
 func (c *FinancialStatementController) Query(w http.ResponseWriter, r *http.Request) {
@@ -84,20 +85,32 @@ func (c *FinancialStatementController) Query(w http.ResponseWriter, r *http.Requ
 	f := &model.FinancialStatementFilters{
 		StatementType: stmtType,
 		StatementCode: q.Get("statement_code"),
-		Symbol:        q.Get("symbol"),
-		Market:        q.Get("market"),
 		PeriodStart:   q.Get("period_start"),
 		PeriodEnd:     q.Get("period_end"),
 		AnnDateBefore: q.Get("ann_date_before"),
 		ReportType:    q.Get("report_type"),
 	}
+	if q.Has("security_id") {
+		v := q.Get("security_id")
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || id == 0 {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id: must be a positive integer"})
+			return
+		}
+		f.SecurityID = id
+	}
+	if q.Has("security_ids") {
+		ids, err := parseUint64ListStrict(q.Get("security_ids"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+			return
+		}
+		f.SecurityIDs = ids
+	}
 	var requestedFields []string
 	if v := q.Get("fields"); v != "" {
 		requestedFields = strings.Split(v, ",")
 		f.Fields = requestedFields
-	}
-	if v := q.Get("symbols"); v != "" {
-		f.Symbols = strings.Split(v, ",")
 	}
 	if v := q.Get("reporting_period"); v != "" {
 		f.ReportingPeriod = v

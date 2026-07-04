@@ -122,14 +122,16 @@ func (s *SecurityService) DeleteAll(ctx context.Context, assetType, market strin
 	logging.Infof(ctx, "SecurityService DeleteAll asset_type=%s market=%s", assetType, market)
 	// Refuse if downstream tables still reference securities in this scope — with no real FK
 	// (§6 R9) a bare delete would leave dangling security_id refs in taxonomy_security_map /
-	// industry_constituent / industry_weight. Operator must clear dependents first (this is
-	// a rebuild-only op; refactor §5.1.1/§8.bis). Mirrors TaxonomyService.DeleteCategory.
+	// industry_constituent / industry_weight (Phase 2) and financial_statement /
+	// corporate_action / equity_structure / adjust_factor / long_hu_bang (Phase 3). Operator
+	// must clear dependents first (this is a rebuild-only op; refactor §5.1.1/§8.bis). Mirrors
+	// TaxonomyService.DeleteCategory.
 	referenced, err := s.Dao.SecurityScopeHasReferences(ctx, assetType, market)
 	if err != nil {
 		return 0, err
 	}
 	if referenced {
-		return 0, NewConflictError("securities in scope (asset_type=%s market=%s) are referenced by taxonomy_security_map/industry_constituent/industry_weight; remove dependents first", assetType, market)
+		return 0, NewConflictError("securities in scope (asset_type=%s market=%s) are referenced by downstream tables (taxonomy_security_map/industry_constituent/industry_weight/financial_statement/corporate_action/equity_structure/adjust_factor/long_hu_bang); remove dependents first", assetType, market)
 	}
 	affected, err := s.Dao.DeleteAll(ctx, assetType, market)
 	if err != nil {

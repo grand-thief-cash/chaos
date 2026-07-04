@@ -8,12 +8,12 @@ import (
 // CorporateAction stores corporate action data (dividend, right issue, etc.)
 // using a JSON column for the variable data fields.
 // Table: corporate_action
+// security_id is a logical FK to ods.security_registry.id (no real FK constraint, refactor §6 R9).
 type CorporateAction struct {
 	ID           uint64          `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
+	SecurityID   uint64          `gorm:"column:security_id;not null;uniqueIndex:uk_corp_action;index:idx_security_action" json:"security_id"`
 	Source       string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_corp_action" json:"source"`
-	Symbol       string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_corp_action;index:idx_symbol_action" json:"symbol"`
-	Market       string          `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_corp_action" json:"market"`
-	ActionType   string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_corp_action;index:idx_symbol_action" json:"action_type"` // dividend / right_issue
+	ActionType   string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_corp_action;index:idx_security_action" json:"action_type"` // dividend / right_issue
 	ReportPeriod string          `gorm:"type:varchar(10);not null;default:'';uniqueIndex:uk_corp_action;index:idx_report_period" json:"report_period"`
 	AnnDate      string          `gorm:"type:varchar(10);not null;default:'';uniqueIndex:uk_corp_action" json:"ann_date"`
 	ProgressCode string          `gorm:"type:varchar(8);not null;default:''" json:"progress_code"`
@@ -26,16 +26,15 @@ func (CorporateAction) TableName() string { return "ods.corporate_action" }
 
 // CorporateActionFilters for querying corporate actions.
 type CorporateActionFilters struct {
-	Symbol        string
-	Symbols       []string // batch query for multiple symbols
-	Market        string
+	SecurityID    uint64
+	SecurityIDs   []uint64 // batch query for multiple securities
 	ActionType    string
 	ReportPeriod  string
 	PeriodStart   string
 	PeriodEnd     string
 	AnnDateBefore string
 	ProgressCode  string
-	Fields        []string // fields to return (e.g., ["symbol", "data_json->DVD_PER_SHARE_PRE_TAX_CASH"])
+	Fields        []string // fields to return (e.g., ["security_id", "data_json->DVD_PER_SHARE_PRE_TAX_CASH"])
 	// PostgreSQL JSONB filters
 	DataContains map[string]interface{} // data_json @> '{"key": value}'  containment query
 	DataHasKey   string                 // data_json ? 'key'  key existence check

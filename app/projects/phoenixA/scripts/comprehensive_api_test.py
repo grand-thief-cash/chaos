@@ -74,11 +74,11 @@ test_and_print("Taxonomy by_security", f"{BASE_URL}/api/v2/taxonomy/by_security/
 test_and_print("Taxonomy Categories", f"{BASE_URL}/api/v2/taxonomy/amazing_data/swhy/zh_a/categories", {"limit": "1"})
 
 test_and_print("Financial Statements", f"{BASE_URL}/api/v2/financial/amazing_data/balance_sheet", {
-    "symbol": "000001",
+    "security_id": "1",
     "limit": "1"
 })
 
 test_and_print("Corporate Actions", f"{BASE_URL}/api/v2/corporate-action/amazing_data/dividend", {
-    "symbol": "000001",
+    "security_id": "1",
     "limit": "1"
 })

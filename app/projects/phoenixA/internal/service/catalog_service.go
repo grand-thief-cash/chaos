@@ -324,8 +324,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{TypeValue: "bs_balance", Label: "偿债能力指标(baostock)", Description: "季频偿债能力数据：流动比率、速动比率、现金比率、资产负债率、权益乘数等", Source: "baostock"},
 		},
 		OutputFields: []model.FieldDesc{
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
-			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "security_id", Type: "bigint", Description: "证券ID（逻辑外键 → security_registry.id，Phase 3 替代 symbol/market）"},
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data/baostock）"},
 			{Name: "statement_type", Type: "varchar(32)", Description: "报表类型"},
 			{Name: "reporting_period", Type: "varchar(10)", Description: "报告期（YYYY-MM-DD）"},
@@ -337,9 +336,8 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data", "baostock"}},
 			{Name: "statement_type", Type: "string", Required: true, Description: "报表类型", Enum: []string{"balance_sheet", "income", "cashflow", "profit_express", "profit_notice", "bs_balance"}},
-			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
-			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
-			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "security_id", Type: "integer", Required: false, Description: "单个证券ID（security_registry.id）"},
+			{Name: "security_ids", Type: "string", Required: false, Description: "证券ID列表（逗号分隔）"},
 			{Name: "period_start", Type: "string", Required: false, Description: "报告期起始（YYYY-MM-DD）"},
 			{Name: "period_end", Type: "string", Required: false, Description: "报告期截止（YYYY-MM-DD）"},
 			{Name: "reporting_period", Type: "string", Required: false, Description: "单个报告期（YYYY-MM-DD）"},
@@ -363,8 +361,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{TypeValue: "bs_dividend", Label: "除权除息(baostock)", Description: "除权除息详细数据：税前/税后每股股利、每股红股、每股转增资本、各关键日期", Source: "baostock"},
 		},
 		OutputFields: []model.FieldDesc{
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
-			{Name: "market", Type: "varchar(16)", Description: "市场标识"},
+			{Name: "security_id", Type: "bigint", Description: "证券ID（逻辑外键 → security_registry.id，Phase 3 替代 symbol/market）"},
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data/baostock）"},
 			{Name: "action_type", Type: "varchar(32)", Description: "行为类型"},
 			{Name: "ann_date", Type: "varchar(10)", Description: "公告日期（YYYY-MM-DD）"},
@@ -374,7 +371,8 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data", "baostock"}},
 			{Name: "action_type", Type: "string", Required: true, Description: "行为类型", Enum: []string{"dividend", "right_issue", "bs_dividend"}},
-			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+			{Name: "security_id", Type: "integer", Required: false, Description: "单个证券ID（security_registry.id）"},
+			{Name: "security_ids", Type: "string", Required: false, Description: "证券ID列表（逗号分隔）"},
 		},
 		RefreshSchedule:     "每日增量",
 		CoverageDescription: "A股全量，2015至今（baostock除权除息）/ 历史全量（AmazingData分红配股）",
@@ -386,8 +384,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{TypeValue: "adjust_factor", Label: "复权因子", Description: "Baostock query_adjust_factor 输出的事件级复权因子", Source: "baostock"},
 		},
 		OutputFields: []model.FieldDesc{
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
-			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "security_id", Type: "bigint", Description: "证券ID（逻辑外键 → security_registry.id，Phase 3 替代 symbol/market）"},
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（baostock）"},
 			{Name: "divid_operate_date", Type: "varchar(10)", Description: "除权除息日期（YYYY-MM-DD）"},
 			{Name: "fore_adjust_factor", Type: "numeric(20,8)", Description: "向前复权因子"},
@@ -396,9 +393,8 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		},
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"baostock"}},
-			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
-			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
-			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "security_id", Type: "integer", Required: false, Description: "单个证券ID（security_registry.id）"},
+			{Name: "security_ids", Type: "string", Required: false, Description: "证券ID列表（逗号分隔）"},
 			{Name: "start_date", Type: "string", Required: false, Description: "起始除权除息日期（YYYY-MM-DD）"},
 			{Name: "end_date", Type: "string", Required: false, Description: "截止除权除息日期（YYYY-MM-DD）"},
 			{Name: "fields", Type: "string", Required: false, Description: "返回字段列表（逗号分隔）"},
@@ -415,8 +411,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{TypeValue: "long_hu_bang", Label: "龙虎榜明细", Description: "AmazingData get_long_hu_bang 输出的营业部级龙虎榜数据", Source: "amazing_data"},
 		},
 		OutputFields: []model.FieldDesc{
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
-			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "security_id", Type: "bigint", Description: "证券ID（逻辑外键 → security_registry.id，Phase 3 替代 symbol/market）"},
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data）"},
 			{Name: "trade_date", Type: "varchar(10)", Description: "交易日期（YYYY-MM-DD）"},
 			{Name: "security_name", Type: "varchar(128)", Description: "证券名称"},
@@ -432,9 +427,8 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		},
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data"}},
-			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
-			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
-			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "security_id", Type: "integer", Required: false, Description: "单个证券ID（security_registry.id）"},
+			{Name: "security_ids", Type: "string", Required: false, Description: "证券ID列表（逗号分隔）"},
 			{Name: "trade_date", Type: "string", Required: false, Description: "精确交易日期（YYYY-MM-DD）"},
 			{Name: "start_date", Type: "string", Required: false, Description: "起始交易日期（YYYY-MM-DD）"},
 			{Name: "end_date", Type: "string", Required: false, Description: "截止交易日期（YYYY-MM-DD）"},
@@ -561,10 +555,10 @@ var domainApiRegistry = map[string]struct {
 		ExampleCalls: []model.ExampleCall{
 			{Title: "查询A股日线行情", URL: "GET /api/v2/bars/stock/zh_a?symbol=000001&start_date=2026-01-01"},
 			{Title: "查询指数行情", URL: "GET /api/v2/bars/index/zh_a?symbol=000001&start_date=2026-01-01"},
-			{Title: "查询复权因子", URL: "GET /api/v2/adjust-factors/baostock?symbol=600000&start_date=2024-01-01"},
+			{Title: "查询复权因子", URL: "GET /api/v2/adjust-factors/baostock?security_id=1&start_date=2024-01-01"},
 		},
 		CrossRefs: []model.CrossRef{
-			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（adjust_factor 经 security_id 关联；bars_* 物理表仍存 symbol，API 将在 Phase 4 迁 security_id）"},
 		},
 	},
 	"security": {
@@ -588,11 +582,11 @@ var domainApiRegistry = map[string]struct {
 	"financial": {
 		Description: "财务报表和公司行为数据，资产负债表/利润表/现金流量表/业绩预告/分红配股",
 		ExampleCalls: []model.ExampleCall{
-			{Title: "查询资产负债表", URL: "GET /api/v2/financial/amazing_data/balance_sheet?symbol=000001&page=1"},
-			{Title: "查询分红信息", URL: "GET /api/v2/corporate-action/amazing_data/dividend?symbol=000001"},
+			{Title: "查询资产负债表", URL: "GET /api/v2/financial/amazing_data/balance_sheet?security_id=1&page=1"},
+			{Title: "查询分红信息", URL: "GET /api/v2/corporate-action/amazing_data/dividend?security_id=1"},
 		},
 		CrossRefs: []model.CrossRef{
-			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（Phase 3 surrogate-key 重构后经 security_id 关联）"},
 		},
 	},
 	"strategy": {
@@ -657,24 +651,29 @@ func (s *CatalogService) queryDataSources(ctx context.Context, schema, table, ti
 		}
 	}
 
-	// Check if table has "source" and "symbol" columns
+	// Check which identity column the table exposes: Phase 3 data tables
+	// (financial_statement / corporate_action / equity_structure / adjust_factor /
+	// long_hu_bang) use security_id; bars_* physical tables still use symbol
+	// (storage exception, §3.2; bars API migrates to security_id in Phase 4).
 	type colCheck struct {
 		ColName string
 	}
 	var foundCols []colCheck
 	checkQ := fmt.Sprintf(
-		`SELECT column_name AS col_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' AND column_name IN ('source', 'symbol')`,
+		`SELECT column_name AS col_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' AND column_name IN ('source', 'security_id', 'symbol')`,
 		schema, table,
 	)
 	if err := s.Dao.DB().WithContext(ctx).Raw(checkQ).Scan(&foundCols).Error; err != nil {
 		return nil
 	}
-	hasSource, hasSymbol := false, false
+	hasSource, hasSecurityID, hasSymbol := false, false, false
 	for _, c := range foundCols {
-		if c.ColName == "source" {
+		switch c.ColName {
+		case "source":
 			hasSource = true
-		}
-		if c.ColName == "symbol" {
+		case "security_id":
+			hasSecurityID = true
+		case "symbol":
 			hasSymbol = true
 		}
 	}
@@ -694,7 +693,9 @@ func (s *CatalogService) queryDataSources(ctx context.Context, schema, table, ti
 	var query string
 
 	distinctExpr := "0"
-	if hasSymbol {
+	if hasSecurityID {
+		distinctExpr = "COUNT(DISTINCT security_id)"
+	} else if hasSymbol {
 		distinctExpr = "COUNT(DISTINCT symbol)"
 	}
 
@@ -1756,15 +1757,15 @@ func computeUngovernedKeys(observed []model.JSONBKeyRef, governed map[string]boo
 	return out
 }
 
-// GetSymbolCoverage returns per-dataset/data_type row counts and time ranges
-// for a given symbol+market. This is a generic discovery API — callers (e.g.,
+// GetSecurityCoverage returns per-dataset/data_type row counts and time ranges
+// for a given security_id. This is a generic discovery API — callers (e.g.,
 // artemis BI layer) use it to show what data exists for a company.
-func (s *CatalogService) GetSymbolCoverage(ctx context.Context, symbol, market string) (*model.CatalogSymbolCoverage, error) {
-	rows, err := s.Dao.GetSymbolCoverage(ctx, symbol, market)
+func (s *CatalogService) GetSecurityCoverage(ctx context.Context, securityID uint64) (*model.CatalogSecurityCoverage, error) {
+	rows, err := s.Dao.GetSecurityCoverage(ctx, securityID)
 	if err != nil {
 		return nil, err
 	}
-	coverage := dao.AggregateCoverage(rows, symbol, market)
+	coverage := dao.AggregateCoverage(rows, securityID)
 	coverage.GeneratedAt = time.Now().UTC()
 	return coverage, nil
 }

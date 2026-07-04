@@ -48,7 +48,7 @@ func (d *EquityStructureDao) Start(ctx context.Context) error {
 func (d *EquityStructureDao) Stop(ctx context.Context) error { return d.BaseComponent.Stop(ctx) }
 
 // BatchUpsert upserts equity_structure rows. Unique key:
-// (source, symbol, market, change_date, ann_date).
+// (security_id, source, change_date, ann_date).
 func (d *EquityStructureDao) BatchUpsert(ctx context.Context, list []*model.EquityStructure) error {
 	if len(list) == 0 {
 		return nil
@@ -56,7 +56,7 @@ func (d *EquityStructureDao) BatchUpsert(ctx context.Context, list []*model.Equi
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
-				{Name: "source"}, {Name: "symbol"}, {Name: "market"},
+				{Name: "security_id"}, {Name: "source"},
 				{Name: "change_date"}, {Name: "ann_date"},
 			},
 			DoUpdates: clause.AssignmentColumns([]string{
@@ -65,20 +65,19 @@ func (d *EquityStructureDao) BatchUpsert(ctx context.Context, list []*model.Equi
 		}).CreateInBatches(list, 200).Error
 }
 
-// applyEquityFilters mutates the gorm query with equity_structure WHERE
-// clauses. Shared between QueryFlat, QueryNested and Count.
-func applyEquityFilters(q *gorm.DB, f *model.EquityStructureFilters) {
+// applyEquityFilters returns the gorm query with equity_structure WHERE
+// clauses applied. Shared between QueryFlat, QueryNested and Count. MUST return
+// the *gorm.DB (gorm v2 Where returns a new session; callers must reassign:
+// q = applyEquityFilters(q, f)).
+func applyEquityFilters(q *gorm.DB, f *model.EquityStructureFilters) *gorm.DB {
 	if f == nil {
-		return
+		return q
 	}
-	if f.Symbol != "" {
-		q = q.Where("symbol = ?", f.Symbol)
+	if f.SecurityID != 0 {
+		q = q.Where("security_id = ?", f.SecurityID)
 	}
-	if len(f.Symbols) > 0 {
-		q = q.Where("symbol IN ?", f.Symbols)
-	}
-	if f.Market != "" {
-		q = q.Where("market = ?", f.Market)
+	if len(f.SecurityIDs) > 0 {
+		q = q.Where("security_id IN ?", f.SecurityIDs)
 	}
 	if f.ChangeDate != "" {
 		q = q.Where("change_date = ?", f.ChangeDate)
@@ -106,13 +105,14 @@ func applyEquityFilters(q *gorm.DB, f *model.EquityStructureFilters) {
 	if f.DataHasKey != "" {
 		q = q.Where("data_json ?? ?", f.DataHasKey)
 	}
+	return q
 }
 
 // Count returns the number of rows matching the filters.
 func (d *EquityStructureDao) Count(ctx context.Context, source string, f *model.EquityStructureFilters) (int64, error) {
 	var cnt int64
 	q := d.db.WithContext(ctx).Table("ods.equity_structure").Where("source = ?", source)
-	applyEquityFilters(q, f)
+	q = applyEquityFilters(q, f)
 	if err := q.Count(&cnt).Error; err != nil {
 		return 0, err
 	}
@@ -131,8 +131,8 @@ func (d *EquityStructureDao) ResolveQueryFields(ctx context.Context, source, dat
 func (d *EquityStructureDao) QueryFlat(ctx context.Context, source string, f *model.EquityStructureFilters, resolved []ResolvedField, limit, offset int) ([]map[string]any, error) {
 	selectClause, _ := BuildFlatSelect(resolved)
 	q := d.db.WithContext(ctx).Table("ods.equity_structure").Where("source = ?", source)
-	applyEquityFilters(q, f)
-	q = q.Order("symbol ASC, change_date DESC")
+	q = applyEquityFilters(q, f)
+	q = q.Order("security_id ASC, change_date DESC")
 	if selectClause != "" {
 		q = q.Select(selectClause)
 	}
@@ -155,7 +155,7 @@ func (d *EquityStructureDao) QueryNested(ctx context.Context, source string, f *
 	topLevel, dataJSONFields := SplitResolved(resolved)
 
 	selectParts := []string{
-		"source", "symbol", "market", "ann_date", "change_date",
+		"security_id", "source", "ann_date", "change_date",
 		"current_sign", "is_valid",
 	}
 	seen := map[string]bool{}
@@ -179,8 +179,8 @@ func (d *EquityStructureDao) QueryNested(ctx context.Context, source string, f *
 		Table("equity_structure").
 		Select(strings.Join(selectParts, ", ")).
 		Where("source = ?", source)
-	applyEquityFilters(q, f)
-	q = q.Order("symbol ASC, change_date DESC")
+	q = applyEquityFilters(q, f)
+	q = q.Order("security_id ASC, change_date DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -189,9 +189,8 @@ func (d *EquityStructureDao) QueryNested(ctx context.Context, source string, f *
 	}
 
 	type rawNestedRow struct {
+		SecurityID  uint64 `gorm:"column:security_id"`
 		Source      string `gorm:"column:source"`
-		Symbol      string `gorm:"column:symbol"`
-		Market      string `gorm:"column:market"`
 		AnnDate     string `gorm:"column:ann_date"`
 		ChangeDate  string `gorm:"column:change_date"`
 		CurrentSign int    `gorm:"column:current_sign"`
@@ -207,9 +206,8 @@ func (d *EquityStructureDao) QueryNested(ctx context.Context, source string, f *
 	for _, r := range rawRows {
 		row := model.NestedRow{
 			TopLevel: map[string]any{
+				"security_id":  r.SecurityID,
 				"source":       r.Source,
-				"symbol":       r.Symbol,
-				"market":       r.Market,
 				"ann_date":     r.AnnDate,
 				"change_date":  r.ChangeDate,
 				"current_sign": r.CurrentSign,

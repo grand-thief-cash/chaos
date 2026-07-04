@@ -31,6 +31,10 @@ func (c *EquityStructureController) Stop(ctx context.Context) error {
 }
 
 // POST /api/v2/equity-structure/{source}/upsert
+//
+// Request body: JSON array of equity-structure rows. Each row MUST carry a
+// security_id resolved from security_registry; rows with a missing/unknown
+// security_id are rejected with 400 (orphan defense, refactor §10.c).
 func (c *EquityStructureController) BatchUpsert(w http.ResponseWriter, r *http.Request) {
 	source := chi.URLParam(r, "source")
 	if source == "" {
@@ -44,12 +48,9 @@ func (c *EquityStructureController) BatchUpsert(w http.ResponseWriter, r *http.R
 	}
 	for _, item := range list {
 		item.Source = source
-		if item.Market == "" {
-			item.Market = bizConsts.MARKET_ZH_A
-		}
 	}
 	if err := c.Svc.BatchUpsert(r.Context(), list); err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
@@ -63,7 +64,7 @@ func (c *EquityStructureController) BatchUpsert(w http.ResponseWriter, r *http.R
 //	fields          - comma-separated raw/canonical field names; resolved
 //	                  through the field dictionary. Unknown fields return 400
 //	                  with suggestions.
-//	symbol / symbols / market / change_date / change_start / change_end /
+//	security_id / security_ids / change_date / change_start / change_end /
 //	ann_date_before / current_only / valid_only / page / page_size
 func (c *EquityStructureController) Query(w http.ResponseWriter, r *http.Request) {
 	source := chi.URLParam(r, "source")
@@ -76,12 +77,27 @@ func (c *EquityStructureController) Query(w http.ResponseWriter, r *http.Request
 	}
 
 	f := &model.EquityStructureFilters{
-		Symbol:        q.Get("symbol"),
-		Market:        q.Get("market"),
 		ChangeDate:    q.Get("change_date"),
 		ChangeStart:   q.Get("change_start"),
 		ChangeEnd:     q.Get("change_end"),
 		AnnDateBefore: q.Get("ann_date_before"),
+	}
+	if q.Has("security_id") {
+		v := q.Get("security_id")
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || id == 0 {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id: must be a positive integer"})
+			return
+		}
+		f.SecurityID = id
+	}
+	if q.Has("security_ids") {
+		ids, err := parseUint64ListStrict(q.Get("security_ids"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+			return
+		}
+		f.SecurityIDs = ids
 	}
 	if v := q.Get("current_only"); v == "1" || strings.EqualFold(v, "true") {
 		f.CurrentOnly = true
@@ -93,9 +109,6 @@ func (c *EquityStructureController) Query(w http.ResponseWriter, r *http.Request
 	if v := q.Get("fields"); v != "" {
 		requestedFields = strings.Split(v, ",")
 		f.Fields = requestedFields
-	}
-	if v := q.Get("symbols"); v != "" {
-		f.Symbols = strings.Split(v, ",")
 	}
 
 	switch format {

@@ -14,7 +14,8 @@ import (
 
 type AdjustFactorService struct {
 	*core.BaseComponent
-	Dao *dao.AdjustFactorDao `infra:"dep:dao_adjust_factor"`
+	Dao     *dao.AdjustFactorDao `infra:"dep:dao_adjust_factor"`
+	Resolve *ResolveCache        `infra:"dep:svc_resolve_cache"`
 }
 
 func NewAdjustFactorService() *AdjustFactorService {
@@ -27,6 +28,9 @@ func (s *AdjustFactorService) Start(ctx context.Context) error {
 	if s.Dao == nil {
 		return errors.New("dao_adjust_factor is nil")
 	}
+	if s.Resolve == nil {
+		return errors.New("svc_resolve_cache is nil (required for Phase 3 orphan defense)")
+	}
 	return s.BaseComponent.Start(ctx)
 }
 
@@ -35,6 +39,13 @@ func (s *AdjustFactorService) Stop(ctx context.Context) error { return s.BaseCom
 func (s *AdjustFactorService) BatchUpsert(ctx context.Context, list []*model.AdjustFactor) error {
 	if len(list) == 0 {
 		return nil
+	}
+	ids := make([]uint64, 0, len(list))
+	for _, item := range list {
+		ids = append(ids, item.SecurityID)
+	}
+	if err := s.Resolve.ValidateSecurityIDsExist(ctx, ids); err != nil {
+		return err
 	}
 	logging.Infof(ctx, "AdjustFactorService BatchUpsert count=%d", len(list))
 	return s.Dao.BatchUpsert(ctx, list)
