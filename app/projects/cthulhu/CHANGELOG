@@ -1,7 +1,19 @@
 # VERSION
-v0.17.2
+v0.18.0
 
 # Changelog
+- v0.18.0
+    - **Fully migrated to `security_id` (lockstep with artemis v0.41.0, no-compat).**
+        - BI: `ArtemisBiService` query methods (`queryFinancial`/`queryCorporateAction`/`queryEquityStructure`) + `getSecurityCoverage`/`getDupont` take `security_id`/`security_ids` (was `symbol`/`symbols`); routes `company/:symbol` → `company/:security_id`; URL paths `/bi/catalog/securities/{symbol}/datasets/summary` and `/bi/dupont/{symbol}` → `/{security_id}`. Models gain `security_id` (`BISymbolCoverageResponse` renamed → `BISecurityCoverageResponse`, `BISecurityItem`, `BIDupontResponse`). `symbol` survives only as response decoration — pages set it from `resp.symbol` for display.
+        - Param serialization switched from truthy-check (`if (opts.symbol)`) to null-check (`if (opts.security_id != null)`) so `security_id=0` is sent → backend 400, not silently dropped (which would degrade to an unfiltered query).
+        - Workbench market-data: `getMarketData(securityId)` + `IndicatorsCalcRequest`/`MarketDataResponse`/`IndicatorsCalcResponse` carry `security_id`; hardcoded `symbol='000001'` → user-entered `securityId` (fail-closed on null/≤0). Header falls back to `#<id>` until the response returns the symbol.
+        - Workbench factor-engine: `computeIncremental(securityIds: number[])` sends `security_ids` as a comma-joined query param (body null, was `symbols` array body); `getSnapshot(securityId)` takes `security_id`; `FactorRankItem` gains `security_id`; `FactorComputeResult.symbols_count` → `securities_count`. Incremental input is fail-closed — any empty/non-numeric/non-positive token aborts the whole batch (no silent filter, which would bypass the backend strict-identity 400).
+        - DuPont page: hardcoded `symbol='000021'` removed → user-entered `securityId` with fail-closed validation (null/≤0/non-integer → error); `ngOnInit` no longer auto-loads (waits for 查询). BIGSERIAL is not stable across registry rebuilds, so a stale hardcoded id would silently show the wrong security.
+        - Incidental fix: `stock-list.page.ts` search button `(click)="onSearch"` → `"onSearch()"` (handler was not being invoked).
+    - **Workbench backtest + industry + strategy components removed (will be redesigned later).**
+        - Deleted 8 files: `workbench-research` + `industry-explorer` pages, `strategy-config` + 5 backtest chart/stats components (`backtest-chart`, `backtest-kline-chart`, `backtest-stats`, `return-curve-chart`, `backtest-diagnostics`). `return-distribution-chart` retained (still used by `market-data` with `[bars]` input — dropped its `artifacts` input).
+        - `workbench.model.ts` dropped all strategy/backtest/industry interfaces (~190 lines); `WorkbenchApiService` dropped `getStrategies`/`runBacktest`/`getIndustry*`; `WorkbenchStore` dropped the `_strategies`/`_result`/`_loading`/`_running` signals + `loadStrategies`/`runBacktest`/`clearResult`.
+        - Routes `research` + `industry` removed; default redirect `research` → `market-data`; menu orders renumbered; `index.ts` exports pruned. Retained: market-data + factor-engine pages (migrated to `security_id` above).
 - v0.17.2
     - **BI: removed dead `BiApiService` methods**
         - Deleted 6 zero-caller methods from `bi-api.service.ts`: `getCompanyDashboard`, `getCompanyDupont`, `getCompanyQuality`, `getCompanyInsight`, `searchSecurities`, `getPeerComparison` — all targeted the long-deleted artemis old-BI endpoints (`/bi/financial/company/{symbol}/{dashboard,dupont,quality,insight}`, `/bi/search/securities`, `/bi/financial/peer-comparison`) and had no remaining caller in the codebase. The live `getMetricDefinitions` (used by the `metric-dictionary` page) is kept. Pruned the now-unused `HttpParams` import and 7 now-unused response-type imports from the service line; the type definitions remain in `bi-legacy.models.ts`.

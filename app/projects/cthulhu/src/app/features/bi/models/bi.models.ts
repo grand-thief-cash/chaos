@@ -2,6 +2,7 @@
 // cthulhu → artemis /bi/* → phoenixA /api/v2/*
 
 export interface BISecurityItem {
+  security_id: number;
   symbol: string;
   asset_type: string;
   market: string;
@@ -69,7 +70,7 @@ export interface BIEnumResponse {
   values: { code: string; label_zh: string }[];
 }
 
-// ─── Per-symbol coverage ───
+// ─── Per-security coverage ───
 
 export interface BICoverageReportTypeBucket {
   report_type: string;
@@ -94,8 +95,9 @@ export interface BICoverageDataset {
   data_types: BICoverageDataType[];
 }
 
-export interface BISymbolCoverageResponse {
+export interface BISecurityCoverageResponse {
   generated_at: string;
+  security_id: number;
   symbol: string;
   market: string;
   datasets: BICoverageDataset[];
@@ -186,6 +188,7 @@ export type DupontPeriodKind = 'annual' | 'single_quarter' | 'ytd' | 'ttm';
 
 export interface BIDupontResponse {
   generated_at: string;
+  security_id: number;
   symbol: string;
   source: string;
   market: string;

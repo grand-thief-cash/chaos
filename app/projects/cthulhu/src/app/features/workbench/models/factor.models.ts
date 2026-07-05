@@ -132,6 +132,7 @@ export interface FactorSnapshot {
 
 /** Response from /factors/rank */
 export interface FactorRankItem {
+  security_id: number;
   symbol: string;
   [factorName: string]: string | number;
 }
@@ -139,7 +140,7 @@ export interface FactorRankItem {
 /** Response from /factors/compute/full and /factors/compute/incremental */
 export interface FactorComputeResult {
   status: string;
-  symbols_count: number;
+  securities_count: number;
   as_of_date?: string;
 }
 

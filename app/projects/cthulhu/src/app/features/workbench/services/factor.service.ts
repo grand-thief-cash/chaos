@@ -35,14 +35,17 @@ export class FactorService {
   }
 
   /** POST /factors/compute/incremental – incremental computation */
-  computeIncremental(symbols: string[], asOfDate: string, market: string = 'zh_a', source?: string): Observable<FactorComputeResult> {
-    const params = this.withOptionalSource(new HttpParams().set('as_of_date', asOfDate).set('market', market), source);
-    return this.http.post<FactorComputeResult>(`${BASE_URL}/factors/compute/incremental`, symbols, {params});
+  computeIncremental(securityIds: number[], asOfDate: string, market: string = 'zh_a', source?: string): Observable<FactorComputeResult> {
+    const params = this.withOptionalSource(new HttpParams()
+      .set('as_of_date', asOfDate)
+      .set('market', market)
+      .set('security_ids', securityIds.join(',')), source);
+    return this.http.post<FactorComputeResult>(`${BASE_URL}/factors/compute/incremental`, null, {params});
   }
 
-  /** GET /factors/snapshot – single symbol factor snapshot */
-  getSnapshot(symbol: string, asOfDate: string, market: string = 'zh_a', source?: string): Observable<FactorSnapshot> {
-    const params = this.withOptionalSource(new HttpParams().set('symbol', symbol).set('as_of_date', asOfDate).set('market', market), source);
+  /** GET /factors/snapshot – single security factor snapshot */
+  getSnapshot(securityId: number, asOfDate: string, market: string = 'zh_a', source?: string): Observable<FactorSnapshot> {
+    const params = this.withOptionalSource(new HttpParams().set('security_id', String(securityId)).set('as_of_date', asOfDate).set('market', market), source);
     return this.http.get<FactorSnapshot>(`${BASE_URL}/factors/snapshot`, {params});
   }
 

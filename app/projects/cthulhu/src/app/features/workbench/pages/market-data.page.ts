@@ -138,10 +138,10 @@ const COLOR_PALETTE = [
                 </nz-select>
               </div>
             }
-            <!-- Symbol -->
+            <!-- Security ID -->
             <div>
-              <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Symbol</label>
-              <input nz-input [(ngModel)]="symbol" placeholder="e.g. 000001" style="width: 140px;" />
+              <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Security ID</label>
+              <input nz-input type="number" [(ngModel)]="securityId" placeholder="e.g. 1" style="width: 140px;" />
             </div>
             <div>
               <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Start</label>
@@ -204,7 +204,7 @@ const COLOR_PALETTE = [
         }
         @if (bars.length > 0) {
           <span style="margin-left: 12px; font-size: 12px; color: #999; font-weight: normal;">
-            {{ bars.length }} bars · {{ symbol }}
+            {{ bars.length }} bars · {{ displaySymbol || ('#' + (securityId ?? '')) }}
           </span>
         }
       </ng-template>
@@ -303,7 +303,8 @@ export class MarketDataPageComponent implements OnInit {
   private msg = inject(NzMessageService);
   store = inject(WorkbenchStore);
 
-  symbol = '000001';
+  securityId: number | null = null;
+  displaySymbol = '';
   startDate = '2024-01-01';
   endDate = '2024-12-31';
   loading = false;
@@ -448,7 +449,7 @@ export class MarketDataPageComponent implements OnInit {
   }
 
   loadChart(): void {
-    if (!this.symbol || !this.startDate || !this.endDate) {
+    if (this.securityId === null || this.securityId <= 0 || !this.startDate || !this.endDate) {
       this.msg.warning('Please fill in all fields');
       return;
     }
@@ -460,13 +461,14 @@ export class MarketDataPageComponent implements OnInit {
     const source = this.store.sourceSelectorVisible() ? this.selectedSource : undefined;
     this.loading = true;
     this.api.getMarketData(
-      this.symbol, this.startDate, this.endDate,
+      this.securityId, this.startDate, this.endDate,
       this.selectedPeriod, this.selectedAdjust,
       this.selectedAssetType, this.selectedMarket,
       source,
     ).subscribe({
       next: (resp) => {
         this.bars = resp.bars;
+        this.displaySymbol = resp.symbol;
         this.loading = false;
         if (resp.bars.length === 0) {
           this.msg.warning('No data found for the selected parameters');
@@ -496,7 +498,7 @@ export class MarketDataPageComponent implements OnInit {
 
     this.api
       .calculateIndicators({
-        symbol: this.symbol,
+        security_id: this.securityId!,
         start_date: this.startDate,
         end_date: this.endDate,
         period: this.selectedPeriod,

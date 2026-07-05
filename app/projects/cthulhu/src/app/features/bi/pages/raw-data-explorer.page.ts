@@ -34,7 +34,7 @@ import {
       <nz-card [nzTitle]="headerTpl" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
         <ng-template #headerTpl>
           <div style="display: flex; align-items: center; gap: 12px;">
-            <span>原始数据 · {{ symbol }}</span>
+            <span>原始数据 · #{{ securityId }}</span>
             <nz-tag nzColor="blue">{{ dataset }} / {{ dataType }}</nz-tag>
             <button nz-button nzSize="small" (click)="goBack()">← 返回公司页</button>
           </div>
@@ -189,7 +189,7 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly api = inject(ArtemisBiService);
 
-  symbol = '';
+  securityId: number | null = null;
   market = 'zh_a';
   dataset = '';
   dataType = '';
@@ -252,11 +252,12 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.paramsSub = this.route.paramMap.subscribe((params) => {
-      this.symbol = params.get('symbol') || '';
+      const idParam = params.get('security_id');
+      this.securityId = idParam ? Number(idParam) : null;
       this.dataset = params.get('dataset') || '';
       this.dataType = params.get('type') || '';
       this.market = this.route.snapshot.queryParamMap.get('market') || 'zh_a';
-      if (this.symbol && this.dataset && this.dataType) {
+      if (this.securityId && this.dataset && this.dataType) {
         this.loadFields();
         this.onFilterChange();
       }
@@ -364,7 +365,7 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
   private buildQuery(fields: string | undefined): Observable<BIRawQueryResponse> {
     const common = {
       source: 'amazing_data',
-      symbol: this.symbol,
+      security_id: this.securityId ?? undefined,
       market: this.market,
       fields,
       format: 'flat' as const,
@@ -400,7 +401,7 @@ export class RawDataExplorerPageComponent implements OnInit, OnDestroy {
   }
 
   goBack(): void {
-    this.router.navigate(['/bi/company', this.symbol], { queryParams: { market: this.market } });
+    this.router.navigate(['/bi/company', this.securityId], { queryParams: { market: this.market } });
   }
 
   formatCell(v: unknown, field?: BIFieldMeta): string {

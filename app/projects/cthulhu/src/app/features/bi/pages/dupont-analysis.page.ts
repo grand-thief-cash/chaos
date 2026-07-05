@@ -86,6 +86,10 @@ interface NodeLayout {
         </div>
         <div class="filter-row" aria-label="杜邦分析筛选条件">
           <label>
+            <span>Security ID</span>
+            <input type="number" [(ngModel)]="securityId" (keyup.enter)="load()" placeholder="如 21" style="width: 90px;" />
+          </label>
+          <label>
             <span>口径</span>
             <select [(ngModel)]="selectedPeriodKind" (ngModelChange)="onPeriodKindChange()">
               @for (k of periodKindOptions; track k.value) {
@@ -113,6 +117,7 @@ interface NodeLayout {
               切换：{{ viewLabel }}
             </button>
           }
+          <button type="button" class="view-toggle" (click)="load()" [disabled]="!securityId || securityId <= 0">查询</button>
         </div>
       </header>
 
@@ -781,9 +786,10 @@ interface NodeLayout {
 export class DupontAnalysisPageComponent implements OnInit {
   private readonly bi = inject(ArtemisBiService);
 
-  // Hard-coded for the first integration: only 000021 (深科技) has full
-  // financial data from 2015. Parameters will be wired to the filter row later.
-  private readonly symbol = '000021';
+  // security_id is a BIGSERIAL surrogate (stable only within a rebuild cycle).
+  // Entered by the user — no hardcoded default, since a stale id would silently
+  // show the wrong security after a registry rebuild.
+  securityId: number | null = null;
   private readonly source = 'amazing_data';
 
   organizations = ['上市公司合并口径'];
@@ -902,10 +908,15 @@ export class DupontAnalysisPageComponent implements OnInit {
   loadError: string | null = null;
 
   ngOnInit(): void {
-    this.load();
+    // Wait for the user to enter a security_id — BIGSERIAL is not stable across
+    // registry rebuilds, so no hardcoded default.
   }
 
-  private load(): void {
+  load(): void {
+    if (!this.securityId || this.securityId <= 0 || !Number.isInteger(this.securityId)) {
+      this.loadError = '请输入有效的 Security ID（正整数）';
+      return;
+    }
     this.loadError = null;
     this.updateDate = '加载中…';
     const opts: Parameters<ArtemisBiService['getDupont']>[1] = {
@@ -914,7 +925,7 @@ export class DupontAnalysisPageComponent implements OnInit {
     };
     if (this.selectedReportingPeriod) opts.target_reporting_period = this.selectedReportingPeriod;
     if (this.extrapolateQ4 && this.canExtrapolate) opts.extrapolate_q4 = true;
-    this.bi.getDupont(this.symbol, opts).subscribe({
+    this.bi.getDupont(this.securityId, opts).subscribe({
       next: (resp) => {
         this.currentResp = resp;
         this.hasExtrapolated = !!resp.extrapolated_full_year;

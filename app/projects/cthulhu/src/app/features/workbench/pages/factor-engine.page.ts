@@ -142,15 +142,15 @@ import {
             </div>
           </div>
           <div *ngIf="computeResult" class="result-msg">
-            ✅ Computed {{ computeResult.symbols_count }} symbols for {{ computeResult.as_of_date }}
+            ✅ Computed {{ computeResult.securities_count }} securities for {{ computeResult.as_of_date }}
           </div>
         </nz-card>
 
         <nz-card nzTitle="Incremental Computation" [nzBordered]="false">
           <div nz-row [nzGutter]="16" nzAlign="middle">
             <div nz-col>
-              <label class="field-label">Symbols (comma-separated)</label>
-              <input nz-input placeholder="e.g. 000001,000002" [(ngModel)]="incrSymbols" style="width: 260px;" />
+              <label class="field-label">Security IDs (comma-separated)</label>
+              <input nz-input placeholder="e.g. 1,2,3" [(ngModel)]="incrSecurityIds" style="width: 260px;" />
             </div>
             <div nz-col>
               <label class="field-label">Date</label>
@@ -158,13 +158,13 @@ import {
             </div>
             <div nz-col>
               <button nz-button nzType="primary" (click)="computeIncremental()" [nzLoading]="computingIncr"
-                      [disabled]="!incrSymbols">
+                      [disabled]="!incrSecurityIds">
                 <span nz-icon nzType="thunderbolt"></span> Run Incremental
               </button>
             </div>
           </div>
           <div *ngIf="incrResult" class="result-msg">
-            ✅ Computed {{ incrResult.symbols_count }} symbols
+            ✅ Computed {{ incrResult.securities_count }} securities
           </div>
         </nz-card>
       </nz-tab>
@@ -178,8 +178,8 @@ import {
           </div>
           <div nz-row [nzGutter]="16" nzAlign="middle" style="margin-bottom: 16px;">
             <div nz-col>
-              <label class="field-label">Symbol</label>
-              <input nz-input placeholder="e.g. 000001" [(ngModel)]="snapSymbol" style="width: 120px;" />
+              <label class="field-label">Security ID</label>
+              <input nz-input type="number" placeholder="e.g. 1" [(ngModel)]="snapSecurityId" style="width: 120px;" />
             </div>
             <div nz-col>
               <label class="field-label">Date</label>
@@ -187,7 +187,7 @@ import {
             </div>
             <div nz-col>
               <button nz-button nzType="primary" (click)="loadSnapshot()" [nzLoading]="loadingSnap"
-                      [disabled]="!snapSymbol || !snapDate">
+                      [disabled]="!snapSecurityId || !snapDate">
                 <span nz-icon nzType="search"></span> Query
               </button>
             </div>
@@ -242,7 +242,7 @@ import {
               </tbody>
             </nz-table>
           </div>
-          <nz-empty *ngIf="!snapshot && !loadingSnap" nzNotFoundContent="Enter symbol and date to query snapshot"></nz-empty>
+          <nz-empty *ngIf="!snapshot && !loadingSnap" nzNotFoundContent="Enter security id and date to query snapshot"></nz-empty>
         </nz-card>
       </nz-tab>
 
@@ -583,13 +583,13 @@ export class FactorEngineComponent implements OnInit {
   computeResult: any = null;
 
   // -- Compute Incremental --
-  incrSymbols = '';
+  incrSecurityIds = '';
   incrDate = '';
   computingIncr = false;
   incrResult: any = null;
 
   // -- Snapshot --
-  snapSymbol = '';
+  snapSecurityId: number | null = null;
   snapDate = '';
   loadingSnap = false;
   snapshot: FactorSnapshot | null = null;
@@ -676,12 +676,25 @@ export class FactorEngineComponent implements OnInit {
 
   computeIncremental() {
     if (!this.incrDate) this.incrDate = this.todayStr();
-    const symbols = this.incrSymbols.split(',').map(s => s.trim()).filter(s => s);
-    if (!symbols.length) { this.msg.warning('Please enter at least one symbol'); return; }
+    // Fail-closed: any empty token / non-numeric / non-positive aborts the whole
+    // batch — do NOT silently filter (would bypass backend strict-identity 400
+    // and let the user think a partial batch was fully submitted).
+    const tokens = this.incrSecurityIds.split(',').map(s => s.trim());
+    const securityIds: number[] = [];
+    for (const t of tokens) {
+      if (!t) { this.msg.error('Security ID 列表中存在空值'); return; }
+      const n = Number(t);
+      if (isNaN(n) || !Number.isInteger(n) || n <= 0) {
+        this.msg.error(`无效的 Security ID: "${t}"（必须为正整数）`);
+        return;
+      }
+      securityIds.push(n);
+    }
+    if (!securityIds.length) { this.msg.warning('Please enter at least one security id'); return; }
     this.computingIncr = true;
     this.incrResult = null;
     this.selectedSource = this.workbenchStore.selectedSource();
-    this.svc.computeIncremental(symbols, this.incrDate, 'zh_a', this.selectedSource).subscribe({
+    this.svc.computeIncremental(securityIds, this.incrDate, 'zh_a', this.selectedSource).subscribe({
       next: res => { this.incrResult = res; this.computingIncr = false; this.msg.success('Incremental computation completed'); },
       error: err => { this.msg.error('Computation failed: ' + (err.error?.detail || err.message)); this.computingIncr = false; }
     });
@@ -691,7 +704,7 @@ export class FactorEngineComponent implements OnInit {
     this.loadingSnap = true;
     this.snapshot = null;
     this.selectedSource = this.workbenchStore.selectedSource();
-    this.svc.getSnapshot(this.snapSymbol, this.snapDate, 'zh_a', this.selectedSource).subscribe({
+    this.svc.getSnapshot(this.snapSecurityId!, this.snapDate, 'zh_a', this.selectedSource).subscribe({
       next: data => {
         this.snapshot = data;
         this.snapshotRawEntries = Object.entries(data.raw_factors || {}).sort() as [string, number][];
@@ -878,10 +891,10 @@ export class FactorEngineComponent implements OnInit {
   jumpToSnapshot(item: FactorAvailabilityItem): void {
     this.snapshotFocusFactor = item.name;
     this.selectedTabIndex = 2;
-    if (this.snapSymbol && this.snapDate) {
+    if (this.snapSecurityId && this.snapDate) {
       this.loadSnapshot();
     } else {
-      this.msg.info(`Switched to Snapshot. Enter symbol/date to inspect ${item.name}.`);
+      this.msg.info(`Switched to Snapshot. Enter security id/date to inspect ${item.name}.`);
     }
   }
 

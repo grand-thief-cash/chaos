@@ -7,7 +7,7 @@ import {
   BIDatasetsResponse,
   BIFieldDiscoveryResponse,
   BIEnumResponse,
-  BISymbolCoverageResponse,
+  BISecurityCoverageResponse,
   BIRawQueryResponse,
   BIDupontResponse,
   DupontPeriodKind,
@@ -67,18 +67,18 @@ export class ArtemisBiService {
     return obs;
   }
 
-  // ─── Per-symbol coverage ───
-  getSymbolCoverage(symbol: string, market = 'zh_a'): Observable<BISymbolCoverageResponse> {
+  // ─── Per-security coverage ───
+  getSecurityCoverage(securityId: number, market = 'zh_a'): Observable<BISecurityCoverageResponse> {
     const params = new HttpParams().set('market', market);
-    return this.http.get<BISymbolCoverageResponse>(`${BASE_URL}/bi/catalog/securities/${symbol}/datasets/summary`, { params });
+    return this.http.get<BISecurityCoverageResponse>(`${BASE_URL}/bi/catalog/securities/${securityId}/datasets/summary`, { params });
   }
 
   // ─── Raw queries ───
   queryFinancial(opts: {
     source: string;
     statement_type: string;
-    symbol?: string;
-    symbols?: string;
+    security_id?: number;
+    security_ids?: number[];
     market?: string;
     fields?: string;
     format?: string;
@@ -93,8 +93,8 @@ export class ArtemisBiService {
       .set('format', opts.format || 'flat')
       .set('page', String(opts.page || 1))
       .set('page_size', String(opts.page_size || 100));
-    if (opts.symbol) params = params.set('symbol', opts.symbol);
-    if (opts.symbols) params = params.set('symbols', opts.symbols);
+    if (opts.security_id != null) params = params.set('security_id', String(opts.security_id));
+    if (opts.security_ids != null) params = params.set('security_ids', opts.security_ids.join(','));
     if (opts.market) params = params.set('market', opts.market);
     if (opts.fields) params = params.set('fields', opts.fields);
     if (opts.period_start) params = params.set('period_start', opts.period_start);
@@ -107,7 +107,8 @@ export class ArtemisBiService {
   queryCorporateAction(opts: {
     source: string;
     action_type: string;
-    symbol?: string;
+    security_id?: number;
+    security_ids?: number[];
     market?: string;
     fields?: string;
     format?: string;
@@ -120,7 +121,8 @@ export class ArtemisBiService {
       .set('format', opts.format || 'flat')
       .set('page', String(opts.page || 1))
       .set('page_size', String(opts.page_size || 100));
-    if (opts.symbol) params = params.set('symbol', opts.symbol);
+    if (opts.security_id != null) params = params.set('security_id', String(opts.security_id));
+    if (opts.security_ids != null) params = params.set('security_ids', opts.security_ids.join(','));
     if (opts.market) params = params.set('market', opts.market);
     if (opts.fields) params = params.set('fields', opts.fields);
     if (opts.period_start) params = params.set('period_start', opts.period_start);
@@ -130,7 +132,8 @@ export class ArtemisBiService {
 
   queryEquityStructure(opts: {
     source: string;
-    symbol?: string;
+    security_id?: number;
+    security_ids?: number[];
     market?: string;
     fields?: string;
     format?: string;
@@ -145,7 +148,8 @@ export class ArtemisBiService {
       .set('format', opts.format || 'flat')
       .set('page', String(opts.page || 1))
       .set('page_size', String(opts.page_size || 100));
-    if (opts.symbol) params = params.set('symbol', opts.symbol);
+    if (opts.security_id != null) params = params.set('security_id', String(opts.security_id));
+    if (opts.security_ids != null) params = params.set('security_ids', opts.security_ids.join(','));
     if (opts.market) params = params.set('market', opts.market);
     if (opts.fields) params = params.set('fields', opts.fields);
     if (opts.change_start) params = params.set('change_start', opts.change_start);
@@ -157,7 +161,7 @@ export class ArtemisBiService {
 
   // ─── DuPont analysis (artemis-owned computation) ───
   getDupont(
-    symbol: string,
+    securityId: number,
     opts: {
       source?: string;
       market?: string;
@@ -174,6 +178,6 @@ export class ArtemisBiService {
     if (opts.period_kind) params = params.set('period_kind', opts.period_kind);
     if (opts.target_reporting_period) params = params.set('target_reporting_period', opts.target_reporting_period);
     if (opts.extrapolate_q4) params = params.set('extrapolate_q4', 'true');
-    return this.http.get<BIDupontResponse>(`${BASE_URL}/bi/dupont/${symbol}`, { params });
+    return this.http.get<BIDupontResponse>(`${BASE_URL}/bi/dupont/${securityId}`, { params });
   }
 }

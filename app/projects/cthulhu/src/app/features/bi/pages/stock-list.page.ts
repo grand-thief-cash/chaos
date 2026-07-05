@@ -27,7 +27,7 @@ import { BISecurityItem } from '../models/bi.models';
             <label style="display: block; font-size: 12px; color: #595959; margin-bottom: 4px;">名称/代码搜索</label>
             <input nz-input [(ngModel)]="nameFilter" placeholder="输入名称或代码" style="width: 220px;" (keyup.enter)="onSearch()" />
           </div>
-          <button nz-button nzType="primary" (click)="onSearch">搜索</button>
+          <button nz-button nzType="primary" (click)="onSearch()">搜索</button>
           <button nz-button (click)="onReset()">重置</button>
         </div>
 
@@ -49,7 +49,7 @@ import { BISecurityItem } from '../models/bi.models';
               </tr>
             </thead>
             <tbody>
-              @for (item of tbl.data; track item.symbol) {
+              @for (item of tbl.data; track item.security_id) {
                 <tr>
                   <td><code>{{ item.symbol }}</code></td>
                   <td>{{ item.name }}</td>
@@ -117,7 +117,7 @@ export class StockListPageComponent implements OnInit {
   }
 
   enterCompany(item: BISecurityItem): void {
-    this.router.navigate(['/bi/company', item.symbol], {
+    this.router.navigate(['/bi/company', item.security_id], {
       queryParams: { market: item.market },
     });
   }

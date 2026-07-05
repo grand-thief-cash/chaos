@@ -22,12 +22,12 @@ export const BI_ROUTES: Routes = [
         data: { breadcrumb: 'Stock List', menu: { label: '股票列表', order: 1 } },
       },
       {
-        path: 'company/:symbol',
+        path: 'company/:security_id',
         component: CompanyOverviewPageComponent,
         data: { breadcrumb: 'Company' },
       },
       {
-        path: 'company/:symbol/raw/:dataset/:type',
+        path: 'company/:security_id/raw/:dataset/:type',
         component: RawDataExplorerPageComponent,
         data: { breadcrumb: 'Raw Data' },
       },
