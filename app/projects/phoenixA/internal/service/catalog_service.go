@@ -159,23 +159,6 @@ var tableMetaRegistry = map[string]tableMeta{
 			APIEndpoint:     "POST /api/v2/long-hu-bang/{source}/upsert",
 		},
 	},
-	// Strategy
-	"strategy_run_summary": {
-		Domain:      "strategy",
-		Description: "策略回测汇总",
-		Lineage: &model.DataLineage{
-			SourceSystem:    "artemis",
-			IngestionMethod: "REST API upsert",
-		},
-	},
-	"strategy_run_artifact": {
-		Domain:      "strategy",
-		Description: "策略回测制品",
-		Lineage: &model.DataLineage{
-			SourceSystem:    "artemis",
-			IngestionMethod: "REST API upsert",
-		},
-	},
 	// KG
 	"documents": {
 		Domain:      "kg",
@@ -300,7 +283,6 @@ var domainDescriptions = map[string]string{
 	"security":  "证券基础信息",
 	"taxonomy":  "分类/行业数据",
 	"financial": "财务/公司行为数据",
-	"strategy":  "策略回测数据",
 	"kg":        "知识图谱数据",
 	"factor":    "因子数据",
 	"regime":    "市场状态引擎数据",
@@ -530,13 +512,6 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily?category_id=", Description: "查询行业日线"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily/upsert", Description: "写入行业日线"},
 	},
-	"strategy_run_summary": {
-		{Method: "GET", Path: "/api/v1/strategy/run/list", Description: "查询策略列表"},
-		{Method: "GET", Path: "/api/v1/strategy/run/{run_id}", Description: "查询策略详情"},
-	},
-	"strategy_run_artifact": {
-		{Method: "GET", Path: "/api/v1/strategy/run/{run_id}/artifacts", Description: "查询策略产物"},
-	},
 	"bars_": {
 		{Method: "GET", Path: "/api/v2/bars/{asset_type}/{market}", Description: "查询K线行情"},
 		{Method: "POST", Path: "/api/v2/bars/{asset_type}/{market}/upsert", Description: "写入K线行情"},
@@ -590,12 +565,6 @@ var domainApiRegistry = map[string]struct {
 		},
 		CrossRefs: []model.CrossRef{
 			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（Phase 3 surrogate-key 重构后经 security_id 关联）"},
-		},
-	},
-	"strategy": {
-		Description: "策略回测运行结果和产物数据",
-		ExampleCalls: []model.ExampleCall{
-			{Title: "查询策略列表", URL: "GET /api/v1/strategy/run/list?strategy_code=momentum"},
 		},
 	},
 	"kg": {
@@ -1444,7 +1413,7 @@ func (s *CatalogService) GetBusinessOverview(ctx context.Context, refresh bool) 
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "strategy", "kg", "factor", "regime", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "kg", "factor", "regime", "other"}
 	seen := map[string]bool{}
 	var domains []model.BusinessDomain
 
@@ -1573,7 +1542,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "strategy", "kg", "factor", "regime", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "kg", "factor", "regime", "other"}
 	var capabilities []model.DomainCapability
 
 	for _, d := range domainOrder {

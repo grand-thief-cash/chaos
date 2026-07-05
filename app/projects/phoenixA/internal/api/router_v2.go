@@ -91,13 +91,6 @@ func init() {
 			})
 		})
 
-		// ====== Strategy Run (unchanged) ======
-		strategyRunCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_STRATEGY_RUN)
-		if err != nil {
-			return err
-		}
-		strategyRunCtrl := strategyRunCtrlComp.(*controller.StrategyRunController)
-
 		// ====== Financial Statements ======
 		finStmtCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_FINANCIAL_STMT)
 		if err != nil {
@@ -307,18 +300,6 @@ func init() {
 				r.Post("/schema/ensure", graphCtrl.EnsureSchema)
 			})
 		}
-
-		r.Route("/api/v1/strategy/run", func(r chi.Router) {
-			r.Get("/list", strategyRunCtrl.ListSummaries)
-			r.Post("/summary/upsert", strategyRunCtrl.UpsertSummary)
-			r.Post("/artifact/upsert", strategyRunCtrl.UpsertArtifacts)
-			r.Get("/{run_id}", func(w http.ResponseWriter, req *http.Request) {
-				strategyRunCtrl.GetSummary(w, req, chi.URLParam(req, "run_id"))
-			})
-			r.Get("/{run_id}/artifacts", func(w http.ResponseWriter, req *http.Request) {
-				strategyRunCtrl.ListArtifacts(w, req, chi.URLParam(req, "run_id"))
-			})
-		})
 
 		// ====== Legacy v1 routes (backward compatible - proxied to v2 logic) ======
 		// Bars legacy routes

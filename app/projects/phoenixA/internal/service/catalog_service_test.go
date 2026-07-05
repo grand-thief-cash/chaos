@@ -23,8 +23,6 @@ func TestFindMeta_ExactMatch(t *testing.T) {
 		{"public", "taxonomy_category_derived_flags", "taxonomy", "分类语义派生标记（PhoenixA 维护）"},
 		{"public", "industry_weight", "taxonomy", "行业成分权重（日度）"},
 		{"public", "industry_daily", "taxonomy", "行业日行情"},
-		{"public", "strategy_run_summary", "strategy", "策略回测汇总"},
-		{"public", "strategy_run_artifact", "strategy", "策略回测制品"},
 		{"public", "factor_metadata", "factor", "因子元数据（描述/参数/状态）"},
 		{"kg", "documents", "kg", "知识图谱文档元数据"},
 		{"kg", "extractions", "kg", "LLM 抽取结果（JSONB）"},

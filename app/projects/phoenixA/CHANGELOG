@@ -1,7 +1,14 @@
 # VERSION
-v1.31.0
+v1.32.0
 
 # Changelog
+- v1.32.0
+    - **Workbench `strategy_run` feature fully removed (lockstep with artemis v0.41.0, will be redesigned later).** Pure deletion (−530 lines), no new functionality.
+        - Deleted model/dao/service/controller: `StrategyRunSummary` + `StrategyRunArtifact` GORM models, `StrategyRunDao`, `StrategyRunService` (artifact-type allowlist + validation), `StrategyRunController`.
+        - Removed 5 routes under `/api/v1/strategy/run`: `GET /list`, `POST /summary/upsert`, `POST /artifact/upsert`, `GET /{run_id}`, `GET /{run_id}/artifacts` (plus the DI resolution block).
+        - Component constants `COMP_DAO/SVC/CTRL_STRATEGY_RUN` + their `registry_ext` auto-registrations (`controller_v2.go`/`dao_v2.go`/`service_v2.go`) removed.
+        - Catalog: removed the `"strategy"` domain from `tableMetaRegistry`/`tableApiMap`/`domainApiRegistry`/`domainDescriptions` and from `domainOrder` in both `GetBusinessOverview` and `GetCapabilities`; `catalog_service_test.go` dropped the two `strategy_run_*` rows.
+        - Migration `0003_govern.sql`: dropped `govern.strategy_run_summary` + `govern.strategy_run_artifact` DDL (tables + 7 indexes) and their warm_storage storage-tier comments; remaining sections renumbered. No new DDL.
 - v1.31.0
     - **Phase 4 of `security_registry` surrogate-key refactor: bars API migrated to `security_id` (no dual-track, §3.6).** `GET /api/v2/bars/{asset_type}/{market}` takes `?security_id=` (drops `symbol`/`symbols` — deprecated, 400); `POST /api/v2/bars/{asset_type}/{market}/upsert` body carries `security_id` per bar/ext row; `GET /api/v2/bars/{asset_type}/{market}/last_update` takes `?security_id=` / `?security_ids=` (drops `symbols`). Responses include `security_id` per row. Strict validation (Phase 1/3 pattern): present-but-empty/zero/non-numeric/empty-token → 400, never silently degrades to unfiltered.
     - **bars_* physical tables unchanged (§3.2).** `security_id` → physical `symbol` resolved at the controller boundary before DAO/write buffer; `StandardBar` gains a `gorm:"-"` `security_id` response-decoration field only. Path `{asset_type}/{market}` validated against the resolved security → 400 on mismatch (§10.d.4 option A). Orphan defense: the resolve IS the existence check (found=false = orphan, §10.c); cache/DB load failure → 500.
