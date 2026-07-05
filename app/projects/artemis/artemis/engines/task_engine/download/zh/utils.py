@@ -158,9 +158,9 @@ def get_security_map_from_phoenixa(
         })
         return {}
     security_map: Dict[str, Dict[str, Any]] = {}
-    for sym, info in securities.items():
+    for sid, info in securities.items():
         exchange = (info.get('exchange') or '').upper()
-        sid = info.get('security_id', 0)
+        sym = info.get('symbol', '')
         if sym and exchange and sid:
             security_map[f"{sym}.{exchange}"] = {
                 "symbol": sym,

@@ -1,80 +1,25 @@
-"""Unit tests for PhoenixAClient Phase 3 security_id resolve behavior."""
-from unittest.mock import MagicMock
-
+"""Unit tests for PhoenixAClient security_id params (security_id-only, no symbol convenience)."""
 import pytest
 
 from artemis.core.clients.phoenixA_client import PhoenixAClient
 
 
 def _make_client() -> PhoenixAClient:
-    """A PhoenixAClient with no real HTTP backend; get_securities is mocked."""
+    """A PhoenixAClient with no real HTTP backend."""
     return PhoenixAClient(host="localhost", port=9999, logger=None)
 
 
 def test_explicit_security_id_passes_through():
     client = _make_client()
-    params = client.security_id_query_params(
-        security_id=5, security_ids=None, symbol="", symbols=None,
-        exchange=None, asset_type="stock", market="zh_a",
-    )
+    params = client._build_security_id_params(security_id=5, security_ids=None)
     assert params == {"security_id": "5"}
 
 
 def test_no_identity_returns_empty():
     """No identity supplied → {} (unfiltered is intentional)."""
     client = _make_client()
-    client.get_securities = MagicMock(return_value={})
-    params = client.security_id_query_params(
-        security_id=None, security_ids=None, symbol="", symbols=None,
-        exchange=None, asset_type="stock", market="zh_a",
-    )
+    params = client._build_security_id_params(security_id=None, security_ids=None)
     assert params == {}
-
-
-def test_symbol_resolved_to_security_id():
-    client = _make_client()
-    client.get_securities = MagicMock(return_value={
-        "000001": {"symbol": "000001", "exchange": "SZ", "security_id": 42},
-    })
-    params = client.security_id_query_params(
-        security_id=None, security_ids=None, symbol="000001", symbols=None,
-        exchange="SZ", asset_type="stock", market="zh_a",
-    )
-    assert params == {"security_id": "42"}
-
-
-def test_unresolved_symbol_raises():
-    """Symbol supplied but not in registry → must raise, NOT degrade to an
-    unfiltered query (which would return unrelated data)."""
-    client = _make_client()
-    client.get_securities = MagicMock(return_value={})
-    with pytest.raises(ValueError):
-        client.security_id_query_params(
-            security_id=None, security_ids=None, symbol="000001", symbols=None,
-            exchange="SZ", asset_type="stock", market="zh_a",
-        )
-
-
-def test_unresolved_symbols_list_raises():
-    client = _make_client()
-    client.get_securities = MagicMock(return_value={})
-    with pytest.raises(ValueError):
-        client.security_id_query_params(
-            security_id=None, security_ids=None, symbol="", symbols=["000001", "600519"],
-            exchange=None, asset_type="stock", market="zh_a",
-        )
-
-
-def test_query_method_returns_empty_on_resolve_failure():
-    """Query methods must catch the resolve ValueError and return empty (so
-    factor_engine degrades gracefully instead of crashing)."""
-    client = _make_client()
-    client.get_securities = MagicMock(return_value={})
-    # symbol "000001" not in registry → resolve raises → method returns empty.
-    result = client.query_financial_statements(
-        source="amazing_data", statement_type="balance_sheet", symbol="000001",
-    )
-    assert result == {"data": [], "total": 0}
 
 
 def test_explicit_security_id_zero_raises():
@@ -82,34 +27,27 @@ def test_explicit_security_id_zero_raises():
     not degrade to an unfiltered query."""
     client = _make_client()
     with pytest.raises(ValueError):
-        client.security_id_query_params(
-            security_id=0, security_ids=None, symbol="", symbols=None,
-            exchange=None, asset_type="stock", market="zh_a",
-        )
+        client._build_security_id_params(security_id=0, security_ids=None)
 
 
 def test_security_ids_with_zero_raises():
     client = _make_client()
     with pytest.raises(ValueError):
-        client.security_id_query_params(
-            security_id=None, security_ids=[1, 0, 2], symbol="", symbols=None,
-            exchange=None, asset_type="stock", market="zh_a",
-        )
+        client._build_security_id_params(security_id=None, security_ids=[1, 0, 2])
 
 
-def test_partial_symbols_raises():
-    """If some symbols in a batch resolve and others don't, must raise — never
-    silently query only the resolved subset (caller would miss the rest)."""
+def test_empty_security_ids_list_raises():
+    """An explicit security_ids=[] is supplied-but-empty → must raise (not
+    degrade to an unfiltered query)."""
     client = _make_client()
-    client.get_securities = MagicMock(return_value={
-        "000001": {"symbol": "000001", "exchange": "SZ", "security_id": 42},
-        # "BAD" not in registry
-    })
     with pytest.raises(ValueError):
-        client.security_id_query_params(
-            security_id=None, security_ids=None, symbol="", symbols=["000001", "BAD"],
-            exchange=None, asset_type="stock", market="zh_a",
-        )
+        client._build_security_id_params(security_id=None, security_ids=[])
+
+
+def test_multiple_security_ids_returns_csv():
+    client = _make_client()
+    params = client._build_security_id_params(security_id=None, security_ids=[1, 2, 3])
+    assert params == {"security_ids": "1,2,3"}
 
 
 def test_security_id_zero_query_returns_empty():
@@ -122,27 +60,6 @@ def test_security_id_zero_query_returns_empty():
     assert result == {"data": [], "total": 0}
 
 
-def test_empty_security_ids_list_raises():
-    """An explicit security_ids=[] is supplied-but-empty → must raise (not
-    degrade to an unfiltered query)."""
-    client = _make_client()
-    with pytest.raises(ValueError):
-        client.security_id_query_params(
-            security_id=None, security_ids=[], symbol="", symbols=None,
-            exchange=None, asset_type="stock", market="zh_a",
-        )
-
-
-def test_empty_symbols_list_raises():
-    """An explicit symbols=[] is supplied-but-empty → must raise."""
-    client = _make_client()
-    with pytest.raises(ValueError):
-        client.security_id_query_params(
-            security_id=None, security_ids=None, symbol="", symbols=[],
-            exchange=None, asset_type="stock", market="zh_a",
-        )
-
-
 def test_empty_security_ids_query_returns_empty():
     """query with security_ids=[] returns empty (caught), not unfiltered."""
     client = _make_client()
@@ -150,3 +67,51 @@ def test_empty_security_ids_query_returns_empty():
         source="amazing_data", statement_type="balance_sheet", security_ids=[],
     )
     assert result == {"data": [], "total": 0}
+
+
+# ── get_security_by_id error semantics ──
+# A 5xx / network failure must NOT be masked as "not found" (which would surface
+# as a 400 user error). Only a real 404 returns None.
+
+
+class _FakeResp:
+    def __init__(self, status_code, payload=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self.text = "body"
+
+    def json(self):
+        return self._payload
+
+
+def test_get_security_by_id_404_returns_none():
+    client = _make_client()
+    client.get = lambda path, params=None: _FakeResp(404)
+    assert client.get_security_by_id(42) is None
+
+
+def test_get_security_by_id_5xx_raises_runtime_error():
+    """A 5xx response must raise (→500), not return None (which would mask as 404/400)."""
+    client = _make_client()
+    client.get = lambda path, params=None: _FakeResp(500)
+    with pytest.raises(RuntimeError, match="failed: status 500"):
+        client.get_security_by_id(42)
+
+
+def test_get_security_by_id_network_error_re_raises():
+    """A network exception from self.get() must propagate (→500), not be swallowed."""
+    client = _make_client()
+
+    def _boom(path, params=None):
+        raise ConnectionError("phoenixA unreachable")
+
+    client.get = _boom
+    with pytest.raises(ConnectionError, match="phoenixA unreachable"):
+        client.get_security_by_id(42)
+
+
+def test_get_security_by_id_2xx_returns_data():
+    client = _make_client()
+    client.get = lambda path, params=None: _FakeResp(200, {"data": {"security_id": 42, "symbol": "000001"}})
+    info = client.get_security_by_id(42)
+    assert info == {"security_id": 42, "symbol": "000001"}

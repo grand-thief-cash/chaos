@@ -1,28 +1,25 @@
 """Lightweight BI routes — /bi/* endpoints.
 
-Replaces the old bi_routes.py (dashboard/dupont/quality/insight/peer/metrics).
-The new routes are thin passthroughs to phoenixA raw data APIs, with optional
-YoY/QoQ computation for financial queries.
+Thin passthroughs to phoenixA raw data APIs, with optional YoY/QoQ
+computation for financial queries.
 
 Architecture: cthulhu → artemis /bi/* → phoenixA /api/v2/*
 
-Phase 4: identity is security_id (refactor §3.6). Query routes accept
-`security_id`/`security_ids` (primary) with `symbol`/`symbols` as convenience
-input resolved by BIService via the registry (§8.bis-5). The two single-symbol
-path routes (`/catalog/securities/{symbol}/datasets/summary`, `/dupont/{symbol}`)
-keep the `{symbol}` path so cthulhu keeps working; BIService accepts security_id
-as the primary identity for direct callers (the path flips to {security_id} when
-cthulhu migrates).
+Identity is security_id (refactor §3.6, no dual-track). Query routes accept
+``security_id``/``security_ids``; the two single-identity path routes
+(``/catalog/securities/{security_id}/datasets/summary``,
+``/dupont/{security_id}``) take ``{security_id}`` in the path.
 
 Strict identity (Phase 1/3 pattern): a present-but-empty / non-numeric / zero /
 empty-token security_id(s) → 400, never silently degrades to an unfiltered
-query. ValueError from the resolve layer (bad/unresolvable identity) → 400.
+query. ValueError from the service layer (bad identity) → 400.
 """
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 
+from artemis.api.http_gateway._identity import _parse_security_id, _parse_security_ids
 from artemis.log.logger import get_logger
 from artemis.models.metric_definitions import METRIC_DEFINITIONS
 from artemis.services.bi import BIService
@@ -30,59 +27,6 @@ from artemis.services.bi import BIService
 logger = get_logger("bi.routes")
 router = APIRouter(prefix="/bi", tags=["bi"])
 service = BIService()
-
-
-def _parse_int_list(raw: Optional[str]) -> Optional[List[int]]:
-    """Parse a comma-separated security_ids string → list[int].
-
-    None (param absent) → None. A present value is parsed strictly: empty
-    tokens (leading/trailing/consecutive comma, or bare `?security_ids=`),
-    non-numeric tokens, and non-positive ids → 400. Never returns an empty
-    list for a present value (that would let an explicit empty identity
-    degrade to an unfiltered query downstream).
-    """
-    if raw is None:
-        return None
-    out: List[int] = []
-    for token in raw.split(","):
-        token = token.strip()
-        if not token:
-            raise HTTPException(status_code=400, detail="security_ids contains an empty token")
-        try:
-            v = int(token)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"invalid security_id token: {token!r}")
-        if v <= 0:
-            raise HTTPException(status_code=400, detail=f"security_id must be a positive integer, got {v}")
-        out.append(v)
-    if not out:
-        # `?security_ids=` splits to [""] → caught above; defensive guard.
-        raise HTTPException(status_code=400, detail="security_ids is empty")
-    return out
-
-
-def _parse_security_id(raw: Optional[str]) -> Optional[int]:
-    """Parse a singular security_id query string → int (strict).
-
-    None (absent) → None. A present value is parsed strictly: empty,
-    non-numeric, or non-positive → 400 — never silently treated as absent
-    (which would let an explicit empty identity degrade to an unfiltered
-    query downstream). Mirrors `_parse_int_list` so both identity shapes
-    return a uniform 400 + `{"detail": "..."}` envelope instead of FastAPI's
-    422 validation array.
-    """
-    if raw is None:
-        return None
-    token = raw.strip()
-    if not token:
-        raise HTTPException(status_code=400, detail="security_id is empty")
-    try:
-        v = int(token)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"invalid security_id: {token!r}")
-    if v <= 0:
-        raise HTTPException(status_code=400, detail=f"security_id must be a positive integer, got {v}")
-    return v
 
 
 @router.get("/securities")
@@ -139,17 +83,19 @@ async def get_enum(enum_name: str, source: str | None = Query(None)):
         raise HTTPException(status_code=500, detail="internal error")
 
 
-@router.get("/catalog/securities/{symbol}/datasets/summary")
-async def get_symbol_coverage(symbol: str, market: str = Query("zh_a")):
+@router.get("/catalog/securities/{security_id}/datasets/summary")
+async def get_security_coverage(security_id: str, market: str = Query("zh_a")):
+    sid = _parse_security_id(security_id)
+    if sid is None:
+        raise HTTPException(status_code=400, detail="security_id is required")
     try:
-        return service.get_symbol_coverage(symbol, market=market)
+        return service.get_security_coverage(security_id=sid, market=market)
     except HTTPException:
         raise
     except ValueError as exc:
-        # symbol not resolvable to a security_id → not found in registry
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.error({"event": "bi_symbol_coverage_failed", "symbol": symbol, "error": str(exc)}, exc_info=True)
+        logger.error({"event": "bi_security_coverage_failed", "security_id": sid, "error": str(exc)}, exc_info=True)
         raise HTTPException(status_code=500, detail="internal error")
 
 
@@ -159,8 +105,6 @@ async def query_financial(
     statement_type: str,
     security_id: Optional[str] = Query(None),
     security_ids: Optional[str] = Query(None),
-    symbol: str | None = Query(None),
-    symbols: str | None = Query(None),
     market: str = Query("zh_a"),
     fields: str | None = Query(None),
     format: str = Query("flat"),
@@ -174,8 +118,8 @@ async def query_financial(
     try:
         return service.query_financial(
             source=source, statement_type=statement_type,
-            security_id=_parse_security_id(security_id), security_ids=_parse_int_list(security_ids),
-            symbol=symbol, symbols=symbols, market=market, fields=fields,
+            security_id=_parse_security_id(security_id), security_ids=_parse_security_ids(security_ids),
+            market=market, fields=fields,
             format=format, period_start=period_start, period_end=period_end,
             report_type=report_type, statement_code=statement_code,
             page=page, page_size=page_size,
@@ -195,8 +139,6 @@ async def query_corporate_action(
     action_type: str,
     security_id: Optional[str] = Query(None),
     security_ids: Optional[str] = Query(None),
-    symbol: str | None = Query(None),
-    symbols: str | None = Query(None),
     market: str = Query("zh_a"),
     fields: str | None = Query(None),
     format: str = Query("flat"),
@@ -208,8 +150,8 @@ async def query_corporate_action(
     try:
         return service.query_corporate_action(
             source=source, action_type=action_type,
-            security_id=_parse_security_id(security_id), security_ids=_parse_int_list(security_ids),
-            symbol=symbol, symbols=symbols, market=market, fields=fields,
+            security_id=_parse_security_id(security_id), security_ids=_parse_security_ids(security_ids),
+            market=market, fields=fields,
             format=format, period_start=period_start, period_end=period_end,
             page=page, page_size=page_size,
         )
@@ -227,8 +169,6 @@ async def query_equity_structure(
     source: str,
     security_id: Optional[str] = Query(None),
     security_ids: Optional[str] = Query(None),
-    symbol: str | None = Query(None),
-    symbols: str | None = Query(None),
     market: str = Query("zh_a"),
     fields: str | None = Query(None),
     format: str = Query("flat"),
@@ -242,8 +182,8 @@ async def query_equity_structure(
     try:
         return service.query_equity_structure(
             source=source,
-            security_id=_parse_security_id(security_id), security_ids=_parse_int_list(security_ids),
-            symbol=symbol, symbols=symbols, market=market,
+            security_id=_parse_security_id(security_id), security_ids=_parse_security_ids(security_ids),
+            market=market,
             fields=fields, format=format, change_start=change_start,
             change_end=change_end, current_only=current_only, valid_only=valid_only,
             page=page, page_size=page_size,
@@ -270,9 +210,9 @@ async def get_metric_definitions():
         raise HTTPException(status_code=500, detail="internal error")
 
 
-@router.get("/dupont/{symbol}")
+@router.get("/dupont/{security_id}")
 async def get_dupont_analysis(
-    symbol: str,
+    security_id: str,
     source: str = Query("amazing_data"),
     market: str = Query("zh_a"),
     statement_code: str = Query("1", description="1=合并, 6=母公司"),
@@ -281,9 +221,12 @@ async def get_dupont_analysis(
     extrapolate_q4: bool = Query(False, description="仅当period_kind=ytd且target_period是Q3时生效，按Q3YTD×4/3外推全年预测"),
 ):
     """DuPont decomposition: ttm(默认)/annual/single_quarter/ytd; Q3YTD可外推全年."""
+    sid = _parse_security_id(security_id)
+    if sid is None:
+        raise HTTPException(status_code=400, detail="security_id is required")
     try:
         return service.get_dupont_analysis(
-            symbol=symbol, source=source, market=market,
+            security_id=sid, source=source, market=market,
             statement_code=statement_code, period_kind=period_kind,
             target_reporting_period=target_reporting_period,
             extrapolate_q4=extrapolate_q4,
@@ -291,9 +234,9 @@ async def get_dupont_analysis(
     except HTTPException:
         raise
     except ValueError as exc:
-        # ValueError from dupont = "no financial data for symbol" → 404
-        logger.warning({"event": "bi_dupont_no_data", "symbol": symbol, "error": str(exc)})
+        # ValueError from dupont = "no financial data for security_id" → 404
+        logger.warning({"event": "bi_dupont_no_data", "security_id": sid, "error": str(exc)})
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
-        logger.error({"event": "bi_dupont_failed", "symbol": symbol, "error": str(exc)}, exc_info=True)
+        logger.error({"event": "bi_dupont_failed", "security_id": sid, "error": str(exc)}, exc_info=True)
         raise HTTPException(status_code=500, detail="internal error")

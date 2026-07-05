@@ -1,72 +1,23 @@
 """因子引擎 API 路由。
 
-Phase 4: identity is security_id (refactor §3.6). symbol/symbols remain as
-convenience input (resolved to security_id inside factor_service, §8.bis-5)
-so cthulhu keeps working until its factor page migrates. Responses are
-security_id-native with symbol kept as decoration.
+Identity is security_id (refactor §3.6, no dual-track). Responses are
+security_id-native with symbol kept as decoration where it already exists
+in the store.
 
-Strict identity (Phase 1/3 pattern): a present-but-empty / non-numeric / zero /
-empty-token security_id(s) → 400; an unresolvable symbol or a partial symbols
-batch → 400 (never silently computes a subset).
+Strict identity (Phase 1/3 pattern): a present-but-empty / non-numeric /
+zero / empty-token security_id(s) → 400 (never silently degrades).
 """
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from artemis.api.http_gateway._identity import _parse_security_id, _parse_security_ids
 from artemis.services import factor_service
 from artemis.log.logger import get_logger
 
 logger = get_logger("factor.routes")
 
 router = APIRouter(prefix="/factors", tags=["factors"])
-
-
-def _parse_security_ids(raw: Optional[str]) -> Optional[List[int]]:
-    """Parse a comma-separated security_ids query string → list[int] (strict).
-
-    None (absent) → None. A present value is parsed strictly: empty tokens,
-    non-numeric tokens, non-positive ids → 400.
-    """
-    if raw is None:
-        return None
-    out: List[int] = []
-    for token in raw.split(","):
-        token = token.strip()
-        if not token:
-            raise HTTPException(status_code=400, detail="security_ids contains an empty token")
-        try:
-            v = int(token)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"invalid security_id token: {token!r}")
-        if v <= 0:
-            raise HTTPException(status_code=400, detail=f"security_id must be a positive integer, got {v}")
-        out.append(v)
-    if not out:
-        raise HTTPException(status_code=400, detail="security_ids is empty")
-    return out
-
-
-def _parse_security_id(raw: Optional[str]) -> Optional[int]:
-    """Parse a singular security_id query string → int (strict).
-
-    None (absent) → None. A present value is parsed strictly: empty,
-    non-numeric, or non-positive → 400 — never silently treated as absent
-    (which would let an explicit empty identity degrade downstream). Mirrors
-    `_parse_security_ids` so both identity shapes return a uniform 400 +
-    `{"detail": "..."}` envelope instead of FastAPI's 422 validation array.
-    """
-    if raw is None:
-        return None
-    token = raw.strip()
-    if not token:
-        raise HTTPException(status_code=400, detail="security_id is empty")
-    try:
-        v = int(token)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"invalid security_id: {token!r}")
-    if v <= 0:
-        raise HTTPException(status_code=400, detail=f"security_id must be a positive integer, got {v}")
-    return v
 
 
 @router.post("/compute/full")
@@ -84,26 +35,21 @@ async def compute_factors_full(market: str = "zh_a", as_of_date: Optional[str] =
 
 @router.post("/compute/incremental")
 async def compute_factors_incremental(
-    symbols: Optional[List[str]] = None,
     as_of_date: Optional[str] = None,
     market: str = "zh_a",
     source: Optional[str] = None,
-    security_ids: Optional[str] = Query(None, description="comma-separated security_ids (primary)"),
+    security_ids: Optional[str] = Query(None, description="comma-separated security_ids (required)"),
 ):
-    """增量因子计算。
-
-    `security_ids` (query, primary) and `symbols` (body, convenience) are
-    mutually-resolvable: pass either. cthulhu posts a bare JSON array body of
-    symbols; security_id-native callers use the query param. At least one is
-    required. A partial symbols batch (any entry unresolved) → 400.
-    """
+    """增量因子计算。security_ids is required (comma-separated query param)."""
     if not as_of_date:
         from datetime import date
         as_of_date = date.today().strftime("%Y%m%d")
+    sids = _parse_security_ids(security_ids)
+    if sids is None:
+        raise HTTPException(status_code=400, detail="security_ids is required")
     try:
         return factor_service.compute_incremental(
-            security_ids=_parse_security_ids(security_ids),
-            symbols=symbols,
+            security_ids=sids,
             as_of_date=as_of_date,
             market=market,
             source=source,
@@ -121,17 +67,16 @@ async def compute_factors_incremental(
 async def get_factor_snapshot(
     as_of_date: str,
     security_id: Optional[str] = Query(None),
-    symbol: Optional[str] = None,
     market: str = "zh_a",
     source: Optional[str] = None,
 ):
-    """查询单股因子快照。security_id is primary; symbol is convenience (Phase 4)."""
+    """查询单股因子快照。security_id is required."""
     sid = _parse_security_id(security_id)
-    if sid is None and not symbol:
-        raise HTTPException(status_code=400, detail="security_id or symbol is required")
+    if sid is None:
+        raise HTTPException(status_code=400, detail="security_id is required")
     try:
         result = factor_service.get_snapshot(
-            security_id=sid, symbol=symbol,
+            security_id=sid,
             as_of_date=as_of_date, market=market, source=source,
         )
     except ValueError as e:

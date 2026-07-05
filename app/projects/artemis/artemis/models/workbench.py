@@ -57,7 +57,8 @@ def normalize_dimensions(
 class MarketDataQuery(BaseModel):
     """Workbench 市场数据查询语义对象。"""
 
-    symbol: str
+    security_id: int
+    symbol: Optional[str] = None
     start_date: str
     end_date: str
     asset_type: str = "stock"
@@ -66,36 +67,19 @@ class MarketDataQuery(BaseModel):
     adjust: str = "nf"
     source: Optional[str] = None
     use_cache: bool = True
-
-
-class WorkbenchRunReq(BaseModel):
-    """Workbench 回测运行请求。"""
-    strategy_code: str
-    symbol: str
-    start_date: str
-    end_date: str
-    period: str = "daily"
-    adjust: str = "nf"
-    asset_type: str = "stock"
-    market: str = "zh_a"
-    cash: float = 100000.0
-    commission: float = 0.0
-    strategy_params: Dict[str, Any] = Field(default_factory=dict)
-    source: Optional[str] = None
-    use_cache: bool = True
-    enable_bar_details: bool = False
-    bar_details_level: str = "trade"  # "trade" | "all"
 
 
 class IndicatorReq(BaseModel):
     """单个指标请求。"""
+
     name: str
     params: Dict[str, Any] = Field(default_factory=dict)
 
 
 class IndicatorsRequest(BaseModel):
     """指标计算请求。"""
-    symbol: str
+
+    security_id: int
     start_date: str
     end_date: str
     period: str = "daily"
@@ -107,7 +91,8 @@ class IndicatorsRequest(BaseModel):
 
 
 class CompactRequest(BaseModel):
-    """缓存 Compaction 请求。"""
+    """缓存 Compaction 请求（cache_engine 物理 symbol-keyed，§3.2 永久存储特例）。"""
+
     symbol: str
     period: str = "daily"
     asset_type: str = "stock"

@@ -386,7 +386,7 @@ class TestParentPlanUsesSymbol(unittest.TestCase):
             "symbol_infos": {
                 "600000": {"symbol": "600000", "exchange": "SH", "security_id": 1},
             },
-            "last_updates_map": {"600000": "2099-12-31"},
+            "last_updates_map": {1: "2099-12-31"},
         })
 
         with patch("artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent.convert_to_baostock_params",
@@ -434,8 +434,8 @@ class TestGetSecuritiesNoCodeField(unittest.TestCase):
         fake_resp.status_code = 200
         fake_resp.json.return_value = {
             "data": [
-                {"symbol": "600000", "name": "浦发银行", "exchange": "SH"},
-                {"symbol": "000001", "name": "平安银行", "exchange": "SZ"},
+                {"security_id": 1, "symbol": "600000", "name": "浦发银行", "exchange": "SH"},
+                {"security_id": 2, "symbol": "000001", "name": "平安银行", "exchange": "SZ"},
             ]
         }
 
@@ -443,10 +443,11 @@ class TestGetSecuritiesNoCodeField(unittest.TestCase):
             result = client.get_securities()
 
         self.assertEqual(len(result), 2)
-        for sym, info in result.items():
+        # get_securities returns a dict keyed by security_id
+        for sid, info in result.items():
             self.assertIn("symbol", info)
             self.assertNotIn("code", info)
-            self.assertEqual(info["symbol"], sym)
+            self.assertEqual(info["security_id"], sid)
 
 
 if __name__ == "__main__":

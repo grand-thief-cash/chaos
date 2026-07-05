@@ -106,7 +106,17 @@ class StockZHAList(WorkerUnit):
         ctx.stats["row_count"] = int(count or 0)
 
         client = ctx.dept_http.get(DeptServices.PHOENIXA)
-        ok = client.stock_zh_a_list_batch_upsert(rows, ctx.run_id)
+        securities = [
+            {
+                "symbol": row.get("code", row.get("symbol", "")),
+                "name": row.get("company", row.get("name", "")),
+                "exchange": row.get("exchange", ""),
+                "asset_type": "stock",
+                "market": "zh_a",
+            }
+            for row in rows
+        ]
+        ok = client.upsert_securities(securities, run_id=ctx.run_id)
         if ok is False:
             ctx.fail(f"failed to sink stock list to phoenixA for exchange={exchange}", phase='sink')
             return

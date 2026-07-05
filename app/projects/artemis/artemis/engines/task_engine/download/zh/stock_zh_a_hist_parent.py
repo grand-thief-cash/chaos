@@ -41,13 +41,12 @@ class StockZhAHistParent(OrchestratorUnit):
         client = cast(PhoenixAClient, phoenix_client)
         symbol_infos = client.get_securities(symbols=symbols or None, exchanges=exchanges)
 
-        symbols = list(symbol_infos.keys())
         period = params.get("period")
         adjust = params.get("adjust")
 
         # Phase 4: query last_update by security_id (the registry already gave us
         # security_id on each info row; passing security_ids avoids a redundant
-        # symbol→id resolve inside the client). The response stays {symbol: date}.
+        # symbol→id resolve inside the client). The response is {security_id: date}.
         security_ids = [int(i.get("security_id")) for i in symbol_infos.values() if i.get("security_id")]
         last_updates_map = client.get_bars_last_update(
             period=period, adjust=adjust, security_ids=security_ids or None,
@@ -137,8 +136,8 @@ class StockZhAHistParent(OrchestratorUnit):
                 ctx.fail(f"Cannot determine bs_code for symbol={symbol}, exchange={exchange}", phase='plan')
                 return []
 
-            # last_updates_map key is the symbol (e.g. "600000")
-            last_update = last_updates_map.get(symbol)
+            # last_updates_map key is the security_id
+            last_update = last_updates_map.get(int(security_id))
 
             if last_update:
                 try:

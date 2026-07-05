@@ -121,47 +121,7 @@ def compute_full(as_of_date: str, market: str = "zh_a", source: str | None = Non
     _, _, pipeline = _get_runtime(source)
     logger.info({"event": "factor_compute_full", "as_of_date": as_of_date, "market": market, "source": source or "default"})
     result = pipeline.run_full(as_of_date, market)
-    return {"status": "ok", "symbols_count": len(result), "as_of_date": as_of_date, "source": source or "default"}
-
-
-def _get_client(source: str | None = None) -> Optional[PhoenixAClient]:
-    """Return the runtime's PhoenixA client if available, else build one, else None."""
-    runtime = _runtimes.get(_runtime_key(source))
-    if runtime is not None and isinstance(runtime[1], PhoenixADataProvider):
-        return runtime[1].client
-    try:
-        return _build_phoenix_client(source)
-    except Exception as exc:
-        logger.warning({"event": "factor_service_client_unavailable", "source": source or "default", "error": str(exc)})
-        return None
-
-
-def _resolve_security_ids(symbols: List[str], source: str | None = None) -> List[int]:
-    """Resolve symbol convenience input → security_ids (strict, §8.bis-5).
-
-    Raises ValueError if ANY supplied symbol cannot be resolved (partial or
-    all-miss) — matches the Phase 3 rule that explicit identity must not
-    silently degrade or partially execute. Also raises if the phoenixA client
-    is unavailable (cannot resolve).
-    """
-    sym_list = [str(s).strip() for s in symbols if str(s).strip()]
-    if not sym_list:
-        raise ValueError("no non-empty symbols supplied")
-    client = _get_client(source)
-    if client is None:
-        raise ValueError("cannot resolve symbols: phoenixA client unavailable")
-    resolved = client.resolve_security_ids(symbols=sym_list)
-    if len(resolved) != len(sym_list):
-        raise ValueError(
-            f"could not resolve all {len(sym_list)} symbol(s); only {len(resolved)} found "
-            f"in security_registry (symbols={sym_list}); ensure STOCK_ZH_A_LIST has upserted them"
-        )
-    return resolved
-
-
-def _resolve_security_id(symbol: str, source: str | None = None) -> int:
-    """Resolve a single symbol → security_id (strict; raises on unresolvable)."""
-    return _resolve_security_ids([symbol], source)[0]
+    return {"status": "ok", "securities_count": len(result), "as_of_date": as_of_date, "source": source or "default"}
 
 
 def compute_incremental(
@@ -169,27 +129,21 @@ def compute_incremental(
     as_of_date: str = "",
     market: str = "zh_a",
     source: str | None = None,
-    symbols: Optional[List[str]] = None,
 ) -> dict:
-    """增量因子计算。Identity is security_id (Phase 4); `symbols` is convenience
-    input resolved to security_ids via the registry before the call (§8.bis-5).
+    """增量因子计算。Identity is security_id (Phase 4, no dual-track).
 
-    Strict (Phase 3): an explicit empty/non-positive security_ids, or a symbols
-    list where any entry fails to resolve (partial), raises ValueError — never
-    silently computes a subset."""
+    Strict (Phase 3): an explicit empty/non-positive security_ids raises
+    ValueError — never silently computes a subset."""
     as_of_date = normalize_date(as_of_date)
-    # Validate / resolve identity BEFORE building the runtime (fail fast on bad
-    # input; avoids a phoenixA connection attempt for malformed requests).
-    if security_ids is not None:
-        if not security_ids:
-            raise ValueError("security_ids is empty")
-        if any(i <= 0 for i in security_ids):
-            raise ValueError("security_ids must be positive integers")
-        resolved = list(security_ids)
-    elif symbols:
-        resolved = _resolve_security_ids(symbols, source)  # strict — raises on partial
-    else:
-        raise ValueError("compute_incremental requires security_ids or symbols")
+    # Validate identity BEFORE building the runtime (fail fast on bad input;
+    # avoids a phoenixA connection attempt for malformed requests).
+    if security_ids is None:
+        raise ValueError("compute_incremental requires security_ids")
+    if not security_ids:
+        raise ValueError("security_ids is empty")
+    if any(i <= 0 for i in security_ids):
+        raise ValueError("security_ids must be positive integers")
+    resolved = list(security_ids)
     _, _, pipeline = _get_runtime(source)
     logger.info({"event": "factor_compute_incr", "security_ids": resolved[:5], "as_of_date": as_of_date, "source": source or "default"})
     pipeline.run_incremental(resolved, as_of_date, market)
@@ -201,25 +155,20 @@ def get_snapshot(
     as_of_date: str = "",
     market: str = "zh_a",
     source: str | None = None,
-    symbol: Optional[str] = None,
 ) -> Optional[dict]:
-    """Query a single-security factor snapshot. Identity is security_id (Phase 4);
-    `symbol` is convenience input resolved via the registry (§8.bis-5).
+    """Query a single-security factor snapshot. Identity is security_id
+    (Phase 4, no dual-track).
 
-    Strict (Phase 3): a non-positive security_id or an unresolvable symbol
-    raises ValueError. Returns None only if no identity is supplied (the route
-    400s before that) or the snapshot does not exist."""
+    Strict (Phase 3): a non-positive security_id raises ValueError. Returns
+    None if the snapshot does not exist."""
     as_of_date = normalize_date(as_of_date)
-    # Validate / resolve identity BEFORE building the runtime (fail fast on bad
-    # input; avoids a phoenixA connection attempt for malformed requests).
-    if security_id is not None:
-        if security_id <= 0:
-            raise ValueError("security_id must be a positive integer")
-        resolved = security_id
-    elif symbol:
-        resolved = _resolve_security_id(symbol, source)  # strict — raises on unresolvable
-    else:
-        return None
+    # Validate identity BEFORE building the runtime (fail fast on bad input;
+    # avoids a phoenixA connection attempt for malformed requests).
+    if security_id is None:
+        raise ValueError("get_snapshot requires security_id")
+    if security_id <= 0:
+        raise ValueError("security_id must be a positive integer")
+    resolved = security_id
     store, _, _ = _get_runtime(source)
     snap = store.get_factor_snapshot(resolved, as_of_date, market)
     if snap is None:

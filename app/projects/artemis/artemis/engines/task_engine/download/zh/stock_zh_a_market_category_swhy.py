@@ -116,9 +116,9 @@ class StockZHAMarketCategorySWHY(WorkerUnit):
             return
 
         phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
-        ok = phoenixA_client.upsert_market_categories(
+        ok = phoenixA_client.upsert_taxonomy_categories(
             processed,
-            consts.DataSource.DS_AMAZING_DATA.value,
+            source=consts.DataSource.DS_AMAZING_DATA.value,
             taxonomy=Taxonomy.SWHY.value,
             market="zh_a",
             run_id=ctx.run_id,

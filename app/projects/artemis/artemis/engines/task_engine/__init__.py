@@ -4,7 +4,6 @@ from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 from artemis.consts import TaskCode
 from artemis.core import registry
 from artemis.engines.task_engine.base import BaseTaskUnit
-from artemis.engines.task_engine.backtest import BacktraderCampaignTask, BacktraderRunTask
 from artemis.engines.task_engine.download.zh import (
     StockZhAHistParent, StockZhAHistChild,
     StockZHAMktCategoryMairui, StockZHAMarketCategorySWHY,
@@ -169,16 +168,4 @@ registry.register(
     TaskCode.STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD,
     module=StockZhABsAdjustFactorChild.__module__,
     class_name=StockZhABsAdjustFactorChild.__name__,
-)
-
-registry.register(
-    TaskCode.BACKTRADER_CAMPAIGN,
-    module=BacktraderCampaignTask.__module__,
-    class_name=BacktraderCampaignTask.__name__,
-)
-
-registry.register(
-    TaskCode.BACKTRADER_RUN,
-    module=BacktraderRunTask.__module__,
-    class_name=BacktraderRunTask.__name__,
 )

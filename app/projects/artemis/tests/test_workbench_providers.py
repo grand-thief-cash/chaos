@@ -15,26 +15,33 @@ from artemis.services.workbench.providers import (
 
 
 class FakeStockClient:
-    """Fake client implementing get_bars() for stock asset type."""
+    """Fake client implementing get_bars() / get_security_by_id() for stock asset type."""
 
     def __init__(self):
         self.calls = []
 
     def get_bars(self, **kwargs):
         self.calls.append(kwargs)
-        # get_bars with normalize_for_cache=True returns date/code (CacheEngine format)
-        return [{"date": "2024-01-02", "code": kwargs["symbol"], "close": 10.0}]
+        return [{"date": "2024-01-02", "code": str(kwargs["security_id"]), "close": 10.0}]
+
+    def get_security_by_id(self, security_id):
+        return {1: {"security_id": 1, "symbol": "000001", "exchange": "SZ",
+                    "asset_type": "stock", "market": "zh_a"}}.get(security_id)
 
 
 class FakeIndexClient:
-    """Fake client implementing get_bars() for index asset type."""
+    """Fake client implementing get_bars() / get_security_by_id() for index asset type."""
 
     def __init__(self):
         self.calls = []
 
     def get_bars(self, **kwargs):
         self.calls.append(kwargs)
-        return [{"date": "2024-01-02", "code": kwargs["symbol"], "close": 3000.0}]
+        return [{"date": "2024-01-02", "code": str(kwargs["security_id"]), "close": 3000.0}]
+
+    def get_security_by_id(self, security_id):
+        return {3: {"security_id": 3, "symbol": "000300", "exchange": "SH",
+                    "asset_type": "index", "market": "zh_a"}}.get(security_id)
 
 
 class FakeResponse:
@@ -74,6 +81,7 @@ def test_stock_provider_maps_query_to_phoenix_bars_api():
     provider = PhoenixBarsProvider()
     client = FakeStockClient()
     query = MarketDataQuery(
+        security_id=1,
         symbol="000001",
         start_date="2024-01-01",
         end_date="2024-01-31",
@@ -86,7 +94,7 @@ def test_stock_provider_maps_query_to_phoenix_bars_api():
     bars = provider.fetch_bars(client=client, query=query)
 
     # get_bars with normalize_for_cache=True returns CacheEngine format (code/date)
-    assert bars[0]["code"] == "000001"
+    assert bars[0]["code"] == "1"
     assert client.calls[0]["period"] == "weekly"
     assert client.calls[0]["adjust"] == "qfq"
     assert client.calls[0]["asset_type"] == "stock"
@@ -99,6 +107,7 @@ def test_index_provider_uses_same_get_bars_api():
     provider = PhoenixBarsProvider()
     client = FakeIndexClient()
     query = MarketDataQuery(
+        security_id=3,
         symbol="000300",
         start_date="2024-01-01",
         end_date="2024-01-31",
@@ -110,7 +119,7 @@ def test_index_provider_uses_same_get_bars_api():
 
     bars = provider.fetch_bars(client=client, query=query)
 
-    assert bars[0]["code"] == "000300"
+    assert bars[0]["code"] == "3"
     assert client.calls[0]["asset_type"] == "index"
     assert client.calls[0]["market"] == "zh_a"
     assert client.calls[0]["period"] == "daily"
@@ -125,7 +134,7 @@ def test_market_data_service_delegates_to_phoenix_bars_provider(monkeypatch):
     )
 
     result = get_market_bars(
-        symbol="000300",
+        security_id=3,
         start_date="2024-01-01",
         end_date="2024-01-31",
         period="weekly",
@@ -136,10 +145,77 @@ def test_market_data_service_delegates_to_phoenix_bars_provider(monkeypatch):
         use_cache=False,
     )
 
+    assert result["security_id"] == 3
     assert result["symbol"] == "000300"
     assert result["period"] == "weekly"
     assert len(result["bars"]) == 1
     assert fake_client.calls[0]["asset_type"] == "index"
+
+
+def test_market_data_rejects_asset_type_mismatch(monkeypatch):
+    """A security_id whose registry asset_type doesn't match the request must
+    raise — otherwise cache_engine would route to the wrong (asset_type, market)
+    bucket and silently return the wrong security's bars."""
+    fake_client = FakeIndexClient()
+    monkeypatch.setattr(
+        "artemis.services.workbench.market_data._build_phoenix_client",
+        lambda source=None: fake_client,
+    )
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="asset_type mismatch"):
+        get_market_bars(
+            security_id=3,  # registry says index
+            start_date="2024-01-01",
+            end_date="2024-01-31",
+            period="weekly",
+            adjust="nf",
+            asset_type="stock",  # request says stock — mismatch
+            market="zh_a",
+            use_cache=False,
+        )
+    # Must not have fetched bars (fail-closed before provider call).
+    assert fake_client.calls == []
+
+
+def test_market_data_rejects_security_id_not_found(monkeypatch):
+    """An unknown security_id raises ValueError (→ 400), not a silent empty result."""
+    fake_client = FakeIndexClient()
+    monkeypatch.setattr(
+        "artemis.services.workbench.market_data._build_phoenix_client",
+        lambda source=None: fake_client,
+    )
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="not found"):
+        get_market_bars(
+            security_id=999,  # not in the fake registry
+            start_date="2024-01-01",
+            end_date="2024-01-31",
+            asset_type="index",
+            market="zh_a",
+            use_cache=False,
+        )
+
+
+def test_market_data_normalizes_asset_type_before_resolve(monkeypatch):
+    """Whitespace in asset_type/market is normalized BEFORE the registry compare,
+    so a direct API call with " stock " / "zh_a " is not falsely rejected as a
+    mismatch (the registry stores stripped values)."""
+    fake_client = FakeStockClient()
+    monkeypatch.setattr(
+        "artemis.services.workbench.market_data._build_phoenix_client",
+        lambda source=None: fake_client,
+    )
+    result = get_market_bars(
+        security_id=1,
+        start_date="2024-01-01",
+        end_date="2024-01-31",
+        asset_type=" stock ",  # whitespace — would falsely mismatch without normalize
+        market=" zh_a ",
+        use_cache=False,
+    )
+    assert result["security_id"] == 1
+    assert result["symbol"] == "000001"
+    assert fake_client.calls[0]["asset_type"] == "stock"  # normalized on the wire
 
 
 def test_phoenix_stock_client_paginates_until_last_page(monkeypatch):
@@ -159,8 +235,6 @@ def test_phoenix_stock_client_paginates_until_last_page(monkeypatch):
 
     monkeypatch.setattr(client, "get", fake_get)
 
-    # Use v2 API directly: get_bars with security_id (Phase 4; skips symbol
-    # resolve) + normalize_for_cache=True.
     rows = client.get_bars(
         security_id=1,
         start_date="2024-01-01",
@@ -174,4 +248,3 @@ def test_phoenix_stock_client_paginates_until_last_page(monkeypatch):
     # normalize_for_cache renames trade_date→date, symbol→code
     assert [row["date"] for row in rows] == ["2024-01-02", "2024-01-03", "2024-01-04"]
     assert offsets == [0, 2]
-
