@@ -1,7 +1,13 @@
 # VERSION
-v0.18.0
+v0.19.0
 
 # Changelog
+- v0.19.0
+    - **BI static financial dashboard expansion**
+        - Added financial ability dashboards for growth, operating, and solvency analysis with mock KPI cards, benchmark views, trend selectors, detail tables, and explanatory notes.
+        - Added a new nested Profit & Revenue Analysis menu with three static pages: profit-income analysis, profit comparison analysis, and revenue analysis.
+        - Preserved core business relationships in the mock dashboards, including revenue/cost/expense-to-profit breakdowns and revenue composition views.
+        - Improved static BI navigation ordering for financial summary, financial ability, profit & revenue analysis, DuPont analysis, and metric dictionary.
 - v0.18.0
     - **Fully migrated to `security_id` (lockstep with artemis v0.41.0, no-compat).**
         - BI: `ArtemisBiService` query methods (`queryFinancial`/`queryCorporateAction`/`queryEquityStructure`) + `getSecurityCoverage`/`getDupont` take `security_id`/`security_ids` (was `symbol`/`symbols`); routes `company/:symbol` → `company/:security_id`; URL paths `/bi/catalog/securities/{symbol}/datasets/summary` and `/bi/dupont/{symbol}` → `/{security_id}`. Models gain `security_id` (`BISymbolCoverageResponse` renamed → `BISecurityCoverageResponse`, `BISecurityItem`, `BIDupontResponse`). `symbol` survives only as response decoration — pages set it from `resp.symbol` for display.
