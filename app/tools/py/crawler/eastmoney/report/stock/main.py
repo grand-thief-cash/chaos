@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
+from curl_cffi import requests as curl_requests
 
 
 # =============================================================================
@@ -298,20 +299,27 @@ class EastMoneyStockReportCrawler:
     def download_pdf(self, pdf_url: str, pdf_path: Path) -> None:
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         part_path = pdf_path.with_suffix(pdf_path.suffix + ".part")
-        response = self.request(
-            "GET",
-            pdf_url,
-            headers={
-                "Accept": "application/pdf,*/*;q=0.8",
-                "Referer": LIST_REFERER,
-            },
-            stream=True,
-        )
-        content_type = response.headers.get("Content-Type", "")
-        with part_path.open("wb") as out_file:
-            for chunk in response.iter_content(chunk_size=1024 * 128):
-                if chunk:
-                    out_file.write(chunk)
+
+        # Use curl-cffi with Chrome TLS fingerprint impersonation to bypass anti-bot detection
+        # The site checks TLS fingerprints and blocks Python requests/httpx libraries
+        session = curl_requests.Session(impersonate="chrome")
+        try:
+            response = session.get(
+                pdf_url,
+                headers={
+                    "Accept": "application/pdf,*/*;q=0.8",
+                    "Referer": LIST_REFERER,
+                },
+                timeout=REQUEST_TIMEOUT_SECONDS,
+                stream=True,
+            )
+            content_type = response.headers.get("Content-Type", "")
+            with part_path.open("wb") as out_file:
+                for chunk in response.iter_content(chunk_size=1024 * 128):
+                    if chunk:
+                        out_file.write(chunk)
+        finally:
+            session.close()
 
         if not is_valid_pdf(part_path):
             if "text/html" in content_type.lower():
