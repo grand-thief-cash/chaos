@@ -1157,3 +1157,227 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             return {"capabilities": [], "_reachable": False, "_error": str(e)}
 
+    # ──────────── Research Reports (v2) ────────────
+    #
+    # Research-report metadata is upserted as status='pending' at list time;
+    # after the PDF is sunk to MinIO, the row is updated to status='downloaded'
+    # with the MinIO object key. phoenixA's ON CONFLICT preserves status /
+    # pdf_object_key / pdf_url / last_error on existing rows, so re-listing
+    # already-downloaded reports is safe and idempotent.
+
+    def upsert_research_report(
+        self,
+        reports: List[Dict[str, Any]],
+        source: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Batch upsert research-report metadata (pending) via v2 API."""
+        path = f"/api/v2/research-report/{source}/upsert"
+        try:
+            resp = self.post(path, reports)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_research_report_failure',
+                    'run_id': run_id,
+                    'source': source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(reports) if reports else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_research_report_exception',
+                    'run_id': run_id,
+                    'source': source,
+                    'error': str(e),
+                })
+            raise
+
+    def update_research_report_status(
+        self,
+        *,
+        source: str,
+        resource_id: str,
+        status: str,
+        pdf_object_key: str = "",
+        pdf_url: str = "",
+        last_error: str = "",
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Update a research report's download status (+ object key / pdf url / error)."""
+        path = f"/api/v2/research-report/{source}/{resource_id}/status"
+        payload: Dict[str, Any] = {
+            'status': status,
+            'pdf_object_key': pdf_object_key,
+            'pdf_url': pdf_url,
+            'last_error': last_error,
+        }
+        try:
+            resp = self.post(path, payload)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_update_research_report_status_failure',
+                    'run_id': run_id,
+                    'source': source,
+                    'resource_id': resource_id,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_update_research_report_status_exception',
+                    'run_id': run_id,
+                    'source': source,
+                    'resource_id': resource_id,
+                    'error': str(e),
+                })
+            raise
+
+    def get_research_report_last_update(self, *, source: str = "eastmoney") -> str:
+        """Return MAX(publish_date) among downloaded reports ("" if none)."""
+        path = f"/api/v2/research-report/{source}/last-update"
+        try:
+            resp = self.get(path, {})
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                if isinstance(data, dict):
+                    val = data.get('last_update')
+                    if val is None and isinstance(data.get('data'), dict):
+                        val = data['data'].get('last_update')
+                    return str(val or "")
+            return ""
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_research_report_last_update_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return ""
+
+    def get_research_report_max_publish_date(self, *, source: str = "eastmoney") -> str:
+        """Return MAX(publish_date) across ALL research-report rows (any status).
+
+        Used as the list high-water mark: the artemis task lists eastmoney reports
+        from this date forward so it only fetches new reports each run.
+        """
+        path = f"/api/v2/research-report/{source}/max-publish-date"
+        try:
+            resp = self.get(path, {})
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                if isinstance(data, dict):
+                    val = data.get('max_publish_date')
+                    if val is None and isinstance(data.get('data'), dict):
+                        val = data['data'].get('max_publish_date')
+                    return str(val or "")
+            return ""
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_research_report_max_publish_date_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return ""
+
+    def query_research_report_pending(
+        self,
+        *,
+        source: str = "eastmoney",
+        start_date: str = "",
+        end_date: str = "",
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Query pending/error research reports for downloading (oldest first)."""
+        path = f"/api/v2/research-report/{source}/pending"
+        params: Dict[str, Any] = {'limit': str(limit)}
+        if start_date:
+            params['start_date'] = start_date
+        if end_date:
+            params['end_date'] = end_date
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                rows = data.get('data') if isinstance(data, dict) else data
+                if isinstance(rows, list):
+                    return [r for r in rows if isinstance(r, dict)]
+            return []
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_research_report_pending_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return []
+
+    def query_research_report(
+        self,
+        *,
+        source: str,
+        subject_id: Optional[int] = None,
+        subject_ids: Optional[List[int]] = None,
+        resource_id: str = "",
+        report_type: str = "",
+        start_date: str = "",
+        end_date: str = "",
+        status: str = "",
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query research-report download records via v2 API. The subject is
+        held in subject_id (namespace per report_type: stock→security_id,
+        industry→category_id). Omit to query unfiltered."""
+        path = f"/api/v2/research-report/{source}"
+        params: Dict[str, Any] = {'page': page, 'page_size': page_size}
+        # strict identity (fail-closed): a supplied subject_id must be positive.
+        if subject_id is not None and subject_id <= 0:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_research_report_invalid_subject_id',
+                    'subject_id': subject_id, 'path': path,
+                })
+            return {"data": [], "total": 0}
+        if subject_ids is not None and any(i <= 0 for i in subject_ids):
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_research_report_invalid_subject_ids',
+                    'subject_ids': subject_ids, 'path': path,
+                })
+            return {"data": [], "total": 0}
+        if subject_id is not None:
+            params['subject_id'] = str(int(subject_id))
+        elif subject_ids is not None and subject_ids:
+            params['subject_ids'] = ",".join(str(int(i)) for i in subject_ids)
+        if resource_id:
+            params['resource_id'] = resource_id
+        if report_type:
+            params['report_type'] = report_type
+        if start_date:
+            params['start_date'] = start_date
+        if end_date:
+            params['end_date'] = end_date
+        if status:
+            params['status'] = status
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_research_report_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
+

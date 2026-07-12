@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 from artemis.consts import TaskStatus, DeptServices
 from artemis.consts.task_status import ALLOWED_TASK_STATUSES
 from artemis.core.clients import BaseDeptServiceClient, NoopDeptServiceClient, CronjobClient, HTTPDeptServiceClient, \
-    PhoenixAClient
+    PhoenixAClient, NoopMinioClient, build_minio_client_from_config
 from artemis.core.config_manager import cfg_mgr
 from artemis.core.task_registry import registry
 from artemis.log import get_logger
@@ -37,11 +37,13 @@ class TaskContext:
             self.dept_http: Dict[str, BaseDeptServiceClient] = {
                 DeptServices.CRONJOB: self.build_dept_http_client(DeptServices.CRONJOB),
                 DeptServices.PHOENIXA: self.build_dept_http_client(DeptServices.PHOENIXA),
+                DeptServices.MINIO: self.build_dept_http_client(DeptServices.MINIO),
             }
         except Exception as e:
             self.dept_http = {
                 DeptServices.CRONJOB: NoopDeptServiceClient(),
                 DeptServices.PHOENIXA: NoopDeptServiceClient(),
+                DeptServices.MINIO: NoopMinioClient(logger=self.logger),
             }
             if self.logger:
                 self.logger.warning({'event': 'dept_http_client_init_failed', 'error': str(e), 'task_code': self.task_code, 'run_id': self.run_id})
@@ -181,7 +183,13 @@ class TaskContext:
 
         This is the common path for phoenixA and future services.
         We specialize CronjobClient to use the new subclass.
+        MinIO is special-cased: it is not a host/port HTTP-JSON service, it
+        reads its own config section (connection + business layout) and uses
+        the S3 API via MinioClient.
         """
+        if service_name == DeptServices.MINIO:
+            return build_minio_client_from_config(logger=self.logger)
+
         host, port = self._resolve_service_endpoint(service_name)
         if host is None or port is None:
             return NoopDeptServiceClient()

@@ -1,0 +1,27 @@
+{
+  "exported_at": "2026-07-07T12:00:00Z",
+  "version": "1.0",
+  "description": "Eastmoney stock research-report PDF download task (full + incremental, same strategy; ASYNC every 2h)",
+  "tasks": [
+    {
+      "name": "stock_zh_a_eastmoney_report",
+      "description": "东财研报下载：从东方财富抓取研报列表，下载 PDF 入 MinIO，元数据+下载状态入 phoenixA。任务自决日期范围（MAX publish_date 游标），全量回补与增量新增共用同一策略；断点续传，单次 bounded by download_limit。",
+      "cron_expr": "0 0 */2 * * *",
+      "timezone": "Asia/Shanghai",
+      "target_service": "artemis",
+      "target_path": "/tasks/run/STOCK_ZH_A_EASTMONEY_REPORT",
+      "method": "POST",
+      "body_template": "{}",
+      "headers_json": "{}",
+      "exec_type": "ASYNC",
+      "callback_method": "POST",
+      "callback_timeout_sec": 3600,
+      "concurrency_policy": "SKIP",
+      "max_concurrency": 1,
+      "overlap_action": "SKIP",
+      "failure_action": "RUN_NEW",
+      "retry_policy_json": "{\"max_attempts\": 2, \"initial_backoff\": \"120s\"}",
+      "status": "DISABLED"
+    }
+  ]
+}

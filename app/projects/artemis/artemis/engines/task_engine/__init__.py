@@ -23,6 +23,7 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_profit_express import St
 from artemis.engines.task_engine.download.zh.stock_zh_a_profit_notice import StockZHAProfitNotice
 from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHADividend
 from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
+from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import StockZhAEastmoneyReport
 
 __all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
 
@@ -168,4 +169,10 @@ registry.register(
     TaskCode.STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD,
     module=StockZhABsAdjustFactorChild.__module__,
     class_name=StockZhABsAdjustFactorChild.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_EASTMONEY_REPORT,
+    module=StockZhAEastmoneyReport.__module__,
+    class_name=StockZhAEastmoneyReport.__name__,
 )

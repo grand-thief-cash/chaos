@@ -6,6 +6,7 @@ class DataSource(str, Enum):
     DS_MAIRUI = "mairui"
     DS_BAOSTOCK = "baostock"
     DS_TUSHARE = "tushare"
+    DS_EASTMONEY = "eastmoney"
 
 
 class Taxonomy(str, Enum):

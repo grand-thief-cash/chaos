@@ -120,6 +120,31 @@ class DeptServicesCfg(BaseModel):
     extras: Dict[str, ServiceEndpointCfg] = Field(default_factory=dict)
 
 
+class MinioCfg(BaseModel):
+    """MinIO object storage connection config.
+
+    Used by research-report (and future) tasks to sink downloaded PDFs.
+    `endpoint` is host:port. When endpoint is empty, MinioClient degrades to
+    NoopMinioClient so the task can be developed before real MinIO is up.
+    """
+    endpoint: Optional[str] = None
+    access_key: str = ""
+    secret_key: str = ""
+    secure: bool = False
+
+
+class MinioBusinessCfg(BaseModel):
+    """MinIO business layout for research-report storage.
+
+    Research reports are split into a stock folder and an industry folder.
+    Under the stock folder, each symbol gets its own subfolder. Object key
+    convention: "{stock_prefix}/{symbol}/{publish_date}_{title}.pdf".
+    """
+    bucket: str = "research-report"
+    stock_prefix: str = "stock"
+    industry_prefix: str = "industry"
+
+
 class DataOption(BaseModel):
     """单个选项（value + 展示 label）。"""
     value: str
@@ -158,6 +183,10 @@ class Config(BaseModel):
 
     # new preferred config
     dept_services: DeptServicesCfg = Field(default_factory=DeptServicesCfg)
+
+    # MinIO object storage (research-report PDFs sink here)
+    minio: MinioCfg = Field(default_factory=MinioCfg)
+    minio_business: MinioBusinessCfg = Field(default_factory=MinioBusinessCfg)
 
     # legacy (kept for compatibility; will be mapped to dept_services.cronjob when present)
     callback: CallbackCfg = Field(default_factory=CallbackCfg)
