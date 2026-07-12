@@ -1,7 +1,9 @@
 # VERSION
-v1.32.0
+v1.33.0
 
 # Changelog
+- v1.33.0
+    - **Research-report download records.** Added `ods.research_report_download_record` plus APIs for batch upserts, pending queries, status updates, and max publish-date cursors; records use `source`/`resource_id` uniqueness, `report_type`, `subject_source_code` with nullable `subject_id`, strict status/report-type validation, and catalog metadata.
 - v1.32.0
     - **Workbench `strategy_run` feature fully removed (lockstep with artemis v0.41.0, will be redesigned later).** Pure deletion (−530 lines), no new functionality.
         - Deleted model/dao/service/controller: `StrategyRunSummary` + `StrategyRunArtifact` GORM models, `StrategyRunDao`, `StrategyRunService` (artifact-type allowlist + validation), `StrategyRunController`.

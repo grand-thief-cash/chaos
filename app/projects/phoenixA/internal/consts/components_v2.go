@@ -19,6 +19,7 @@ const (
 	COMP_DAO_CATALOG           = "dao_catalog"
 	COMP_DAO_FIELD_DICTIONARY  = "dao_field_dictionary"
 	COMP_DAO_FIELD_COVERAGE    = "dao_field_coverage"
+	COMP_DAO_RESEARCH_REPORT   = "dao_research_report"
 
 	// Service components
 	COMP_SVC_SECURITY         = "svc_security"
@@ -35,6 +36,7 @@ const (
 	COMP_SVC_CATALOG          = "svc_catalog"
 	COMP_SVC_FIELD_DICTIONARY = "svc_field_dictionary"
 	COMP_SVC_FIELD_COVERAGE   = "svc_field_coverage"
+	COMP_SVC_RESEARCH_REPORT  = "svc_research_report"
 
 	// Buffer components
 	COMP_WRITE_BUFFER = "write_buffer_mgr"
@@ -54,4 +56,5 @@ const (
 	COMP_CTRL_CATALOG          = "ctrl_catalog"
 	COMP_CTRL_FIELD_DICTIONARY = "ctrl_field_dictionary"
 	COMP_CTRL_FIELD_COVERAGE   = "ctrl_field_coverage"
+	COMP_CTRL_RESEARCH_REPORT  = "ctrl_research_report"
 )

@@ -151,6 +151,22 @@ func init() {
 			r.Get("/", equityStructCtrl.Query)
 		})
 
+		// ====== Research Reports ======
+		rrCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_RESEARCH_REPORT)
+		if err != nil {
+			return err
+		}
+		rrCtrl := rrCtrlComp.(*controller.ResearchReportController)
+
+		r.Route("/api/v2/research-report/{source}", func(r chi.Router) {
+			r.Post("/upsert", rrCtrl.BatchUpsert)
+			r.Post("/{resource_id}/status", rrCtrl.UpdateStatus)
+			r.Get("/last-update", rrCtrl.GetLastUpdate)
+			r.Get("/max-publish-date", rrCtrl.GetMaxPublishDate)
+			r.Get("/pending", rrCtrl.QueryPending)
+			r.Get("/", rrCtrl.Query)
+		})
+
 		// ====== Schema Discovery ======
 		schemaCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_SCHEMA)
 		if err != nil {

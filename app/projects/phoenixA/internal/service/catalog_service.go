@@ -235,6 +235,18 @@ var tableMetaRegistry = map[string]tableMeta{
 			RefreshSchedule: "每日计算",
 		},
 	},
+	// Research
+	"research_report_download_record": {
+		Domain:      "research",
+		Description: "研报下载任务状态跟踪（东方财富，PDF 存 MinIO）",
+		TimeColumn:  "publish_date",
+		Lineage: &model.DataLineage{
+			SourceSystem:    "artemis",
+			IngestionMethod: "REST API batch upsert",
+			RefreshSchedule: "高频增量",
+			APIEndpoint:     "POST /api/v2/research-report/{source}/upsert",
+		},
+	},
 }
 
 // column description registry (table.column → description)
@@ -274,6 +286,10 @@ var columnDescRegistry = map[string]string{
 	"*.sell_amount":        "卖出金额（元）",
 	"*.total_amount":       "实际交易金额（元）",
 	"*.total_volume":       "实际交易量（万股）",
+	"*.resource_id":        "源定义研报 ID（东方财富 infoCode）",
+	"*.publish_date":       "研报发布日期（YYYY-MM-DD）",
+	"*.pdf_object_key":     "MinIO 对象键（PDF 字节在 MinIO，phoenixA 仅存指针）",
+	"*.status":             "下载状态（pending/downloaded/no_pdf/detail_error/pdf_error）",
 }
 
 // ─── Domain label map ───
@@ -286,6 +302,7 @@ var domainDescriptions = map[string]string{
 	"kg":        "知识图谱数据",
 	"factor":    "因子数据",
 	"regime":    "市场状态引擎数据",
+	"research":  "研究报告数据",
 	"other":     "其他",
 }
 
@@ -466,6 +483,42 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		RefreshSchedule:     "每日全量",
 		CoverageDescription: "A股全量（SH+SZ+BJ），含退市标记",
 	},
+	"research_report_download_record": {
+		Provider:            "研究报告",
+		ProviderDescription: "东方财富研报下载任务状态跟踪表。artemis 从东方财富抓取研报列表，下载 PDF 并入 MinIO；本表只记录下载任务所需的最小元数据 + MinIO 对象键（pdf_object_key）+ 下载状态，不存 PDF 字节，也不建模研报业务内容。report_type 区分 stock/industry/other；主体由 subject_source_code（源原始代码，stock/industry 非空）+ subject_id（解析后的项目代理 ID，命名空间由 report_type 决定：stock→security_registry.id，industry→taxonomy_category.id）共同表达。未注册主体的研报不跳过（subject_id=NULL，subject_source_code 仍记录）。subject_id 不会自动补齐，需单独 backfill 任务。状态机：pending → downloaded | no_pdf | detail_error | pdf_error。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "research_report_download_record", Label: "研报下载记录", Description: "东方财富研报下载任务跟踪记录", Source: "eastmoney"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "source", Type: "varchar(32)", Description: "数据来源（eastmoney）"},
+			{Name: "resource_id", Type: "varchar(64)", Description: "源定义研报 ID（东方财富 infoCode，自然键）"},
+			{Name: "report_type", Type: "varchar(16)", Description: "研报类型：stock/industry/other"},
+			{Name: "subject_id", Type: "bigint", Description: "研报主体 ID；命名空间由 report_type 决定：stock→security_registry.id，industry→taxonomy_category.id；未 resolve 时为 NULL"},
+			{Name: "subject_source_code", Type: "varchar(32)", Description: "源原始主体代码（总是填充）：stock→股票代码，industry→产业代码；用于 MinIO 路径与 subject_id 补 resolve"},
+			{Name: "publish_date", Type: "varchar(10)", Description: "研报发布日期（YYYY-MM-DD）"},
+			{Name: "title", Type: "varchar(512)", Description: "研报标题"},
+			{Name: "org_name", Type: "varchar(128)", Description: "出研报的机构名称（哪家券商）"},
+			{Name: "detail_url", Type: "varchar(512)", Description: "研报详情页 URL"},
+			{Name: "pdf_url", Type: "varchar(512)", Description: "已下载 PDF 直链（下载后回填）"},
+			{Name: "pdf_object_key", Type: "varchar(512)", Description: "MinIO 对象键（PDF 字节在 MinIO，phoenixA 仅存指针）"},
+			{Name: "status", Type: "varchar(24)", Description: "下载状态：pending/downloaded/no_pdf/detail_error/pdf_error"},
+			{Name: "last_error", Type: "text", Description: "最近一次失败原因"},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"eastmoney"}},
+			{Name: "subject_id", Type: "integer", Required: false, Description: "单个主体 ID（命名空间由 report_type 决定）"},
+			{Name: "subject_ids", Type: "string", Required: false, Description: "主体 ID 列表（逗号分隔）"},
+			{Name: "resource_id", Type: "string", Required: false, Description: "源定义研报 ID"},
+			{Name: "report_type", Type: "string", Required: false, Description: "研报类型", Enum: []string{"stock", "industry", "other"}},
+			{Name: "status", Type: "string", Required: false, Description: "下载状态", Enum: []string{"pending", "downloaded", "no_pdf", "detail_error", "pdf_error"}},
+			{Name: "start_date", Type: "string", Required: false, Description: "发布日期起始（YYYY-MM-DD）"},
+			{Name: "end_date", Type: "string", Required: false, Description: "发布日期截止（YYYY-MM-DD）"},
+			{Name: "page", Type: "int", Required: false, Description: "页码"},
+			{Name: "page_size", Type: "int", Required: false, Description: "每页条数"},
+		},
+		RefreshSchedule:     "高频增量",
+		CoverageDescription: "东方财富研报列表覆盖范围，PDF 落 MinIO",
+	},
 }
 
 // ─── Business API Registry ───
@@ -492,6 +545,14 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 	"long_hu_bang": {
 		{Method: "GET", Path: "/api/v2/long-hu-bang/{source}", Description: "查询龙虎榜明细"},
 		{Method: "POST", Path: "/api/v2/long-hu-bang/{source}/upsert", Description: "写入龙虎榜明细"},
+	},
+	"research_report_download_record": {
+		{Method: "GET", Path: "/api/v2/research-report/{source}", Description: "查询研报下载记录"},
+		{Method: "POST", Path: "/api/v2/research-report/{source}/upsert", Description: "写入研报下载记录（pending）"},
+		{Method: "POST", Path: "/api/v2/research-report/{source}/{resource_id}/status", Description: "更新研报下载状态"},
+		{Method: "GET", Path: "/api/v2/research-report/{source}/last-update", Description: "最近已下载研报发布日期"},
+		{Method: "GET", Path: "/api/v2/research-report/{source}/max-publish-date", Description: "已列表研报最大发布日期（游标）"},
+		{Method: "GET", Path: "/api/v2/research-report/{source}/pending", Description: "查询待下载研报"},
 	},
 	"taxonomy_category": {
 		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories", Description: "查询分类节点"},
@@ -575,6 +636,17 @@ var domainApiRegistry = map[string]struct {
 	},
 	"factor": {Description: "因子数据（规划中）"},
 	"regime": {Description: "市场状态引擎数据（规划中）"},
+	"research": {
+		Description: "研报下载任务状态跟踪（东方财富），phoenixA 仅存元数据 + MinIO 对象键，PDF 字节在 MinIO",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询某股票研报", URL: "GET /api/v2/research-report/eastmoney?subject_id=1&report_type=stock&page=1"},
+			{Title: "查询待下载研报", URL: "GET /api/v2/research-report/eastmoney/pending?start_date=2026-01-01&limit=100"},
+			{Title: "最近已下载研报日期", URL: "GET /api/v2/research-report/eastmoney/last-update"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "subject_id", Description: "stock 类型主体（subject_id = security_id）→ 证券基础信息；industry 类型 subject_id → taxonomy_category"},
+		},
+	},
 }
 
 func (s *CatalogService) resolveAPIs(table string) []model.ApiEndpointRef {
@@ -1413,7 +1485,7 @@ func (s *CatalogService) GetBusinessOverview(ctx context.Context, refresh bool) 
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "kg", "factor", "regime", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "kg", "factor", "regime", "research", "other"}
 	seen := map[string]bool{}
 	var domains []model.BusinessDomain
 
@@ -1542,7 +1614,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "kg", "factor", "regime", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "kg", "factor", "regime", "research", "other"}
 	var capabilities []model.DomainCapability
 
 	for _, d := range domainOrder {

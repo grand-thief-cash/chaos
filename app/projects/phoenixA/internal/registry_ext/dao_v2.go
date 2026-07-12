@@ -58,6 +58,10 @@ func init() {
 	})
 
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, dao.NewResearchReportDao("security"), nil
+	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, dao.NewKgDao("security"), nil
 	})
 
