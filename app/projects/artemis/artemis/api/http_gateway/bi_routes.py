@@ -23,24 +23,30 @@ from artemis.api.http_gateway._identity import _parse_security_id, _parse_securi
 from artemis.log.logger import get_logger
 from artemis.models.metric_definitions import METRIC_DEFINITIONS
 from artemis.services.bi import BIService
+from artemis.services.securities import SecuritiesService
 
 logger = get_logger("bi.routes")
 router = APIRouter(prefix="/bi", tags=["bi"])
 service = BIService()
+# /bi/securities delegates to the general SecuritiesService (same impl as
+# /securities) for back-compat; new callers should use /securities.
+securities_service = SecuritiesService()
 
 
-@router.get("/securities")
+@router.get("/securities", deprecated=True)
 async def list_securities(
     market: str = Query("zh_a"),
     asset_type: str = Query("stock"),
     exchange: str | None = Query(None),
     name: str | None = Query(None),
+    q: str | None = Query(None, description="forward-compat: unified name/symbol search term"),
     limit: int = Query(20, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ):
+    """Deprecated: use GET /securities instead. Delegates to the same impl."""
     try:
-        return service.list_securities(
-            market=market, asset_type=asset_type, exchange=exchange,
+        return securities_service.list_securities(
+            q=q, market=market, asset_type=asset_type, exchange=exchange,
             name=name, limit=limit, offset=offset,
         )
     except Exception as exc:

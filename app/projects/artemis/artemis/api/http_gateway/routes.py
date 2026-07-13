@@ -307,3 +307,6 @@ app.include_router(regime_router)
 from artemis.api.http_gateway.bi_routes import router as bi_router  # noqa: E402
 app.include_router(bi_router)
 
+from artemis.api.http_gateway.security_routes import router as security_router  # noqa: E402
+app.include_router(security_router)
+

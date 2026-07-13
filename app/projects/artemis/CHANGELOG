@@ -1,7 +1,10 @@
 # VERSION
-v0.42.0
+v0.43.0
 
 # Changelog
+- v0.43.0
+    - **General `/securities` routes.** Added `GET /securities` (`q` + legacy filters + pagination) and `GET /securities/{security_id}`, backed by a new `SecuritiesService` calling phoenixA's `/api/v2/securities/search` (single request) and `/api/v2/securities/{id}`. `security_id` remains the internal identity handed to downstream endpoints (e.g. `/bi/dupont/{security_id}` is unchanged) - these routes only resolve the user-facing name/symbol -> `security_id` question.
+    - **`/bi/securities` kept as deprecated compat.** It delegates to the same `SecuritiesService` (response shape `{items,total,limit,offset}` unchanged), so existing callers like the stock-list page are unaffected. `SecuritiesMixin` extracted out of `BIService` into the general `SecuritiesService`; `services/bi/securities.py` deleted.
 - v0.42.0
     - **Eastmoney research-report downloads.** Added a scheduled download task for Eastmoney stock research reports with full/incremental listing, PhoenixA-backed download tracking, MinIO PDF sinking (noop-safe until storage is configured), and an importable cronjob JSON for ASYNC runs.
 - v0.41.0

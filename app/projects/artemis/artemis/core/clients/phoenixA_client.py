@@ -164,6 +164,70 @@ class PhoenixAClient(HTTPDeptServiceClient):
             return item
         return None
 
+    def search_securities(
+        self,
+        *,
+        q: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+        exchange: Optional[str] = None,
+        status: Optional[str] = None,
+        name: Optional[str] = None,
+        symbol: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """One-pass securities search via GET /api/v2/securities/search.
+
+        Returns ``{items, total, limit, offset}`` computed over phoenixA's L1
+        snapshot in a single request, so list and count cannot diverge (the
+        legacy /securities + /securities/count pair did two requests and had an
+        inconsistency window). ``q`` is the unified free-text term: symbol
+        exact (case-insensitive) OR name contains (case-sensitive).
+        """
+        path = "/api/v2/securities/search"
+        params: Dict[str, Any] = {
+            "asset_type": asset_type,
+            "market": market,
+            "limit": str(limit),
+            "offset": str(offset),
+        }
+        if q:
+            params["q"] = q
+        if exchange:
+            params["exchange"] = exchange
+        if status:
+            params["status"] = status
+        if name:
+            params["name"] = name
+        if symbol:
+            params["symbol"] = symbol
+        try:
+            resp = self.get(path, params)
+        except Exception as e:
+            if self.logger:
+                self.logger.error({'event': 'phoenixA_search_securities_failed', 'error': str(e)})
+            raise
+        if not (200 <= resp.status_code < 300):
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_search_securities_non_2xx',
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                })
+            raise RuntimeError(f"phoenixA search_securities failed: status {resp.status_code}")
+        data = resp.json()
+        payload = data.get("data") if isinstance(data, dict) else data
+        if not isinstance(payload, dict):
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+        items = payload.get("items") or []
+        return {
+            "items": items,
+            "total": payload.get("total", len(items)),
+            "limit": payload.get("limit", limit),
+            "offset": payload.get("offset", offset),
+        }
+
     def _build_security_id_params(
         self,
         *,
