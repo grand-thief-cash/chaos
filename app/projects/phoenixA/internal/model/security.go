@@ -37,4 +37,11 @@ type SecurityFilters struct {
 	Exchanges  []string
 	Name       string
 	Status     string
+	// Q is the unified free-text search term used by the general /securities
+	// search endpoint and the autocomplete typeahead. Hit condition (any one
+	// suffices, not both): symbol exact match (case-insensitive) OR name fuzzy
+	// contains (case-sensitive). % and _ are treated as literals, not LIKE
+	// wildcards. Distinct from the legacy exact `Symbol`/fuzzy `Name` params,
+	// which stay for backward-compatible callers.
+	Q string
 }

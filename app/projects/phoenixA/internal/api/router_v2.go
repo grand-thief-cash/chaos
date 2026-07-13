@@ -27,6 +27,7 @@ func init() {
 
 		r.Route("/api/v2/securities", func(r chi.Router) {
 			r.Get("/", securityCtrl.List)
+			r.Get("/search", securityCtrl.Search)
 			r.Post("/upsert", securityCtrl.BatchUpsert)
 			r.Get("/count", securityCtrl.Count)
 			r.Delete("/all", securityCtrl.DeleteAll)

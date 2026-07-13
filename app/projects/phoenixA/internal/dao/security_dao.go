@@ -121,7 +121,21 @@ func (d *SecurityRegistryDao) GetAll(ctx context.Context) ([]*model.SecurityRegi
 
 func (d *SecurityRegistryDao) ListFiltered(ctx context.Context, f *model.SecurityFilters, limit, offset int) ([]*model.SecurityRegistry, error) {
 	var list []*model.SecurityRegistry
-	q := d.db.WithContext(ctx).Model(&model.SecurityRegistry{}).Order("symbol ASC")
+	q := d.db.WithContext(ctx).Model(&model.SecurityRegistry{})
+	if f != nil && f.Q != "" {
+		// Exact-symbol (case-insensitive) tier first, then symbol ASC - mirrors
+		// the in-memory SearchPage sort. Parameter-bound via clause.Expr so user
+		// input never reaches raw SQL (no manual quote escaping, no dependence on
+		// the DB's string-literal config).
+		q = q.Clauses(clause.OrderBy{
+			Expression: clause.Expr{
+				SQL:  "CASE WHEN UPPER(symbol) = UPPER(?) THEN 0 ELSE 1 END, symbol ASC",
+				Vars: []interface{}{strings.TrimSpace(f.Q)},
+			},
+		})
+	} else {
+		q = q.Order("symbol ASC")
+	}
 	q = applySecurityFilters(q, f)
 	if limit > 0 {
 		q = q.Limit(limit)
@@ -222,6 +236,13 @@ func applySecurityFilters(q *gorm.DB, f *model.SecurityFilters) *gorm.DB {
 	}
 	if f.Name != "" {
 		q = q.Where("name LIKE ?", "%"+strings.TrimSpace(f.Name)+"%")
+	}
+	if f.Q != "" {
+		// Q: symbol exact (case-insensitive) OR name contains (case-sensitive).
+		// % and _ are escaped to literals so a user q cannot inject LIKE wildcards.
+		trimmed := strings.TrimSpace(f.Q)
+		escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(trimmed)
+		q = q.Where("UPPER(symbol) = UPPER(?) OR name LIKE ? ESCAPE '\\'", trimmed, "%"+escaped+"%")
 	}
 	if len(f.Symbols) > 0 {
 		q = q.Where("symbol IN ?", f.Symbols)

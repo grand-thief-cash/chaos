@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
@@ -22,11 +23,19 @@ type SecurityService struct {
 	Dao       *dao.SecurityRegistryDao   `infra:"dep:dao_security_registry"`
 	Resolve   *ResolveCache              `infra:"dep:svc_resolve_cache?"`
 	RedisComp *infraRedis.RedisComponent `infra:"dep:redis?"`
+
+	// L1 process-local snapshot cache + singleflight gate (see security_search.go).
+	l1Mu       sync.RWMutex
+	l1         map[string]*securitySnapshot
+	inflightMu sync.Mutex
+	inflight   map[string]*snapshotCall
 }
 
 func NewSecurityService() *SecurityService {
 	return &SecurityService{
 		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_SECURITY, consts.COMPONENT_LOGGING),
+		l1:            make(map[string]*securitySnapshot),
+		inflight:      make(map[string]*snapshotCall),
 	}
 }
 
@@ -45,7 +54,7 @@ func (s *SecurityService) BatchUpsert(ctx context.Context, list []*model.Securit
 	if err != nil {
 		return affected, err
 	}
-	s.invalidateAggregateCaches(ctx, list)
+	s.invalidateAllSecurityCaches(ctx)
 	// New securities (or reassignment after a delete+reimport) change the natural-key → id
 	// map the taxonomy resolve cache holds; invalidate so industry writes don't resolve to
 	// stale/missing ids within the TTL window (refactor §8.bis-1).
@@ -142,6 +151,9 @@ func (s *SecurityService) DeleteAll(ctx context.Context, assetType, market strin
 	if s.Resolve != nil {
 		s.Resolve.Invalidate()
 	}
+	// L1 holds every scope's snapshot locally; clear it so this replica serves
+	// fresh data immediately (other replicas converge via the L1 TTL).
+	s.invalidateL1()
 	if assetType == "" || market == "" {
 		if err := s.invalidateAggregateCachesByScope(ctx, assetType, market); err != nil {
 			logging.Warnf(ctx, "security cache wildcard invalidation after delete_all failed: %v", err)
@@ -162,29 +174,23 @@ func (s *SecurityService) redisClient() redislib.UniversalClient {
 	return s.RedisComp.Client()
 }
 
-func (s *SecurityService) invalidateAggregateCaches(ctx context.Context, list []*model.SecurityRegistry) {
-	if len(list) == 0 {
+// invalidateAllSecurityCaches clears L1 (process-local) and pattern-deletes the
+// entire security:list / security:count Redis namespace. Used on BatchUpsert:
+// broad invalidation covers the case where a security's market/asset_type was
+// reassigned (the old scope's cache would otherwise linger until its 6h TTL).
+// Registry upserts are low-frequency batch ops, so a namespace-wide scan is
+// cheap and correct. Other replicas' L1 converges via the L1 TTL (v1 SLA).
+func (s *SecurityService) invalidateAllSecurityCaches(ctx context.Context) {
+	s.invalidateL1()
+	client := s.redisClient()
+	if client == nil {
 		return
 	}
-	touched := make(map[string]struct{})
-	keys := make([]string, 0, len(list)*2)
-	for _, item := range list {
-		if item == nil {
-			continue
-		}
-		assetType, market := normalizeSecurityAggregateScope(item.AssetType, item.Market)
-		scope := assetType + ":" + market
-		if _, ok := touched[scope]; ok {
-			continue
-		}
-		touched[scope] = struct{}{}
-		keys = append(keys,
-			bizConsts.BuildSecurityListCacheKey(assetType, market),
-			bizConsts.BuildSecurityCountCacheKey(assetType, market),
-		)
+	if err := cache.DeleteByPattern(ctx, client, bizConsts.BuildSecurityListCachePattern("", "")); err != nil {
+		logging.Warnf(ctx, "security list cache pattern invalidation failed: %v", err)
 	}
-	if err := cache.DeleteKeys(ctx, s.redisClient(), keys...); err != nil {
-		logging.Warnf(ctx, "security cache invalidation after batch_upsert failed: %v", err)
+	if err := cache.DeleteByPattern(ctx, client, bizConsts.BuildSecurityCountCachePattern("", "")); err != nil {
+		logging.Warnf(ctx, "security count cache pattern invalidation failed: %v", err)
 	}
 }
 

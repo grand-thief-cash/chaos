@@ -85,6 +85,45 @@ func (c *SecurityController) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: list})
 }
 
+// GET /api/v2/securities/search
+//
+// One-pass search returning {items, total, limit, offset} computed over a
+// single L1 snapshot, so list and count cannot diverge (the legacy
+// /securities + /securities/count pair had an inconsistency window and doubled
+// the work). q is the unified free-text term: symbol exact (case-insensitive)
+// OR name contains (case-sensitive) - any one suffices. Legacy name/symbol
+// params are still accepted for backward-compatible callers. status is optional
+// (delisted securities remain queryable for historical DuPont).
+func (c *SecurityController) Search(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	limit, offset := parseLimitOffset(r)
+	q := r.URL.Query()
+
+	f := &model.SecurityFilters{
+		AssetType: q.Get("asset_type"),
+		Market:    q.Get("market"),
+		Exchanges: parseFieldsParam(q.Get("exchange")),
+		Name:      q.Get("name"),
+		Q:         q.Get("q"),
+		Status:    q.Get("status"),
+		Symbol:    q.Get("symbol"),
+	}
+	// Default scope to stock/zh_a so the L1 snapshot key is well-defined.
+	if f.AssetType == "" {
+		f.AssetType = bizConsts.ASSET_TYPE_STOCK
+	}
+	if f.Market == "" {
+		f.Market = bizConsts.MARKET_ZH_A
+	}
+
+	res, err := c.Svc.SearchPage(ctx, f, limit, offset)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse[any]{Data: res})
+}
+
 // GET /api/v2/securities/{security_id}
 func (c *SecurityController) Get(w http.ResponseWriter, r *http.Request, securityIDStr string) {
 	ctx := r.Context()
@@ -128,7 +167,7 @@ func (c *SecurityController) Count(w http.ResponseWriter, r *http.Request) {
 	f := &model.SecurityFilters{
 		AssetType: q.Get("asset_type"),
 		Market:    q.Get("market"),
-		Exchange:  q.Get("exchange"),
+		Exchanges: parseFieldsParam(q.Get("exchange")),
 		Name:      q.Get("name"),
 		Status:    q.Get("status"),
 	}
