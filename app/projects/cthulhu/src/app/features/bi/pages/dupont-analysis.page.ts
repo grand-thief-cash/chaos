@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 
 import { ArtemisBiService } from '../services/artemis-bi.service';
 import { BIDupontResponse, BIDupontMetricNode, DupontPeriodKind } from '../models/bi.models';
+import { SecuritySearchInputComponent } from '../../../shared/ui/security-search-input.component';
+import { SecuritySearchItem } from '../../../core/services/security-lookup.service';
 
 type TrendDirection = 'up' | 'down' | 'flat';
 type NodeTone = 'navy' | 'blue' | 'sky' | 'pale' | 'slate';
@@ -76,7 +78,7 @@ interface NodeLayout {
 @Component({
   selector: 'app-bi-dupont-analysis-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SecuritySearchInputComponent],
   template: `
     <section class="dupont-page">
       <header class="dashboard-header">
@@ -85,9 +87,12 @@ interface NodeLayout {
           <span class="update-date">{{ securityName ? securityName + ' · ' : '' }}{{ updateDate }}</span>
         </div>
         <div class="filter-row" aria-label="杜邦分析筛选条件">
-          <label>
-            <span>Security ID</span>
-            <input type="number" [(ngModel)]="securityId" (keyup.enter)="load()" placeholder="如 21" style="width: 90px;" />
+          <label class="security-search-label">
+            <span>证券</span>
+            <app-security-search-input
+              (securitySelected)="onSecuritySelected($event)"
+              placeholder="名称或代码"
+            />
           </label>
           <label>
             <span>口径</span>
@@ -787,7 +792,7 @@ export class DupontAnalysisPageComponent implements OnInit {
   private readonly bi = inject(ArtemisBiService);
 
   // security_id is a BIGSERIAL surrogate (stable only within a rebuild cycle).
-  // Entered by the user — no hardcoded default, since a stale id would silently
+  // Resolved from a name/symbol selection (not user-entered); no hardcoded — no hardcoded default, since a stale id would silently
   // show the wrong security after a registry rebuild.
   securityId: number | null = null;
   private readonly source = 'amazing_data';
@@ -908,13 +913,19 @@ export class DupontAnalysisPageComponent implements OnInit {
   loadError: string | null = null;
 
   ngOnInit(): void {
-    // Wait for the user to enter a security_id — BIGSERIAL is not stable across
+    // Wait for the user to pick a security via the name/symbol search input; — BIGSERIAL is not stable across
     // registry rebuilds, so no hardcoded default.
+  }
+
+  onSecuritySelected(item: SecuritySearchItem | null): void {
+    // Resolved from the name/symbol search; null when the user edits the text
+    // after a selection, which keeps the 查询 button disabled (no stale-id query).
+    this.securityId = item?.security_id ?? null;
   }
 
   load(): void {
     if (!this.securityId || this.securityId <= 0 || !Number.isInteger(this.securityId)) {
-      this.loadError = '请输入有效的 Security ID（正整数）';
+      this.loadError = '请先选择证券';
       return;
     }
     this.loadError = null;
