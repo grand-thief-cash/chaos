@@ -791,9 +791,9 @@ interface NodeLayout {
 export class DupontAnalysisPageComponent implements OnInit {
   private readonly bi = inject(ArtemisBiService);
 
-  // security_id is a BIGSERIAL surrogate (stable only within a rebuild cycle).
-  // Resolved from a name/symbol selection (not user-entered); no hardcoded — no hardcoded default, since a stale id would silently
-  // show the wrong security after a registry rebuild.
+  // security_id is permanent once assigned, but remains an internal identifier.
+  // Resolve it from the selected name/symbol instead of hardcoding an
+  // environment-specific numeric ID.
   securityId: number | null = null;
   private readonly source = 'amazing_data';
 
