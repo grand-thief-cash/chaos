@@ -1,7 +1,7 @@
 # Chaos Feature Platform 架构设计与分阶段迭代方案
 
-> 状态：Approved，Phase 0 已完成（2026-07-14）
-> 批准记录：用户于 2026-07-14 确认从 Phase 0 开始执行
+> 状态：Approved，Phase 0、Phase 1 实现已完成（2026-07-14）；生产迁移仍需满足 TimescaleDB 与 `warm_storage` 部署门禁
+> 批准记录：用户于 2026-07-14 确认从 Phase 0 开始执行，并在 Phase 0 提交后启动 Phase 1
 > 日期：2026-07-14
 > 范围：PhoenixA、Artemis、Cthulhu、Cronjob，以及 Atlas 的未来接入预留
 > 目标读者：架构设计者、后端开发、前端开发、测试人员、后续因子研究开发者
@@ -621,6 +621,7 @@ FeatureRun 表达一次被冻结的计算请求。
 | `source_profile` | home/production 等 PhoenixA source profile |
 | `market` | 当前 zh_a 等 |
 | `universe_hash` | Subject Snapshot 的 SHA-256 |
+| `dependency_plan_checksum` | 依赖执行计划 SHA-256；Phase 1 在 `request_payload` 和 fingerprint 中预留，Phase 2 Planner 接入后填写 |
 | `code_revision` | Git commit SHA 或构建版本 |
 | `status` | 状态机 |
 | `heartbeat_at` | 卡死检测 |
@@ -649,11 +650,13 @@ BackfillJob 是多个单日期 Run 的编排容器，不是另一种计算语义
 规则：
 
 - 展开日期必须确定且持久化，相同 BackfillJob 重启后不得重新按“当前日历”生成；
-- 每个日期创建独立 FeatureRun，并保存 `backfill_id + backfill_sequence`；
-- `(backfill_id, as_of_time)` 唯一，重复提交不得生成重复子 Run；
+- 每个日期创建独立 FeatureRun，并保存 `backfill_id + backfill_sequence + backfill_attempt`；
+- 初始 Run 的 `backfill_attempt=1`；失败/aborted 日期重试时递增 attempt，旧 Run 和旧值保持不变；
+- `(backfill_id, as_of_time, backfill_attempt)` 唯一；同一 attempt 的并发重复提交不得生成重复子 Run；
 - 单个子 Run 失败不覆盖成功子 Run；Job 汇总为 partially_succeeded，并允许只 retry 失败日期；
 - 取消 Job 只阻止尚未开始的子 Run；已经进入终态的 Run 和值不删除；
 - BackfillJob 不允许使用 `latest` Feature 依赖，所有版本在创建时解析并冻结。
+- Phase 1 尚无受治理的交易日历表，因此 `calendar_code` 只作协议预留，非空值明确返回 422；需要交易日集合时必须使用 `step=explicit` 和冻结的 `explicit_as_of_times`，不得把自然日静默解释为交易日。
 
 ### 6.7 FeatureRunItem
 
@@ -1027,6 +1030,7 @@ CREATE TABLE govern.feature_run (
     heartbeat_at            TIMESTAMPTZ,
     backfill_id             UUID REFERENCES govern.feature_backfill_job(backfill_id),
     backfill_sequence       INTEGER,
+    backfill_attempt        INTEGER,
     started_at              TIMESTAMPTZ,
     finished_at             TIMESTAMPTZ,
     error_code              VARCHAR(64) NOT NULL DEFAULT '',
@@ -1040,7 +1044,12 @@ CREATE TABLE govern.feature_run (
     CONSTRAINT chk_feature_run_time
         CHECK (data_cutoff_time <= as_of_time),
     CONSTRAINT chk_feature_run_retry_not_self
-        CHECK (retry_of_run_id IS NULL OR retry_of_run_id <> run_id)
+        CHECK (retry_of_run_id IS NULL OR retry_of_run_id <> run_id),
+    CONSTRAINT chk_feature_run_backfill_fields CHECK (
+        (backfill_id IS NULL AND backfill_sequence IS NULL AND backfill_attempt IS NULL)
+        OR
+        (backfill_id IS NOT NULL AND backfill_sequence >= 0 AND backfill_attempt > 0)
+    )
 ) TABLESPACE pg_default;
 
 CREATE INDEX idx_feature_run_lookup
@@ -1049,8 +1058,8 @@ CREATE INDEX idx_feature_run_lookup
 CREATE INDEX idx_feature_run_fingerprint
     ON govern.feature_run (request_fingerprint, status);
 
-CREATE UNIQUE INDEX uk_feature_run_backfill_as_of
-    ON govern.feature_run (backfill_id, as_of_time)
+CREATE UNIQUE INDEX uk_feature_run_backfill_attempt
+    ON govern.feature_run (backfill_id, as_of_time, backfill_attempt)
     WHERE backfill_id IS NOT NULL;
 
 CREATE TABLE govern.feature_run_item (
@@ -1953,6 +1962,8 @@ docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.m
 | FP-1.7 | Catalog 集成 | feature domain 显示真实表/API |
 | FP-1.8 | Go 单元和 DB 集成测试 | 不可变、状态、幂等、查询覆盖 |
 | FP-1.9 | Backfill 控制面 | Job、冻结日期、子 Run 唯一性、失败日期重试 |
+
+执行状态：FP-1.1 至 FP-1.9 已完成。实现、接口、测试证据、部署前置条件和 Phase 2 交接约束见 [Phase 1 执行报告](./2026-07-14%20FEATURE_PLATFORM_PHASE_1_EXECUTION_REPORT.md)。
 
 验收：
 

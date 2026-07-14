@@ -167,6 +167,45 @@ func init() {
 			r.Get("/", rrCtrl.Query)
 		})
 
+		// ====== Feature Platform control plane ======
+		featureCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_FEATURE)
+		if err != nil {
+			return err
+		}
+		featureCtrl := featureCtrlComp.(*controller.FeatureController)
+
+		r.Route("/api/v2/features", func(r chi.Router) {
+			r.Post("/registry/sync", featureCtrl.SyncRegistry)
+			r.Get("/definitions", featureCtrl.ListDefinitions)
+			r.Get("/definitions/{feature_code}", featureCtrl.GetDefinition)
+			r.Get("/versions/{version_id}", featureCtrl.GetVersion)
+			r.Post("/definitions/{feature_code}/versions/{version}:publish", featureCtrl.PublishVersion)
+			r.Post("/definitions/{feature_code}/versions/{version}:deprecate", featureCtrl.DeprecateVersion)
+			r.Get("/lineage/{feature_code}", featureCtrl.Lineage)
+			r.Get("/availability/{feature_code}", featureCtrl.Availability)
+
+			r.Post("/runs", featureCtrl.CreateRun)
+			r.Get("/runs", featureCtrl.ListRuns)
+			r.Get("/runs/{run_id}", featureCtrl.GetRun)
+			r.Post("/runs/{run_id}/subjects:batch", featureCtrl.BatchSubjects)
+			r.Post("/runs/{run_id}/items:batch", featureCtrl.BatchItems)
+			r.Patch("/runs/{run_id}", featureCtrl.UpdateRun)
+			r.Patch("/runs/{run_id}/items/{version_id}", featureCtrl.UpdateItem)
+			r.Post("/runs/{run_id}/values/numeric:batch", featureCtrl.WriteNumericValues)
+			r.Post("/runs/{run_id}:complete", featureCtrl.CompleteRun)
+			r.Post("/runs/{run_id}:fail", featureCtrl.FailRun)
+			r.Post("/runs/{run_id}:cancel", featureCtrl.CancelRun)
+
+			r.Get("/values/numeric", featureCtrl.QueryNumericValues)
+			r.Get("/values/numeric/latest", featureCtrl.QueryLatestNumericValues)
+			r.Get("/values/numeric/cross-section", featureCtrl.QueryNumericCrossSection)
+
+			r.Post("/backfills", featureCtrl.CreateBackfill)
+			r.Get("/backfills/{backfill_id}", featureCtrl.GetBackfill)
+			r.Post("/backfills/{backfill_id}:retry-failed", featureCtrl.RetryFailedBackfill)
+			r.Post("/backfills/{backfill_id}:cancel", featureCtrl.CancelBackfill)
+		})
+
 		// ====== Schema Discovery ======
 		schemaCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_SCHEMA)
 		if err != nil {

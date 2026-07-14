@@ -1,7 +1,11 @@
 # VERSION
-v1.35.0
+v1.36.0
 
 # Changelog
+- v1.36.0
+    - **Feature Platform Phase 1 control plane.** Added versioned Feature registry, exact DataField/Feature dependencies, publish immutability, DAG validation, lineage/availability, producer-neutral Run/Subject/Item APIs, and Catalog integration under `/api/v2/features/*`.
+    - **PIT-safe numeric materialization.** Added immutable numeric values with idempotent batches, succeeded-only latest semantics, service/database cutoff enforcement, canonical request fingerprints, and dependency-closed RunItems.
+    - **Deterministic backfills and tests.** Added frozen date expansion, per-date runs, concurrency-safe failed-date retries, cancellation/progress aggregation, unit coverage, and rollback-only PostgreSQL integration tests.
 - v1.35.0
     - **Permanent `security_id` gate.** Removed the destructive securities delete API and enforced natural-key identity with PostgreSQL triggers that reject registry DELETE/TRUNCATE and natural-key reassignment. Upserts preserve the existing ID; unit tests and a transaction-rolled-back PostgreSQL integration test cover the contract.
     - **Feature Platform Phase 0 catalog cleanup.** Removed unimplemented Factor/Regime placeholders and reclassified `long_hu_bang` under `market_activity`; no Feature Registry or Feature values were added.

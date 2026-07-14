@@ -218,6 +218,43 @@ var tableMetaRegistry = map[string]tableMeta{
 			APIEndpoint:     "POST /api/v2/research-report/{source}/upsert",
 		},
 	},
+	// Feature Platform (real tables introduced by migration 0008).
+	"feature_definition": {
+		Domain: "feature", Description: "Feature 稳定业务定义", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "phoenixA", IngestionMethod: "Feature Registry API", APIEndpoint: "POST /api/v2/features/registry/sync"},
+	},
+	"feature_version": {
+		Domain: "feature", Description: "Feature 不可变语义版本", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "phoenixA", IngestionMethod: "Feature Registry API"},
+	},
+	"feature_implementation": {
+		Domain: "feature", Description: "Feature 实现与制品修订", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "Manifest sync"},
+	},
+	"feature_dependency": {
+		Domain: "feature", Description: "FeatureVersion 与 DataField 精确依赖图", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "phoenixA", IngestionMethod: "Manifest dependency resolution"},
+	},
+	"feature_backfill_job": {
+		Domain: "feature", Description: "Feature 多日期回填编排", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "Feature Backfill API"},
+	},
+	"feature_run": {
+		Domain: "feature", Description: "Feature 冻结运行上下文", TimeColumn: "as_of_time",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "Feature Run API"},
+	},
+	"feature_run_item": {
+		Domain: "feature", Description: "Feature 运行节点状态与质量摘要",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "Feature Run API"},
+	},
+	"feature_run_subject": {
+		Domain: "feature", Description: "Feature 运行证券集合快照",
+		Lineage: &model.DataLineage{SourceSystem: "phoenixA", IngestionMethod: "Feature Run API"},
+	},
+	"feature_value_numeric": {
+		Domain: "feature", Description: "不可变数值 Feature 物化", TimeColumn: "observed_at",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "REST API batch write", APIEndpoint: "POST /api/v2/features/runs/{run_id}/values/numeric:batch"},
+	},
 }
 
 // column description registry (table.column → description)
@@ -273,6 +310,7 @@ var domainDescriptions = map[string]string{
 	"market_activity": "市场交易活动数据",
 	"kg":              "知识图谱数据",
 	"research":        "研究报告数据",
+	"feature":         "Feature 注册、运行与物化数据",
 	"other":           "其他",
 }
 
@@ -524,6 +562,29 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 		{Method: "GET", Path: "/api/v2/research-report/{source}/max-publish-date", Description: "已列表研报最大发布日期（游标）"},
 		{Method: "GET", Path: "/api/v2/research-report/{source}/pending", Description: "查询待下载研报"},
 	},
+	"feature_definition": {
+		{Method: "GET", Path: "/api/v2/features/definitions", Description: "查询 Feature 定义"},
+		{Method: "POST", Path: "/api/v2/features/registry/sync", Description: "同步 Feature Manifest"},
+	},
+	"feature_version": {
+		{Method: "GET", Path: "/api/v2/features/versions/{version_id}", Description: "查询 FeatureVersion"},
+	},
+	"feature_dependency": {
+		{Method: "GET", Path: "/api/v2/features/lineage/{feature_code}", Description: "查询 Feature 血缘"},
+	},
+	"feature_backfill_job": {
+		{Method: "POST", Path: "/api/v2/features/backfills", Description: "创建回填任务"},
+		{Method: "GET", Path: "/api/v2/features/backfills/{backfill_id}", Description: "查询回填任务"},
+	},
+	"feature_run": {
+		{Method: "POST", Path: "/api/v2/features/runs", Description: "创建 Feature Run"},
+		{Method: "GET", Path: "/api/v2/features/runs", Description: "查询 Feature Run"},
+	},
+	"feature_value_numeric": {
+		{Method: "GET", Path: "/api/v2/features/values/numeric", Description: "查询数值 Feature"},
+		{Method: "GET", Path: "/api/v2/features/values/numeric/latest", Description: "查询最新成功物化"},
+		{Method: "POST", Path: "/api/v2/features/runs/{run_id}/values/numeric:batch", Description: "幂等写入数值 Feature"},
+	},
 	"taxonomy_category": {
 		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories", Description: "查询分类节点"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert", Description: "写入分类节点"},
@@ -619,6 +680,18 @@ var domainApiRegistry = map[string]struct {
 		},
 		CrossRefs: []model.CrossRef{
 			{ToTable: "security_registry", JoinKey: "subject_id", Description: "stock 类型主体（subject_id = security_id）→ 证券基础信息；industry 类型 subject_id → taxonomy_category"},
+		},
+	},
+	"feature": {
+		Description: "Feature 的定义、不可变版本、精确依赖、运行上下文、回填和数值物化控制面",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询 Feature 定义", URL: "GET /api/v2/features/definitions"},
+			{Title: "查询运行", URL: "GET /api/v2/features/runs?status=succeeded"},
+			{Title: "查询最新成功值", URL: "GET /api/v2/features/values/numeric/latest?feature_code=platform.security.constant_one"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "RunSubject 与 Numeric Value 的永久证券身份"},
+			{ToTable: "data_field_dictionary", JoinKey: "data_field_dictionary_id", Description: "FeatureVersion 锁定的源字段契约"},
 		},
 	},
 }
@@ -1459,7 +1532,7 @@ func (s *CatalogService) GetBusinessOverview(ctx context.Context, refresh bool) 
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "kg", "research", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "feature", "kg", "research", "other"}
 	seen := map[string]bool{}
 	var domains []model.BusinessDomain
 
@@ -1588,7 +1661,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "kg", "research", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "feature", "kg", "research", "other"}
 	var capabilities []model.DomainCapability
 
 	for _, d := range domainOrder {

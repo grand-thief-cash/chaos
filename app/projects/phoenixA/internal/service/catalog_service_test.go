@@ -29,6 +29,9 @@ func TestFindMeta_ExactMatch(t *testing.T) {
 		{"kg", "impact_logs", "kg", "事件影响日志"},
 		{"kg", "daily_runs", "kg", "每日 KG 流水线运行记录"},
 		{"kg", "graph_ingestions", "kg", "图谱写入记录"},
+		{"govern", "feature_definition", "feature", "Feature 稳定业务定义"},
+		{"govern", "feature_run", "feature", "Feature 冻结运行上下文"},
+		{"dwd", "feature_value_numeric", "feature", "不可变数值 Feature 物化"},
 	}
 
 	for _, c := range cases {
