@@ -184,17 +184,3 @@ func (c *SecurityController) Count(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"count": cnt}})
 }
-
-// DELETE /api/v2/securities/all
-func (c *SecurityController) DeleteAll(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	q := r.URL.Query()
-	assetType := q.Get("asset_type")
-	market := q.Get("market")
-	affected, err := c.Svc.DeleteAll(ctx, assetType, market)
-	if err != nil {
-		writeServiceError(w, err) // ConflictError (referenced) → 409; other → 500
-		return
-	}
-	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"rows": affected}})
-}

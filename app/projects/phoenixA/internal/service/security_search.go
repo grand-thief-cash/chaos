@@ -209,8 +209,7 @@ func (s *SecurityService) loadSnapshotFromL2OrDB(ctx context.Context, assetType,
 }
 
 // invalidateL1 clears every scope's process-local snapshot. Called on any
-// registry mutation (BatchUpsert / DeleteAll) - the other replicas' L1
-// converges via TTL (v1 SLA).
+// registry upsert - the other replicas' L1 converges via TTL (v1 SLA).
 func (s *SecurityService) invalidateL1() {
 	s.l1Mu.Lock()
 	s.l1 = make(map[string]*securitySnapshot)

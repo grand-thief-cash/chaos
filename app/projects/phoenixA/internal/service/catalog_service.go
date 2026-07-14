@@ -149,7 +149,7 @@ var tableMetaRegistry = map[string]tableMeta{
 		},
 	},
 	"long_hu_bang": {
-		Domain:      "regime",
+		Domain:      "market_activity",
 		Description: "龙虎榜营业部明细",
 		TimeColumn:  "trade_date",
 		Lineage: &model.DataLineage{
@@ -204,35 +204,6 @@ var tableMetaRegistry = map[string]tableMeta{
 		Description: "图谱写入记录",
 		Lineage: &model.DataLineage{
 			SourceSystem: "atlas",
-		},
-	},
-	// Factor
-	"factor_": {
-		Domain:      "factor",
-		Description: "因子数据",
-		TimeColumn:  "trade_date",
-		Lineage: &model.DataLineage{
-			SourceSystem:    "artemis",
-			IngestionMethod: "REST API batch upsert",
-			RefreshSchedule: "每日增量",
-		},
-	},
-	"factor_metadata": {
-		Domain:      "factor",
-		Description: "因子元数据（描述/参数/状态）",
-		Lineage: &model.DataLineage{
-			SourceSystem: "artemis",
-		},
-	},
-	// Regime
-	"regime_": {
-		Domain:      "regime",
-		Description: "市场状态引擎数据",
-		TimeColumn:  "trade_date",
-		Lineage: &model.DataLineage{
-			SourceSystem:    "artemis",
-			IngestionMethod: "REST API",
-			RefreshSchedule: "每日计算",
 		},
 	},
 	// Research
@@ -295,15 +266,14 @@ var columnDescRegistry = map[string]string{
 // ─── Domain label map ───
 
 var domainDescriptions = map[string]string{
-	"bars":      "行情数据（K线）",
-	"security":  "证券基础信息",
-	"taxonomy":  "分类/行业数据",
-	"financial": "财务/公司行为数据",
-	"kg":        "知识图谱数据",
-	"factor":    "因子数据",
-	"regime":    "市场状态引擎数据",
-	"research":  "研究报告数据",
-	"other":     "其他",
+	"bars":            "行情数据（K线）",
+	"security":        "证券基础信息",
+	"taxonomy":        "分类/行业数据",
+	"financial":       "财务/公司行为数据",
+	"market_activity": "市场交易活动数据",
+	"kg":              "知识图谱数据",
+	"research":        "研究报告数据",
+	"other":           "其他",
 }
 
 // ─── Data Capability Registry ───
@@ -578,9 +548,6 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 		{Method: "POST", Path: "/api/v2/bars/{asset_type}/{market}/upsert", Description: "写入K线行情"},
 		{Method: "GET", Path: "/api/v2/bars/{asset_type}/{market}/last_update", Description: "最近更新时间"},
 	},
-	"factor_": {
-		{Method: "GET", Path: "/api/v2/catalog/tables", Description: "因子数据（规划中）"},
-	},
 }
 
 // domainApiRegistry maps business domains to example queries and cross-refs.
@@ -634,8 +601,15 @@ var domainApiRegistry = map[string]struct {
 			{Title: "查询事件", URL: "GET /api/v1/kg/events?event_type=risk"},
 		},
 	},
-	"factor": {Description: "因子数据（规划中）"},
-	"regime": {Description: "市场状态引擎数据（规划中）"},
+	"market_activity": {
+		Description: "市场交易活动明细，当前包含龙虎榜营业部级数据",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询龙虎榜明细", URL: "GET /api/v2/long-hu-bang/amazing_data?security_id=1"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息"},
+		},
+	},
 	"research": {
 		Description: "研报下载任务状态跟踪（东方财富），phoenixA 仅存元数据 + MinIO 对象键，PDF 字节在 MinIO",
 		ExampleCalls: []model.ExampleCall{
@@ -1485,7 +1459,7 @@ func (s *CatalogService) GetBusinessOverview(ctx context.Context, refresh bool) 
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "kg", "factor", "regime", "research", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "kg", "research", "other"}
 	seen := map[string]bool{}
 	var domains []model.BusinessDomain
 
@@ -1614,7 +1588,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "kg", "factor", "regime", "research", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "kg", "research", "other"}
 	var capabilities []model.DomainCapability
 
 	for _, d := range domainOrder {

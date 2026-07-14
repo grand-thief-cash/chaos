@@ -4,7 +4,7 @@
 
 提供证券基础信息查询，包括股票、指数、基金等证券的代码、名称、交易所、上市状态等信息。
 
-`security_registry` 的代理主键 `security_id` (BIGSERIAL) 是 `(exchange, asset_type, symbol)` 自然键的代理，作为其他表逻辑外键 `security_id` 的引用目标（不建真实 FK 约束）。`security_id` 仅在当前重建周期内稳定。
+`security_registry` 的代理主键 `security_id` (BIGSERIAL) 是 `(exchange, asset_type, symbol)` 自然键的代理，作为其他表逻辑外键 `security_id` 的引用目标（不建真实 FK 约束）。`security_id` 是永久、不可回收的内部身份；全量刷新必须按自然键 upsert，并通过 `status`、`list_date`、`delist_date` 表达生命周期，禁止删除后重建注册表。
 
 ## API 端点
 
@@ -13,8 +13,7 @@
 | GET | `/api/v2/securities` | 查询证券列表 |
 | GET | `/api/v2/securities/{security_id}` | 按 security_id 获取单个证券信息 |
 | GET | `/api/v2/securities/count` | 统计证券数量 |
-| POST | `/api/v2/securities/upsert` | 批量插入/更新证券信息（按自然键 upsert，id 自增） |
-| DELETE | `/api/v2/securities/all` | 删除所有证券信息 |
+| POST | `/api/v2/securities/upsert` | 批量插入/更新证券信息（按自然键 upsert，已有 security_id 保持不变） |
 
 ## 查询参数
 
@@ -59,7 +58,7 @@
 
 ### POST /api/v2/securities/upsert
 
-按自然键 `(exchange, asset_type, symbol)` upsert，`security_id` 自增分配（client 无需也不应传入 id）。多源/预留字段（full_name/list_date/delist_date）当前无数据源填充，为预留空列。
+按自然键 `(exchange, asset_type, symbol)` upsert。新证券由数据库分配 `security_id`，已有证券更新属性但保留原 `security_id`（client 无需也不应传入 id）。退市或暂时不活跃的证券仍保留注册表行，通过 `status`、`list_date`、`delist_date` 更新生命周期。
 
 ## 响应数据
 
@@ -156,4 +155,4 @@
 
 ---
 
-*文档最后更新: 2026-07-03*
+*文档最后更新: 2026-07-14*

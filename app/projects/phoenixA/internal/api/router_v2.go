@@ -30,7 +30,6 @@ func init() {
 			r.Get("/search", securityCtrl.Search)
 			r.Post("/upsert", securityCtrl.BatchUpsert)
 			r.Get("/count", securityCtrl.Count)
-			r.Delete("/all", securityCtrl.DeleteAll)
 			r.Get("/{security_id}", func(w http.ResponseWriter, req *http.Request) {
 				securityCtrl.Get(w, req, chi.URLParam(req, "security_id"))
 			})

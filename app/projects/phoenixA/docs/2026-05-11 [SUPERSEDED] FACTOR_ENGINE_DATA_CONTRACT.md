@@ -1,5 +1,9 @@
 # Factor Engine Data Contract
 
+> **Status: Superseded（2026-07-14）**
+>
+> 本文仅保留作历史记录，已由 `docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md` 替代，不得再作为新开发或验收依据。
+
 ## 概述
 
 本文档定义了 Artemis Factor Engine 数据需求与 PhoenixA API 供给之间的契约关系。

@@ -1,7 +1,10 @@
 # VERSION
-v1.34.0
+v1.35.0
 
 # Changelog
+- v1.35.0
+    - **Permanent `security_id` gate.** Removed the destructive securities delete API and enforced natural-key identity with PostgreSQL triggers that reject registry DELETE/TRUNCATE and natural-key reassignment. Upserts preserve the existing ID; unit tests and a transaction-rolled-back PostgreSQL integration test cover the contract.
+    - **Feature Platform Phase 0 catalog cleanup.** Removed unimplemented Factor/Regime placeholders and reclassified `long_hu_bang` under `market_activity`; no Feature Registry or Feature values were added.
 - v1.34.0
     - **General securities search endpoint.** Added `GET /api/v2/securities/search` returning `{items, total, limit, offset}` in one pass over an L1 snapshot (list and count can't diverge, unlike the legacy list+count pair). `q` matches symbol exact (case-insensitive) OR name contains (case-sensitive) - any one suffices; `%`/`_` are literals, not LIKE wildcards. Legacy `name`/`symbol`/`exchange`/`status` filters retained; `status` is not defaulted to `active` (delisted securities stay queryable).
     - **Two-level snapshot cache.** L1 process-local deserialized slice (30s TTL) -> L2 Redis `security:list` (6h) -> DB, with singleflight deduping concurrent cold loads; Redis down still warms L1 so a Redis outage doesn't turn every query into a DB hit. `BatchUpsert` invalidation switched from per-scope to namespace-wide pattern delete + L1 clear (fixes a market/asset_type reassignment leaving the old scope's cache lingering). Per-query L1-hit logging dropped (high-frequency); only rare load events logged.

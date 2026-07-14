@@ -24,15 +24,12 @@ import (
 // that caller-supplied ids actually exist (no real FK, §6 R9 → app-layer orphan defense).
 //
 // It is a registered component shared by TaxonomyService (resolves + validates) and
-// SecurityService (invalidates on security_registry upsert / delete — without this, a
-// rebuild that reassigns BIGSERIAL ids would leave the cache pointing at stale ids and
-// industry writes would produce orphans within the TTL window; refactor §8.bis-1).
+// SecurityService (invalidates on security_registry upsert so newly registered
+// securities become resolvable without waiting for the TTL).
 //
 // Process-local (no Redis L2 yet). Lazy-loads on first access and refreshes on a TTL so a
-// long-running phoenixA picks up newly upserted rows. Within a single rebuild cycle
-// surrogate ids are stable (§8.bis-1), so staleness across a rebuild boundary is not a
-// concern — a rebuild clears the whole DB anyway (and SecurityService.DeleteAll now
-// invalidates this cache).
+// long-running phoenixA picks up newly upserted rows. security_id is permanent and
+// destructive registry rebuilds are forbidden.
 type ResolveCache struct {
 	*core.BaseComponent
 	SecurityDao *dao.SecurityRegistryDao `infra:"dep:dao_security_registry"`
@@ -172,8 +169,8 @@ func (c *ResolveCache) reload(ctx context.Context) error {
 	return nil
 }
 
-// Invalidate forces the next access to reload. Called by SecurityService on security_registry
-// upsert/delete and by TaxonomyService on category upsert/delete.
+// Invalidate forces the next access to reload. Called by SecurityService on
+// security_registry upsert and by TaxonomyService on category upsert/delete.
 func (c *ResolveCache) Invalidate() {
 	c.mu.Lock()
 	c.loadedAt = time.Time{}

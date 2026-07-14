@@ -7,8 +7,9 @@ import "time"
 //
 // id is the surrogate primary key (BIGSERIAL), a proxy for the natural key
 // (exchange, asset_type, symbol). Other tables reference it via security_id as
-// a logical foreign key (no real FK constraint). id is stable only within the
-// current rebuild cycle.
+// a logical foreign key (no real FK constraint). id is a permanent identity:
+// registry refreshes must upsert by natural key and must never delete/recreate
+// rows or recycle IDs.
 type SecurityRegistry struct {
 	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"security_id,omitempty"`
 	Exchange   string    `gorm:"type:varchar(8);not null;uniqueIndex:uk_sr_exchange_asset_symbol" json:"exchange"`

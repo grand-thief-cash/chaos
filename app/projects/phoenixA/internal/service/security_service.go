@@ -55,9 +55,8 @@ func (s *SecurityService) BatchUpsert(ctx context.Context, list []*model.Securit
 		return affected, err
 	}
 	s.invalidateAllSecurityCaches(ctx)
-	// New securities (or reassignment after a delete+reimport) change the natural-key → id
-	// map the taxonomy resolve cache holds; invalidate so industry writes don't resolve to
-	// stale/missing ids within the TTL window (refactor §8.bis-1).
+	// New securities change the natural-key → id map the taxonomy resolve cache
+	// holds; invalidate so industry writes can resolve them immediately.
 	if s.Resolve != nil {
 		s.Resolve.Invalidate()
 	}
@@ -127,46 +126,6 @@ func (s *SecurityService) CountFiltered(ctx context.Context, f *model.SecurityFi
 	return s.Dao.CountFiltered(ctx, f)
 }
 
-func (s *SecurityService) DeleteAll(ctx context.Context, assetType, market string) (int64, error) {
-	logging.Infof(ctx, "SecurityService DeleteAll asset_type=%s market=%s", assetType, market)
-	// Refuse if downstream tables still reference securities in this scope — with no real FK
-	// (§6 R9) a bare delete would leave dangling security_id refs in taxonomy_security_map /
-	// industry_constituent / industry_weight (Phase 2) and financial_statement /
-	// corporate_action / equity_structure / adjust_factor / long_hu_bang (Phase 3). Operator
-	// must clear dependents first (this is a rebuild-only op; refactor §5.1.1/§8.bis). Mirrors
-	// TaxonomyService.DeleteCategory.
-	referenced, err := s.Dao.SecurityScopeHasReferences(ctx, assetType, market)
-	if err != nil {
-		return 0, err
-	}
-	if referenced {
-		return 0, NewConflictError("securities in scope (asset_type=%s market=%s) are referenced by downstream tables (taxonomy_security_map/industry_constituent/industry_weight/financial_statement/corporate_action/equity_structure/adjust_factor/long_hu_bang); remove dependents first", assetType, market)
-	}
-	affected, err := s.Dao.DeleteAll(ctx, assetType, market)
-	if err != nil {
-		return affected, err
-	}
-	// A delete+reimport reassigns BIGSERIAL ids; the taxonomy resolve cache MUST be cleared
-	// so industry writes don't resolve to now-reassigned ids (refactor §8.bis-1).
-	if s.Resolve != nil {
-		s.Resolve.Invalidate()
-	}
-	// L1 holds every scope's snapshot locally; clear it so this replica serves
-	// fresh data immediately (other replicas converge via the L1 TTL).
-	s.invalidateL1()
-	if assetType == "" || market == "" {
-		if err := s.invalidateAggregateCachesByScope(ctx, assetType, market); err != nil {
-			logging.Warnf(ctx, "security cache wildcard invalidation after delete_all failed: %v", err)
-		}
-		return affected, nil
-	}
-	resolvedAssetType, resolvedMarket := normalizeSecurityAggregateScope(assetType, market)
-	if delErr := cache.DeleteKeys(ctx, s.redisClient(), bizConsts.BuildSecurityListCacheKey(resolvedAssetType, resolvedMarket), bizConsts.BuildSecurityCountCacheKey(resolvedAssetType, resolvedMarket)); delErr != nil {
-		logging.Warnf(ctx, "security cache invalidation after delete_all failed: %v", delErr)
-	}
-	return affected, nil
-}
-
 func (s *SecurityService) redisClient() redislib.UniversalClient {
 	if s.RedisComp == nil {
 		return nil
@@ -192,15 +151,6 @@ func (s *SecurityService) invalidateAllSecurityCaches(ctx context.Context) {
 	if err := cache.DeleteByPattern(ctx, client, bizConsts.BuildSecurityCountCachePattern("", "")); err != nil {
 		logging.Warnf(ctx, "security count cache pattern invalidation failed: %v", err)
 	}
-}
-
-func (s *SecurityService) invalidateAggregateCachesByScope(ctx context.Context, assetType, market string) error {
-	listPattern := bizConsts.BuildSecurityListCachePattern(assetType, market)
-	countPattern := bizConsts.BuildSecurityCountCachePattern(assetType, market)
-	if err := cache.DeleteByPattern(ctx, s.redisClient(), listPattern); err != nil {
-		return err
-	}
-	return cache.DeleteByPattern(ctx, s.redisClient(), countPattern)
 }
 
 func securityAggregateCacheScope(f *model.SecurityFilters, limit, offset int) (string, string, bool) {

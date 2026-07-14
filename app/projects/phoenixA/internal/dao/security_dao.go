@@ -53,19 +53,7 @@ func (d *SecurityRegistryDao) BatchUpsert(ctx context.Context, list []*model.Sec
 		chunkSize = 200
 	}
 	for _, s := range list {
-		s.ID = 0 // id is surrogate, auto-assigned; ignore any client-supplied value on upsert
-		s.Symbol = strings.TrimSpace(s.Symbol)
-		s.Exchange = strings.ToUpper(strings.TrimSpace(s.Exchange))
-		s.Name = strings.TrimSpace(s.Name)
-		if s.AssetType == "" {
-			s.AssetType = bizConsts.ASSET_TYPE_STOCK
-		}
-		if s.Market == "" {
-			s.Market = bizConsts.MARKET_ZH_A
-		}
-		if s.Status == "" {
-			s.Status = "active"
-		}
+		normalizeSecurityForUpsert(s)
 	}
 	var affected int64
 	for i := 0; i < len(list); i += chunkSize {
@@ -75,16 +63,54 @@ func (d *SecurityRegistryDao) BatchUpsert(ctx context.Context, list []*model.Sec
 		}
 		batch := list[i:end]
 		res := d.db.WithContext(ctx).
-			Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "exchange"}, {Name: "asset_type"}, {Name: "symbol"}},
-				DoUpdates: clause.AssignmentColumns([]string{"name", "full_name", "status", "list_date", "delist_date", "market", "updated_at"}),
-			}).Create(&batch)
+			Clauses(securityUpsertOnConflict()).Create(&batch)
 		if res.Error != nil {
 			return affected, res.Error
 		}
 		affected += res.RowsAffected
 	}
 	return affected, nil
+}
+
+// normalizeSecurityForUpsert applies the canonical natural-key representation.
+// A caller-supplied ID is always discarded: new IDs are database-assigned, while
+// an existing row is matched by its natural key and keeps its permanent ID.
+func normalizeSecurityForUpsert(s *model.SecurityRegistry) {
+	s.ID = 0
+	s.Symbol = strings.TrimSpace(s.Symbol)
+	s.Exchange = strings.ToUpper(strings.TrimSpace(s.Exchange))
+	s.Name = strings.TrimSpace(s.Name)
+	if s.AssetType == "" {
+		s.AssetType = bizConsts.ASSET_TYPE_STOCK
+	}
+	if s.Market == "" {
+		s.Market = bizConsts.MARKET_ZH_A
+	}
+	if s.Status == "" {
+		s.Status = "active"
+	}
+}
+
+// securityUpsertOnConflict is deliberately centralized and tested. The update
+// set must never contain id or a natural-key column; changing either would make
+// historical security_id references point at a different instrument.
+func securityUpsertOnConflict() clause.OnConflict {
+	return clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "exchange"},
+			{Name: "asset_type"},
+			{Name: "symbol"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"name",
+			"full_name",
+			"status",
+			"list_date",
+			"delist_date",
+			"market",
+			"updated_at",
+		}),
+	}
 }
 
 // Get retrieves a security by its natural key (exchange, asset_type, symbol).
@@ -157,59 +183,6 @@ func (d *SecurityRegistryDao) CountFiltered(ctx context.Context, f *model.Securi
 		return 0, err
 	}
 	return cnt, nil
-}
-
-func (d *SecurityRegistryDao) DeleteAll(ctx context.Context, assetType, market string) (int64, error) {
-	q := d.db.WithContext(ctx)
-	if assetType != "" {
-		q = q.Where("asset_type = ?", assetType)
-	}
-	if market != "" {
-		q = q.Where("market = ?", market)
-	}
-	res := q.Delete(&model.SecurityRegistry{})
-	return res.RowsAffected, res.Error
-}
-
-// SecurityScopeHasReferences reports whether any downstream row references a
-// security_id in the given (asset_type, market) scope — the same scope DeleteAll
-// would remove. Guards delete against leaving dangling security_id references
-// (no real FK, §6 R9 → app-layer defense; mirrors TaxonomyDao.CategoryHasReferences).
-// Empty assetType/market means "all securities". Covers the Phase 2 taxonomy chain
-// (taxonomy_security_map / industry_constituent / industry_weight) AND the Phase 3
-// data tables (financial_statement / corporate_action / equity_structure /
-// adjust_factor / long_hu_bang), all of which now reference security_id.
-func (d *SecurityRegistryDao) SecurityScopeHasReferences(ctx context.Context, assetType, market string) (bool, error) {
-	scope := func() *gorm.DB {
-		q := d.db.WithContext(ctx).Model(&model.SecurityRegistry{}).Select("id")
-		if assetType != "" {
-			q = q.Where("asset_type = ?", assetType)
-		}
-		if market != "" {
-			q = q.Where("market = ?", market)
-		}
-		return q
-	}
-	tables := []string{
-		"ods.taxonomy_security_map",
-		"ods.industry_constituent",
-		"ods.industry_weight",
-		"ods.financial_statement",
-		"ods.corporate_action",
-		"ods.equity_structure",
-		"ods.adjust_factor",
-		"ods.long_hu_bang",
-	}
-	for _, tbl := range tables {
-		var c int64
-		if err := d.db.WithContext(ctx).Table(tbl).Where("security_id IN (?)", scope()).Count(&c).Error; err != nil {
-			return false, err
-		}
-		if c > 0 {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func applySecurityFilters(q *gorm.DB, f *model.SecurityFilters) *gorm.DB {

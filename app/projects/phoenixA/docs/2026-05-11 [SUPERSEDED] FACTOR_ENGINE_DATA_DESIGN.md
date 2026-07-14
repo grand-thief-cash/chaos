@@ -1,5 +1,9 @@
 # 因子引擎数据供给设计 — 需求/供应 Gap 分析
 
+> **Status: Superseded（2026-07-14）**
+>
+> 本文仅保留作历史记录，已由 `docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md` 替代，不得再作为新开发或验收依据。
+
 ## 背景
 
 Artemis factor_engine 计算 7 类 36 个因子（盈利、成长、质量、偿债、估值、效率、每股）。

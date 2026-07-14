@@ -1,5 +1,9 @@
 # security_registry 代理主键化与 ODS 表外键引用改造 — 调研报告
 
+> **Identity policy update（2026-07-14）**
+>
+> 本文中允许删除/重建 `security_registry` 并重新分配 `security_id` 的内容已失效。当前 Accepted 决策见 `docs/system_design/2026-07-14 ADR_FEATURE_PLATFORM_FOUNDATION.md`：`security_id` 永久、不可回收，全量刷新只能按自然键 upsert 并更新生命周期字段。
+
 > 状态: **调研阶段,未改动任何代码**
 > 日期: 2026-07-02
 > 作者: 调研产出 (基于 dev/alpha 分支 v0.38.3 / phoenixA v1.26.3)
@@ -619,7 +623,7 @@ HAVING COUNT(*) > 1;
 | `POST /api/v2/securities/upsert` | body `[{symbol, exchange, ...}]` | body `[{symbol, exchange, asset_type, market, name, ...}]` (按自然键 upsert,id 自增) | `{rows: N}` (不必返 id,§6 R7) | 自然键 upsert |
 | `GET /api/v2/securities/{symbol}` | path `{symbol}` | path `{security_id}` | `{security_id, symbol, ...}` | Get |
 | `GET /api/v2/securities/count` | `?asset_type=&market=` | `?asset_type=&market=` | `{count: N}` | 不变 |
-| `DELETE /api/v2/securities/all` | `?asset_type=&market=` | `?asset_type=&market=` | `{rows: N}` | 不变 |
+| ~~`DELETE /api/v2/securities/all`~~ | — | — | — | **已于 2026-07-14 Phase 0 删除**；永久身份策略禁止批量删除或重建 registry |
 | `GET /api/v2/bars/{asset_type}/{market}` | `?symbol=&start_date=&end_date=&period=&adjust=` | `?security_id=&period=&adjust=&start_date=&end_date=` (asset_type/market 由 resolve 得,但仍可在 path;period/adjust 必传) | `[{security_id, symbol, trade_date, OHLCV}]` | §3.2: 内部 resolve→table_resolver→查 symbol |
 | `POST /api/v2/bars/{asset_type}/{market}/upsert` | body `{meta:{period,adjust,source}, bars:[{symbol,...}]}` | body `{meta:{period,adjust,source}, bars:[{security_id,...}]}` | `{status:ok}` | phoenixA resolve 出 symbol 写物理表 |
 | `GET /api/v2/bars/{asset_type}/{market}/last_update` | `?symbols=&period=&adjust=` | `?security_ids=&period=&adjust=` | `[{security_id, symbol, last_update}]` | 批量 |

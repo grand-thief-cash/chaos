@@ -1,5 +1,9 @@
 # Factor Data Readiness API 设计
 
+> **Status: Superseded（2026-07-14）**
+>
+> 本文仅保留作历史记录，已由 `docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md` 替代，不得再作为新开发或验收依据。
+
 ## 概述
 
 当接入新因子时，需要判断 PhoenixA 是否已提供所需数据。
