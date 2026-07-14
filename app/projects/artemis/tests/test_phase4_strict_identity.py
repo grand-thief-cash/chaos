@@ -10,40 +10,7 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from artemis.services import factor_service
 from artemis.api.http_gateway import _identity
-
-
-class TestComputeIncrementalValidation:
-    def test_empty_security_ids_raises(self):
-        with pytest.raises(ValueError, match="security_ids is empty"):
-            factor_service.compute_incremental(security_ids=[], as_of_date="20250101")
-
-    def test_non_positive_security_id_raises(self):
-        with pytest.raises(ValueError, match="positive"):
-            factor_service.compute_incremental(security_ids=[1, 0], as_of_date="20250101")
-
-    def test_negative_security_id_raises(self):
-        with pytest.raises(ValueError, match="positive"):
-            factor_service.compute_incremental(security_ids=[-1], as_of_date="20250101")
-
-    def test_no_identity_raises(self):
-        with pytest.raises(ValueError, match="requires security_ids"):
-            factor_service.compute_incremental(as_of_date="20250101")
-
-
-class TestGetSnapshotValidation:
-    def test_zero_security_id_raises(self):
-        with pytest.raises(ValueError, match="positive"):
-            factor_service.get_snapshot(security_id=0, as_of_date="20250101")
-
-    def test_negative_security_id_raises(self):
-        with pytest.raises(ValueError, match="positive"):
-            factor_service.get_snapshot(security_id=-5, as_of_date="20250101")
-
-    def test_none_security_id_raises(self):
-        with pytest.raises(ValueError, match="requires security_id"):
-            factor_service.get_snapshot(security_id=None, as_of_date="20250101")
 
 
 class TestParseSecurityIds:
@@ -123,22 +90,3 @@ class TestParseSecurityId:
         with pytest.raises(HTTPException) as exc:
             _identity._parse_security_id("abc")
         assert exc.value.status_code == 400
-
-
-class TestGetSnapshotFailFast:
-    """Invalid identity must raise BEFORE `_get_runtime` (no phoenixA connection
-    attempt for malformed input) — GLM review P2."""
-
-    def test_zero_id_does_not_touch_runtime(self, monkeypatch):
-        def _boom(*a, **kw):
-            raise AssertionError("_get_runtime must not be called for invalid identity")
-        monkeypatch.setattr(factor_service, "_get_runtime", _boom)
-        with pytest.raises(ValueError, match="positive"):
-            factor_service.get_snapshot(security_id=0, as_of_date="20250101")
-
-    def test_negative_id_does_not_touch_runtime(self, monkeypatch):
-        def _boom(*a, **kw):
-            raise AssertionError("_get_runtime must not be called for invalid identity")
-        monkeypatch.setattr(factor_service, "_get_runtime", _boom)
-        with pytest.raises(ValueError, match="positive"):
-            factor_service.get_snapshot(security_id=-5, as_of_date="20250101")

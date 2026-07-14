@@ -93,16 +93,27 @@ class CacheEngineCfg(BaseModel):
     partition_rules: list[PartitionRuleCfg] = Field(default_factory=list)
 
 
-class FactorEngineCfg(BaseModel):
-    """Factor engine configuration."""
-    pass
+class FeaturePlatformCfg(BaseModel):
+    """Reserved Feature Platform execution settings.
+
+    Phase 0 keeps the platform disabled. Phase 2 enables it after the registry,
+    manifest loader and executor exist.
+    """
+
+    enabled: bool = False
+    manifest_root: str = "./config/feature_catalog"
+    max_parallel_features: int = 2
+    write_batch_size: int = 5000
+    heartbeat_interval_seconds: int = 15
+    stale_run_timeout_seconds: int = 300
+    plugin_timeout_seconds: int = 1800
 
 
 class EngineCfg(BaseModel):
     """Top-level engine configuration."""
     task_engine: TaskEngineCfg = Field(default_factory=TaskEngineCfg)
     cache_engine: CacheEngineCfg = Field(default_factory=CacheEngineCfg)
-    factor_engine: FactorEngineCfg = Field(default_factory=FactorEngineCfg)
+    feature_platform: FeaturePlatformCfg = Field(default_factory=FeaturePlatformCfg)
 
 
 class DeptServicesCfg(BaseModel):

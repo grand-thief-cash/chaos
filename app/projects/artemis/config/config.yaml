@@ -89,6 +89,15 @@ data_options:
       options: []
 
 engine:
+  # Phase 0 reservation only. Phase 2 enables this after Registry/Executor exist.
+  feature_platform:
+    enabled: false
+    manifest_root: "./config/feature_catalog"
+    max_parallel_features: 2
+    write_batch_size: 5000
+    heartbeat_interval_seconds: 15
+    stale_run_timeout_seconds: 300
+    plugin_timeout_seconds: 1800
   task_engine:
     worker_task_timeout: 180
     amazing_data_cache_dir: "../cache/artemis/amazing_data"

@@ -1,7 +1,7 @@
 """Shared strict identity-param parsers for the HTTP gateway routes.
 
-Both factor_routes and bi_routes parse ``security_id`` (singular) and
-``security_ids`` (comma-separated) query/path params with the same strict
+HTTP gateway routes parse ``security_id`` (singular) and ``security_ids``
+(comma-separated) query/path params with the same strict
 semantics: absent → None; a present value that is empty / non-numeric /
 non-positive / contains an empty token → 400 (never silently treated as
 absent, which would let an explicit empty identity degrade to an unfiltered

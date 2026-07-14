@@ -1,5 +1,9 @@
 # Factor Engine × PhoenixA 后续复核与修复报告
 
+> **Status: Superseded（2026-07-14）**
+>
+> 本文仅保留作历史记录，已由 `docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md` 替代，不得再作为新开发或验收依据。
+
 日期：2026-05-15
 
 范围：
@@ -426,5 +430,3 @@ python -u -m pytest tests/test_factor_engine.py tests/test_phoenixa_factor_provi
 - PhoenixA derived flags 接入：**已确认正确使用**
 - Availability 误导性显示：**已修正语义和 UI 展示**
 - 因子快照持久化：**仍是后续平台化任务**
-
-

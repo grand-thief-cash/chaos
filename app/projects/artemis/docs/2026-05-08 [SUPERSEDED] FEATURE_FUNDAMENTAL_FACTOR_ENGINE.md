@@ -1,5 +1,9 @@
 # 2026-05-08 因子化财务数据引擎设计
 
+> **Status: Superseded（2026-07-14）**
+>
+> 本文仅保留作历史记录，已由 `docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md` 替代，不得再作为新开发或验收依据。
+
 > 更新日期：2026-05-08 (rev.2 — 修正/优化/扩展)  
 > 关联文档：`2026-04-26 FINANCIAL_DATA_FIELDS.md`, `2026-05-07 FINANCIAL_DATA_PG_MIGRATION.md`  
 > 影响范围：Artemis (Python), PhoenixA (Go), PostgreSQL
@@ -1662,4 +1666,3 @@ Execution / Backtest
 | **FactorMeta** | 字段不够 | 新增 `exclude_financial` + `min_history_quarters` |
 | **IC 分析** | 过于简略 | 扩展：有效样本量检查 + IC 衰减 + holding_period |
 | **负增长率处理** | "设为 NaN" | 细化：亏转盈/持续亏损的分别处理 |
-

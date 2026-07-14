@@ -1,5 +1,9 @@
 # 2026-05-08 Market Regime Engine（市场状态引擎）设计
 
+> **Status: Superseded（2026-07-14）**
+>
+> 本文仅保留作历史记录，已由 `docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md` 替代，不得再作为新开发或验收依据。
+
 > 更新日期：2026-05-08 (rev.2 — 架构重构: 离散分类 → 连续状态空间)  
 > 关联文档：`2026-05-08 [PLANNING] FEATURE_FUNDAMENTAL_FACTOR_ENGINE.md`, `2026-04-15 REVIEW_STRATEGY_ENGINE_ARCHITECTURE.md`  
 > 影响范围：Artemis (Python), PhoenixA (Go), PostgreSQL, Cronjob (Go)
@@ -1724,5 +1728,3 @@ class RegimeInertia:
 | | | - KMeans/GMM 聚类自动发现 regime | |
 | | | - HMM (Hidden Markov Model) | |
 | | | - Meta Learning: 学习 regime → 因子有效性映射 | |
-
-
