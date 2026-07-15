@@ -1,0 +1,52 @@
+api_version: chaos.feature/v1
+
+feature:
+  code: platform.security.datafield_pit_probe
+  display_name: Platform DataField PIT Probe
+  description: >-
+    Internal point-in-time plumbing probe for governed financial DataFields.
+    It has no financial research meaning and must not be used as a factor,
+    selection signal or backtest input.
+  kind: metric
+  entity_type: security
+  value_type: number
+  unit: source_scalar
+  category: platform
+  owner: platform
+  tags: [smoke, internal, pit]
+
+version:
+  number: 1
+  status: published
+  frequency: on_demand
+  as_of_semantics: snapshot
+  missing_policy: explicit_missing
+  description: Initial DataField and point-in-time acceptance probe
+
+implementation:
+  kind: python
+  producer_service: artemis
+  backend: python
+  entrypoint: artemis.feature_platform.plugins.smoke.datafield_pit_probe:DataFieldPITProbeFeature
+  implementation_revision: 1
+  config:
+    availability_timezone: Asia/Shanghai
+  status: active
+
+dependencies:
+  - kind: data_field
+    source: amazing_data
+    dataset: financial_statement
+    data_type: income
+    raw_field: NET_PRO_EXCL_MIN_INT_INC
+    contract_version: "2026-06-27"
+
+materialization:
+  store: numeric
+  mode: snapshot
+
+quality:
+  min_coverage_ratio: 0.0
+  allow_nan: false
+  allow_infinite: false
+  allow_duplicates: false

@@ -89,9 +89,9 @@ data_options:
       options: []
 
 engine:
-  # Phase 0 reservation only. Phase 2 enables this after Registry/Executor exist.
+  # Phase 2 Artemis manifest and Python execution plane.
   feature_platform:
-    enabled: false
+    enabled: true
     manifest_root: "./config/feature_catalog"
     max_parallel_features: 2
     write_batch_size: 5000

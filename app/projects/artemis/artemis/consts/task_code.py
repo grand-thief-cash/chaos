@@ -1,5 +1,6 @@
 from enum import Enum
 class TaskCode(str, Enum):
+    FEATURE_PLATFORM_COMPUTE = 'feature_platform_compute'
     STOCK_ZH_A_LIST = 'STOCK_ZH_A_LIST'
     STOCK_ZH_A_HIST_PARENT = 'STOCK_ZH_A_HIST_PARENT'
     STOCK_ZH_A_HIST_CHILD = 'STOCK_ZH_A_HIST_CHILD'

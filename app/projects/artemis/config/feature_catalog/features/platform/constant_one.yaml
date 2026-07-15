@@ -1,0 +1,44 @@
+api_version: chaos.feature/v1
+
+feature:
+  code: platform.security.constant_one
+  display_name: Platform Constant One
+  description: >-
+    Feature Platform end-to-end acceptance probe. It emits 1.0 for every
+    frozen RunSubject and must not be used for research, selection or backtests.
+  kind: metric
+  entity_type: security
+  value_type: number
+  unit: scalar
+  category: platform
+  owner: platform
+  tags: [smoke, internal]
+
+version:
+  number: 1
+  status: published
+  frequency: on_demand
+  as_of_semantics: snapshot
+  missing_policy: explicit_missing
+  description: Initial platform control-plane smoke version
+
+implementation:
+  kind: python
+  producer_service: artemis
+  backend: python
+  entrypoint: artemis.feature_platform.plugins.smoke.constant_one:ConstantOneFeature
+  implementation_revision: 1
+  config: {}
+  status: active
+
+dependencies: []
+
+materialization:
+  store: numeric
+  mode: snapshot
+
+quality:
+  min_coverage_ratio: 1.0
+  allow_nan: false
+  allow_infinite: false
+  allow_duplicates: false

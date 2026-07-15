@@ -1,7 +1,11 @@
 # VERSION
-v0.44.0
+v0.45.0
 
 # Changelog
+- v0.45.0
+    - **Feature Platform Phase 2 execution plane.** Added strict local manifests/schema, PhoenixA-compatible checksums and registry client, deterministic dependency planning, Python plugins, output quality gates, and TaskEngine-backed Run/Item/value execution.
+    - **Smoke and PIT probes.** Added `constant_one` plus a governed financial DataField PIT probe that filters by actual announcement availability without introducing a financial business factor.
+    - **Feature APIs and tests.** Added compute/execution/manifest/sync routes and offline coverage for idempotent submission, DAG/cycles, PIT filtering, state transitions, and numeric writes.
 - v0.44.0
     - **Feature Platform Phase 0 cleanup.** Removed the experimental Factor and Regime engines, services, HTTP routes, YAML catalog, scripts, and engine-specific tests. Legacy `/factors/*` and `/regime/*` endpoints are covered by a removal regression test.
     - **Feature Platform reservation.** Replaced `FactorEngineCfg` with a disabled `FeaturePlatformCfg` placeholder and archived the superseded Factor/Regime design documents; no Feature computation was introduced.

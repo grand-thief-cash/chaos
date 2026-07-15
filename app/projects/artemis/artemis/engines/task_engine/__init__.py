@@ -24,8 +24,15 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_profit_notice import Sto
 from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHADividend
 from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
 from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import StockZhAEastmoneyReport
+from artemis.feature_platform.tasks.feature_compute_task import FeatureComputeTask
 
 __all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
+
+registry.register(
+    TaskCode.FEATURE_PLATFORM_COMPUTE,
+    module=FeatureComputeTask.__module__,
+    class_name=FeatureComputeTask.__name__,
+)
 
 registry.register(
     TaskCode.STOCK_ZH_A_LIST,

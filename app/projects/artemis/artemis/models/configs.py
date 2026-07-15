@@ -94,11 +94,7 @@ class CacheEngineCfg(BaseModel):
 
 
 class FeaturePlatformCfg(BaseModel):
-    """Reserved Feature Platform execution settings.
-
-    Phase 0 keeps the platform disabled. Phase 2 enables it after the registry,
-    manifest loader and executor exist.
-    """
+    """Feature Platform manifest and execution settings."""
 
     enabled: bool = False
     manifest_root: str = "./config/feature_catalog"
