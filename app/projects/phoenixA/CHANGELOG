@@ -1,7 +1,10 @@
 # VERSION
-v1.36.0
+v1.36.1
 
 # Changelog
+- v1.36.1
+    - **Artemis Phase 2 checksum contract.** Added a cross-language registry test proving the Python smoke Manifest projection is accepted by PhoenixA's canonical implementation and Manifest checksum validator.
+    - **Deterministic cycle diagnostics.** Feature dependency cycle detection now traverses sorted nodes and edges, eliminating rotation-dependent flaky output from Go map iteration.
 - v1.36.0
     - **Feature Platform Phase 1 control plane.** Added versioned Feature registry, exact DataField/Feature dependencies, publish immutability, DAG validation, lineage/availability, producer-neutral Run/Subject/Item APIs, and Catalog integration under `/api/v2/features/*`.
     - **PIT-safe numeric materialization.** Added immutable numeric values with idempotent batches, succeeded-only latest semantics, service/database cutoff enforcement, canonical request fingerprints, and dependency-closed RunItems.

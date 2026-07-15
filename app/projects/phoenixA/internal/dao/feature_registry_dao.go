@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -351,7 +352,9 @@ func DetectFeatureDependencyCycle(edges map[uint64][]uint64) []uint64 {
 		state[node] = visiting
 		position[node] = len(stack)
 		stack = append(stack, node)
-		for _, next := range edges[node] {
+		neighbors := append([]uint64(nil), edges[node]...)
+		sort.Slice(neighbors, func(i, j int) bool { return neighbors[i] < neighbors[j] })
+		for _, next := range neighbors {
 			switch state[next] {
 			case unseen:
 				if visit(next) {
@@ -369,7 +372,12 @@ func DetectFeatureDependencyCycle(edges map[uint64][]uint64) []uint64 {
 		state[node] = done
 		return false
 	}
+	nodes := make([]uint64, 0, len(edges))
 	for node := range edges {
+		nodes = append(nodes, node)
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i] < nodes[j] })
+	for _, node := range nodes {
 		if state[node] == unseen && visit(node) {
 			return cycle
 		}
