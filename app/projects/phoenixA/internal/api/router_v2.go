@@ -185,6 +185,7 @@ func init() {
 			r.Get("/availability/{feature_code}", featureCtrl.Availability)
 
 			r.Post("/runs", featureCtrl.CreateRun)
+			r.Post("/runs:reconcile-stale", featureCtrl.ReconcileStaleRuns)
 			r.Get("/runs", featureCtrl.ListRuns)
 			r.Get("/runs/{run_id}", featureCtrl.GetRun)
 			r.Post("/runs/{run_id}/subjects:batch", featureCtrl.BatchSubjects)

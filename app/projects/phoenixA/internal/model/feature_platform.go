@@ -384,17 +384,55 @@ type FeatureLineage struct {
 }
 
 type FeatureLineageVersion struct {
-	FeatureVersionID uint64              `json:"feature_version_id"`
-	VersionNumber    int                 `json:"version_number"`
-	Upstream         []FeatureDependency `json:"upstream"`
-	Downstream       []FeatureDependency `json:"downstream"`
+	FeatureVersionID   uint64                    `json:"feature_version_id"`
+	VersionNumber      int                       `json:"version_number"`
+	Upstream           []FeatureDependency       `json:"upstream"`
+	Downstream         []FeatureDependency       `json:"downstream"`
+	UpstreamFeatures   []FeatureLineageReference `json:"upstream_features"`
+	DownstreamFeatures []FeatureLineageReference `json:"downstream_features"`
+	UpstreamDataFields []FeatureLineageDataField `json:"upstream_data_fields"`
+}
+
+type FeatureLineageReference struct {
+	FeatureVersionID uint64 `json:"feature_version_id"`
+	FeatureCode      string `json:"feature_code"`
+	VersionNumber    int    `json:"version_number"`
+	Status           string `json:"status"`
+}
+
+type FeatureLineageDataField struct {
+	DataFieldDictionaryID uint64 `json:"data_field_dictionary_id"`
+	Source                string `json:"source"`
+	Dataset               string `json:"dataset"`
+	DataType              string `json:"data_type"`
+	RawField              string `json:"raw_field"`
+	ContractVersion       string `json:"contract_version"`
+	StorageLocation       string `json:"storage_location"`
+	Deprecated            bool   `json:"deprecated"`
 }
 
 type FeatureAvailability struct {
-	FeatureCode        string      `json:"feature_code"`
-	LatestPublishedID  *uint64     `json:"latest_published_version_id,omitempty"`
-	LatestSucceededRun *FeatureRun `json:"latest_succeeded_run,omitempty"`
-	Status             string      `json:"status"`
+	FeatureCode           string                         `json:"feature_code"`
+	SourceProfile         string                         `json:"source_profile"`
+	LatestPublishedID     *uint64                        `json:"latest_published_version_id,omitempty"`
+	LatestSucceededRun    *FeatureRun                    `json:"latest_succeeded_run,omitempty"`
+	Status                string                         `json:"status"`
+	DefinitionStatus      string                         `json:"definition_status"`
+	VersionStatus         string                         `json:"version_status"`
+	DependencyStatus      string                         `json:"dependency_status"`
+	DataStatus            string                         `json:"data_status"`
+	ImplementationStatus  string                         `json:"implementation_status"`
+	MaterializationStatus string                         `json:"materialization_status"`
+	ExecutionReadiness    string                         `json:"execution_readiness"`
+	Reasons               []string                       `json:"reasons"`
+	DataFields            []FeatureDataFieldAvailability `json:"data_fields"`
+}
+
+type FeatureDataFieldAvailability struct {
+	FeatureLineageDataField
+	Status      string     `json:"status"`
+	SampleCount int64      `json:"sample_count"`
+	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
 }
 
 // Run/value API contracts.
@@ -455,6 +493,17 @@ type FeatureRunItemUpdateRequest struct {
 	QualitySummary map[string]any `json:"quality_summary,omitempty"`
 	ErrorCode      string         `json:"error_code,omitempty"`
 	ErrorMessage   string         `json:"error_message,omitempty"`
+}
+
+type FeatureStaleRunReconcileRequest struct {
+	StaleBefore     time.Time `json:"stale_before"`
+	ProducerService string    `json:"producer_service"`
+}
+
+type FeatureStaleRunReconcileResponse struct {
+	StaleBefore  time.Time `json:"stale_before"`
+	AbortedCount int       `json:"aborted_count"`
+	RunIDs       []string  `json:"run_ids"`
 }
 
 type FeatureNumericBatchRequest struct {

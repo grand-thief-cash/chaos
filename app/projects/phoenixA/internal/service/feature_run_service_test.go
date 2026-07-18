@@ -82,6 +82,35 @@ func TestFeatureRunStateMachineAndHeartbeat(t *testing.T) {
 	}
 }
 
+func TestNormalizeItemQualitySummary(t *testing.T) {
+	summary := normalizeItemQualitySummary(model.FeatureRunItemUpdateRequest{
+		NewStatus: "succeeded", InputCount: 10, OutputCount: 10,
+		ValidCount: 8, MissingCount: 1, InvalidCount: 1,
+		QualitySummary: map[string]any{"plugin": "constant_one"},
+	})
+	if summary["status"] != "succeeded" || summary["gate_passed"] != true {
+		t.Fatalf("terminal quality status missing: %#v", summary)
+	}
+	if summary["coverage_ratio"] != 0.8 || summary["output_ratio"] != 1.0 {
+		t.Fatalf("quality ratios are incorrect: %#v", summary)
+	}
+	if summary["plugin"] != "constant_one" {
+		t.Fatalf("plugin quality details were lost: %#v", summary)
+	}
+}
+
+func TestReconcileStaleRunsValidatesCutoffBeforeUsingDao(t *testing.T) {
+	service := &FeatureRunService{}
+	_, err := service.ReconcileStaleRuns(t.Context(), model.FeatureStaleRunReconcileRequest{
+		ProducerService: "artemis", StaleBefore: time.Now().UTC().Add(time.Minute),
+	})
+	assertFeatureErrorCode(t, err, "STALE_BEFORE_INVALID")
+	_, err = service.ReconcileStaleRuns(t.Context(), model.FeatureStaleRunReconcileRequest{
+		StaleBefore: time.Now().UTC().Add(-time.Minute),
+	})
+	assertFeatureErrorCode(t, err, "PRODUCER_SERVICE_REQUIRED")
+}
+
 func TestExpandBackfillTimesMonthlyClampsToMonthEnd(t *testing.T) {
 	start := time.Date(2024, 1, 31, 9, 30, 0, 0, time.UTC)
 	got, err := expandBackfillTimes(model.FeatureBackfillCreateRequest{

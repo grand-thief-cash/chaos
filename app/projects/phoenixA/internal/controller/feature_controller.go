@@ -155,7 +155,22 @@ func (c *FeatureController) Lineage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *FeatureController) Availability(w http.ResponseWriter, r *http.Request) {
-	response, err := c.Registry.Availability(r.Context(), chi.URLParam(r, "feature_code"))
+	response, err := c.Registry.Availability(
+		r.Context(), chi.URLParam(r, "feature_code"), r.URL.Query().Get("source_profile"),
+	)
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (c *FeatureController) ReconcileStaleRuns(w http.ResponseWriter, r *http.Request) {
+	var req model.FeatureStaleRunReconcileRequest
+	if !decodeFeatureJSON(w, r, &req) {
+		return
+	}
+	response, err := c.Runs.ReconcileStaleRuns(r.Context(), req)
 	if err != nil {
 		writeFeatureError(w, err)
 		return

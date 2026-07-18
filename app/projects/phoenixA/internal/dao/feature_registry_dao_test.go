@@ -77,3 +77,35 @@ func TestFeatureTerminalStatusHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestFeatureAvailabilityStatusAggregation(t *testing.T) {
+	readyField := model.FeatureDataFieldAvailability{Status: "ready"}
+	unknownField := model.FeatureDataFieldAvailability{Status: "unknown"}
+	missingField := model.FeatureDataFieldAvailability{Status: "missing"}
+	if got := featureDataStatus(nil, 0, 0); got != "ready" {
+		t.Fatalf("no data dependencies = %s, want ready", got)
+	}
+	if got := featureDataStatus([]model.FeatureDataFieldAvailability{unknownField}, 0, 1); got != "unknown" {
+		t.Fatalf("unknown dependency = %s", got)
+	}
+	if got := featureDataStatus([]model.FeatureDataFieldAvailability{readyField, unknownField}, 1, 1); got != "partial" {
+		t.Fatalf("mixed observed dependency = %s", got)
+	}
+	if got := featureDataStatus([]model.FeatureDataFieldAvailability{missingField}, 0, 0); got != "missing" {
+		t.Fatalf("missing dependency = %s", got)
+	}
+}
+
+func TestFeatureExecutionReadinessRequiresExecutableContract(t *testing.T) {
+	definition := model.FeatureDefinition{EntityType: "security", ValueType: "number"}
+	if got := featureExecutionReadiness(definition, "valid", "published", "ready", "ready", "loadable"); got != "ready" {
+		t.Fatalf("executable contract = %s", got)
+	}
+	if got := featureExecutionReadiness(definition, "valid", "published", "ready", "unknown", "loadable"); got != "unknown" {
+		t.Fatalf("unknown source data = %s", got)
+	}
+	definition.EntityType = "document"
+	if got := featureExecutionReadiness(definition, "valid", "published", "ready", "ready", "loadable"); got != "not_ready" {
+		t.Fatalf("unsupported entity = %s", got)
+	}
+}

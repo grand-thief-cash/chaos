@@ -177,7 +177,9 @@ func (d *FeatureRunDao) BatchItems(ctx context.Context, runID string, versionIDs
 	for _, id := range versionIDs {
 		rows = append(rows, model.FeatureRunItem{
 			RunID: runID, FeatureVersionID: id, Status: "queued",
-			QualitySummary: model.NewJSONValue(map[string]any{}),
+			QualitySummary: model.NewJSONValue(map[string]any{
+				"status": "queued", "gate_passed": false,
+			}),
 		})
 	}
 	res := d.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(rows, 200)
@@ -218,6 +220,50 @@ func (d *FeatureRunDao) UpdateRunStatus(ctx context.Context, runID, expected, ne
 			"run %s is not in expected status %s", runID, expected)
 	}
 	return d.GetRun(ctx, runID)
+}
+
+func (d *FeatureRunDao) AbortStaleRuns(ctx context.Context, producerService string, staleBefore time.Time) ([]model.FeatureRun, error) {
+	stale := make([]model.FeatureRun, 0)
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Raw(`
+			SELECT *
+			FROM govern.feature_run
+			WHERE producer_service = ?
+			  AND status IN ('planning', 'running', 'validating')
+			  AND COALESCE(heartbeat_at, updated_at, created_at) < ?
+			ORDER BY created_at, run_id
+			FOR UPDATE SKIP LOCKED`, producerService, staleBefore).Scan(&stale).Error; err != nil {
+			return err
+		}
+		if len(stale) == 0 {
+			return nil
+		}
+		runIDs := make([]string, 0, len(stale))
+		for _, run := range stale {
+			runIDs = append(runIDs, run.RunID)
+		}
+		if err := tx.Model(&model.FeatureRunItem{}).
+			Where("run_id IN ? AND status IN ('queued', 'running', 'validating')", runIDs).
+			Updates(map[string]any{
+				"status": gorm.Expr("CASE WHEN status = 'queued' THEN 'skipped' ELSE 'failed' END"),
+				"quality_summary": gorm.Expr(`quality_summary || jsonb_build_object(
+					'status', CASE WHEN status = 'queued' THEN 'skipped' ELSE 'failed' END,
+					'error_code', 'RUN_ABORTED_STALE', 'gate_passed', false)`),
+				"error_code":    "RUN_ABORTED_STALE",
+				"error_message": "owning feature run heartbeat expired",
+				"finished_at":   gorm.Expr("NOW()"),
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.FeatureRun{}).
+			Where("run_id IN ? AND status IN ('planning', 'running', 'validating')", runIDs).
+			Updates(map[string]any{
+				"status": "aborted", "error_code": "RUN_ABORTED_STALE",
+				"error_message": "feature run heartbeat expired and was reconciled",
+				"finished_at":   gorm.Expr("NOW()"), "updated_at": gorm.Expr("NOW()"),
+			}).Error
+	})
+	return stale, err
 }
 
 func (d *FeatureRunDao) UpdateItemStatus(ctx context.Context, runID string, versionID uint64, expected, next string, updates map[string]any) (*model.FeatureRunItem, error) {

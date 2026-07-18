@@ -212,6 +212,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_feature_run_backfill_attempt
     ON govern.feature_run (backfill_id, as_of_time, backfill_attempt)
     WHERE backfill_id IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS idx_feature_run_stale_active
+    ON govern.feature_run
+    (producer_service, (COALESCE(heartbeat_at, updated_at, created_at)))
+    WHERE status IN ('planning', 'running', 'validating');
+
+
+
 CREATE TABLE IF NOT EXISTS govern.feature_run_item (
     run_id                  UUID NOT NULL REFERENCES govern.feature_run(run_id),
     feature_version_id      BIGINT NOT NULL REFERENCES govern.feature_version(id),

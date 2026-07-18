@@ -564,6 +564,7 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 	},
 	"feature_definition": {
 		{Method: "GET", Path: "/api/v2/features/definitions", Description: "查询 Feature 定义"},
+		{Method: "GET", Path: "/api/v2/features/availability/{feature_code}", Description: "查询 Feature 多维可用性"},
 		{Method: "POST", Path: "/api/v2/features/registry/sync", Description: "同步 Feature Manifest"},
 	},
 	"feature_version": {
@@ -578,6 +579,7 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 	},
 	"feature_run": {
 		{Method: "POST", Path: "/api/v2/features/runs", Description: "创建 Feature Run"},
+		{Method: "POST", Path: "/api/v2/features/runs:reconcile-stale", Description: "终止心跳过期的 Feature Run"},
 		{Method: "GET", Path: "/api/v2/features/runs", Description: "查询 Feature Run"},
 	},
 	"feature_value_numeric": {

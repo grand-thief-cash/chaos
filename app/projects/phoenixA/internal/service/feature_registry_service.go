@@ -327,6 +327,6 @@ func (s *FeatureRegistryService) Lineage(ctx context.Context, featureCode string
 	return s.Dao.GetLineage(ctx, featureCode)
 }
 
-func (s *FeatureRegistryService) Availability(ctx context.Context, featureCode string) (*model.FeatureAvailability, error) {
-	return s.Dao.GetAvailability(ctx, featureCode)
+func (s *FeatureRegistryService) Availability(ctx context.Context, featureCode, sourceProfile string) (*model.FeatureAvailability, error) {
+	return s.Dao.GetAvailability(ctx, featureCode, strings.TrimSpace(sourceProfile))
 }

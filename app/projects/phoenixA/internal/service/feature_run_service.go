@@ -268,6 +268,12 @@ func (s *FeatureRunService) UpdateRun(ctx context.Context, runID string, req mod
 		return nil, model.NewFeatureError(model.FeatureErrorValidation, "RUN_TRANSITION_INVALID",
 			"run transition %s -> %s is not allowed", req.ExpectedStatus, req.NewStatus)
 	}
+	if req.HeartbeatAt != nil {
+		if req.HeartbeatAt.IsZero() || req.HeartbeatAt.After(time.Now().UTC().Add(time.Minute)) {
+			return nil, model.NewFeatureError(model.FeatureErrorValidation, "RUN_HEARTBEAT_INVALID",
+				"heartbeat_at must be a non-zero time no more than one minute in the future")
+		}
+	}
 	updates := map[string]any{}
 	if req.WorkerID != "" {
 		updates["worker_id"] = req.WorkerID
@@ -318,6 +324,7 @@ func (s *FeatureRunService) UpdateItem(ctx context.Context, runID string, versio
 	if req.QualitySummary == nil {
 		req.QualitySummary = map[string]any{}
 	}
+	req.QualitySummary = normalizeItemQualitySummary(req)
 	updates := map[string]any{
 		"input_count": req.InputCount, "output_count": req.OutputCount,
 		"valid_count": req.ValidCount, "missing_count": req.MissingCount,
@@ -326,6 +333,65 @@ func (s *FeatureRunService) UpdateItem(ctx context.Context, runID string, versio
 		"error_code":      req.ErrorCode, "error_message": req.ErrorMessage,
 	}
 	return s.Dao.UpdateItemStatus(ctx, runID, versionID, req.ExpectedStatus, req.NewStatus, updates)
+}
+
+func normalizeItemQualitySummary(req model.FeatureRunItemUpdateRequest) map[string]any {
+	summary := make(map[string]any, len(req.QualitySummary)+8)
+	for key, value := range req.QualitySummary {
+		summary[key] = value
+	}
+	summary["status"] = req.NewStatus
+	summary["input_count"] = req.InputCount
+	summary["output_count"] = req.OutputCount
+	summary["valid_count"] = req.ValidCount
+	summary["missing_count"] = req.MissingCount
+	summary["invalid_count"] = req.InvalidCount
+	if req.InputCount > 0 {
+		summary["coverage_ratio"] = float64(req.ValidCount) / float64(req.InputCount)
+		summary["output_ratio"] = float64(req.OutputCount) / float64(req.InputCount)
+	} else {
+		summary["coverage_ratio"] = float64(0)
+		summary["output_ratio"] = float64(0)
+	}
+	gatePassed := req.NewStatus == "succeeded" || req.NewStatus == "validating"
+	summary["gate_passed"] = gatePassed
+	if req.ErrorCode != "" {
+		summary["error_code"] = req.ErrorCode
+	}
+	return summary
+}
+
+func (s *FeatureRunService) ReconcileStaleRuns(ctx context.Context, req model.FeatureStaleRunReconcileRequest) (*model.FeatureStaleRunReconcileResponse, error) {
+	req.ProducerService = strings.TrimSpace(req.ProducerService)
+	if req.ProducerService == "" {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "PRODUCER_SERVICE_REQUIRED",
+			"producer_service is required")
+	}
+	now := time.Now().UTC()
+	if req.StaleBefore.IsZero() || !req.StaleBefore.Before(now) {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "STALE_BEFORE_INVALID",
+			"stale_before must be a time in the past")
+	}
+	runs, err := s.Dao.AbortStaleRuns(ctx, req.ProducerService, req.StaleBefore.UTC())
+	if err != nil {
+		return nil, err
+	}
+	runIDs := make([]string, 0, len(runs))
+	backfills := make(map[string]struct{})
+	for _, run := range runs {
+		runIDs = append(runIDs, run.RunID)
+		if run.BackfillID != nil {
+			backfills[*run.BackfillID] = struct{}{}
+		}
+	}
+	for backfillID := range backfills {
+		if err := s.Dao.RefreshBackfillCounts(ctx, backfillID); err != nil {
+			return nil, err
+		}
+	}
+	return &model.FeatureStaleRunReconcileResponse{
+		StaleBefore: req.StaleBefore.UTC(), AbortedCount: len(runIDs), RunIDs: runIDs,
+	}, nil
 }
 
 func (s *FeatureRunService) WriteNumericValues(ctx context.Context, runID string, req model.FeatureNumericBatchRequest) (int, error) {

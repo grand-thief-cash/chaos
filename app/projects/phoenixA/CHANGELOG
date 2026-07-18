@@ -1,7 +1,11 @@
 # VERSION
-v1.36.1
+v1.37.0
 
 # Changelog
+- v1.37.0
+    - **Feature Platform Phase 3 observability.** Expanded lineage to recursive Feature/DataField ancestry and descendants, and replaced the legacy single availability flag with definition, version, dependency, data, implementation, materialization, and execution-readiness dimensions.
+    - **Crash recovery and quality closure.** Added atomic stale-run reconciliation with structured RunItem failures, an active-heartbeat index, server-enriched quality summaries, and the existing succeeded-only latest materialization contract.
+    - **Recovery and availability tests.** Added deterministic status aggregation tests plus rollback-only PostgreSQL coverage proving stale Runs and their active Items terminate together.
 - v1.36.1
     - **Artemis Phase 2 checksum contract.** Added a cross-language registry test proving the Python smoke Manifest projection is accepted by PhoenixA's canonical implementation and Manifest checksum validator.
     - **Deterministic cycle diagnostics.** Feature dependency cycle detection now traverses sorted nodes and edges, eliminating rotation-dependent flaky output from Go map iteration.

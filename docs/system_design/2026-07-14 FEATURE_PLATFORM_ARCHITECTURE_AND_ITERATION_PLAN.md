@@ -1,6 +1,6 @@
 # Chaos Feature Platform 架构设计与分阶段迭代方案
 
-> 状态：Approved，Phase 0、Phase 1 实现已完成（2026-07-14）；生产迁移仍需满足 TimescaleDB 与 `warm_storage` 部署门禁
+> 状态：Approved，Phase 0、Phase 1、Phase 2、Phase 3 实现已完成（Phase 3：2026-07-18）；生产迁移仍需满足 TimescaleDB 与 `warm_storage` 部署门禁
 > 批准记录：用户于 2026-07-14 确认从 Phase 0 开始执行，并在 Phase 0 提交后启动 Phase 1
 > 日期：2026-07-14
 > 范围：PhoenixA、Artemis、Cthulhu、Cronjob，以及 Atlas 的未来接入预留

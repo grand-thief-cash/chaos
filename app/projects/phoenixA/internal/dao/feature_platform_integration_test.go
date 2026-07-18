@@ -44,6 +44,14 @@ func TestFeaturePlatformMigrationContract(t *testing.T) {
 			t.Errorf("0008_feature_platform.sql is missing %q", fragment)
 		}
 	}
+	recoveryPath := filepath.Join("..", "..", "migrations", "postgresql", "security", "0009_feature_platform_recovery.sql")
+	recovery, err := os.ReadFile(recoveryPath)
+	if err != nil {
+		t.Fatalf("read recovery migration: %v", err)
+	}
+	if !strings.Contains(string(recovery), "idx_feature_run_stale_active") {
+		t.Fatal("0009_feature_platform_recovery.sql is missing the active heartbeat index")
+	}
 }
 
 // TestFeaturePlatformMigrationPostgres exercises the PostgreSQL-enforced
@@ -112,6 +120,14 @@ func TestFeaturePlatformMigrationPostgres(t *testing.T) {
 	if _, err := tx.ExecContext(ctx, featureMigration); err != nil {
 		t.Fatalf("apply Feature Platform migration: %v", err)
 	}
+	recoveryPath := filepath.Join("..", "..", "migrations", "postgresql", "security", "0009_feature_platform_recovery.sql")
+	recoveryMigration, err := os.ReadFile(recoveryPath)
+	if err != nil {
+		t.Fatalf("read Feature Platform recovery migration: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, string(recoveryMigration)); err != nil {
+		t.Fatalf("apply Feature Platform recovery migration: %v", err)
+	}
 
 	suffix := time.Now().UTC().Format("150405000000")
 	featureCode := "test.feature.platform_" + suffix
@@ -144,6 +160,89 @@ func TestFeaturePlatformMigrationPostgres(t *testing.T) {
 		RETURNING id`, versionID, strings.Repeat("b", 64)).Scan(&implementationID)
 	if err != nil {
 		t.Fatalf("insert feature implementation: %v", err)
+	}
+	upstreamCode := featureCode + ".upstream"
+	grandparentCode := featureCode + ".grandparent"
+	var upstreamFeatureID, upstreamVersionID, grandparentFeatureID, grandparentVersionID, dataFieldID int64
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO govern.feature_definition
+		    (feature_code, display_name, description, kind, entity_type, value_type,
+		     unit, category, owner, status, tags)
+		VALUES ($1, 'Phase 3 upstream fixture', '', 'metric', 'security', 'number', '',
+		        'test', 'codex', 'draft', '[]'::jsonb)
+		RETURNING id`, upstreamCode).Scan(&upstreamFeatureID)
+	if err != nil {
+		t.Fatalf("insert upstream feature definition: %v", err)
+	}
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO govern.feature_version
+		    (feature_id, version_number, status, frequency, as_of_semantics,
+		     missing_policy, manifest_checksum, manifest_snapshot)
+		VALUES ($1, 1, 'draft', 'on_demand', 'snapshot', 'explicit_missing', $2,
+		        '{"fixture":"upstream"}'::jsonb)
+		RETURNING id`, upstreamFeatureID, strings.Repeat("2", 64)).Scan(&upstreamVersionID)
+	if err != nil {
+		t.Fatalf("insert upstream feature version: %v", err)
+	}
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO govern.feature_definition
+		    (feature_code, display_name, description, kind, entity_type, value_type,
+		     unit, category, owner, status, tags)
+		VALUES ($1, 'Phase 3 grandparent fixture', '', 'metric', 'security', 'number', '',
+		        'test', 'codex', 'draft', '[]'::jsonb)
+		RETURNING id`, grandparentCode).Scan(&grandparentFeatureID)
+	if err != nil {
+		t.Fatalf("insert grandparent feature definition: %v", err)
+	}
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO govern.feature_version
+		    (feature_id, version_number, status, frequency, as_of_semantics,
+		     missing_policy, manifest_checksum, manifest_snapshot)
+		VALUES ($1, 1, 'draft', 'on_demand', 'snapshot', 'explicit_missing', $2,
+		        '{"fixture":"grandparent"}'::jsonb)
+		RETURNING id`, grandparentFeatureID, strings.Repeat("3", 64)).Scan(&grandparentVersionID)
+	if err != nil {
+		t.Fatalf("insert grandparent feature version: %v", err)
+	}
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO govern.data_field_dictionary
+		    (contract_version, source, dataset, data_type, raw_field, canonical_field,
+		     value_type, storage_location)
+		VALUES ('phase3', 'fixture', 'feature_platform', 'probe', 'security_id',
+		        'security_id', 'integer', 'top_level')
+		RETURNING id`).Scan(&dataFieldID)
+	if err != nil {
+		t.Fatalf("insert lineage data field: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO govern.feature_dependency
+		    (feature_version_id, dependency_kind, data_field_dictionary_id,
+		     dependency_ref_snapshot, ordinal)
+		VALUES ($1, 'data_field', $2, '{"fixture":"field"}'::jsonb, 0)`,
+		grandparentVersionID, dataFieldID); err != nil {
+		t.Fatalf("insert grandparent data-field dependency: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE govern.feature_version SET status = 'published', published_at = NOW() WHERE id = $1", grandparentVersionID); err != nil {
+		t.Fatalf("publish grandparent feature version: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO govern.feature_dependency
+		    (feature_version_id, dependency_kind, depends_on_feature_version_id,
+		     dependency_ref_snapshot, ordinal)
+		VALUES ($1, 'feature', $2, '{"fixture":"grandparent"}'::jsonb, 0)`,
+		upstreamVersionID, grandparentVersionID); err != nil {
+		t.Fatalf("insert upstream feature dependency: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE govern.feature_version SET status = 'published', published_at = NOW() WHERE id = $1", upstreamVersionID); err != nil {
+		t.Fatalf("publish upstream feature version: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO govern.feature_dependency
+		    (feature_version_id, dependency_kind, depends_on_feature_version_id,
+		     dependency_ref_snapshot, ordinal)
+		VALUES ($1, 'feature', $2, '{"fixture":"upstream"}'::jsonb, 0)`,
+		versionID, upstreamVersionID); err != nil {
+		t.Fatalf("insert root feature dependency: %v", err)
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE govern.feature_version SET status = 'published', published_at = NOW() WHERE id = $1", versionID); err != nil {
 		t.Fatalf("publish feature version fixture: %v", err)
@@ -193,16 +292,82 @@ func TestFeaturePlatformMigrationPostgres(t *testing.T) {
 		t.Fatalf("open GORM over integration transaction: %v", err)
 	}
 	runDao := &FeatureRunDao{db: gormTx}
+	registryDao := &FeatureRegistryDao{db: gormTx}
+	lineage, err := registryDao.GetLineage(ctx, featureCode)
+	if err != nil {
+		t.Fatalf("query recursive feature lineage: %v", err)
+	}
+	if len(lineage.Versions) != 1 || len(lineage.Versions[0].UpstreamFeatures) != 2 || len(lineage.Versions[0].UpstreamDataFields) != 1 {
+		t.Fatalf("root lineage is incomplete: %#v", lineage)
+	}
+	grandparentLineage, err := registryDao.GetLineage(ctx, grandparentCode)
+	if err != nil {
+		t.Fatalf("query recursive downstream lineage: %v", err)
+	}
+	if len(grandparentLineage.Versions) != 1 || len(grandparentLineage.Versions[0].DownstreamFeatures) != 2 {
+		t.Fatalf("grandparent downstream lineage is incomplete: %#v", grandparentLineage)
+	}
+	availability, err := registryDao.GetAvailability(ctx, featureCode, "test")
+	if err != nil {
+		t.Fatalf("query feature availability: %v", err)
+	}
+	if availability.SourceProfile != "test" || availability.DependencyStatus != "ready" ||
+		availability.DataStatus != "ready" || availability.ImplementationStatus != "loadable" ||
+		availability.MaterializationStatus != "running" || availability.ExecutionReadiness != "ready" {
+		t.Fatalf("unexpected feature availability: %#v", availability)
+	}
 	latestQuery := model.FeatureValueQuery{FeatureCode: featureCode, Latest: true, Limit: 100}
 	rows, total, err := runDao.QueryValues(ctx, latestQuery)
 	if err != nil || total != 0 || len(rows) != 0 {
 		t.Fatalf("running Run leaked through latest query: rows=%d total=%d err=%v", len(rows), total, err)
+	}
+	staleRunID := featureTestUUID(t)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO govern.feature_run
+		    (run_id, request_fingerprint, producer_service, trigger_type, as_of_time,
+		     data_cutoff_time, source_profile, market, universe_hash, request_payload,
+		     code_revision, status, heartbeat_at)
+		VALUES ($1, $2, 'artemis', 'api', $3, $4, 'test', 'zh_a', $5,
+		        '{"root_feature_version_ids":[]}'::jsonb, 'fixture', 'running', NOW() - INTERVAL '10 minutes')`,
+		staleRunID, strings.Repeat("f", 64), asOf, cutoff, strings.Repeat("1", 64)); err != nil {
+		t.Fatalf("insert stale run: %v", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO govern.feature_run_item (run_id, feature_version_id, status, quality_summary)
+		VALUES ($1, $2, 'running', '{"status":"running"}'::jsonb)`, staleRunID, versionID); err != nil {
+		t.Fatalf("insert stale run item: %v", err)
+	}
+	aborted, err := runDao.AbortStaleRuns(ctx, "artemis", time.Now().UTC().Add(-5*time.Minute))
+	if err != nil || len(aborted) != 1 || aborted[0].RunID != staleRunID {
+		t.Fatalf("abort stale runs = %#v, %v", aborted, err)
+	}
+	var staleStatus, itemStatus, itemError string
+	var quality string
+	if err := tx.QueryRowContext(ctx, "SELECT status FROM govern.feature_run WHERE run_id = $1", staleRunID).Scan(&staleStatus); err != nil {
+		t.Fatalf("read stale run status: %v", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status, error_code, quality_summary::text
+		FROM govern.feature_run_item WHERE run_id = $1 AND feature_version_id = $2`, staleRunID, versionID).
+		Scan(&itemStatus, &itemError, &quality); err != nil {
+		t.Fatalf("read stale item status: %v", err)
+	}
+	if staleStatus != "aborted" || itemStatus != "failed" || itemError != "RUN_ABORTED_STALE" || !strings.Contains(quality, "gate_passed") {
+		t.Fatalf("stale reconciliation split state: run=%s item=%s error=%s quality=%s", staleStatus, itemStatus, itemError, quality)
+	}
+	availability, err = registryDao.GetAvailability(ctx, featureCode, "test")
+	if err != nil || availability.MaterializationStatus != "running" || availability.LatestSucceededRun != nil {
+		t.Fatalf("active materialization availability after stale reconciliation = %#v, %v", availability, err)
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE govern.feature_run_item SET status = 'succeeded' WHERE run_id = $1", runID); err != nil {
 		t.Fatalf("complete run item: %v", err)
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE govern.feature_run SET status = 'succeeded', finished_at = NOW() WHERE run_id = $1", runID); err != nil {
 		t.Fatalf("complete run: %v", err)
+	}
+	availability, err = registryDao.GetAvailability(ctx, featureCode, "test")
+	if err != nil || availability.MaterializationStatus != "succeeded" || availability.LatestSucceededRun == nil {
+		t.Fatalf("succeeded materialization availability = %#v, %v", availability, err)
 	}
 	rows, total, err = runDao.QueryValues(ctx, latestQuery)
 	if err != nil || total != 1 || len(rows) != 1 || rows[0].RunID != runID {

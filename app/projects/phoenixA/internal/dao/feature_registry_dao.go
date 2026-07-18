@@ -535,17 +535,101 @@ func (d *FeatureRegistryDao) GetLineage(ctx context.Context, featureCode string)
 			Order("feature_version_id ASC, ordinal ASC").Find(&downstream).Error; err != nil {
 			return nil, err
 		}
+		upstreamFeatures, err := d.lineageFeatureReferences(ctx, summary.Version.ID, false)
+		if err != nil {
+			return nil, err
+		}
+		downstreamFeatures, err := d.lineageFeatureReferences(ctx, summary.Version.ID, true)
+		if err != nil {
+			return nil, err
+		}
+		dataFields, err := d.lineageDataFields(ctx, summary.Version.ID)
+		if err != nil {
+			return nil, err
+		}
 		result.Versions = append(result.Versions, model.FeatureLineageVersion{
-			FeatureVersionID: summary.Version.ID,
-			VersionNumber:    summary.Version.VersionNumber,
-			Upstream:         summary.Dependencies,
-			Downstream:       downstream,
+			FeatureVersionID:   summary.Version.ID,
+			VersionNumber:      summary.Version.VersionNumber,
+			Upstream:           summary.Dependencies,
+			Downstream:         downstream,
+			UpstreamFeatures:   upstreamFeatures,
+			DownstreamFeatures: downstreamFeatures,
+			UpstreamDataFields: dataFields,
 		})
 	}
 	return result, nil
 }
 
-func (d *FeatureRegistryDao) GetAvailability(ctx context.Context, featureCode string) (*model.FeatureAvailability, error) {
+func (d *FeatureRegistryDao) lineageFeatureReferences(ctx context.Context, versionID uint64, downstream bool) ([]model.FeatureLineageReference, error) {
+	query := `
+		WITH RECURSIVE related(id) AS (
+			SELECT depends_on_feature_version_id
+			FROM govern.feature_dependency
+			WHERE feature_version_id = ? AND dependency_kind = 'feature'
+			UNION
+			SELECT dependency.depends_on_feature_version_id
+			FROM govern.feature_dependency AS dependency
+			JOIN related ON related.id = dependency.feature_version_id
+			WHERE dependency.dependency_kind = 'feature'
+		)
+		SELECT version.id AS feature_version_id, definition.feature_code,
+		       version.version_number, version.status
+		FROM related
+		JOIN govern.feature_version AS version ON version.id = related.id
+		JOIN govern.feature_definition AS definition ON definition.id = version.feature_id
+		ORDER BY definition.feature_code, version.version_number, version.id`
+	if downstream {
+		query = `
+			WITH RECURSIVE related(id) AS (
+				SELECT feature_version_id
+				FROM govern.feature_dependency
+				WHERE depends_on_feature_version_id = ? AND dependency_kind = 'feature'
+				UNION
+				SELECT dependency.feature_version_id
+				FROM govern.feature_dependency AS dependency
+				JOIN related ON related.id = dependency.depends_on_feature_version_id
+				WHERE dependency.dependency_kind = 'feature'
+			)
+			SELECT version.id AS feature_version_id, definition.feature_code,
+			       version.version_number, version.status
+			FROM related
+			JOIN govern.feature_version AS version ON version.id = related.id
+			JOIN govern.feature_definition AS definition ON definition.id = version.feature_id
+			ORDER BY definition.feature_code, version.version_number, version.id`
+	}
+	rows := make([]model.FeatureLineageReference, 0)
+	if err := d.db.WithContext(ctx).Raw(query, versionID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+func (d *FeatureRegistryDao) lineageDataFields(ctx context.Context, versionID uint64) ([]model.FeatureLineageDataField, error) {
+	rows := make([]model.FeatureLineageDataField, 0)
+	err := d.db.WithContext(ctx).Raw(`
+		WITH RECURSIVE upstream(id) AS (
+			SELECT ?::bigint
+			UNION
+			SELECT dependency.depends_on_feature_version_id
+			FROM govern.feature_dependency AS dependency
+			JOIN upstream ON upstream.id = dependency.feature_version_id
+			WHERE dependency.dependency_kind = 'feature'
+		)
+		SELECT DISTINCT field.id AS data_field_dictionary_id, field.source, field.dataset,
+		       field.data_type, field.raw_field, field.contract_version,
+		       field.storage_location, field.deprecated
+		FROM upstream
+		JOIN govern.feature_dependency AS dependency
+		  ON dependency.feature_version_id = upstream.id
+		 AND dependency.dependency_kind = 'data_field'
+		JOIN govern.data_field_dictionary AS field
+		  ON field.id = dependency.data_field_dictionary_id
+		ORDER BY field.source, field.dataset, field.data_type, field.raw_field,
+		         field.contract_version`, versionID).Scan(&rows).Error
+	return rows, err
+}
+
+func (d *FeatureRegistryDao) GetAvailability(ctx context.Context, featureCode, sourceProfile string) (*model.FeatureAvailability, error) {
 	var definition model.FeatureDefinition
 	if err := d.db.WithContext(ctx).Where("feature_code = ?", featureCode).First(&definition).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -553,33 +637,262 @@ func (d *FeatureRegistryDao) GetAvailability(ctx context.Context, featureCode st
 		}
 		return nil, err
 	}
-	availability := &model.FeatureAvailability{FeatureCode: featureCode, Status: "unavailable"}
+	if sourceProfile == "" {
+		sourceProfile = "default"
+	}
+	availability := &model.FeatureAvailability{
+		FeatureCode: featureCode, SourceProfile: sourceProfile, Status: "unavailable",
+		DefinitionStatus: "valid", VersionStatus: "draft", DependencyStatus: "unknown",
+		DataStatus: "unknown", ImplementationStatus: "unloadable",
+		MaterializationStatus: "never", ExecutionReadiness: "not_ready",
+		Reasons: make([]string, 0), DataFields: make([]model.FeatureDataFieldAvailability, 0),
+	}
+	if definition.FeatureCode == "" || definition.EntityType == "" || definition.ValueType == "" {
+		availability.DefinitionStatus = "invalid"
+		availability.Reasons = append(availability.Reasons, "definition is incomplete")
+	}
 	var version model.FeatureVersion
 	err := d.db.WithContext(ctx).Where("feature_id = ? AND status = 'published'", definition.ID).
 		Order("version_number DESC").First(&version).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if latestErr := d.db.WithContext(ctx).Where("feature_id = ?", definition.ID).
+			Order("version_number DESC").First(&version).Error; latestErr == nil {
+			availability.VersionStatus = version.Status
+		}
+		availability.Reasons = append(availability.Reasons, "no published feature version")
 		return availability, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	availability.LatestPublishedID = &version.ID
-	var run model.FeatureRun
-	err = d.db.WithContext(ctx).Table("govern.feature_run AS r").
-		Select("r.*").
-		Joins("JOIN govern.feature_run_item i ON i.run_id = r.run_id").
-		Where("i.feature_version_id = ? AND r.status = 'succeeded' AND i.status = 'succeeded'", version.ID).
-		Order("r.as_of_time DESC, r.created_at DESC").First(&run).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		availability.Status = "registered"
-		return availability, nil
-	}
+	availability.VersionStatus = version.Status
+	availability.Status = "registered"
+
+	upstream, err := d.lineageFeatureReferences(ctx, version.ID, false)
 	if err != nil {
 		return nil, err
 	}
-	availability.Status = "available"
-	availability.LatestSucceededRun = &run
+	dataFields, err := d.lineageDataFields(ctx, version.ID)
+	if err != nil {
+		return nil, err
+	}
+	availability.DependencyStatus = "ready"
+	dependencyEdges, err := d.dependencyEdges(ctx, version.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(DetectFeatureDependencyCycle(dependencyEdges)) > 0 {
+		availability.DependencyStatus = "cycle"
+		availability.Reasons = append(availability.Reasons, "feature dependency graph contains a cycle")
+	}
+	for _, dependency := range upstream {
+		if dependency.Status != "published" {
+			if availability.DependencyStatus != "cycle" {
+				availability.DependencyStatus = "missing"
+			}
+			availability.Reasons = append(availability.Reasons,
+				fmt.Sprintf("upstream %s@%d is %s", dependency.FeatureCode, dependency.VersionNumber, dependency.Status))
+		}
+	}
+
+	readyFields, unknownFields := 0, 0
+	for _, field := range dataFields {
+		item := model.FeatureDataFieldAvailability{FeatureLineageDataField: field, Status: "unknown"}
+		if field.Deprecated {
+			item.Status = "missing"
+			if availability.DependencyStatus != "cycle" {
+				availability.DependencyStatus = "missing"
+			}
+			availability.Reasons = append(availability.Reasons,
+				fmt.Sprintf("data field %s/%s/%s is deprecated", field.Source, field.Dataset, field.RawField))
+		} else if field.StorageLocation == "top_level" {
+			item.Status = "ready"
+			readyFields++
+		} else {
+			var observation struct {
+				Status      string
+				SampleCount int64
+				LastSeenAt  time.Time
+			}
+			observationErr := d.db.WithContext(ctx).Table("govern.data_field_coverage_observation").
+				Select("status, sample_count, last_seen_at").
+				Where("source = ? AND dataset = ? AND observed_key = ?", field.Source, field.Dataset, field.RawField).
+				Take(&observation).Error
+			if observationErr == nil && observation.Status == "governed" && observation.SampleCount > 0 {
+				item.Status = "ready"
+				item.SampleCount = observation.SampleCount
+				item.LastSeenAt = &observation.LastSeenAt
+				readyFields++
+			} else if observationErr != nil && !errors.Is(observationErr, gorm.ErrRecordNotFound) {
+				return nil, observationErr
+			} else {
+				unknownFields++
+			}
+		}
+		availability.DataFields = append(availability.DataFields, item)
+	}
+	availability.DataStatus = featureDataStatus(availability.DataFields, readyFields, unknownFields)
+
+	var implementations []model.FeatureImplementation
+	if err := d.db.WithContext(ctx).Where("feature_version_id = ? AND is_canonical = TRUE", version.ID).
+		Order("id ASC").Find(&implementations).Error; err != nil {
+		return nil, err
+	}
+	availability.ImplementationStatus = featureImplementationStatus(implementations)
+
+	var latestRun model.FeatureRun
+	latestErr := d.db.WithContext(ctx).Table("govern.feature_run AS run").Select("run.*").
+		Joins("JOIN govern.feature_run_item AS item ON item.run_id = run.run_id").
+		Where("item.feature_version_id = ?", version.ID).
+		Order("CASE WHEN run.status IN ('queued', 'planning', 'running', 'validating') THEN 0 ELSE 1 END").
+		Order("COALESCE(run.finished_at, run.updated_at, run.created_at) DESC, run.created_at DESC").
+		First(&latestRun).Error
+	if latestErr != nil && !errors.Is(latestErr, gorm.ErrRecordNotFound) {
+		return nil, latestErr
+	}
+	var latestSucceeded model.FeatureRun
+	succeededErr := d.db.WithContext(ctx).Table("govern.feature_run AS run").Select("run.*").
+		Joins("JOIN govern.feature_run_item AS item ON item.run_id = run.run_id").
+		Where("item.feature_version_id = ? AND item.status = 'succeeded' AND run.status = 'succeeded'", version.ID).
+		Order("run.as_of_time DESC, run.created_at DESC").First(&latestSucceeded).Error
+	if succeededErr == nil {
+		availability.LatestSucceededRun = &latestSucceeded
+		availability.Status = "available"
+	} else if !errors.Is(succeededErr, gorm.ErrRecordNotFound) {
+		return nil, succeededErr
+	}
+	availability.MaterializationStatus = featureMaterializationStatus(latestErr, latestRun.Status, succeededErr)
+
+	availability.ExecutionReadiness = featureExecutionReadiness(
+		definition, availability.DefinitionStatus, availability.VersionStatus,
+		availability.DependencyStatus, availability.DataStatus, availability.ImplementationStatus,
+	)
+	if availability.DependencyStatus != "ready" {
+		availability.Reasons = append(availability.Reasons, "dependencies are not ready")
+	}
+	if availability.DataStatus != "ready" {
+		availability.Reasons = append(availability.Reasons, "source data availability is "+availability.DataStatus)
+	}
+	if availability.ImplementationStatus != "loadable" {
+		availability.Reasons = append(availability.Reasons, "implementation is "+availability.ImplementationStatus)
+	}
+	if definition.EntityType != "security" {
+		availability.Reasons = append(availability.Reasons, "entity_type is not executable in this release")
+	}
+	if definition.ValueType != "number" && definition.ValueType != "integer" {
+		availability.Reasons = append(availability.Reasons, "value_type is not executable in this release")
+	}
 	return availability, nil
+}
+
+func (d *FeatureRegistryDao) dependencyEdges(ctx context.Context, versionID uint64) (map[uint64][]uint64, error) {
+	type edge struct {
+		SourceID uint64 `gorm:"column:source_id"`
+		TargetID uint64 `gorm:"column:target_id"`
+	}
+	rows := make([]edge, 0)
+	err := d.db.WithContext(ctx).Raw(`
+		WITH RECURSIVE upstream(id) AS (
+			SELECT ?::bigint
+			UNION
+			SELECT dependency.depends_on_feature_version_id
+			FROM govern.feature_dependency AS dependency
+			JOIN upstream ON upstream.id = dependency.feature_version_id
+			WHERE dependency.dependency_kind = 'feature'
+		)
+		SELECT dependency.feature_version_id AS source_id,
+		       dependency.depends_on_feature_version_id AS target_id
+		FROM govern.feature_dependency AS dependency
+		JOIN upstream ON upstream.id = dependency.feature_version_id
+		WHERE dependency.dependency_kind = 'feature'
+		ORDER BY dependency.feature_version_id, dependency.depends_on_feature_version_id`, versionID).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	edges := make(map[uint64][]uint64)
+	for _, row := range rows {
+		edges[row.SourceID] = append(edges[row.SourceID], row.TargetID)
+	}
+	return edges, nil
+}
+
+func featureDataStatus(fields []model.FeatureDataFieldAvailability, ready, unknown int) string {
+	if len(fields) == 0 {
+		return "ready"
+	}
+	missing := 0
+	for _, field := range fields {
+		if field.Status == "missing" {
+			missing++
+		}
+	}
+	if missing == len(fields) {
+		return "missing"
+	}
+	if missing > 0 || (ready > 0 && unknown > 0) {
+		return "partial"
+	}
+	if ready == len(fields) {
+		return "ready"
+	}
+	return "unknown"
+}
+
+func featureImplementationStatus(rows []model.FeatureImplementation) string {
+	if len(rows) != 1 {
+		return "unloadable"
+	}
+	implementation := rows[0]
+	if implementation.Status != "active" {
+		return "disabled"
+	}
+	if implementation.Kind != "python" || implementation.ProducerService != "artemis" {
+		return "unsupported"
+	}
+	if strings.TrimSpace(implementation.Entrypoint) == "" {
+		return "unloadable"
+	}
+	return "loadable"
+}
+
+func featureMaterializationStatus(latestErr error, latestStatus string, succeededErr error) string {
+	if errors.Is(latestErr, gorm.ErrRecordNotFound) {
+		return "never"
+	}
+	if latestErr != nil {
+		return "failed"
+	}
+	switch latestStatus {
+	case "queued", "planning", "running", "validating":
+		return "running"
+	case "succeeded":
+		return "succeeded"
+	default:
+		if succeededErr == nil {
+			return "stale"
+		}
+		return "failed"
+	}
+}
+
+func featureExecutionReadiness(
+	definition model.FeatureDefinition,
+	definitionStatus, versionStatus, dependencyStatus, dataStatus, implementationStatus string,
+) string {
+	if definitionStatus != "valid" || versionStatus != "published" || dependencyStatus != "ready" ||
+		implementationStatus != "loadable" || definition.EntityType != "security" ||
+		(definition.ValueType != "number" && definition.ValueType != "integer") {
+		return "not_ready"
+	}
+	if dataStatus == "unknown" {
+		return "unknown"
+	}
+	if dataStatus != "ready" {
+		return "not_ready"
+	}
+	return "ready"
 }
 
 func (d *FeatureRegistryDao) ValidatePublishedVersionIDs(ctx context.Context, ids []uint64) error {
