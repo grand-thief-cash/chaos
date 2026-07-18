@@ -1,4 +1,5 @@
 api_version: chaos.feature.catalog/v1
 features:
   - features/platform/constant_one.yaml
+  - features/platform/constant_two.yaml
   - features/platform/datafield_pit_probe.yaml

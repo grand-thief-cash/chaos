@@ -1,7 +1,11 @@
 # VERSION
-v0.46.0
+v0.47.0
 
 # Changelog
+- v0.47.0
+    - **Feature Platform Phase 5 acceptance.** Added a managed Sync -> Compute -> Persist -> Query harness that starts isolated current PhoenixA/Artemis services, verifies idempotency, V1/V2 coexistence, published immutability, DataField PIT/cutoff enforcement, and persistence after both services restart.
+    - **Version and API closure.** Added the published constant-output V2 smoke plugin and Manifest, plus explicit FastAPI metadata, compute response semantics, and OpenAPI regression coverage.
+    - **Operational evidence.** Integrated the PhoenixA read benchmark into the acceptance flow and added tests for both smoke versions while retaining the governed PIT probe.
 - v0.46.0
     - **Feature Platform Phase 3 recovery.** FeatureComputeTask now emits periodic heartbeats through planning/running/validating, reconciles stale PhoenixA Runs at gateway startup or through a maintenance API, and stops heartbeat workers before terminal transitions.
     - **Quality and observability closure.** Added structured run/item/plugin logs, Feature-specific OTel counters/histograms, enriched coverage summaries, and execution stats suitable for Run detail diagnostics.

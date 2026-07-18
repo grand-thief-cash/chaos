@@ -27,7 +27,17 @@ def _raise_http(exc: FeaturePlatformError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.as_dict()) from exc
 
 
-@router.post("/compute", response_model=FeatureComputeResponse)
+@router.post(
+    "/compute",
+    response_model=FeatureComputeResponse,
+    status_code=202,
+    summary="Submit a governed feature computation",
+    responses={
+        200: {"description": "An idempotent request reused an existing run."},
+        409: {"description": "The requested run conflicts with persisted state."},
+        422: {"description": "The manifest, dependency plan, or request is not executable."},
+    },
+)
 def compute_feature(
     request: FeatureComputeRequest,
     response: Response,
@@ -41,7 +51,7 @@ def compute_feature(
         _raise_http(exc)
 
 
-@router.get("/executions/{run_id}")
+@router.get("/executions/{run_id}", summary="Get persisted feature execution evidence")
 def get_feature_execution(
     run_id: str,
     source_profile: str = "default",
@@ -53,7 +63,7 @@ def get_feature_execution(
         _raise_http(exc)
 
 
-@router.post("/maintenance/reconcile-stale")
+@router.post("/maintenance/reconcile-stale", summary="Abort stale feature runs")
 def reconcile_stale_feature_runs(
     source_profile: str = "default",
     service: FeatureService = Depends(get_feature_service),
@@ -64,7 +74,7 @@ def reconcile_stale_feature_runs(
         _raise_http(exc)
 
 
-@router.post("/manifests/validate")
+@router.post("/manifests/validate", summary="Validate feature manifests without persistence")
 def validate_feature_manifests(
     request: ManifestValidateRequest = ManifestValidateRequest(),
     service: FeatureService = Depends(get_feature_service),
@@ -75,7 +85,7 @@ def validate_feature_manifests(
         _raise_http(exc)
 
 
-@router.post("/registry/sync")
+@router.post("/registry/sync", summary="Synchronize selected manifests into PhoenixA")
 def sync_feature_registry(
     request: ManifestSelectionRequest = ManifestSelectionRequest(),
     service: FeatureService = Depends(get_feature_service),

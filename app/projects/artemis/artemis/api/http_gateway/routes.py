@@ -59,7 +59,12 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title='Artemis Gateway', lifespan=lifespan)
+app = FastAPI(
+    title="Artemis Gateway",
+    version="0.47.0",
+    description="Task gateway and governed Feature Platform compute API.",
+    lifespan=lifespan,
+)
 router = APIRouter()
 
 # 初始化 OTEL（如果配置启用），并对 FastAPI App 做自动 instrumentation

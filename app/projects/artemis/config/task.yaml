@@ -85,7 +85,7 @@ tasks:
         config:
           start_date: "2015-01-01"     # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"       # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]
+          symbols: ["000021"]
           exchange : "SZ"
 
   STOCK_ZH_A_CASH_FLOW:
@@ -94,7 +94,7 @@ tasks:
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-06-01"               # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          symbols: ["000021"]        # 纯代码格式，缺省则全量下载
           exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_INCOME:
@@ -103,7 +103,7 @@ tasks:
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          symbols: ["000021"]        # 纯代码格式，缺省则全量下载
           exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_PROFIT_EXPRESS:

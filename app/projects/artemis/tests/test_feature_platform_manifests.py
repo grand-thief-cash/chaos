@@ -20,6 +20,7 @@ def test_catalog_loads_phase_two_smoke_manifests_and_schema_is_json():
     catalog = FeatureManifestLoader(CATALOG_ROOT).load()
     assert [manifest.identity for manifest in catalog.manifests] == [
         "platform.security.constant_one@1",
+        "platform.security.constant_one@2",
         "platform.security.datafield_pit_probe@1",
     ]
     schema = json.loads((CATALOG_ROOT / "schema" / "feature-manifest.schema.json").read_text("utf-8"))
@@ -28,6 +29,9 @@ def test_catalog_loads_phase_two_smoke_manifests_and_schema_is_json():
     dependency = pit.dependencies[0]
     assert dependency.raw_field == "NET_PRO_EXCL_MIN_INT_INC"
     assert dependency.contract_version == "2026-06-27"
+    assert catalog.get("platform.security.constant_one", 2).implementation.entrypoint.endswith(
+        "constant_two:ConstantTwoFeature"
+    )
 
 
 def test_registry_projection_is_stable_and_excludes_local_execution_policy():

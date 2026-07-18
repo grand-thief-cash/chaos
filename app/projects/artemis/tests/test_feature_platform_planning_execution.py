@@ -91,6 +91,25 @@ def test_dependency_planner_rejects_cycle_even_if_registry_returns_one():
     assert error.value.code == "DEPENDENCY_CYCLE"
 
 
+def test_constant_two_plugin_materializes_version_specific_value():
+    manifest = FeatureManifestLoader(CATALOG_ROOT).load().get("platform.security.constant_one", 2)
+    registry = _registry_version(manifest.feature.code, 2, 12)
+    registry.implementation["entrypoint"] = manifest.implementation.entrypoint
+    node = PlanNode(registry, (), ())
+    ctx = FeatureExecutionContext(
+        run_id="run-v2",
+        node=node,
+        manifest=manifest,
+        as_of_time=datetime(2026, 7, 18, 15, tzinfo=TZ),
+        data_cutoff_time=datetime(2026, 7, 18, 15, tzinfo=TZ),
+        security_ids=(1, 2),
+        source_profile="test",
+        market="zh_a",
+    )
+    output = PythonFeatureExecutor(timeout_seconds=1).execute(ctx, object())
+    assert [row.value for row in output.rows] == [2.0, 2.0]
+
+
 class _FinancialClient:
     def query_financial_flat(self, **kwargs):
         return {
