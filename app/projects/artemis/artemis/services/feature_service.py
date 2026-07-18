@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -24,6 +25,7 @@ from artemis.feature_platform.planning import DependencyPlanner
 from artemis.feature_platform.registry.client import FeatureRegistryClient
 from artemis.feature_platform.registry.factory import build_registry_client
 from artemis.models import TaskRunReq
+from artemis.telemetry.otel import record_feature_stale_runs
 
 
 RegistryFactory = Callable[[str], FeatureRegistryClient]
@@ -204,3 +206,17 @@ class FeatureService:
     def get_execution(self, run_id: str, source_profile: str = "default") -> dict[str, Any]:
         self._ensure_enabled()
         return self.registry_factory(source_profile).get_run(run_id, include_subjects=True)
+
+    def reconcile_stale_runs(
+        self,
+        source_profile: str = "default",
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        self._ensure_enabled()
+        timeout = self._settings().stale_run_timeout_seconds
+        current = now or datetime.now(timezone.utc)
+        stale_before = current.astimezone(timezone.utc) - timedelta(seconds=timeout)
+        result = self.registry_factory(source_profile).reconcile_stale_runs(stale_before)
+        record_feature_stale_runs(int(result.get("aborted_count", 0)))
+        return result

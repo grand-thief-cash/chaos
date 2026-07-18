@@ -20,11 +20,16 @@ class ValidatedOutput:
     coverage_ratio: float
 
     def quality_summary(self) -> dict:
+        denominator = self.input_count or 1
         return {
             "coverage_ratio": self.coverage_ratio,
+            "output_ratio": self.output_count / denominator,
+            "missing_ratio": self.missing_count / denominator,
+            "invalid_ratio": self.invalid_count / denominator,
             "valid_count": self.valid_count,
             "missing_count": self.missing_count,
             "invalid_count": self.invalid_count,
+            "gate_passed": True,
         }
 
 

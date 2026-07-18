@@ -98,11 +98,11 @@ class FeaturePlatformCfg(BaseModel):
 
     enabled: bool = False
     manifest_root: str = "./config/feature_catalog"
-    max_parallel_features: int = 2
-    write_batch_size: int = 5000
-    heartbeat_interval_seconds: int = 15
-    stale_run_timeout_seconds: int = 300
-    plugin_timeout_seconds: int = 1800
+    max_parallel_features: int = Field(default=2, gt=0)
+    write_batch_size: int = Field(default=5000, gt=0, le=5000)
+    heartbeat_interval_seconds: int = Field(default=15, gt=0)
+    stale_run_timeout_seconds: int = Field(default=300, gt=0)
+    plugin_timeout_seconds: int = Field(default=1800, gt=0)
 
 
 class EngineCfg(BaseModel):

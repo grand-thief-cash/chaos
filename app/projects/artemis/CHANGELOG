@@ -1,7 +1,11 @@
 # VERSION
-v0.45.0
+v0.46.0
 
 # Changelog
+- v0.46.0
+    - **Feature Platform Phase 3 recovery.** FeatureComputeTask now emits periodic heartbeats through planning/running/validating, reconciles stale PhoenixA Runs at gateway startup or through a maintenance API, and stops heartbeat workers before terminal transitions.
+    - **Quality and observability closure.** Added structured run/item/plugin logs, Feature-specific OTel counters/histograms, enriched coverage summaries, and execution stats suitable for Run detail diagnostics.
+    - **Failure injection coverage.** Added source outage, value-write conflict, plugin timeout, heartbeat, reconciliation-cutoff, and PhoenixA state-conflict tests while preserving succeeded-only latest behavior.
 - v0.45.0
     - **Feature Platform Phase 2 execution plane.** Added strict local manifests/schema, PhoenixA-compatible checksums and registry client, deterministic dependency planning, Python plugins, output quality gates, and TaskEngine-backed Run/Item/value execution.
     - **Smoke and PIT probes.** Added `constant_one` plus a governed financial DataField PIT probe that filters by actual announcement availability without introducing a financial business factor.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -21,6 +22,7 @@ from artemis.feature_platform.providers.phoenixa import PhoenixAFeatureProvider
 from artemis.feature_platform.registry.client import FeatureRegistryClient
 from artemis.feature_platform.registry.factory import build_registry_client
 from artemis.feature_platform.storage.phoenixa_writer import PhoenixAFeatureWriter
+from artemis.telemetry.otel import record_feature_item, record_feature_run, record_feature_values
 
 
 class _TaskPayload(BaseModel):
@@ -76,11 +78,84 @@ class FeatureComputeTask(BaseTaskUnit):
         self.requires_availability: dict[int, bool] = {}
         self.remote_status = "queued"
         self.current_feature_version_id: int | None = None
+        self._remote_lock = threading.Lock()
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_thread: threading.Thread | None = None
 
     def _require_state(self) -> tuple[_TaskPayload, FeatureRegistryClient, LoadedCatalog, ExecutionPlan]:
         if not self.payload or not self.client or not self.catalog or not self.plan:
             raise FeaturePlatformError("INTERNAL_ERROR", "feature task was not initialized")
         return self.payload, self.client, self.catalog, self.plan
+
+    def _update_remote_run(
+        self,
+        expected_status: str,
+        new_status: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        if not self.payload or not self.client:
+            raise FeaturePlatformError("INTERNAL_ERROR", "feature task registry client is unavailable")
+        with self._remote_lock:
+            result = self.client.update_run(
+                self.payload.run_id,
+                expected_status,
+                new_status,
+                **kwargs,
+            )
+            self.remote_status = str(result.get("status", new_status))
+            return result
+
+    def _start_heartbeat(self, ctx) -> None:
+        if self._heartbeat_thread is not None:
+            return
+        interval = cfg_mgr.engine_config().feature_platform.heartbeat_interval_seconds
+        self._heartbeat_stop.clear()
+
+        def heartbeat_loop() -> None:
+            while not self._heartbeat_stop.wait(interval):
+                with self._remote_lock:
+                    status = self.remote_status
+                    if status not in {"planning", "running", "validating"} or not self.payload or not self.client:
+                        return
+                    try:
+                        self.client.update_run(
+                            self.payload.run_id,
+                            status,
+                            status,
+                            heartbeat_at=datetime.now(timezone.utc),
+                        )
+                    except Exception as exc:
+                        if ctx.logger:
+                            ctx.logger.warning(
+                                {
+                                    "event": "feature_run_heartbeat_failed",
+                                    "run_id": self.payload.run_id,
+                                    "status": status,
+                                    "error": str(exc),
+                                }
+                            )
+
+        self._heartbeat_thread = threading.Thread(
+            target=heartbeat_loop,
+            name=f"feature-heartbeat-{self.payload.run_id if self.payload else 'unknown'}",
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
+
+    def _stop_heartbeat(self) -> None:
+        self._heartbeat_stop.set()
+        thread = self._heartbeat_thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=1)
+        self._heartbeat_thread = None
+
+    def _feature_code(self, version_id: int) -> str:
+        if not self.plan:
+            return "unknown"
+        for node in self.plan.ordered_nodes:
+            if node.id == version_id:
+                return node.registry_version.feature_code
+        return "unknown"
 
     def parameter_check(self, ctx) -> None:
         settings = cfg_mgr.engine_config().feature_platform
@@ -108,14 +183,13 @@ class FeatureComputeTask(BaseTaskUnit):
     def before_execute(self, ctx) -> None:
         if not self.payload or not self.client or not self.catalog:
             raise FeaturePlatformError("INTERNAL_ERROR", "feature task dependencies are unavailable")
-        self.client.update_run(
-            self.payload.run_id,
+        self._update_remote_run(
             "queued",
             "planning",
             worker_id=f"artemis:{ctx.task_id}",
             heartbeat_at=datetime.now(timezone.utc),
         )
-        self.remote_status = "planning"
+        self._start_heartbeat(ctx)
         self.plan = DependencyPlanner(self.client.resolve_version).build(self.payload.root_features)
         self.plan.ensure_executable()
         if self.plan.plan_checksum != self.payload.expected_plan_checksum:
@@ -160,14 +234,12 @@ class FeatureComputeTask(BaseTaskUnit):
         payload, client, catalog, plan = self._require_state()
         if not self.runner or not self.provider:
             raise FeaturePlatformError("INTERNAL_ERROR", "feature runner is unavailable")
-        client.update_run(
-            payload.run_id,
+        self._update_remote_run(
             "planning",
             "running",
             worker_id=f"artemis:{ctx.task_id}",
             heartbeat_at=datetime.now(timezone.utc),
         )
-        self.remote_status = "running"
 
         for node in plan.ordered_nodes:
             self.current_feature_version_id = node.id
@@ -178,6 +250,21 @@ class FeatureComputeTask(BaseTaskUnit):
                 node.registry_version.feature_code,
                 node.registry_version.version_number,
             )
+            if ctx.logger:
+                ctx.logger.info(
+                    {
+                        "event": "feature_plugin_started",
+                        "run_id": payload.run_id,
+                        "feature_code": node.registry_version.feature_code,
+                        "feature_version_id": node.id,
+                        "producer_service": "artemis",
+                        "source_profile": payload.source_profile,
+                        "as_of_time": payload.as_of_time.isoformat(),
+                        "data_cutoff_time": payload.data_cutoff_time.isoformat(),
+                        "phase": "execute",
+                        "status": "running",
+                    }
+                )
             dependency_outputs = {
                 upstream_id: self.outputs[upstream_id]
                 for upstream_id in node.feature_dependency_ids
@@ -217,6 +304,19 @@ class FeatureComputeTask(BaseTaskUnit):
             self.item_durations[node.id] = duration_ms
             self.results[node.id] = validated
             self.outputs[node.id] = validated.output
+            if ctx.logger:
+                ctx.logger.info(
+                    {
+                        "event": "feature_plugin_validated",
+                        "run_id": payload.run_id,
+                        "feature_code": node.registry_version.feature_code,
+                        "feature_version_id": node.id,
+                        "phase": "validating",
+                        "status": "succeeded",
+                        "duration_ms": duration_ms,
+                        **validated.quality_summary(),
+                    }
+                )
         self.current_feature_version_id = None
         return self.results
 
@@ -234,10 +334,12 @@ class FeatureComputeTask(BaseTaskUnit):
         if not self.writer:
             raise FeaturePlatformError("INTERNAL_ERROR", "feature writer is unavailable")
         total_written = 0
+        item_stats: list[dict[str, Any]] = []
         for node in plan.ordered_nodes:
             self.current_feature_version_id = node.id
             validated = processed[node.id]
-            total_written += self.writer.write(payload.run_id, validated)
+            written = self.writer.write(payload.run_id, validated)
+            total_written += written
             client.update_item(
                 payload.run_id,
                 node.id,
@@ -252,18 +354,47 @@ class FeatureComputeTask(BaseTaskUnit):
                 quality_summary=validated.quality_summary(),
             )
             self.item_states[node.id] = "succeeded"
+            quality = validated.quality_summary()
+            item_stats.append(
+                {
+                    "feature_code": node.registry_version.feature_code,
+                    "feature_version_id": node.id,
+                    "duration_ms": self.item_durations[node.id],
+                    "values_written": written,
+                    **quality,
+                }
+            )
+            record_feature_item(
+                node.registry_version.feature_code,
+                "succeeded",
+                self.item_durations[node.id],
+                validated.coverage_ratio,
+            )
+            record_feature_values(node.registry_version.feature_code, "succeeded", written)
+            if ctx.logger:
+                ctx.logger.info(
+                    {
+                        "event": "feature_values_written",
+                        "run_id": payload.run_id,
+                        "feature_code": node.registry_version.feature_code,
+                        "feature_version_id": node.id,
+                        "phase": "sink",
+                        "status": "succeeded",
+                        "values_written": written,
+                    }
+                )
         self.current_feature_version_id = None
         ctx.stats["numeric_values_written"] = total_written
+        ctx.stats["feature_items"] = item_stats
 
     def finalize(self, ctx) -> None:
         payload, client, _, _ = self._require_state()
-        client.update_run(
-            payload.run_id,
+        self._update_remote_run(
             "running",
             "validating",
             heartbeat_at=datetime.now(timezone.utc),
         )
-        self.remote_status = "validating"
+        self._stop_heartbeat()
         completed = client.complete_run(payload.run_id)
         self.remote_status = str(completed.get("status", "succeeded"))
         if self.remote_status != "succeeded":
@@ -271,8 +402,24 @@ class FeatureComputeTask(BaseTaskUnit):
                 "RUN_COMPLETION_FAILED",
                 f"feature run completed with unexpected status {self.remote_status}",
             )
+        for version_id in self.plan.root_version_ids:
+            record_feature_run(self._feature_code(version_id), "succeeded")
+        if ctx.logger:
+            ctx.logger.info(
+                {
+                    "event": "feature_run_completed",
+                    "run_id": payload.run_id,
+                    "producer_service": "artemis",
+                    "source_profile": payload.source_profile,
+                    "as_of_time": payload.as_of_time.isoformat(),
+                    "data_cutoff_time": payload.data_cutoff_time.isoformat(),
+                    "phase": "finalize",
+                    "status": self.remote_status,
+                }
+            )
 
     def _cleanup_failed_run(self, ctx, exc: Exception) -> None:
+        self._stop_heartbeat()
         if not self.payload or not self.client:
             return
         error_code = exc.code if isinstance(exc, FeaturePlatformError) else "INTERNAL_ERROR"
@@ -282,6 +429,7 @@ class FeatureComputeTask(BaseTaskUnit):
         message = f"{context}: {exc}"
         for version_id, state in list(self.item_states.items()):
             try:
+                terminal_status: str | None = None
                 if state == "queued":
                     self.client.update_item(
                         self.payload.run_id,
@@ -292,6 +440,7 @@ class FeatureComputeTask(BaseTaskUnit):
                         error_message=message,
                     )
                     self.item_states[version_id] = "skipped"
+                    terminal_status = "skipped"
                 elif state in {"running", "validating"}:
                     validated = self.results.get(version_id)
                     self.client.update_item(
@@ -310,6 +459,14 @@ class FeatureComputeTask(BaseTaskUnit):
                         error_message=message,
                     )
                     self.item_states[version_id] = "failed"
+                    terminal_status = "failed"
+                if terminal_status:
+                    record_feature_item(
+                        self._feature_code(version_id),
+                        terminal_status,
+                        self.item_durations.get(version_id, 0),
+                        self.results[version_id].coverage_ratio if version_id in self.results else 0.0,
+                    )
             except Exception as cleanup_exc:
                 if ctx.logger:
                     ctx.logger.warning(
@@ -336,6 +493,25 @@ class FeatureComputeTask(BaseTaskUnit):
                         "error": str(cleanup_exc),
                     }
                 )
+        if self.plan:
+            for version_id in self.plan.root_version_ids:
+                record_feature_run(self._feature_code(version_id), "failed")
+        if ctx.logger:
+            ctx.logger.error(
+                {
+                    "event": "feature_run_failed",
+                    "run_id": self.payload.run_id,
+                    "feature_version_id": self.current_feature_version_id,
+                    "producer_service": "artemis",
+                    "source_profile": self.payload.source_profile,
+                    "as_of_time": self.payload.as_of_time.isoformat(),
+                    "data_cutoff_time": self.payload.data_cutoff_time.isoformat(),
+                    "phase": ctx.failed_phase or "unknown",
+                    "status": "failed",
+                    "error_code": error_code,
+                    "error": message,
+                }
+            )
 
     def run(self, ctx) -> None:
         try:
@@ -343,3 +519,5 @@ class FeatureComputeTask(BaseTaskUnit):
         except Exception as exc:
             self._cleanup_failed_run(ctx, exc)
             raise
+        finally:
+            self._stop_heartbeat()

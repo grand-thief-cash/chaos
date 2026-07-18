@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 import yaml
 from fastapi import APIRouter, HTTPException, Request, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +24,42 @@ from artemis.models import (
 from artemis.telemetry.middleware import add_trace_id_middleware
 from artemis.telemetry.otel import instrument_fastapi_app, init_otel
 
-app = FastAPI(title='Artemis Gateway')
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    from artemis.feature_platform.domain.errors import FeaturePlatformError
+    from artemis.services.feature_service import FeatureService
+
+    try:
+        result = FeatureService(engine).reconcile_stale_runs()
+        logger.info(
+            {
+                "event": "feature_stale_run_reconciliation",
+                "aborted_count": result.get("aborted_count", 0),
+                "stale_before": result.get("stale_before"),
+            }
+        )
+    except FeaturePlatformError as exc:
+        if exc.code != "FEATURE_PLATFORM_DISABLED":
+            logger.warning(
+                {
+                    "event": "feature_stale_run_reconciliation_failed",
+                    "error_code": exc.code,
+                    "error": str(exc),
+                }
+            )
+    except Exception as exc:
+        logger.warning(
+            {
+                "event": "feature_stale_run_reconciliation_failed",
+                "error_code": "INTERNAL_ERROR",
+                "error": str(exc),
+            }
+        )
+    yield
+
+
+app = FastAPI(title='Artemis Gateway', lifespan=lifespan)
 router = APIRouter()
 
 # 初始化 OTEL（如果配置启用），并对 FastAPI App 做自动 instrumentation

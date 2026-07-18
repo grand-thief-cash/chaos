@@ -53,6 +53,17 @@ def get_feature_execution(
         _raise_http(exc)
 
 
+@router.post("/maintenance/reconcile-stale")
+def reconcile_stale_feature_runs(
+    source_profile: str = "default",
+    service: FeatureService = Depends(get_feature_service),
+):
+    try:
+        return service.reconcile_stale_runs(source_profile)
+    except FeaturePlatformError as exc:
+        _raise_http(exc)
+
+
 @router.post("/manifests/validate")
 def validate_feature_manifests(
     request: ManifestValidateRequest = ManifestValidateRequest(),

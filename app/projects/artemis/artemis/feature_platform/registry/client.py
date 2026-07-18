@@ -253,6 +253,18 @@ class FeatureRegistryClient:
             )
         )
 
+    def reconcile_stale_runs(
+        self,
+        stale_before: datetime,
+        *,
+        producer_service: str = "artemis",
+    ) -> dict[str, Any]:
+        payload = {
+            "stale_before": stale_before.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "producer_service": producer_service,
+        }
+        return dict(self._post(f"{self.BASE_PATH}/runs:reconcile-stale", payload))
+
     def query_financial_flat(
         self,
         *,

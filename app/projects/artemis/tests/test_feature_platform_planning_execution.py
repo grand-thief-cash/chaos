@@ -224,3 +224,17 @@ def test_python_executor_maps_plugin_deadline_to_structured_timeout():
     with pytest.raises(FeaturePlatformError) as error:
         PythonFeatureExecutor(timeout_seconds=0.001).execute(ctx, object())
     assert error.value.code == "PLUGIN_TIMEOUT"
+
+
+def test_phoenixa_provider_preserves_structured_source_failure():
+    class UnavailableClient:
+        def query_financial_flat(self, **kwargs):
+            raise FeaturePlatformError("SOURCE_UNAVAILABLE", "injected source outage", status_code=503)
+
+    ctx = _pit_context()
+    with pytest.raises(FeaturePlatformError) as error:
+        PhoenixAFeatureProvider(UnavailableClient()).load_data_field(
+            ctx, ctx.node.data_field_dependencies[0]
+        )
+    assert error.value.code == "SOURCE_UNAVAILABLE"
+    assert error.value.status_code == 503

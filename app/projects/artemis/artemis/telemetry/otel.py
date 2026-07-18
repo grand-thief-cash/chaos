@@ -19,9 +19,16 @@ _meter = None
 _task_duration_hist = None
 _task_run_counter = None
 _task_error_counter = None
+_feature_run_counter = None
+_feature_item_duration_hist = None
+_feature_output_coverage_hist = None
+_feature_values_counter = None
+_feature_stale_run_counter = None
 
 def init_otel() -> bool:
     global _OTEL_INITIALIZED, _meter, _task_duration_hist, _task_run_counter, _task_error_counter
+    global _feature_run_counter, _feature_item_duration_hist, _feature_output_coverage_hist
+    global _feature_values_counter, _feature_stale_run_counter
     if _OTEL_INITIALIZED:
         return True
     cfg = cfg_mgr.telemetry_config()
@@ -163,12 +170,32 @@ def init_otel() -> bool:
         _task_duration_hist = _meter.create_histogram(name="task.duration.ms", unit="ms", description="Task execution duration in milliseconds")
         _task_run_counter = _meter.create_counter(name="task.run.count", description="Total number of task runs")
         _task_error_counter = _meter.create_counter(name="task.error.count", description="Total number of task errors")
+        _feature_run_counter = _meter.create_counter(
+            name="feature.runs", description="Feature runs by terminal status"
+        )
+        _feature_item_duration_hist = _meter.create_histogram(
+            name="feature.run_item.duration", unit="ms", description="Feature plugin item duration"
+        )
+        _feature_output_coverage_hist = _meter.create_histogram(
+            name="feature.output.coverage", unit="1", description="Feature output valid coverage ratio"
+        )
+        _feature_values_counter = _meter.create_counter(
+            name="feature.values.written", description="Persisted Feature numeric values"
+        )
+        _feature_stale_run_counter = _meter.create_counter(
+            name="feature.stale_runs", description="Feature runs aborted by stale reconciliation"
+        )
     except Exception as e:
         log.warning({'event': 'otel_metric_init_failed', 'error': str(e)})
         _meter = None
         _task_duration_hist = None
         _task_run_counter = None
         _task_error_counter = None
+        _feature_run_counter = None
+        _feature_item_duration_hist = None
+        _feature_output_coverage_hist = None
+        _feature_values_counter = None
+        _feature_stale_run_counter = None
 
     _OTEL_INITIALIZED = True
     return True
@@ -213,5 +240,53 @@ def record_task_metrics(task_code: str, duration_ms: int | None, success: bool):
             _task_duration_hist.record(float(duration_ms), attributes=attrs)
         if not success and _task_error_counter:
             _task_error_counter.add(1, attributes=attrs)
+    except Exception:
+        pass
+
+
+def record_feature_run(feature_code: str, status: str, producer: str = "artemis") -> None:
+    if not _feature_run_counter:
+        return
+    try:
+        _feature_run_counter.add(
+            1,
+            attributes={"feature.code": feature_code, "feature.status": status, "feature.producer": producer},
+        )
+    except Exception:
+        pass
+
+
+def record_feature_item(
+    feature_code: str,
+    status: str,
+    duration_ms: int,
+    coverage_ratio: float,
+) -> None:
+    attrs = {"feature.code": feature_code, "feature.status": status}
+    try:
+        if _feature_item_duration_hist:
+            _feature_item_duration_hist.record(float(duration_ms), attributes=attrs)
+        if _feature_output_coverage_hist:
+            _feature_output_coverage_hist.record(float(coverage_ratio), attributes=attrs)
+    except Exception:
+        pass
+
+
+def record_feature_values(feature_code: str, status: str, count: int) -> None:
+    if not _feature_values_counter or count <= 0:
+        return
+    try:
+        _feature_values_counter.add(
+            count, attributes={"feature.code": feature_code, "feature.status": status}
+        )
+    except Exception:
+        pass
+
+
+def record_feature_stale_runs(count: int) -> None:
+    if not _feature_stale_run_counter or count <= 0:
+        return
+    try:
+        _feature_stale_run_counter.add(count, attributes={"feature.producer": "artemis"})
     except Exception:
         pass
