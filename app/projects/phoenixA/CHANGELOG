@@ -1,7 +1,11 @@
 # VERSION
-v1.37.0
+v1.38.0
 
 # Changelog
+- v1.38.0
+    - **Feature Platform Phase 5 API contract.** Expanded `openapi.yaml` with all 27 registry, lifecycle, lineage, availability, run-state, numeric value, and backfill routes; the route verifier now covers Feature Platform, PATCH methods, and colon-suffixed actions.
+    - **Repeatable capacity evidence.** Added a read-only benchmark for definition, lineage, availability, run, latest-value, run-detail, and run-value endpoints with per-endpoint throughput and latency percentiles.
+    - **Migration gate closure.** Updated the PostgreSQL contract test to validate the stale-active heartbeat index in the consolidated `0008_feature_platform.sql`, removing the obsolete reference to a non-existent recovery migration.
 - v1.37.0
     - **Feature Platform Phase 3 observability.** Expanded lineage to recursive Feature/DataField ancestry and descendants, and replaced the legacy single availability flag with definition, version, dependency, data, implementation, materialization, and execution-readiness dimensions.
     - **Crash recovery and quality closure.** Added atomic stale-run reconciliation with structured RunItem failures, an active-heartbeat index, server-enriched quality summaries, and the existing succeeded-only latest materialization contract.

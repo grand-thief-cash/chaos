@@ -39,18 +39,11 @@ func TestFeaturePlatformMigrationContract(t *testing.T) {
 		"trg_feature_value_numeric_data_cutoff",
 		"trg_feature_value_numeric_immutable",
 		"trg_feature_version_published_immutable",
+		"idx_feature_run_stale_active",
 	} {
 		if !strings.Contains(migration, fragment) {
 			t.Errorf("0008_feature_platform.sql is missing %q", fragment)
 		}
-	}
-	recoveryPath := filepath.Join("..", "..", "migrations", "postgresql", "security", "0009_feature_platform_recovery.sql")
-	recovery, err := os.ReadFile(recoveryPath)
-	if err != nil {
-		t.Fatalf("read recovery migration: %v", err)
-	}
-	if !strings.Contains(string(recovery), "idx_feature_run_stale_active") {
-		t.Fatal("0009_feature_platform_recovery.sql is missing the active heartbeat index")
 	}
 }
 
@@ -120,15 +113,6 @@ func TestFeaturePlatformMigrationPostgres(t *testing.T) {
 	if _, err := tx.ExecContext(ctx, featureMigration); err != nil {
 		t.Fatalf("apply Feature Platform migration: %v", err)
 	}
-	recoveryPath := filepath.Join("..", "..", "migrations", "postgresql", "security", "0009_feature_platform_recovery.sql")
-	recoveryMigration, err := os.ReadFile(recoveryPath)
-	if err != nil {
-		t.Fatalf("read Feature Platform recovery migration: %v", err)
-	}
-	if _, err := tx.ExecContext(ctx, string(recoveryMigration)); err != nil {
-		t.Fatalf("apply Feature Platform recovery migration: %v", err)
-	}
-
 	suffix := time.Now().UTC().Format("150405000000")
 	featureCode := "test.feature.platform_" + suffix
 	var featureID, versionID, implementationID int64
