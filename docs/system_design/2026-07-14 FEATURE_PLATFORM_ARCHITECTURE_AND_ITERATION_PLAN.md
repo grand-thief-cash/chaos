@@ -1,6 +1,6 @@
 # Chaos Feature Platform 架构设计与分阶段迭代方案
 
-> 状态：Approved，Phase 0、Phase 1、Phase 2、Phase 3 实现已完成（Phase 3：2026-07-18）；生产迁移仍需满足 TimescaleDB 与 `warm_storage` 部署门禁
+> 状态：Approved，Phase 0、Phase 1、Phase 2、Phase 3、Phase 4 实现已完成（Phase 4：2026-07-18）；生产迁移仍需满足 TimescaleDB 与 `warm_storage` 部署门禁
 > 批准记录：用户于 2026-07-14 确认从 Phase 0 开始执行，并在 Phase 0 提交后启动 Phase 1
 > 日期：2026-07-14
 > 范围：PhoenixA、Artemis、Cthulhu、Cronjob，以及 Atlas 的未来接入预留
@@ -2056,6 +2056,8 @@ docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.m
 | FP-4.7 | Values 页面 | Series/Cross-section Preview |
 | FP-4.8 | Manual Compute | Smoke/Published Feature 触发 |
 | FP-4.9 | Angular tests/build | 状态和错误分支 |
+
+执行状态：FP-4.1 至 FP-4.9 已完成（2026-07-18）。Cthulhu 已提供 `/workbench/features` 下的 Registry、Definition Detail、Lineage、Runs、Run Detail、Values 和 Manual Compute 工作台；远端 `development-home` 构建、10 个 Feature Platform 定向测试及 1 个布局回归测试通过，并完成桌面与 390px 页面渲染检查。当前 4200 页面运行正常，但 8085 上的 PhoenixA 仍是未加载新 `/api/v2/features/*` 路由的旧进程，因此真实服务联调和 Sync -> Compute -> Persist -> Query 在线 E2E 归入 Phase 5，在启动当前 PhoenixA/Artemis 版本后执行。
 
 验收：
 

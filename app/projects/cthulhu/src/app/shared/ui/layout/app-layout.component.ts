@@ -41,7 +41,7 @@ export class AppLayoutComponent {
   navItems: TopNavItem[] = []; // 顶部导航来源于 TopNavService
   sideMenuGroups: SideMenuGroup[] = [];
   breadcrumbs$: Observable<BreadcrumbItem[]> = this.breadcrumbService.breadcrumbs$;
-  isCollapsed = false; // 侧边栏折叠状态
+  isCollapsed = typeof window !== 'undefined' && window.matchMedia('(max-width: 760px)').matches;
 
   constructor(public router: Router, private sideMenuService: SideMenuService, private breadcrumbService: BreadcrumbService, private topNavService: TopNavService) {
     console.log('[AppLayout] constructing, current url:', this.router.url);

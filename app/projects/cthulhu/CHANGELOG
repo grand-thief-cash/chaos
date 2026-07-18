@@ -2,6 +2,10 @@
 v0.21.0
 
 # Changelog
+- v0.21.0
+    - **Feature Platform workbench.** Added typed PhoenixA/Artemis clients and routed Registry, Definition Detail, Lineage, Runs, Run Detail, Values, and Manual Compute pages under `/workbench/features`.
+    - **Traceable and fail-closed operations.** The UI keeps source profile, Feature version, Run ID, as-of/cutoff, quality, partial/unknown/deprecated/dirty states, and structured 409/422 errors visible; URL-backed filters recover after refresh and manual compute accepts published versions only.
+    - **Responsive and tested delivery.** Added API/store/utility/route coverage, narrow-screen layouts, and automatic side-menu collapse on mobile; remote `development-home` build and 11 targeted Angular/layout tests pass.
 - v0.20.0
     - **Reusable securities typeahead.** Added `SecurityLookupService` (HTTP + models) and `SecuritySearchInputComponent` (autocomplete): `debounceTime(300)` + `distinctUntilChanged` + `switchMap` (cancels stale requests), `catchError` so an HTTP failure doesn't kill the stream, min-length gating, and synchronous selection-clear on text edit - so a parent gating on a non-null selection can't fire a stale `security_id` during the debounce window.
     - **DuPont input switched from `security_id` to name/symbol.** The numeric `Security ID` box is replaced by the typeahead; the resolved `security_id` drives `/bi/dupont/{security_id}` unchanged. The 查询 button is enabled only after an explicit dropdown selection.
