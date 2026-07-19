@@ -1,6 +1,6 @@
 # Chaos Feature Platform 架构设计与分阶段迭代方案
 
-> 状态：Approved，Phase 0、Phase 1、Phase 2、Phase 3、Phase 4 实现已完成（Phase 4：2026-07-18）；生产迁移仍需满足 TimescaleDB 与 `warm_storage` 部署门禁
+> 状态：Approved，Phase 0 至 Phase 5 实现已完成（Phase 5：2026-07-18）；受信环境内财务因子开发已解锁，生产发布仍需满足认证授权、敏感配置外置、TimescaleDB 与 `warm_storage` 门禁
 > 批准记录：用户于 2026-07-14 确认从 Phase 0 开始执行，并在 Phase 0 提交后启动 Phase 1
 > 日期：2026-07-14
 > 范围：PhoenixA、Artemis、Cthulhu、Cronjob，以及 Atlas 的未来接入预留
@@ -2083,6 +2083,10 @@ docs/system_design/2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.m
 | FP-5.5 | 数据容量和查询压测 | 当前硬件基线 |
 | FP-5.6 | 安全检查 | 内部写接口、敏感配置、审计 |
 | FP-5.7 | Architecture Review | 与本文逐项核对 |
+
+执行状态：FP-5.1 至 FP-5.7 已完成（2026-07-18）。远端 managed acceptance 使用当前工作树在隔离的 PhoenixA 18085 和 Artemis 18084 上完成双次 Registry Sync、V1/V2 各 10 个证券的计算与版本共存、DataField PIT probe、`DATA_CUTOFF_VIOLATION` 负例、Published Manifest 不可变、幂等复用，以及 PhoenixA/Artemis 双重启后的 Run/Value 恢复；1000 请求、16 并发的只读容量基线为 1000/1000 成功、637.525 req/s、整体 p95 63.731 ms。PhoenixA 全量 Go test/vet 和 20 个 Artemis Feature Platform 定向测试通过，OpenAPI 与 37 条纳入范围的真实路由一致。运维手册、FeaturePlugin 开发指南和 Phase 5 验收报告见 2026-07-18 对应文档。
+
+安全边界：本轮完成安全审查但不等于 production ready。Feature 写接口仍需服务身份认证授权，Artemis CORS 需收敛，home/dev 明文凭证需迁移到 secret manager，TimescaleDB、`warm_storage`、备份恢复和保留策略需完成生产演练。以上不阻断受信开发网络内启动财务因子独立迭代，但阻断公网或不受信生产发布。
 
 总验收 Gate：
 
