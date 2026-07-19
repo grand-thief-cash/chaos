@@ -1,7 +1,11 @@
 # VERSION
-v0.47.0
+v0.47.1
 
 # Changelog
+- v0.47.1
+    - **Development MinIO storage.** Configured the home development profile to use the `chaos-dev` bucket through the MinIO S3 API and verified application-level upload, readback, and cleanup.
+    - **Changed writing path in minIO.
+    - **Updated deployment scripts.
 - v0.47.0
     - **Feature Platform Phase 5 acceptance.** Added a managed Sync -> Compute -> Persist -> Query harness that starts isolated current PhoenixA/Artemis services, verifies idempotency, V1/V2 coexistence, published immutability, DataField PIT/cutoff enforcement, and persistence after both services restart.
     - **Version and API closure.** Added the published constant-output V2 smoke plugin and Manifest, plus explicit FastAPI metadata, compute response semantics, and OpenAPI regression coverage.

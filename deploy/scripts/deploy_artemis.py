@@ -35,7 +35,7 @@ FORCE_DOCKER_COMPOSE_BUILD = True
 
 SKIP_UPLOAD_BINARY = False
 SKIP_UPLOAD_CONFIG = False
-SKIP_UPLOAD_FACTOR_CATALOG = False
+SKIP_UPLOAD_FEATURE_CATALOG = False
 
 # Path to local folder containing wheel files that should be included in build context
 MINIUS_LOCAL_PATH = "../../minius"
@@ -380,15 +380,15 @@ def upload_files(compose_file):
     if not SKIP_UPLOAD_CONFIG:
         print("⬆️ 上传配置文件...")
         sftp_upload(ssh, PY_PROJECT_PATH+"/config/config-production.yaml", f"{REMOTE_CONFIG_PATH}/config.yaml")
-        sftp_upload(ssh, PY_PROJECT_PATH+"/config/task.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
+        sftp_upload(ssh, PY_PROJECT_PATH+"/config/task-prod.yaml", f"{REMOTE_CONFIG_PATH}/task.yaml")
     else:
         print("⏭️  跳过上传配置文件（使用远程服务器上已有的配置）")
 
-    if not SKIP_UPLOAD_FACTOR_CATALOG:
-        print("⬆️ 上传因子目录配置...")
-        sftp_upload(ssh, PY_PROJECT_PATH+"/config/factor_catalog", f"{REMOTE_CONFIG_PATH}/factor_catalog")
+    if not SKIP_UPLOAD_FEATURE_CATALOG:
+        print("⬆️ 上传特征目录配置...")
+        sftp_upload(ssh, PY_PROJECT_PATH+"/config/feature_catalog", f"{REMOTE_CONFIG_PATH}/feature_catalog")
     else:
-        print("⏭️  跳过上传因子目录配置（使用远程服务器上已有的配置）")
+        print("⏭️  跳过上传特征目录配置（使用远程服务器上已有的配置）")
 
     ssh.close()
 

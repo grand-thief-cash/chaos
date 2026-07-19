@@ -587,7 +587,7 @@ def build_object_key(report: Dict[str, Any], minio_client, subject: str = "") ->
     subject_safe = safe_filename_part(subject or "unknown")
     publish_date = str(report.get("publish_date") or "unknown-date")
     title = safe_filename_part(str(report.get("title") or "untitled"), max_len=120)
-    return f"{prefix}/{subject_safe}/{publish_date}_{title}.pdf"
+    return f"{prefix}/zh/{subject_safe}/{publish_date}_{title}.pdf"
 
 
 def is_valid_pdf_bytes(data: bytes) -> bool:
