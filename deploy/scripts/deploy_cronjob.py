@@ -22,13 +22,19 @@ DOCKERFILE_PATH = "../docker/dockerfile/Dockerfile-cronjob"
 DOCKER_COMPOSE_FILE = "cronjob.yaml"
 DOCKER_COMPOSE_FOLDER = "../docker/docker-compose"
 
-FORCE_GO_BUILD = False
-FORCE_DOCKER_COMPOSE_BUILD = False
+# 容器内读取 ./config/config.yaml，由 docker-compose 从远程 volume 挂载。
+# 部署时把仓库的 config-production.yaml 上传为远程的 config.yaml，保持线上配置与仓库同步。
+CONFIG_SOURCE = "config-production.yaml"
+REMOTE_CONFIG_PATH = "/home/machine/data_volume/cronjob/config"
+
+FORCE_GO_BUILD = True
+FORCE_DOCKER_COMPOSE_BUILD = True
 FORCE_DOCKER_BUILD = True
 SERVICE_NAME = "cronjob"
 
 SKIP_UPLOAD_BINARY = False
 SKIP_UPLOAD_MIGRATIONS = False
+SKIP_UPLOAD_CONFIG = False
 
 VPN = "192.168.31.169:7890"
 PRIMARY_PROXY = "http://192.168.31.170:7890"
@@ -206,6 +212,14 @@ def upload_files(build_file, compose_file):
         sftp_upload(ssh, f"{GO_PROJECT_PATH}/migrations", f"{REMOTE_DEPLOY_PATH}/migrations")
     else:
         print("⏭️  跳过上传 migrations（使用远程服务器上已有的 migrations）")
+
+    if not SKIP_UPLOAD_CONFIG:
+        print(f"⬆️ 上传 config ({CONFIG_SOURCE} -> config.yaml)...")
+        config_src = os.path.join(GO_PROJECT_PATH, "config", CONFIG_SOURCE)
+        remote_exec(ssh, f"mkdir -p {REMOTE_CONFIG_PATH}")
+        sftp_upload(ssh, config_src, f"{REMOTE_CONFIG_PATH}/config.yaml")
+    else:
+        print("⏭️  跳过上传 config（使用远程服务器上已有的 config）")
 
     ssh.close()
 
