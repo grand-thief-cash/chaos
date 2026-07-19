@@ -172,76 +172,83 @@ func (d *TaxonomyDao) DeleteCategory(ctx context.Context, source, taxonomy, mark
 		Delete(&model.TaxonomyCategory{}).Error
 }
 
+// CategoryHasReferences reports whether any taxonomy_security_map / industry_constituent /
+// industry_weight / industry_daily row references the given category_id. Guards category
+// deletion against leaving dangling category_id references (no real FK, §6 R9 → app-layer
+// defense). Hyperatables are queried by category_id index; no JOINs.
+func (d *TaxonomyDao) CategoryHasReferences(ctx context.Context, categoryID uint64) (bool, error) {
+	var count int64
+	err := d.db.WithContext(ctx).Raw(`
+		SELECT
+			(SELECT COUNT(*) FROM ods.taxonomy_security_map WHERE category_id = ?) +
+			(SELECT COUNT(*) FROM ods.industry_constituent WHERE category_id = ?) +
+			(SELECT COUNT(*) FROM ods.industry_weight     WHERE category_id = ?) +
+			(SELECT COUNT(*) FROM ods.industry_daily      WHERE category_id = ?)
+	`, categoryID, categoryID, categoryID, categoryID).Scan(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // ──────────── Security Mappings ────────────
 
-// SyncMappingsFromConstituents derives category→symbol mappings from industry_constituent + taxonomy_category.
-// For each (source, taxonomy, market), it JOINs industry_constituent with taxonomy_category on index_code
-// and inserts into taxonomy_security_map.
-func (d *TaxonomyDao) SyncMappingsFromConstituents(ctx context.Context, source, taxonomy, market string) (int64, error) {
+// SyncMappingsFromConstituents derives category→security mappings from industry_constituent.
+// Phase 2 surrogate-key refactor: the JOIN with taxonomy_category is eliminated —
+// industry_constituent rows already carry (category_id, security_id) resolved at upsert
+// time (refactor §2.3), so this is now a single-table SELECT DISTINCT. The path's
+// (source, taxonomy, market) is resolved by the service into a set of category_ids which
+// scope the SELECT (otherwise it would span every taxonomy).
+func (d *TaxonomyDao) SyncMappingsFromConstituents(ctx context.Context, categoryIDs []uint64) (int64, error) {
+	if len(categoryIDs) == 0 {
+		return 0, nil
+	}
 	sql := `
-		INSERT INTO ods.taxonomy_security_map (source, taxonomy, category_code, symbol, asset_type, market)
-		SELECT DISTINCT ic.source, ic.taxonomy, tc.code, ic.symbol, 'stock', ic.market
-		FROM ods.industry_constituent ic
-		JOIN ods.taxonomy_category tc
-		  ON tc.index_code = ic.index_code
-		 AND tc.source = ic.source
-		 AND tc.taxonomy = ic.taxonomy
-		 AND tc.market  = ic.market
-		WHERE ic.source   = ?
-		  AND ic.taxonomy = ?
-		  AND ic.market   = ?
-		ON CONFLICT (source, taxonomy, category_code, symbol, asset_type, market) DO NOTHING
+		INSERT INTO ods.taxonomy_security_map (security_id, category_id)
+		SELECT DISTINCT security_id, category_id
+		FROM ods.industry_constituent
+		WHERE category_id IN ?
+		  AND security_id IS NOT NULL
+		  AND category_id IS NOT NULL
+		ON CONFLICT (security_id, category_id) DO NOTHING
 	`
-	result := d.db.WithContext(ctx).Exec(sql, source, taxonomy, market)
+	result := d.db.WithContext(ctx).Exec(sql, categoryIDs)
 	if result.Error != nil {
 		return 0, result.Error
 	}
 	return result.RowsAffected, nil
 }
 
-// BatchUpsertMappings upserts taxonomy-security mappings.
-func (d *TaxonomyDao) BatchUpsertMappings(ctx context.Context, source, taxonomy string, list []*model.TaxonomySecurityMap) error {
+// BatchUpsertMappings upserts taxonomy-security mappings (id-keyed).
+func (d *TaxonomyDao) BatchUpsertMappings(ctx context.Context, list []*model.TaxonomySecurityMap) error {
 	if len(list) == 0 {
 		return nil
-	}
-	for _, m := range list {
-		m.Source = source
-		m.Taxonomy = taxonomy
-		if m.AssetType == "" {
-			m.AssetType = bizConsts.ASSET_TYPE_STOCK
-		}
-		if m.Market == "" {
-			m.Market = bizConsts.MARKET_ZH_A
-		}
 	}
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{DoNothing: true}).
 		CreateInBatches(list, 500).Error
 }
 
-// ReplaceStocksForCategories replaces all symbols for given categories.
-func (d *TaxonomyDao) ReplaceStocksForCategories(ctx context.Context, source, taxonomy string, categoryToSymbols map[string][]string) error {
+// ReplaceSecuritiesForCategories replaces all securities for given categories.
+// payload: category_id → []security_id.
+func (d *TaxonomyDao) ReplaceSecuritiesForCategories(ctx context.Context, payload map[uint64][]uint64) error {
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		categories := make([]string, 0, len(categoryToSymbols))
-		for cat := range categoryToSymbols {
+		categories := make([]uint64, 0, len(payload))
+		for cat := range payload {
 			categories = append(categories, cat)
 		}
 		if len(categories) == 0 {
 			return nil
 		}
-		if err := tx.Where("source = ? AND taxonomy = ? AND category_code IN ?", source, taxonomy, categories).Delete(&model.TaxonomySecurityMap{}).Error; err != nil {
+		if err := tx.Where("category_id IN ?", categories).Delete(&model.TaxonomySecurityMap{}).Error; err != nil {
 			return err
 		}
 		var toInsert []*model.TaxonomySecurityMap
-		for cat, symbols := range categoryToSymbols {
-			for _, sym := range symbols {
+		for cat, secs := range payload {
+			for _, sec := range secs {
 				toInsert = append(toInsert, &model.TaxonomySecurityMap{
-					Source:       source,
-					Taxonomy:     taxonomy,
-					CategoryCode: cat,
-					Symbol:       sym,
-					AssetType:    bizConsts.ASSET_TYPE_STOCK,
-					Market:       bizConsts.MARKET_ZH_A,
+					SecurityID: sec,
+					CategoryID: cat,
 				})
 			}
 		}
@@ -252,29 +259,26 @@ func (d *TaxonomyDao) ReplaceStocksForCategories(ctx context.Context, source, ta
 	})
 }
 
-// ReplaceCategoriesForSymbols replaces all categories for given symbols.
-func (d *TaxonomyDao) ReplaceCategoriesForSymbols(ctx context.Context, source, taxonomy string, symbolToCategories map[string][]string) error {
+// ReplaceCategoriesForSecurities replaces all categories for given securities.
+// payload: security_id → []category_id.
+func (d *TaxonomyDao) ReplaceCategoriesForSecurities(ctx context.Context, payload map[uint64][]uint64) error {
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		symbols := make([]string, 0, len(symbolToCategories))
-		for sym := range symbolToCategories {
-			symbols = append(symbols, sym)
+		securities := make([]uint64, 0, len(payload))
+		for sec := range payload {
+			securities = append(securities, sec)
 		}
-		if len(symbols) == 0 {
+		if len(securities) == 0 {
 			return nil
 		}
-		if err := tx.Where("source = ? AND taxonomy = ? AND symbol IN ?", source, taxonomy, symbols).Delete(&model.TaxonomySecurityMap{}).Error; err != nil {
+		if err := tx.Where("security_id IN ?", securities).Delete(&model.TaxonomySecurityMap{}).Error; err != nil {
 			return err
 		}
 		var toInsert []*model.TaxonomySecurityMap
-		for sym, cats := range symbolToCategories {
+		for sec, cats := range payload {
 			for _, cat := range cats {
 				toInsert = append(toInsert, &model.TaxonomySecurityMap{
-					Source:       source,
-					Taxonomy:     taxonomy,
-					CategoryCode: cat,
-					Symbol:       sym,
-					AssetType:    bizConsts.ASSET_TYPE_STOCK,
-					Market:       bizConsts.MARKET_ZH_A,
+					SecurityID: sec,
+					CategoryID: cat,
 				})
 			}
 		}
@@ -285,10 +289,10 @@ func (d *TaxonomyDao) ReplaceCategoriesForSymbols(ctx context.Context, source, t
 	})
 }
 
-// ListMappingsByCategory returns all security mappings for a source + taxonomy + category.
-func (d *TaxonomyDao) ListMappingsByCategory(ctx context.Context, source, taxonomy, categoryCode string, limit, offset int) ([]*model.TaxonomySecurityMap, error) {
+// ListMappingsByCategory returns all security mappings for a category_id.
+func (d *TaxonomyDao) ListMappingsByCategory(ctx context.Context, categoryID uint64, limit, offset int) ([]*model.TaxonomySecurityMap, error) {
 	var list []*model.TaxonomySecurityMap
-	q := d.db.WithContext(ctx).Where("source = ? AND taxonomy = ? AND category_code = ?", source, taxonomy, categoryCode)
+	q := d.db.WithContext(ctx).Where("category_id = ?", categoryID)
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -327,27 +331,25 @@ type taxonomyCategoryDerivedFlagsQuery struct {
 	DerivedFlags *string
 }
 
-// ListMappingsBySymbol returns all taxonomy mappings for a given symbol.
-// Loads matching taxonomy categories by full composite key and enriches the response
-// with canonical hierarchy fields for downstream consumers.
-func (d *TaxonomyDao) ListMappingsBySymbol(ctx context.Context, symbol string) ([]*model.TaxonomySecurityMapWithDetail, error) {
+// ListMappingsBySecurityID returns all taxonomy mappings for a given security_id.
+// Phase 2 surrogate-key refactor: the mapping row is (security_id, category_id); category
+// hierarchy fields are loaded via loadCategoryTreeByIDs. Security display fields (symbol /
+// asset_type / market) are left empty here and filled by the service via the resolve cache.
+type mappingQuery struct {
+	SecurityID uint64
+	CategoryID uint64
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+func (d *TaxonomyDao) ListMappingsBySecurityID(ctx context.Context, securityID uint64) ([]*model.TaxonomySecurityMapWithDetail, error) {
 	var list []*model.TaxonomySecurityMapWithDetail
 
-	type MappingQuery struct {
-		Source       string
-		Taxonomy     string
-		CategoryCode string
-		Symbol       string
-		AssetType    string
-		Market       string
-		CreatedAt    time.Time
-		UpdatedAt    time.Time
-	}
-	var mappings []MappingQuery
+	var mappings []mappingQuery
 	err := d.db.WithContext(ctx).
 		Table("taxonomy_security_map").
-		Select("source, taxonomy, category_code, symbol, asset_type, market, created_at, updated_at").
-		Where("symbol = ?", symbol).
+		Select("security_id, category_id, created_at, updated_at").
+		Where("security_id = ?", securityID).
 		Find(&mappings).Error
 	if err != nil {
 		return nil, err
@@ -356,62 +358,57 @@ func (d *TaxonomyDao) ListMappingsBySymbol(ctx context.Context, symbol string) (
 		return list, nil
 	}
 
-	categoryKeys := make([]taxonomyCategoryLookupKey, 0, len(mappings))
-	seen := make(map[taxonomyCategoryLookupKey]bool)
+	categoryIDs := make([]uint64, 0, len(mappings))
+	seen := make(map[uint64]bool)
 	for _, m := range mappings {
-		key := taxonomyCategoryLookupKey{
-			Source:   m.Source,
-			Taxonomy: m.Taxonomy,
-			Market:   m.Market,
-			Code:     m.CategoryCode,
-		}
-		if !seen[key] {
-			categoryKeys = append(categoryKeys, key)
-			seen[key] = true
+		if !seen[m.CategoryID] {
+			categoryIDs = append(categoryIDs, m.CategoryID)
+			seen[m.CategoryID] = true
 		}
 	}
 
-	categoryMap, err := d.loadCategoryTree(ctx, categoryKeys)
+	categoryByID, err := d.loadCategoryTreeByIDs(ctx, categoryIDs)
 	if err != nil {
 		return nil, err
 	}
-	derivedFlagsMap, err := d.loadDerivedFlags(ctx, categoryKeys)
+	// deriveCategoryFlags walks the parent chain by natural key, so build a natural-key
+	// view of the same loaded tree. loadDerivedFlags is also keyed by natural key.
+	categoryByNatural := make(map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery, len(categoryByID))
+	for _, cat := range categoryByID {
+		if cat == nil {
+			continue
+		}
+		categoryByNatural[taxonomyCategoryLookupKey{Source: cat.Source, Taxonomy: cat.Taxonomy, Market: cat.Market, Code: cat.Code}] = cat
+	}
+	derivedFlagsMap, err := d.loadDerivedFlags(ctx, keysFromCategoryTree(categoryByNatural))
 	if err != nil {
 		return nil, err
 	}
 
 	for _, m := range mappings {
-		key := taxonomyCategoryLookupKey{
-			Source:   m.Source,
-			Taxonomy: m.Taxonomy,
-			Market:   m.Market,
-			Code:     m.CategoryCode,
-		}
-		cat, ok := categoryMap[key]
-		canonicalSource, canonicalTaxonomy, canonicalLevel := canonicalTaxonomyInfo(m.Source, m.Taxonomy, 0)
+		cat := categoryByID[m.CategoryID]
 		detail := &model.TaxonomySecurityMapWithDetail{
-			Source:                m.Source,
-			Taxonomy:              m.Taxonomy,
-			CategoryCode:          m.CategoryCode,
-			CanonicalSource:       canonicalSource,
-			CanonicalTaxonomy:     canonicalTaxonomy,
-			CanonicalLevel:        canonicalLevel,
-			CanonicalCategoryCode: m.CategoryCode,
-			DerivedFlags:          map[string]bool{},
-			Symbol:                m.Symbol,
-			AssetType:             m.AssetType,
-			Market:                m.Market,
-			CreatedAt:             m.CreatedAt,
-			UpdatedAt:             m.UpdatedAt,
+			SecurityID:   m.SecurityID,
+			CategoryID:   m.CategoryID,
+			CreatedAt:    m.CreatedAt,
+			UpdatedAt:    m.UpdatedAt,
+			DerivedFlags: map[string]bool{},
 		}
-		if ok {
-			detail.ID = cat.ID
+		if cat != nil {
+			detail.Source = cat.Source
+			detail.Taxonomy = cat.Taxonomy
+			detail.CategoryCode = cat.Code
 			detail.CategoryName = cat.Name
 			detail.Level = cat.Level
-			detail.CanonicalSource, detail.CanonicalTaxonomy, detail.CanonicalLevel = canonicalTaxonomyInfo(m.Source, m.Taxonomy, cat.Level)
+			natKey := taxonomyCategoryLookupKey{Source: cat.Source, Taxonomy: cat.Taxonomy, Market: cat.Market, Code: cat.Code}
+			canonicalSource, canonicalTaxonomy, canonicalLevel := canonicalTaxonomyInfo(cat.Source, cat.Taxonomy, cat.Level)
+			detail.CanonicalSource = canonicalSource
+			detail.CanonicalTaxonomy = canonicalTaxonomy
+			detail.CanonicalLevel = canonicalLevel
 			detail.CanonicalCategoryCode = cat.Code
 			detail.CanonicalCategoryName = cat.Name
-			detail.DerivedFlags = deriveCategoryFlags(cat, categoryMap, derivedFlagsMap[key], detail.CanonicalTaxonomy)
+			detail.Market = cat.Market
+			detail.DerivedFlags = deriveCategoryFlags(cat, categoryByNatural, derivedFlagsMap[natKey], canonicalTaxonomy)
 			if cat.ParentCode != nil {
 				detail.ParentCode = *cat.ParentCode
 				detail.CanonicalParentCode = *cat.ParentCode
@@ -425,6 +422,71 @@ func (d *TaxonomyDao) ListMappingsBySymbol(ctx context.Context, symbol string) (
 	}
 
 	return list, nil
+}
+
+// keysFromCategoryTree returns the natural-key set of a category tree map.
+func keysFromCategoryTree(m map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery) []taxonomyCategoryLookupKey {
+	keys := make([]taxonomyCategoryLookupKey, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// loadCategoryTreeByIDs loads taxonomy_category rows by id and walks their parent chain
+// (parent_code). Returns a map keyed by category id covering both the requested nodes and
+// their ancestors (so deriveCategoryFlags can walk the hierarchy).
+func (d *TaxonomyDao) loadCategoryTreeByIDs(ctx context.Context, ids []uint64) (map[uint64]*taxonomyCategoryQuery, error) {
+	byID := make(map[uint64]*taxonomyCategoryQuery)
+	pending := make([]uint64, 0, len(ids))
+	seen := make(map[uint64]bool)
+	for _, id := range ids {
+		if id != 0 && !seen[id] {
+			seen[id] = true
+			pending = append(pending, id)
+		}
+	}
+	if len(pending) == 0 {
+		return byID, nil
+	}
+
+	var rows []taxonomyCategoryQuery
+	err := d.db.WithContext(ctx).
+		Table("taxonomy_category").
+		Select("id, source, taxonomy, market, code, name, level, parent_code, index_code, attrs_json").
+		Where("id IN ?", pending).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	natKeys := make([]taxonomyCategoryLookupKey, 0, len(rows))
+	for i := range rows {
+		cat := &rows[i]
+		if cat.ID != 0 {
+			byID[cat.ID] = cat
+		}
+		natKeys = append(natKeys, taxonomyCategoryLookupKey{Source: cat.Source, Taxonomy: cat.Taxonomy, Market: cat.Market, Code: cat.Code})
+	}
+
+	// Walk the parent chain via the existing natural-key tree loader (loads ancestors).
+	tree, err := d.loadCategoryTreeWithDB(ctx, d.db, natKeys)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range tree {
+		if c != nil && c.ID != 0 {
+			byID[c.ID] = c
+		}
+	}
+	return byID, nil
+}
+
+// ListAllCategories returns every taxonomy_category row, used to build the resolve cache.
+func (d *TaxonomyDao) ListAllCategories(ctx context.Context) ([]*model.TaxonomyCategory, error) {
+	var list []*model.TaxonomyCategory
+	err := d.db.WithContext(ctx).Order("id ASC").Find(&list).Error
+	return list, err
 }
 
 func (d *TaxonomyDao) upsertDerivedFlagsForCategories(ctx context.Context, tx *gorm.DB, categories []*model.TaxonomyCategory) error {
@@ -482,10 +544,6 @@ func (d *TaxonomyDao) upsertDerivedFlagsForCategories(ctx context.Context, tx *g
 		Columns:   []clause.Column{{Name: "source"}, {Name: "taxonomy"}, {Name: "market"}, {Name: "code"}},
 		DoUpdates: clause.AssignmentColumns([]string{"derived_flags", "updated_at"}),
 	}).CreateInBatches(records, 500).Error
-}
-
-func (d *TaxonomyDao) loadCategoryTree(ctx context.Context, initialKeys []taxonomyCategoryLookupKey) (map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery, error) {
-	return d.loadCategoryTreeWithDB(ctx, d.db, initialKeys)
 }
 
 func (d *TaxonomyDao) loadCategoryTreeWithDB(ctx context.Context, db *gorm.DB, initialKeys []taxonomyCategoryLookupKey) (map[taxonomyCategoryLookupKey]*taxonomyCategoryQuery, error) {
@@ -773,41 +831,34 @@ func categoryLooksFinancial(cat *taxonomyCategoryQuery, canonicalTaxonomy string
 	return code == "801010" || code == "801780" || strings.HasPrefix(code, "80101") || strings.HasPrefix(code, "80178")
 }
 
-// DeleteMapping deletes a single mapping.
-func (d *TaxonomyDao) DeleteMapping(ctx context.Context, source, taxonomy, categoryCode, symbol string) error {
+// DeleteMapping deletes a single mapping by (category_id, security_id).
+func (d *TaxonomyDao) DeleteMapping(ctx context.Context, categoryID, securityID uint64) error {
 	return d.db.WithContext(ctx).
-		Where("source = ? AND taxonomy = ? AND category_code = ? AND symbol = ?", source, taxonomy, categoryCode, symbol).
+		Where("category_id = ? AND security_id = ?", categoryID, securityID).
 		Delete(&model.TaxonomySecurityMap{}).Error
 }
 
 // ──────────── Industry Constituents ────────────
 
 // BatchUpsertConstituents upserts industry index constituents.
+// Phase 2: items must already carry resolved (CategoryID, SecurityID) — the service
+// resolves IndexCode/ConCode via the in-memory cache before calling this. source/taxonomy/
+// market are retained for scope context only (no longer stored on the row).
 func (d *TaxonomyDao) BatchUpsertConstituents(ctx context.Context, source, taxonomy, market string, list []*model.IndustryConstituent) error {
 	if len(list) == 0 {
 		return nil
 	}
-	for _, c := range list {
-		c.Source = source
-		c.Taxonomy = taxonomy
-		if market != "" {
-			c.Market = market
-		}
-	}
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "source"}, {Name: "taxonomy"}, {Name: "index_code"}, {Name: "symbol"}, {Name: "market"}},
-			DoUpdates: clause.AssignmentColumns([]string{"con_code", "index_name", "in_date", "out_date", "updated_at"}),
+			Columns:   []clause.Column{{Name: "category_id"}, {Name: "security_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"in_date", "out_date", "updated_at"}),
 		}).CreateInBatches(list, 500).Error
 }
 
-// ListConstituentsByIndex returns all constituents for a given source + taxonomy + index_code.
-func (d *TaxonomyDao) ListConstituentsByIndex(ctx context.Context, source, taxonomy, market, indexCode string, limit, offset int) ([]*model.IndustryConstituent, error) {
+// ListConstituentsByCategory returns all constituents for a given category_id.
+func (d *TaxonomyDao) ListConstituentsByCategory(ctx context.Context, categoryID uint64, limit, offset int) ([]*model.IndustryConstituent, error) {
 	var list []*model.IndustryConstituent
-	q := d.db.WithContext(ctx).Where("source = ? AND taxonomy = ? AND index_code = ?", source, taxonomy, indexCode).Order("symbol ASC")
-	if market != "" {
-		q = q.Where("market = ?", market)
-	}
+	q := d.db.WithContext(ctx).Where("category_id = ?", categoryID).Order("security_id ASC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -818,13 +869,10 @@ func (d *TaxonomyDao) ListConstituentsByIndex(ctx context.Context, source, taxon
 	return list, err
 }
 
-// ListConstituentsBySymbol returns all index memberships for a given constituent stock.
-func (d *TaxonomyDao) ListConstituentsBySymbol(ctx context.Context, source, taxonomy, market, symbol string) ([]*model.IndustryConstituent, error) {
+// ListConstituentsBySecurity returns all index memberships for a given constituent security_id.
+func (d *TaxonomyDao) ListConstituentsBySecurity(ctx context.Context, securityID uint64) ([]*model.IndustryConstituent, error) {
 	var list []*model.IndustryConstituent
-	q := d.db.WithContext(ctx).Where("source = ? AND taxonomy = ? AND symbol = ?", source, taxonomy, symbol)
-	if market != "" {
-		q = q.Where("market = ?", market)
-	}
+	q := d.db.WithContext(ctx).Where("security_id = ?", securityID)
 	err := q.Find(&list).Error
 	return list, err
 }
@@ -832,55 +880,41 @@ func (d *TaxonomyDao) ListConstituentsBySymbol(ctx context.Context, source, taxo
 // ──────────── Industry Weights ────────────
 
 // BatchUpsertWeights upserts industry index constituent daily weights.
+// Phase 2: items must already carry resolved (CategoryID, SecurityID). source/taxonomy/
+// market retained for scope context only.
 func (d *TaxonomyDao) BatchUpsertWeights(ctx context.Context, source, taxonomy, market string, list []*model.IndustryWeight) error {
 	if len(list) == 0 {
 		return nil
 	}
-	for _, w := range list {
-		w.Source = source
-		w.Taxonomy = taxonomy
-		if market != "" {
-			w.Market = market
-		}
-	}
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "source"}, {Name: "taxonomy"}, {Name: "index_code"}, {Name: "symbol"}, {Name: "market"}, {Name: "trade_date"}},
-			DoUpdates: clause.AssignmentColumns([]string{"con_code", "weight", "updated_at"}),
+			Columns:   []clause.Column{{Name: "category_id"}, {Name: "security_id"}, {Name: "trade_date"}},
+			DoUpdates: clause.AssignmentColumns([]string{"weight", "updated_at"}),
 		}).CreateInBatches(list, 500).Error
 }
 
-// ListWeightsByIndexAndDate returns weights for a given index on a given trade_date.
-func (d *TaxonomyDao) ListWeightsByIndexAndDate(ctx context.Context, source, taxonomy, market, indexCode, tradeDate string) ([]*model.IndustryWeight, error) {
+// ListWeightsByCategoryAndDate returns weights for a given category_id on a given trade_date.
+func (d *TaxonomyDao) ListWeightsByCategoryAndDate(ctx context.Context, categoryID uint64, tradeDate string) ([]*model.IndustryWeight, error) {
 	var list []*model.IndustryWeight
 	q := d.db.WithContext(ctx).
-		Where("source = ? AND taxonomy = ? AND index_code = ? AND trade_date = ?", source, taxonomy, indexCode, tradeDate)
-	if market != "" {
-		q = q.Where("market = ?", market)
-	}
-	err := q.
-		Order("symbol ASC").
-		Find(&list).Error
+		Where("category_id = ? AND trade_date = ?", categoryID, tradeDate).
+		Order("security_id ASC")
+	err := q.Find(&list).Error
 	return list, err
 }
 
 // ──────────── Industry Daily ────────────
 
 // BatchUpsertIndustryDaily upserts industry index daily bars.
+// Phase 2: items must already carry resolved CategoryID. source/taxonomy/market retained
+// for scope context only.
 func (d *TaxonomyDao) BatchUpsertIndustryDaily(ctx context.Context, source, taxonomy, market string, list []*model.IndustryDaily) error {
 	if len(list) == 0 {
 		return nil
 	}
-	for _, r := range list {
-		r.Source = source
-		r.Taxonomy = taxonomy
-		if market != "" {
-			r.Market = market
-		}
-	}
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "source"}, {Name: "taxonomy"}, {Name: "index_code"}, {Name: "market"}, {Name: "trade_date"}},
+			Columns: []clause.Column{{Name: "category_id"}, {Name: "trade_date"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"open", "high", "close", "low", "pre_close",
 				"amount", "volume", "pb", "pe", "total_cap", "a_float_cap", "updated_at",
@@ -888,15 +922,12 @@ func (d *TaxonomyDao) BatchUpsertIndustryDaily(ctx context.Context, source, taxo
 		}).CreateInBatches(list, 500).Error
 }
 
-// QueryIndustryDaily queries industry daily bars.
-func (d *TaxonomyDao) QueryIndustryDaily(ctx context.Context, source, taxonomy, market, indexCode, startDate, endDate string, limit int) ([]*model.IndustryDaily, error) {
+// QueryIndustryDaily queries industry daily bars by category_id.
+func (d *TaxonomyDao) QueryIndustryDaily(ctx context.Context, categoryID uint64, startDate, endDate string, limit int) ([]*model.IndustryDaily, error) {
 	var list []*model.IndustryDaily
 	q := d.db.WithContext(ctx).
-		Where("source = ? AND taxonomy = ? AND index_code = ?", source, taxonomy, indexCode).
+		Where("category_id = ?", categoryID).
 		Order("trade_date ASC")
-	if market != "" {
-		q = q.Where("market = ?", market)
-	}
 	if startDate != "" {
 		q = q.Where("trade_date >= ?", startDate)
 	}

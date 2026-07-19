@@ -7,7 +7,7 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { ArtemisBiService } from '../services/artemis-bi.service';
-import { BISymbolCoverageResponse, BIDatasetEntry, BICoverageDataset } from '../models/bi.models';
+import { BISecurityCoverageResponse, BIDatasetEntry, BICoverageDataset } from '../models/bi.models';
 
 @Component({
   selector: 'app-bi-company-overview-page',
@@ -76,22 +76,24 @@ export class CompanyOverviewPageComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly api = inject(ArtemisBiService);
 
+  securityId: number | null = null;
   symbol = '';
   market = 'zh_a';
   loading = false;
-  coverage: BISymbolCoverageResponse | null = null;
+  coverage: BISecurityCoverageResponse | null = null;
   datasets: BIDatasetEntry[] = [];
 
   ngOnInit(): void {
-    this.symbol = this.route.snapshot.paramMap.get('symbol') || '';
+    const idParam = this.route.snapshot.paramMap.get('security_id');
+    this.securityId = idParam ? Number(idParam) : null;
     this.market = this.route.snapshot.queryParamMap.get('market') || 'zh_a';
-    if (this.symbol) {
+    if (this.securityId) {
       this.loadCoverage();
     }
   }
 
   enterRaw(dataset: string, dataType: string): void {
-    this.router.navigate(['/bi/company', this.symbol, 'raw', dataset, dataType], {
+    this.router.navigate(['/bi/company', this.securityId, 'raw', dataset, dataType], {
       queryParams: { market: this.market },
     });
   }
@@ -121,9 +123,10 @@ export class CompanyOverviewPageComponent implements OnInit {
         this.datasets = [];
       },
     });
-    this.api.getSymbolCoverage(this.symbol, this.market).subscribe({
+    this.api.getSecurityCoverage(this.securityId!, this.market).subscribe({
       next: (resp) => {
         this.coverage = resp;
+        this.symbol = resp.symbol;
         this.loading = false;
       },
       error: () => {

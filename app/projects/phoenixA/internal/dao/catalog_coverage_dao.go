@@ -7,7 +7,7 @@ import (
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 )
 
-// rawCoverageRow is the scan target for per-symbol coverage queries.
+// rawCoverageRow is the scan target for per-security coverage queries.
 // report_type is empty for corporate_action and equity_structure.
 type rawCoverageRow struct {
 	Source         string
@@ -20,16 +20,13 @@ type rawCoverageRow struct {
 	LatestAnnDate  string
 }
 
-// GetSymbolCoverage returns per-dataset/data_type row counts and time ranges
-// for a given symbol+market across financial_statement, corporate_action, and
+// GetSecurityCoverage returns per-dataset/data_type row counts and time ranges
+// for a given security_id across financial_statement, corporate_action, and
 // equity_structure. This is a generic discovery query — callers aggregate
 // further as needed.
-func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market string) ([]rawCoverageRow, error) {
-	if symbol == "" {
-		return nil, fmt.Errorf("symbol is required")
-	}
-	if market == "" {
-		market = "zh_a"
+func (d *CatalogDao) GetSecurityCoverage(ctx context.Context, securityID uint64) ([]rawCoverageRow, error) {
+	if securityID == 0 {
+		return nil, fmt.Errorf("security_id is required")
 	}
 
 	var rows []rawCoverageRow
@@ -46,12 +43,12 @@ func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market strin
 			COALESCE(MAX(reporting_period), '') AS latest_period,
 			COALESCE(MAX(ann_date), '') AS latest_ann_date
 		FROM ods.financial_statement
-		WHERE symbol = $1 AND market = $2
+		WHERE security_id = $1
 		GROUP BY source, statement_type, report_type
 		ORDER BY source, statement_type, report_type
 	`
 	var fsRows []rawCoverageRow
-	if err := d.db.WithContext(ctx).Raw(fsQuery, symbol, market).Scan(&fsRows).Error; err != nil {
+	if err := d.db.WithContext(ctx).Raw(fsQuery, securityID).Scan(&fsRows).Error; err != nil {
 		return nil, fmt.Errorf("query financial_statement coverage: %w", err)
 	}
 	rows = append(rows, fsRows...)
@@ -68,12 +65,12 @@ func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market strin
 			COALESCE(MAX(report_period), '') AS latest_period,
 			COALESCE(MAX(ann_date), '') AS latest_ann_date
 		FROM ods.corporate_action
-		WHERE symbol = $1 AND market = $2
+		WHERE security_id = $1
 		GROUP BY source, action_type
 		ORDER BY source, action_type
 	`
 	var caRows []rawCoverageRow
-	if err := d.db.WithContext(ctx).Raw(caQuery, symbol, market).Scan(&caRows).Error; err != nil {
+	if err := d.db.WithContext(ctx).Raw(caQuery, securityID).Scan(&caRows).Error; err != nil {
 		return nil, fmt.Errorf("query corporate_action coverage: %w", err)
 	}
 	rows = append(rows, caRows...)
@@ -90,12 +87,12 @@ func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market strin
 			COALESCE(MAX(change_date), '') AS latest_period,
 			COALESCE(MAX(ann_date), '') AS latest_ann_date
 		FROM ods.equity_structure
-		WHERE symbol = $1 AND market = $2
+		WHERE security_id = $1
 		GROUP BY source
 		ORDER BY source
 	`
 	var esRows []rawCoverageRow
-	if err := d.db.WithContext(ctx).Raw(esQuery, symbol, market).Scan(&esRows).Error; err != nil {
+	if err := d.db.WithContext(ctx).Raw(esQuery, securityID).Scan(&esRows).Error; err != nil {
 		return nil, fmt.Errorf("query equity_structure coverage: %w", err)
 	}
 	rows = append(rows, esRows...)
@@ -104,9 +101,9 @@ func (d *CatalogDao) GetSymbolCoverage(ctx context.Context, symbol, market strin
 }
 
 // AggregateCoverage converts flat rawCoverageRow slices into the hierarchical
-// CatalogSymbolCoverage response, grouping by dataset then data_type, and
+// CatalogSecurityCoverage response, grouping by dataset then data_type, and
 // nesting by_report_type for financial_statement.
-func AggregateCoverage(rows []rawCoverageRow, symbol, market string) *model.CatalogSymbolCoverage {
+func AggregateCoverage(rows []rawCoverageRow, securityID uint64) *model.CatalogSecurityCoverage {
 	type dtypeKey struct {
 		dataset  string
 		source   string
@@ -188,9 +185,8 @@ func AggregateCoverage(rows []rawCoverageRow, symbol, market string) *model.Cata
 		}
 	}
 
-	out := &model.CatalogSymbolCoverage{
-		Symbol: symbol,
-		Market: market,
+	out := &model.CatalogSecurityCoverage{
+		SecurityID: securityID,
 	}
 	for _, dk := range dsOrder {
 		out.Datasets = append(out.Datasets, *dsAgg[dk])

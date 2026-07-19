@@ -4,10 +4,12 @@ go 1.24.0
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
-	github.com/grand-thief-cash/chaos/app/infra/go/application v0.18.3
+	github.com/grand-thief-cash/chaos/app/infra/go/application v0.18.4
 	github.com/redis/go-redis/v9 v9.14.0
 	gorm.io/gorm v1.31.0
 )
+
+//replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -65,5 +67,3 @@ require (
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
 )
-
-replace github.com/grand-thief-cash/chaos/app/infra/go/application => ../../infra/go/application

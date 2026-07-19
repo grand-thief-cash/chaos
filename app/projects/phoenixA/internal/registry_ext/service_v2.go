@@ -21,8 +21,11 @@ func init() {
 		return true, service.NewTaxonomyService(), nil
 	})
 
+	// Shared resolve cache (security_registry + taxonomy_category natural-key → id).
+	// Depends only on DAOs; TaxonomyService resolves/validates against it, SecurityService
+	// invalidates it on security_registry upsert/delete (refactor §8.bis-1).
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, service.NewStrategyRunService(), nil
+		return true, service.NewResolveCache(), nil
 	})
 
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
@@ -55,6 +58,18 @@ func init() {
 
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		return true, service.NewFieldCoverageService(), nil
+	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, service.NewResearchReportService(), nil
+	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, service.NewFeatureRegistryService(), nil
+	})
+
+	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
+		return true, service.NewFeatureRunService(), nil
 	})
 
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {

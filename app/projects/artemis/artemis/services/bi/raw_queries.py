@@ -1,10 +1,11 @@
 """Raw financial / corporate-action / equity-structure queries.
 
-Thin passthroughs to phoenixA raw data APIs.
+Thin passthroughs to phoenixA raw data APIs. Identity is security_id
+(Phase 4, no dual-track). Callers pass security_id/security_ids directly.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from artemis.services.bi.base import BIServiceBase
 
@@ -19,8 +20,8 @@ class RawQueryMixin(BIServiceBase):
         *,
         source: str,
         statement_type: str,
-        symbol: Optional[str] = None,
-        symbols: Optional[str] = None,
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         market: str = "zh_a",
         fields: Optional[str] = None,
         format: str = "flat",
@@ -37,10 +38,11 @@ class RawQueryMixin(BIServiceBase):
             "page_size": page_size,
             "format": format,
         }
+        if security_id is not None:
+            params["security_id"] = str(security_id)
+        elif security_ids is not None:
+            params["security_ids"] = ",".join(str(i) for i in security_ids)
         for key, val in (
-            ("symbol", symbol),
-            ("symbols", symbols),
-            ("market", market),
             ("fields", fields),
             ("period_start", period_start),
             ("period_end", period_end),
@@ -58,8 +60,8 @@ class RawQueryMixin(BIServiceBase):
         *,
         source: str,
         action_type: str,
-        symbol: Optional[str] = None,
-        symbols: Optional[str] = None,
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         market: str = "zh_a",
         fields: Optional[str] = None,
         format: str = "flat",
@@ -70,18 +72,17 @@ class RawQueryMixin(BIServiceBase):
     ) -> Dict[str, Any]:
         client = self._client()
         params: Dict[str, Any] = {"page": page, "page_size": page_size, "format": format}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = symbols
-        if market:
-            params["market"] = market
-        if fields:
-            params["fields"] = fields
-        if period_start:
-            params["period_start"] = period_start
-        if period_end:
-            params["period_end"] = period_end
+        if security_id is not None:
+            params["security_id"] = str(security_id)
+        elif security_ids is not None:
+            params["security_ids"] = ",".join(str(i) for i in security_ids)
+        for key, val in (
+            ("fields", fields),
+            ("period_start", period_start),
+            ("period_end", period_end),
+        ):
+            if val is not None and val != "":
+                params[key] = val
         resp = client.get(f"/api/v2/corporate-action/{source}/{action_type}", params=params)
         resp.raise_for_status()
         return resp.json()
@@ -90,8 +91,8 @@ class RawQueryMixin(BIServiceBase):
         self,
         *,
         source: str,
-        symbol: Optional[str] = None,
-        symbols: Optional[str] = None,
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         market: str = "zh_a",
         fields: Optional[str] = None,
         format: str = "flat",
@@ -104,18 +105,17 @@ class RawQueryMixin(BIServiceBase):
     ) -> Dict[str, Any]:
         client = self._client()
         params: Dict[str, Any] = {"page": page, "page_size": page_size, "format": format}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = symbols
-        if market:
-            params["market"] = market
-        if fields:
-            params["fields"] = fields
-        if change_start:
-            params["change_start"] = change_start
-        if change_end:
-            params["change_end"] = change_end
+        if security_id is not None:
+            params["security_id"] = str(security_id)
+        elif security_ids is not None:
+            params["security_ids"] = ",".join(str(i) for i in security_ids)
+        for key, val in (
+            ("fields", fields),
+            ("change_start", change_start),
+            ("change_end", change_end),
+        ):
+            if val is not None and val != "":
+                params[key] = val
         if current_only is not None:
             params["current_only"] = "1" if current_only else "0"
         if valid_only is not None:

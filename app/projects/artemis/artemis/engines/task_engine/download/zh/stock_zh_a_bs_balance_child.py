@@ -62,6 +62,12 @@ class StockZhABsBalanceChild(WorkerUnit):
         if result is None or (isinstance(result, pd.DataFrame) and result.empty):
             return []
 
+        security_id = ctx.params.get("security_id")
+        if not security_id:
+            # No security_id forwarded by parent → cannot write (Phase 3).
+            ctx.fail("bs_balance child missing security_id param", phase='post_process')
+            return []
+
         df = result
         processed = []
 
@@ -99,9 +105,8 @@ class StockZhABsBalanceChild(WorkerUnit):
                     data_fields[col] = s
 
             record = {
+                'security_id': int(security_id),
                 'source': consts.DataSource.DS_BAOSTOCK.value,
-                'symbol': row.get('symbol', ''),
-                'market': 'zh_a',
                 'statement_type': 'bs_balance',
                 'reporting_period': reporting_period,
                 'data_json': data_fields,

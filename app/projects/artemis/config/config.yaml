@@ -39,6 +39,21 @@ dept_services:
     host: "127.0.0.1"          # 依赖的 phoenixA 服务地址（按需配置）
     port: 18085
 
+# MinIO 对象存储：研报 PDF sink 目标
+# endpoint 留空时，MinioClient 退化为 NoopMinioClient（PDF 字节丢弃，仅返回 object_key），
+# 便于在真实 MinIO 就绪前联调下载 → sink → phoenixA 入库 整条链路。
+minio:
+  endpoint: ""                # host:port，例如 "127.0.0.1:9000"
+  access_key: ""
+  secret_key: ""
+  secure: false
+# MinIO 业务配置：研报分股票 / 产业两个 folder
+# 股票研报 object key 约定：{stock_prefix}/{symbol}/{publish_date}_{title}.pdf
+minio_business:
+  bucket: "research-report"
+  stock_prefix: "stock"
+  industry_prefix: "industry"
+
 sdk:
   baostock:
     idle_timeout: 300
@@ -74,6 +89,15 @@ data_options:
       options: []
 
 engine:
+  # Phase 2 Artemis manifest and Python execution plane.
+  feature_platform:
+    enabled: true
+    manifest_root: "./config/feature_catalog"
+    max_parallel_features: 2
+    write_batch_size: 5000
+    heartbeat_interval_seconds: 15
+    stale_run_timeout_seconds: 300
+    plugin_timeout_seconds: 1800
   task_engine:
     worker_task_timeout: 180
     amazing_data_cache_dir: "../cache/artemis/amazing_data"

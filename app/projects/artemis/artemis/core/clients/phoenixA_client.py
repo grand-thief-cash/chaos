@@ -4,8 +4,11 @@ from artemis.consts.task_params import ADJUST_NONE
 from artemis.core.clients.dept_clients import HTTPDeptServiceClient
 
 
-# Unified field name constants (matching PhoenixA v2)
+# Unified field name constants (matching PhoenixA v2). security_id is the
+# Phase 4 identity (response decoration; bars_* physical tables still store
+# symbol, §3.2).
 _V2_BARS_FIELDS = [
+    "security_id",
     "trade_date",
     "symbol",
     "open",
@@ -76,8 +79,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
         exchanges: Optional[List[str]] = None,
         status: Optional[str] = None,
         limit: int = 20000,
-    ) -> Dict[str, Dict[str, Any]]:
-        """Query securities from v2 API."""
+    ) -> Dict[int, Dict[str, Any]]:
+        """Query securities from v2 API. Returns dict keyed by security_id."""
         path = "/api/v2/securities"
         params: Dict[str, Any] = {
             "limit": str(limit),
@@ -91,17 +94,18 @@ class PhoenixAClient(HTTPDeptServiceClient):
         if status:
             params["status"] = status
 
-        result: Dict[str, Dict[str, Any]] = {}
+        result: Dict[int, Dict[str, Any]] = {}
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
                 data = resp.json()
                 rows = data.get("data") or data.get("list") or []
                 for item in rows:
-                    if isinstance(item, dict) and "symbol" in item:
-                        sym = str(item["symbol"])
-                        result[sym] = {
-                            "symbol": sym,
+                    if isinstance(item, dict) and item.get("security_id") is not None:
+                        sid = int(item["security_id"])
+                        result[sid] = {
+                            "security_id": sid,
+                            "symbol": str(item.get("symbol", "")),
                             "name": str(item.get("name", "")),
                             "full_name": str(item.get("full_name", "")) if item.get("full_name") is not None else "",
                             "exchange": str(item.get("exchange", "")).upper(),
@@ -117,7 +121,166 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 self.logger.error({'event': 'phoenixA_get_securities_failed', 'error': str(e)})
             return {}
 
+    def get_security_by_id(self, security_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch a single security by security_id via v2 API.
+
+        Uses GET /api/v2/securities/{security_id} (targeted, O(1)) — prefer this
+        over get_securities() when resolving one id → symbol.
+
+        Returns None if the id is non-positive or the security is not found
+        (404). A 5xx response or network error is RAISED (not swallowed) so the
+        caller surfaces a 500 instead of misreporting a server fault as a
+        "not found" user error.
+        """
+        if not security_id or security_id <= 0:
+            return None
+        path = f"/api/v2/securities/{security_id}"
+        try:
+            resp = self.get(path, {})
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_security_by_id_failed',
+                    'security_id': security_id,
+                    'error': str(e),
+                })
+            raise
+        if resp.status_code == 404:
+            return None
+        if not (200 <= resp.status_code < 300):
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_security_by_id_non_2xx',
+                    'security_id': security_id,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                })
+            raise RuntimeError(
+                f"phoenixA get_security_by_id({security_id}) failed: status {resp.status_code}"
+            )
+        data = resp.json()
+        item = data.get("data") if isinstance(data, dict) else data
+        if isinstance(item, dict):
+            return item
+        return None
+
+    def search_securities(
+        self,
+        *,
+        q: Optional[str] = None,
+        asset_type: str = "stock",
+        market: str = "zh_a",
+        exchange: Optional[str] = None,
+        status: Optional[str] = None,
+        name: Optional[str] = None,
+        symbol: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """One-pass securities search via GET /api/v2/securities/search.
+
+        Returns ``{items, total, limit, offset}`` computed over phoenixA's L1
+        snapshot in a single request, so list and count cannot diverge (the
+        legacy /securities + /securities/count pair did two requests and had an
+        inconsistency window). ``q`` is the unified free-text term: symbol
+        exact (case-insensitive) OR name contains (case-sensitive).
+        """
+        path = "/api/v2/securities/search"
+        params: Dict[str, Any] = {
+            "asset_type": asset_type,
+            "market": market,
+            "limit": str(limit),
+            "offset": str(offset),
+        }
+        if q:
+            params["q"] = q
+        if exchange:
+            params["exchange"] = exchange
+        if status:
+            params["status"] = status
+        if name:
+            params["name"] = name
+        if symbol:
+            params["symbol"] = symbol
+        try:
+            resp = self.get(path, params)
+        except Exception as e:
+            if self.logger:
+                self.logger.error({'event': 'phoenixA_search_securities_failed', 'error': str(e)})
+            raise
+        if not (200 <= resp.status_code < 300):
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_search_securities_non_2xx',
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                })
+            raise RuntimeError(f"phoenixA search_securities failed: status {resp.status_code}")
+        data = resp.json()
+        payload = data.get("data") if isinstance(data, dict) else data
+        if not isinstance(payload, dict):
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+        items = payload.get("items") or []
+        return {
+            "items": items,
+            "total": payload.get("total", len(items)),
+            "limit": payload.get("limit", limit),
+            "offset": payload.get("offset", offset),
+        }
+
+    def _build_security_id_params(
+        self,
+        *,
+        security_id: Optional[int],
+        security_ids: Optional[List[int]],
+    ) -> Dict[str, str]:
+        """Build query params for a security_id-only phoenixA endpoint.
+
+        Strict identity — never silently degrade to an unfiltered query:
+          - A supplied id must be positive. `security_id=0` /
+            `security_ids=[...,0,...]` raise (0 is invalid; None means not supplied).
+          - Only when NO identity is supplied at all is `{}` returned (unfiltered
+            is intentional).
+
+        Query methods catch the ValueError and return empty so callers (factor
+        engine) degrade gracefully instead of receiving unrelated rows.
+        """
+        ids: List[int] = []
+        if security_id is not None:
+            if security_id <= 0:
+                raise ValueError(f"security_id must be a positive integer, got {security_id}")
+            ids.append(int(security_id))
+        # `is not None` (not truthiness) so an explicit empty list is treated as
+        # "supplied" — it contributes no ids but is NOT silently treated as
+        # "no identity" (which would degrade to an unfiltered query).
+        if security_ids is not None:
+            for i in security_ids:
+                if i <= 0:
+                    raise ValueError(f"security_ids contains a non-positive value: {i}")
+                ids.append(int(i))
+        if not ids:
+            supplied = (security_id is not None) or (security_ids is not None)
+            if supplied:
+                raise ValueError(
+                    f"could not resolve security_id from supplied identity "
+                    f"(security_id={security_id!r}, security_ids={security_ids!r}); "
+                    "ensure the security exists in security_registry (run STOCK_ZH_A_LIST first), "
+                    "or omit the identity param to query unfiltered"
+                )
+            return {}
+        if len(ids) == 1:
+            return {"security_id": str(ids[0])}
+        return {"security_ids": ",".join(str(i) for i in ids)}
+
     # ──────────── Bars (v2) ────────────
+    #
+    # Bars API contract is security_id-native (§3.6, §3.2). Query methods take
+    # `security_id` only (no symbol convenience — removed in the no-compat
+    # round); `market`/`asset_type` are path params on
+    # `/api/v2/bars/{asset_type}/{market}` and are sent as such. `upsert_bars`
+    # receives rows that already carry `security_id` — the download task
+    # resolves symbol→security_id via get_security_map_for_task before calling
+    # (§10.d.2).
 
     def upsert_bars(
         self,
@@ -131,7 +294,13 @@ class PhoenixAClient(HTTPDeptServiceClient):
         ext: Optional[List[Dict[str, Any]]] = None,
         run_id: Optional[int | str] = None,
     ) -> bool:
-        """Upsert bars via v2 API."""
+        """Upsert bars via v2 API.
+
+        Each bar/ext row MUST carry a security_id resolved from security_registry
+        (Phase 4); phoenixA resolves security_id → physical symbol before writing
+        the bars_* table (§3.2). The caller (download task) is responsible for
+        putting security_id on each row.
+        """
         path = f"/api/v2/bars/{asset_type}/{market}/upsert"
         payload = {
             "meta": {
@@ -171,7 +340,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         *,
         asset_type: str = "stock",
         market: str = "zh_a",
-        symbol: str,
+        security_id: int,
         start_date: str,
         end_date: str,
         period: str = "daily",
@@ -183,13 +352,15 @@ class PhoenixAClient(HTTPDeptServiceClient):
     ) -> List[Dict[str, Any]]:
         """Unified bars query via v2 API with pagination.
 
-        If normalize_for_cache=True, renames trade_date→date and symbol→code
-        for CacheEngine compatibility.
+        Identity is security_id (Phase 4); the bars endpoint is single-security
+        (GET /api/v2/bars/{asset_type}/{market} reads `security_id` only). If
+        normalize_for_cache=True, renames trade_date→date and symbol→code for
+        CacheEngine compatibility (security_id is preserved on each row).
         """
         return list(self.iter_bars(
             asset_type=asset_type,
             market=market,
-            symbol=symbol,
+            security_id=security_id,
             start_date=start_date,
             end_date=end_date,
             period=period,
@@ -205,7 +376,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         *,
         asset_type: str = "stock",
         market: str = "zh_a",
-        symbol: str,
+        security_id: int,
         start_date: str,
         end_date: str,
         period: str = "daily",
@@ -215,16 +386,33 @@ class PhoenixAClient(HTTPDeptServiceClient):
         limit: int = 5000,
         normalize_for_cache: bool = True,
     ) -> Iterator[Dict[str, Any]]:
-        """Paginated bars iterator via v2 API."""
+        """Paginated bars iterator via v2 API.
+
+        Identity is security_id (Phase 4); the bars endpoint is single-security
+        (GET /api/v2/bars/{asset_type}/{market} reads `security_id` only).
+        """
         path = f"/api/v2/bars/{asset_type}/{market}"
         request_fields = fields or _V2_BARS_FIELDS
         page_size = max(int(limit or 0), 1)
         offset = 0
 
+        # Fail-closed at the client boundary: a non-positive security_id must
+        # NOT be sent to phoenixA (would 400) or silently degrade. Return empty
+        # so callers degrade gracefully, matching the query-method contract.
+        if not isinstance(security_id, int) or security_id <= 0:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_bars_invalid_security_id',
+                    'security_id': security_id,
+                    'path': path,
+                })
+            return
+        id_params = {"security_id": str(security_id)}
+
         try:
             while True:
                 params: Dict[str, Any] = {
-                    "symbol": symbol,
+                    **id_params,
                     "start_date": start_date,
                     "end_date": end_date,
                     "period": period,
@@ -243,7 +431,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
                             'event': 'phoenixA_get_bars_failed',
                             'path': path,
                             'status': resp.status_code,
-                            'symbol': symbol,
+                            'id_params': id_params,
                             'period': period,
                             'offset': offset,
                             'body_snippet': resp.text[:120],
@@ -268,7 +456,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
             if self.logger:
                 self.logger.error({
                     'event': 'phoenixA_get_bars_exception',
-                    'symbol': symbol,
+                    'id_params': id_params,
                     'period': period,
                     'error': str(e),
                 })
@@ -281,20 +469,38 @@ class PhoenixAClient(HTTPDeptServiceClient):
         market: str = "zh_a",
         period: str,
         adjust: str,
-        symbols: Optional[List[str]] = None,
-    ) -> Dict[str, str]:
-        """Query last update dates for symbols via v2 API."""
-        path = f"/api/v2/bars/{asset_type}/{market}/last_update"
-        params: Dict[str, Any] = {"period": period, "adjust": adjust}
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        security_ids: Optional[List[int]] = None,
+    ) -> Dict[int, str]:
+        """Query last update dates for securities via v2 API.
 
+        Identity is security_id (Phase 4). Returns {security_id: last_update_date};
+        symbol is the physical key bars_* stores (§3.2) but the API contract is
+        security_id-native.
+        """
+        path = f"/api/v2/bars/{asset_type}/{market}/last_update"
+        try:
+            id_params = self._build_security_id_params(
+                security_id=None, security_ids=security_ids,
+            )
+        except Exception as resolve_err:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {}
+        if not id_params:
+            return {}
+
+        params: Dict[str, Any] = {"period": period, "adjust": adjust, **id_params}
         try:
             resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
-                data = resp.json()
-                if isinstance(data, dict):
-                    return data
+                # phoenixA returns {data: [{security_id, symbol, last_update}, ...]}.
+                rows = self._coerce_hist_rows(resp.json())
+                return {int(r["security_id"]): str(r.get("last_update", ""))
+                        for r in rows if r.get("security_id")}
             return {}
         except Exception as e:
             if self.logger:
@@ -372,54 +578,6 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             raise
 
-    # ──────────── Strategy Run (unchanged path) ────────────
-
-    def save_strategy_run_summary(self, payload: Dict[str, Any], run_id: Optional[int | str] = None) -> bool:
-        path = "/api/v1/strategy/run/summary/upsert"
-        try:
-            resp = self.post(path, payload)
-            ok = 200 <= resp.status_code < 300
-            if not ok and self.logger:
-                self.logger.error({
-                    'event': 'phoenixA_save_strategy_run_summary_failed',
-                    'run_id': run_id,
-                    'path': path,
-                    'status': resp.status_code,
-                    'body_snippet': resp.text[:120],
-                })
-            return ok
-        except Exception as e:
-            if self.logger:
-                self.logger.error({
-                    'event': 'phoenixA_save_strategy_run_summary_exception',
-                    'run_id': run_id,
-                    'error': str(e),
-                })
-            raise
-
-    def save_strategy_run_artifacts(self, payload: List[Dict[str, Any]], run_id: Optional[int | str] = None) -> bool:
-        path = "/api/v1/strategy/run/artifact/upsert"
-        try:
-            resp = self.post(path, payload)
-            ok = 200 <= resp.status_code < 300
-            if not ok and self.logger:
-                self.logger.error({
-                    'event': 'phoenixA_save_strategy_run_artifacts_failed',
-                    'run_id': run_id,
-                    'artifact_count': len(payload),
-                    'body_snippet': resp.text[:120],
-                })
-            return ok
-        except Exception as e:
-            if self.logger:
-                self.logger.error({
-                    'event': 'phoenixA_save_strategy_run_artifacts_exception',
-                    'run_id': run_id,
-                    'artifact_count': len(payload),
-                    'error': str(e),
-                })
-            raise
-
     # ──────────── Internal helpers ────────────
 
     def _coerce_hist_rows(self, payload: Any) -> List[Dict[str, Any]]:
@@ -427,45 +585,6 @@ class PhoenixAClient(HTTPDeptServiceClient):
         if not isinstance(rows, list):
             return []
         return [row for row in rows if isinstance(row, dict)]
-
-    # ──────────── Backward-compatible aliases ────────────
-
-    def stock_zh_a_list_batch_upsert(self, payload: List[Dict[str, Any]], run_id: Optional[int | str] = None) -> bool:
-        """Legacy alias → upsert_securities. Converts code/company to symbol/name."""
-        converted = []
-        for item in payload:
-            converted.append({
-                "symbol": item.get("code", item.get("symbol", "")),
-                "name": item.get("company", item.get("name", "")),
-                "exchange": item.get("exchange", ""),
-                "asset_type": "stock",
-                "market": "zh_a",
-            })
-        return self.upsert_securities(converted, run_id=run_id)
-
-    def get_stock_zh_a_codes(self, codes: Optional[List[str]] = None, exchanges: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
-        """Legacy alias → get_securities."""
-        return self.get_securities(symbols=codes, exchanges=exchanges)
-
-    def get_stock_zh_a_last_updates(self, period: str, adjust: str, codes: Optional[List[str]] = None) -> Dict[str, str]:
-        """Legacy alias → get_bars_last_update."""
-        return self.get_bars_last_update(period=period, adjust=adjust, symbols=codes)
-
-    def upsert_stock_zh_a_hist(self, data: Dict[str, Any], run_id: Optional[int | str] = None) -> bool:
-        """Legacy alias → upsert_bars. Converts old meta format."""
-        meta = data.get("meta", {})
-        bars_raw = data.get("data", [])
-        return self.upsert_bars(
-            period=meta.get("period", "daily"),
-            adjust=meta.get("adjust", ADJUST_NONE),
-            source=meta.get("source", ""),
-            bars=bars_raw,
-            run_id=run_id,
-        )
-
-    def upsert_market_categories(self, categories: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
-        """Legacy alias → upsert_taxonomy_categories."""
-        return self.upsert_taxonomy_categories(categories, source=data_source, taxonomy=taxonomy, market=market, run_id=run_id)
 
     def upsert_industry_constituents(self, constituents: List[Dict[str, Any]], data_source: str, taxonomy: str = "", market: str = "zh_a", run_id: Optional[int | str] = None) -> bool:
         """Upsert industry index constituents via v2 API."""
@@ -586,9 +705,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
         *,
         source: str,
         statement_type: str,
-        symbol: str = "",
-        symbols: Optional[List[str]] = None,
-        market: str = "",
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         period_start: str = "",
         period_end: str = "",
         ann_date_before: str = "",
@@ -603,19 +721,22 @@ class PhoenixAClient(HTTPDeptServiceClient):
     ) -> Dict[str, Any]:
         """Query financial statements via v2 API.
 
-        Mirrors PhoenixA controller query params:
-        `symbol`, `symbols`, `market`, `period_start`, `period_end`, `ann_date_before`,
-        `reporting_period`, `reporting_periods`, `report_type`, `statement_code`, `comp_type_code`,
-        `fields`, `page`, and `page_size`.
+        Identity is security_id (Phase 3). Omit identity to query unfiltered.
         """
         path = f"/api/v2/financial/{source}/{statement_type}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
-        if market:
-            params["market"] = market
+        try:
+            params.update(self._build_security_id_params(
+                security_id=security_id, security_ids=security_ids,
+            ))
+        except Exception as resolve_err:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {"data": [], "total": 0}
         if period_start:
             params["period_start"] = period_start
         if period_end:
@@ -690,8 +811,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
         *,
         source: str,
         action_type: str,
-        symbol: str = "",
-        symbols: Optional[List[str]] = None,
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         period_start: str = "",
         period_end: str = "",
         report_period: str = "",
@@ -701,13 +822,22 @@ class PhoenixAClient(HTTPDeptServiceClient):
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
-        """Query corporate actions via v2 API."""
+        """Query corporate actions via v2 API. Identity is security_id (Phase 3).
+        Omit identity to query unfiltered."""
         path = f"/api/v2/corporate-action/{source}/{action_type}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
+        try:
+            params.update(self._build_security_id_params(
+                security_id=security_id, security_ids=security_ids,
+            ))
+        except Exception as resolve_err:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {"data": [], "total": 0}
         if period_start:
             params["period_start"] = period_start
         if period_end:
@@ -772,24 +902,30 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str,
-        symbol: str = "",
-        symbols: Optional[List[str]] = None,
-        market: str = "",
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         start_date: str = "",
         end_date: str = "",
         fields: Optional[List[str]] = None,
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
-        """Query adjust factor rows via v2 API."""
+        """Query adjust factor rows via v2 API. Identity is security_id (Phase 3).
+        Omit identity to query unfiltered."""
         path = f"/api/v2/adjust-factors/{source}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
-        if market:
-            params["market"] = market
+        try:
+            params.update(self._build_security_id_params(
+                security_id=security_id, security_ids=security_ids,
+            ))
+        except Exception as resolve_err:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {"data": [], "total": 0}
         if start_date:
             params["start_date"] = start_date
         if end_date:
@@ -847,9 +983,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str,
-        symbol: str = "",
-        symbols: Optional[List[str]] = None,
-        market: str = "",
+        security_id: Optional[int] = None,
+        security_ids: Optional[List[int]] = None,
         trade_date: str = "",
         start_date: str = "",
         end_date: str = "",
@@ -860,15 +995,22 @@ class PhoenixAClient(HTTPDeptServiceClient):
         page: int = 1,
         page_size: int = 100,
     ) -> Dict[str, Any]:
-        """Query long hu bang rows via v2 API."""
+        """Query long hu bang rows via v2 API. Identity is security_id (Phase 3).
+        Omit identity to query unfiltered."""
         path = f"/api/v2/long-hu-bang/{source}"
         params: Dict[str, Any] = {"page": page, "page_size": page_size}
-        if symbol:
-            params["symbol"] = symbol
-        if symbols:
-            params["symbols"] = ",".join([str(s) for s in symbols if str(s).strip()])
-        if market:
-            params["market"] = market
+        try:
+            params.update(self._build_security_id_params(
+                security_id=security_id, security_ids=security_ids,
+            ))
+        except Exception as resolve_err:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_security_id_resolve_failed',
+                    'path': path,
+                    'error': str(resolve_err),
+                })
+            return {"data": [], "total": 0}
         if trade_date:
             params["trade_date"] = trade_date
         if start_date:
@@ -1020,8 +1162,15 @@ class PhoenixAClient(HTTPDeptServiceClient):
 
     # ──────────── Taxonomy Mappings (for factor engine) ────────────
 
-    def get_taxonomy_by_security(self, symbol: str) -> List[Dict[str, Any]]:
+    def get_taxonomy_by_security(
+        self,
+        *,
+        security_id: int,
+    ) -> List[Dict[str, Any]]:
         """Query all taxonomy mappings for a security via v2 API.
+
+        Identity is security_id (Phase 2 migrated the path to
+        `/api/v2/taxonomy/by_security/{security_id}`).
 
         Returns list of TaxonomySecurityMap entries with fields:
         - source, taxonomy, category_code, category_name, level, parent_code, index_code, symbol, asset_type, market
@@ -1032,7 +1181,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
 
         Factor engine should consume PhoenixA canonical/derived fields directly.
         """
-        path = f"/api/v2/taxonomy/by_security/{symbol}"
+        path = f"/api/v2/taxonomy/by_security/{security_id}"
         try:
             resp = self.get(path, {})
             if 200 <= resp.status_code < 300:
@@ -1045,7 +1194,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
             if self.logger:
                 self.logger.error({
                     'event': 'phoenixA_get_taxonomy_by_security_failed',
-                    'symbol': symbol,
+                    'security_id': security_id,
                     'error': str(e),
                 })
             return []
@@ -1071,4 +1220,228 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     'error': str(e),
                 })
             return {"capabilities": [], "_reachable": False, "_error": str(e)}
+
+    # ──────────── Research Reports (v2) ────────────
+    #
+    # Research-report metadata is upserted as status='pending' at list time;
+    # after the PDF is sunk to MinIO, the row is updated to status='downloaded'
+    # with the MinIO object key. phoenixA's ON CONFLICT preserves status /
+    # pdf_object_key / pdf_url / last_error on existing rows, so re-listing
+    # already-downloaded reports is safe and idempotent.
+
+    def upsert_research_report(
+        self,
+        reports: List[Dict[str, Any]],
+        source: str,
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Batch upsert research-report metadata (pending) via v2 API."""
+        path = f"/api/v2/research-report/{source}/upsert"
+        try:
+            resp = self.post(path, reports)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_upsert_research_report_failure',
+                    'run_id': run_id,
+                    'source': source,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                    'count': len(reports) if reports else 0,
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_upsert_research_report_exception',
+                    'run_id': run_id,
+                    'source': source,
+                    'error': str(e),
+                })
+            raise
+
+    def update_research_report_status(
+        self,
+        *,
+        source: str,
+        resource_id: str,
+        status: str,
+        pdf_object_key: str = "",
+        pdf_url: str = "",
+        last_error: str = "",
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        """Update a research report's download status (+ object key / pdf url / error)."""
+        path = f"/api/v2/research-report/{source}/{resource_id}/status"
+        payload: Dict[str, Any] = {
+            'status': status,
+            'pdf_object_key': pdf_object_key,
+            'pdf_url': pdf_url,
+            'last_error': last_error,
+        }
+        try:
+            resp = self.post(path, payload)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.warning({
+                    'event': 'phoenixA_update_research_report_status_failure',
+                    'run_id': run_id,
+                    'source': source,
+                    'resource_id': resource_id,
+                    'status': resp.status_code,
+                    'body_snippet': resp.text[:120],
+                })
+            return ok
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_update_research_report_status_exception',
+                    'run_id': run_id,
+                    'source': source,
+                    'resource_id': resource_id,
+                    'error': str(e),
+                })
+            raise
+
+    def get_research_report_last_update(self, *, source: str = "eastmoney") -> str:
+        """Return MAX(publish_date) among downloaded reports ("" if none)."""
+        path = f"/api/v2/research-report/{source}/last-update"
+        try:
+            resp = self.get(path, {})
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                if isinstance(data, dict):
+                    val = data.get('last_update')
+                    if val is None and isinstance(data.get('data'), dict):
+                        val = data['data'].get('last_update')
+                    return str(val or "")
+            return ""
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_research_report_last_update_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return ""
+
+    def get_research_report_max_publish_date(self, *, source: str = "eastmoney") -> str:
+        """Return MAX(publish_date) across ALL research-report rows (any status).
+
+        Used as the list high-water mark: the artemis task lists eastmoney reports
+        from this date forward so it only fetches new reports each run.
+        """
+        path = f"/api/v2/research-report/{source}/max-publish-date"
+        try:
+            resp = self.get(path, {})
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                if isinstance(data, dict):
+                    val = data.get('max_publish_date')
+                    if val is None and isinstance(data.get('data'), dict):
+                        val = data['data'].get('max_publish_date')
+                    return str(val or "")
+            return ""
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_get_research_report_max_publish_date_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return ""
+
+    def query_research_report_pending(
+        self,
+        *,
+        source: str = "eastmoney",
+        start_date: str = "",
+        end_date: str = "",
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Query pending/error research reports for downloading (oldest first)."""
+        path = f"/api/v2/research-report/{source}/pending"
+        params: Dict[str, Any] = {'limit': str(limit)}
+        if start_date:
+            params['start_date'] = start_date
+        if end_date:
+            params['end_date'] = end_date
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                data = resp.json()
+                rows = data.get('data') if isinstance(data, dict) else data
+                if isinstance(rows, list):
+                    return [r for r in rows if isinstance(r, dict)]
+            return []
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_research_report_pending_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return []
+
+    def query_research_report(
+        self,
+        *,
+        source: str,
+        subject_id: Optional[int] = None,
+        subject_ids: Optional[List[int]] = None,
+        resource_id: str = "",
+        report_type: str = "",
+        start_date: str = "",
+        end_date: str = "",
+        status: str = "",
+        page: int = 1,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        """Query research-report download records via v2 API. The subject is
+        held in subject_id (namespace per report_type: stock→security_id,
+        industry→category_id). Omit to query unfiltered."""
+        path = f"/api/v2/research-report/{source}"
+        params: Dict[str, Any] = {'page': page, 'page_size': page_size}
+        # strict identity (fail-closed): a supplied subject_id must be positive.
+        if subject_id is not None and subject_id <= 0:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_research_report_invalid_subject_id',
+                    'subject_id': subject_id, 'path': path,
+                })
+            return {"data": [], "total": 0}
+        if subject_ids is not None and any(i <= 0 for i in subject_ids):
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_research_report_invalid_subject_ids',
+                    'subject_ids': subject_ids, 'path': path,
+                })
+            return {"data": [], "total": 0}
+        if subject_id is not None:
+            params['subject_id'] = str(int(subject_id))
+        elif subject_ids is not None and subject_ids:
+            params['subject_ids'] = ",".join(str(int(i)) for i in subject_ids)
+        if resource_id:
+            params['resource_id'] = resource_id
+        if report_type:
+            params['report_type'] = report_type
+        if start_date:
+            params['start_date'] = start_date
+        if end_date:
+            params['end_date'] = end_date
+        if status:
+            params['status'] = status
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                return resp.json()
+            return {"data": [], "total": 0}
+        except Exception as e:
+            if self.logger:
+                self.logger.error({
+                    'event': 'phoenixA_query_research_report_failed',
+                    'source': source,
+                    'error': str(e),
+                })
+            return {"data": [], "total": 0}
 

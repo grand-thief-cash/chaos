@@ -14,7 +14,8 @@ import (
 
 type LongHuBangService struct {
 	*core.BaseComponent
-	Dao *dao.LongHuBangDao `infra:"dep:dao_long_hu_bang"`
+	Dao     *dao.LongHuBangDao `infra:"dep:dao_long_hu_bang"`
+	Resolve *ResolveCache      `infra:"dep:svc_resolve_cache"`
 }
 
 func NewLongHuBangService() *LongHuBangService {
@@ -27,6 +28,9 @@ func (s *LongHuBangService) Start(ctx context.Context) error {
 	if s.Dao == nil {
 		return errors.New("dao_long_hu_bang is nil")
 	}
+	if s.Resolve == nil {
+		return errors.New("svc_resolve_cache is nil (required for Phase 3 orphan defense)")
+	}
 	return s.BaseComponent.Start(ctx)
 }
 
@@ -35,6 +39,13 @@ func (s *LongHuBangService) Stop(ctx context.Context) error { return s.BaseCompo
 func (s *LongHuBangService) BatchUpsert(ctx context.Context, list []*model.LongHuBang) error {
 	if len(list) == 0 {
 		return nil
+	}
+	ids := make([]uint64, 0, len(list))
+	for _, item := range list {
+		ids = append(ids, item.SecurityID)
+	}
+	if err := s.Resolve.ValidateSecurityIDsExist(ctx, ids); err != nil {
+		return err
 	}
 	logging.Infof(ctx, "LongHuBangService BatchUpsert count=%d", len(list))
 	return s.Dao.BatchUpsert(ctx, list)

@@ -4,12 +4,13 @@ PhoenixA API 全面测试脚本
 验证 API 返回数据与文档描述的一致性
 """
 
-import requests
 import json
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, Set
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
+from typing import Dict, List, Any, Optional, Set
+
+import requests
 
 # API 基础配置
 BASE_URL = "http://localhost:8085"
@@ -65,6 +66,36 @@ class PhoenixAAPITester:
             return response
         except Exception as e:
             raise Exception(f"请求失败: {url}, 错误: {str(e)}")
+
+    def _get_first_security_id(self) -> Optional[int]:
+        """Fetch the first security_id from /api/v2/securities (Phase 2 id-based routes)."""
+        try:
+            resp = self._make_request("/api/v2/securities/", {"market": "zh_a", "page_size": 1})
+            if resp.status_code == 200:
+                data = resp.json()
+                rows = data if isinstance(data, list) else (data.get("data") or data.get("list") or [])
+                for row in rows:
+                    sid = row.get("security_id") or row.get("id")
+                    if sid:
+                        return int(sid)
+        except Exception:
+            pass
+        return None
+
+    def _get_first_category_id(self, source: str = "amazing_data", taxonomy: str = "sw_l1", market: str = "zh_a") -> Optional[int]:
+        """Fetch the first taxonomy_category id from the categories list (Phase 2 id-based routes)."""
+        try:
+            resp = self._make_request(f"/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories", {"page_size": 1})
+            if resp.status_code == 200:
+                data = resp.json()
+                rows = data.get("list") if isinstance(data, dict) else data
+                for row in rows or []:
+                    cid = row.get("id")
+                    if cid:
+                        return int(cid)
+        except Exception:
+            pass
+        return None
 
     def _get_type_name(self, value: Any) -> str:
         """获取值的类型名称"""
@@ -215,7 +246,7 @@ class PhoenixAAPITester:
                 first_security = data["data"][0]
 
                 expected_fields = {
-                    "id": "integer",
+                    "security_id": "integer",
                     "symbol": "string",
                     "asset_type": "string",
                     "market": "string",
@@ -251,7 +282,15 @@ class PhoenixAAPITester:
 
     def test_securities_detail(self) -> APITestResult:
         """测试单个证券详情 API"""
-        endpoint = "/api/v2/securities/000001"
+        # 路径参数已从 symbol 迁移到 security_id，先从列表取一个真实 id
+        try:
+            _list_resp = self._make_request("/api/v2/securities", {"limit": "1"})
+            _list_data = _list_resp.json() if _list_resp.status_code == 200 else {}
+            _rows = (_list_data.get("data") or []) if isinstance(_list_data, dict) else []
+            _sid = str(_rows[0].get("security_id", "1")) if _rows else "1"
+        except Exception:
+            _sid = "1"
+        endpoint = f"/api/v2/securities/{_sid}"
         result = APITestResult(
             api_name="Securities - 详情",
             endpoint=endpoint,
@@ -279,7 +318,7 @@ class PhoenixAAPITester:
             security = data["data"]
 
             expected_fields = {
-                "id": "integer",
+                "security_id": "integer",
                 "symbol": "string",
                 "asset_type": "string",
                 "market": "string",
@@ -487,7 +526,7 @@ class PhoenixAAPITester:
         """测试资产负债表 API"""
         endpoint = "/api/v2/financial/amazing_data/balance_sheet"
         params = {
-            "symbols": "000001",
+            "security_id": "1",
             "limit": 1
         }
         result = APITestResult(
@@ -521,8 +560,7 @@ class PhoenixAAPITester:
             outer_expected_fields = {
                 "id": "integer",
                 "source": "string",
-                "symbol": "string",
-                "market": "string",
+                "security_id": "integer",
                 "statement_type": "string",
                 "report_period": "string",
                 "report_type": "string",
@@ -544,7 +582,6 @@ class PhoenixAAPITester:
 
                 # 检查一些关键字段
                 key_data_json_fields = {
-                    "MARKET_CODE": "string",
                     "SECURITY_NAME": "string",
                     "STATEMENT_TYPE": "string",
                     "REPORT_TYPE": "string",
@@ -579,7 +616,7 @@ class PhoenixAAPITester:
         """测试利润表 API"""
         endpoint = "/api/v2/financial/amazing_data/income"
         params = {
-            "symbols": "000001",
+            "security_id": "1",
             "limit": 1
         }
         result = APITestResult(
@@ -612,8 +649,7 @@ class PhoenixAAPITester:
             outer_expected_fields = {
                 "id": "integer",
                 "source": "string",
-                "symbol": "string",
-                "market": "string",
+                "security_id": "integer",
                 "statement_type": "string",
                 "report_period": "string",
                 "report_type": "string",
@@ -633,7 +669,6 @@ class PhoenixAAPITester:
                 data_json = first_item["data_json"]
 
                 key_data_json_fields = {
-                    "MARKET_CODE": "string",
                     "SECURITY_NAME": "string",
                     "STATEMENT_TYPE": "string",
                     "REPORT_TYPE": "string",
@@ -670,7 +705,7 @@ class PhoenixAAPITester:
         """测试分红数据 API"""
         endpoint = "/api/v2/corporate-action/amazing_data/dividend"
         params = {
-            "symbols": "000001",
+            "security_id": "1",
             "limit": 1
         }
         result = APITestResult(
@@ -703,8 +738,7 @@ class PhoenixAAPITester:
             outer_expected_fields = {
                 "id": "integer",
                 "source": "string",
-                "symbol": "string",
-                "market": "string",
+                "security_id": "integer",
                 "action_type": "string",
                 "report_period": "string",
                 "ann_date": "string",
@@ -720,7 +754,6 @@ class PhoenixAAPITester:
                 data_json = first_item["data_json"]
 
                 key_data_json_fields = {
-                    "MARKET_CODE": "string",
                     "DIV_PROGRESS": "string",
                     "DVD_PER_SHARE_STK": "float64",
                     "DVD_PER_SHARE_PRE_TAX_CASH": "float64",
@@ -752,13 +785,20 @@ class PhoenixAAPITester:
 
     def test_taxonomy_by_security(self) -> APITestResult:
         """测试证券分类映射 API"""
-        endpoint = "/api/v2/taxonomy/by_security/000001"
+        security_id = self._get_first_security_id()
+        endpoint = f"/api/v2/taxonomy/by_security/{security_id}" if security_id else "/api/v2/taxonomy/by_security/{security_id}"
         result = APITestResult(
             api_name="Taxonomy - 证券分类映射",
             endpoint=endpoint,
             status=TestStatus.PASSED,
             response_code=0
         )
+
+        if security_id is None:
+            result.status = TestStatus.SKIPPED
+            result.message = "无可用 security_id（security_registry 为空），跳过"
+            self.results.append(result)
+            return result
 
         try:
             response = self._make_request(endpoint)
@@ -781,7 +821,8 @@ class PhoenixAAPITester:
                 first_item = data[0]
 
                 expected_fields = {
-                    "id": "integer",
+                    "security_id": "integer",
+                    "category_id": "integer",
                     "source": "string",
                     "taxonomy": "string",
                     "category_code": "string",
@@ -889,13 +930,20 @@ class PhoenixAAPITester:
 
     def test_taxonomy_industry_constituents(self) -> APITestResult:
         """测试行业成分股 API"""
-        endpoint = "/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-constituents/by_index/801010"
+        category_id = self._get_first_category_id()
+        endpoint = f"/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-constituents/by_category/{category_id}" if category_id else "/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-constituents/by_category/{category_id}"
         result = APITestResult(
             api_name="Taxonomy - 行业成分股",
             endpoint=endpoint,
             status=TestStatus.PASSED,
             response_code=0
         )
+
+        if category_id is None:
+            result.status = TestStatus.SKIPPED
+            result.message = "无可用 category_id（taxonomy_category 为空），跳过"
+            self.results.append(result)
+            return result
 
         try:
             response = self._make_request(endpoint)
@@ -919,10 +967,8 @@ class PhoenixAAPITester:
 
                 expected_fields = {
                     "id": "integer",
-                    "index_code": "string",
-                    "con_code": "string",
-                    "symbol": "string",
-                    "index_name": "string",
+                    "category_id": "integer",
+                    "security_id": "integer",
                     "in_date": "string",
                     "out_date": "string",
                     "created_at": "string",
@@ -950,7 +996,8 @@ class PhoenixAAPITester:
 
     def test_taxonomy_industry_weights(self) -> APITestResult:
         """测试行业权重 API"""
-        endpoint = "/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-weights/801010"
+        category_id = self._get_first_category_id()
+        endpoint = f"/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-weights/{category_id}" if category_id else "/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-weights/{category_id}"
         result = APITestResult(
             api_name="Taxonomy - 行业权重",
             endpoint=endpoint,
@@ -958,8 +1005,15 @@ class PhoenixAAPITester:
             response_code=0
         )
 
+        if category_id is None:
+            result.status = TestStatus.SKIPPED
+            result.message = "无可用 category_id（taxonomy_category 为空），跳过"
+            self.results.append(result)
+            return result
+
         try:
-            response = self._make_request(endpoint)
+            # trade_date is required; use a recent date (data may be empty → WARNING).
+            response = self._make_request(endpoint, {"trade_date": "2026-06-30"})
             result.response_code = response.status_code
 
             if response.status_code != 200:
@@ -979,10 +1033,8 @@ class PhoenixAAPITester:
                 first_item = data[0]
 
                 expected_fields = {
-                    "id": "integer",
-                    "index_code": "string",
-                    "con_code": "string",
-                    "symbol": "string",
+                    "category_id": "integer",
+                    "security_id": "integer",
                     "trade_date": "string",
                     "weight": "float64",
                     "created_at": "string",
@@ -1010,12 +1062,13 @@ class PhoenixAAPITester:
 
     def test_taxonomy_industry_daily(self) -> APITestResult:
         """测试行业日行情 API"""
+        category_id = self._get_first_category_id()
         endpoint = "/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-daily"
         params = {
-            "index_code": "801010",
+            "category_id": category_id,
             "start_date": "2024-05-01",
-            "end_date": "2024-05-15",
-            "limit": 5
+            "end_date": "2026-06-30",
+            "limit": 5,
         }
         result = APITestResult(
             api_name="Taxonomy - 行业日行情",
@@ -1023,6 +1076,12 @@ class PhoenixAAPITester:
             status=TestStatus.PASSED,
             response_code=0
         )
+
+        if category_id is None:
+            result.status = TestStatus.SKIPPED
+            result.message = "无可用 category_id（taxonomy_category 为空），跳过"
+            self.results.append(result)
+            return result
 
         try:
             response = self._make_request(endpoint, params)
@@ -1045,8 +1104,7 @@ class PhoenixAAPITester:
                 first_item = data[0]
 
                 expected_fields = {
-                    "id": "integer",
-                    "index_code": "string",
+                    "category_id": "integer",
                     "trade_date": "string",
                     "open": "float64",
                     "high": "float64",
@@ -1131,7 +1189,7 @@ class PhoenixAAPITester:
         """测试现金流量表 API"""
         endpoint = "/api/v2/financial/amazing_data/cashflow"
         params = {
-            "symbols": "000001",
+            "security_id": "1",
             "limit": 1
         }
         result = APITestResult(
@@ -1164,8 +1222,7 @@ class PhoenixAAPITester:
             outer_expected_fields = {
                 "id": "integer",
                 "source": "string",
-                "symbol": "string",
-                "market": "string",
+                "security_id": "integer",
                 "statement_type": "string",
                 "report_period": "string",
                 "report_type": "string",
@@ -1185,7 +1242,6 @@ class PhoenixAAPITester:
                 data_json = first_item["data_json"]
 
                 key_data_json_fields = {
-                    "MARKET_CODE": "string",
                     "SECURITY_NAME": "string",
                     "STATEMENT_TYPE": "string",
                     "REPORT_TYPE": "string",
@@ -1274,13 +1330,20 @@ class PhoenixAAPITester:
 
     def test_taxonomy_constituents_by_stock(self) -> APITestResult:
         """测试按股票查询成分股 API"""
-        endpoint = "/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-constituents/by_stock/000001"
+        security_id = self._get_first_security_id()
+        endpoint = f"/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-constituents/by_security/{security_id}" if security_id else "/api/v2/taxonomy/amazing_data/sw_l1/zh_a/industry-constituents/by_security/{security_id}"
         result = APITestResult(
             api_name="Taxonomy - 按股票查询成分股",
             endpoint=endpoint,
             status=TestStatus.PASSED,
             response_code=0
         )
+
+        if security_id is None:
+            result.status = TestStatus.SKIPPED
+            result.message = "无可用 security_id（security_registry 为空），跳过"
+            self.results.append(result)
+            return result
 
         try:
             response = self._make_request(endpoint)
@@ -1304,10 +1367,8 @@ class PhoenixAAPITester:
 
                 expected_fields = {
                     "id": "integer",
-                    "index_code": "string",
-                    "con_code": "string",
-                    "symbol": "string",
-                    "index_name": "string",
+                    "category_id": "integer",
+                    "security_id": "integer",
                     "in_date": "string",
                     "out_date": "string",
                     "created_at": "string",

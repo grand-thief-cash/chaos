@@ -107,3 +107,7 @@ class HTTPDeptServiceClient(BaseDeptServiceClient, OTELHTTPClientMixin):
     def post(self, path: str, payload: Any, headers: Optional[Dict[str, str]] = None) -> httpx.Response:
         p = self._build_path(path)
         return self._client.post(p, json=payload, headers=self._headers(headers))
+
+    def patch(self, path: str, payload: Any, headers: Optional[Dict[str, str]] = None) -> httpx.Response:
+        p = self._build_path(path)
+        return self._client.patch(p, json=payload, headers=self._headers(headers))

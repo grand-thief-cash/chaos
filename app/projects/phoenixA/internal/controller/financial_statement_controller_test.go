@@ -2,6 +2,8 @@ package controller
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
@@ -10,11 +12,11 @@ import (
 // TestFinancialStatementJSONDeserialization verifies Artemis payload can be
 // correctly deserialized into FinancialStatement model.
 func TestFinancialStatementJSONDeserialization(t *testing.T) {
-	// Exact payload format from Artemis base_financial_statement.py
+	// Exact payload format from Artemis base_financial_statement.py (Phase 3:
+	// security_id replaces symbol/market).
 	artemisPayload := `[{
+		"security_id": 1,
 		"source": "amazing_data",
-		"symbol": "000001.SZ",
-		"market": "zh_a",
 		"statement_type": "balance_sheet",
 		"reporting_period": "20231231",
 		"report_type": "4",
@@ -38,8 +40,6 @@ func TestFinancialStatementJSONDeserialization(t *testing.T) {
 	rec := list[0]
 	cases := []struct{ field, got, want string }{
 		{"source", rec.Source, "amazing_data"},
-		{"symbol", rec.Symbol, "000001.SZ"},
-		{"market", rec.Market, "zh_a"},
 		{"statement_type", rec.StatementType, "balance_sheet"},
 		{"reporting_period", rec.ReportingPeriod, "20231231"},
 		{"report_type", rec.ReportType, "4"},
@@ -52,6 +52,9 @@ func TestFinancialStatementJSONDeserialization(t *testing.T) {
 		if c.got != c.want {
 			t.Errorf("%s: got %q, want %q", c.field, c.got, c.want)
 		}
+	}
+	if rec.SecurityID != 1 {
+		t.Errorf("security_id: got %d, want 1", rec.SecurityID)
 	}
 	if rec.CompTypeCode != 2 {
 		t.Errorf("comp_type_code: got %d, want 2", rec.CompTypeCode)
@@ -75,9 +78,8 @@ func TestFinancialStatementJSONDeserialization(t *testing.T) {
 // TestFinancialStatementFieldMapping verifies all JSON tags match Artemis output.
 func TestFinancialStatementFieldMapping(t *testing.T) {
 	expectedFields := map[string]bool{
-		"source": true, "symbol": true, "market": true,
-		"statement_type": true, "reporting_period": true,
-		"report_type": true, "statement_code": true,
+		"security_id": true, "source": true, "statement_type": true,
+		"reporting_period": true, "report_type": true, "statement_code": true,
 		"security_name": true, "ann_date": true, "actual_ann_date": true,
 		"comp_type_code": true, "data_json": true,
 	}
@@ -86,9 +88,8 @@ func TestFinancialStatementFieldMapping(t *testing.T) {
 	}
 
 	rec := &model.FinancialStatement{
+		SecurityID:      1,
 		Source:          "amazing_data",
-		Symbol:          "000001.SZ",
-		Market:          "zh_a",
 		StatementType:   "balance_sheet",
 		ReportingPeriod: "20231231",
 		ReportType:      "4",
@@ -120,9 +121,8 @@ func TestFinancialStatementFieldMapping(t *testing.T) {
 // profit_express sends empty strings for report_type, statement_code, security_name.
 func TestFinancialStatementProfitExpressNoMetadata(t *testing.T) {
 	payload := `[{
+		"security_id": 1,
 		"source": "amazing_data",
-		"symbol": "000001.SZ",
-		"market": "zh_a",
 		"statement_type": "profit_express",
 		"reporting_period": "20231231",
 		"report_type": "",
@@ -151,32 +151,96 @@ func TestFinancialStatementProfitExpressNoMetadata(t *testing.T) {
 	}
 }
 
-// TestFinancialStatementDefaultMarket verifies controller sets default market.
-func TestFinancialStatementDefaultMarket(t *testing.T) {
+// TestFinancialStatementSecurityIDParsed verifies security_id deserializes as a
+// uint64 (Phase 3 replaced the symbol/market defaulting test — security_id is
+// now the required identity field, no market defaulting occurs).
+func TestFinancialStatementSecurityIDParsed(t *testing.T) {
 	payload := `[{
-		"symbol": "600519.SH",
+		"security_id": 600519,
 		"reporting_period": "20231231",
 		"data_json": "{}"
 	}]`
 
 	var list []*model.FinancialStatement
-	json.Unmarshal([]byte(payload), &list)
-
-	// Simulate controller logic
-	for _, item := range list {
-		item.Source = "amazing_data"
-		item.StatementType = "balance_sheet"
-		if item.Market == "" {
-			item.Market = "zh_a"
-		}
+	if err := json.Unmarshal([]byte(payload), &list); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
-
-	if list[0].Market != "zh_a" {
-		t.Errorf("expected market=zh_a, got %q", list[0].Market)
+	if list[0].SecurityID != 600519 {
+		t.Errorf("expected security_id=600519, got %d", list[0].SecurityID)
 	}
 }
 
-// TestFinancialStatementDataJSONRoundTrip tests data_json integrity.
+// TestQueryRejectsMalformedIdentityParam is a handler-level test ensuring a
+// present-but-empty/invalid security_id or security_ids param returns 400
+// (never silently degrades to an unfiltered query). Uses q.Has, so ?security_id=
+// (empty value, distinct from param-absent) is treated as supplied-but-invalid.
+// The 400 returns before the service is touched, so a nil Svc is safe.
+func TestQueryRejectsMalformedIdentityParam(t *testing.T) {
+	cases := []string{
+		"?security_id=",      // empty value → 400 (not unfiltered)
+		"?security_ids=",     // empty value → 400
+		"?security_id=0",     // zero → 400
+		"?security_ids=1,,2", // consecutive comma → 400
+		"?security_ids=abc",  // non-numeric → 400
+		"?security_ids=,",    // only commas → 400
+	}
+	for _, qs := range cases {
+		c := &FinancialStatementController{} // Svc nil — 400 returns before service call
+		req := httptest.NewRequest(http.MethodGet, "/api/v2/financial/amazing_data/balance_sheet"+qs, nil)
+		w := httptest.NewRecorder()
+		c.Query(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("query %q: got status %d, want 400", qs, w.Code)
+		}
+	}
+}
+
+// TestParseUint64ListStrict locks in the strict security_ids parsing contract:
+// a non-numeric, zero, or empty token (leading/trailing/consecutive comma, or
+// whitespace-only) must error (→ 400), never silently degrade to an unfiltered
+// query. Whitespace around tokens is tolerated.
+func TestParseUint64ListStrict(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    []uint64
+		wantErr bool
+	}{
+		{"1,2,3", []uint64{1, 2, 3}, false},
+		{"1,2,1", []uint64{1, 2}, false},   // dedup
+		{" 1 , 2 ", []uint64{1, 2}, false}, // whitespace around tokens tolerated
+		{"1,,2", nil, true},                // consecutive comma → error
+		{"1,2,", nil, true},                // trailing comma → error
+		{",", nil, true},                   // only commas → error
+		{" ", nil, true},                   // whitespace-only → error
+		{"", nil, true},                    // empty → error
+		{"abc", nil, true},                 // non-numeric → error
+		{"1,abc", nil, true},               // partial invalid → error
+		{"0", nil, true},                   // zero → error
+		{"1,0", nil, true},                 // zero in list → error
+	}
+	for _, c := range cases {
+		got, err := parseUint64ListStrict(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("parseUint64ListStrict(%q): want error, got %v", c.in, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("parseUint64ListStrict(%q): unexpected err: %v", c.in, err)
+			continue
+		}
+		if len(got) != len(c.want) {
+			t.Errorf("parseUint64ListStrict(%q): got %v, want %v", c.in, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("parseUint64ListStrict(%q): got %v, want %v", c.in, got, c.want)
+			}
+		}
+	}
+}
 func TestFinancialStatementDataJSONRoundTrip(t *testing.T) {
 	original := map[string]any{
 		"TOTAL_ASSETS":  5600000000000.0,
@@ -188,9 +252,8 @@ func TestFinancialStatementDataJSONRoundTrip(t *testing.T) {
 
 	dataBytes, _ := json.Marshal(original)
 	rec := &model.FinancialStatement{
+		SecurityID:      1,
 		Source:          "amazing_data",
-		Symbol:          "000001.SZ",
-		Market:          "zh_a",
 		StatementType:   "balance_sheet",
 		ReportingPeriod: "20231231",
 		DataJSON:        json.RawMessage(dataBytes),

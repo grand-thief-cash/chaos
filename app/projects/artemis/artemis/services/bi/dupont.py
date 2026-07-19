@@ -70,7 +70,7 @@ class DupontMixin(BIServiceBase):
     def get_dupont_analysis(
         self,
         *,
-        symbol: str,
+        security_id: int,
         source: str = "amazing_data",
         market: str = "zh_a",
         statement_code: str = "1",
@@ -78,27 +78,33 @@ class DupontMixin(BIServiceBase):
         target_reporting_period: Optional[str] = None,
         extrapolate_q4: bool = False,
     ) -> Dict[str, Any]:
-        """Compute a DuPont decomposition for one symbol/period.
+        """Compute a DuPont decomposition for one security/period.
+
+        Identity is security_id (Phase 4, no dual-track). ``security_id`` is
+        required. ``symbol`` survives only as a response-decoration field
+        sourced from the query result rows (not from input).
 
         Parameters:
             period_kind: "annual" (全年)/"single_quarter" (单季度)/"ytd" (年初至今)/"ttm" (滚动12个月，默认)
             target_reporting_period: 指定目标报告期YYYY-MM-DD，默认取最新可用期
             extrapolate_q4: 仅当period_kind=ytd且target_period是Q3(report_type=3)时生效，按Q3YTD×4/3外推全年预测
         """
+        if security_id is None or security_id <= 0:
+            raise ValueError("get_dupont_analysis requires a positive security_id")
         # Step 1: fetch all periods (all report_type)
         income_rows = self._fetch_all_dupont_rows(
-            source=source, statement_type="income", symbol=symbol,
+            source=source, statement_type="income", security_id=security_id,
             market=market, statement_code=statement_code,
             fields=self._DUPONT_INCOME_FIELDS,
         )
         balance_rows = self._fetch_all_dupont_rows(
-            source=source, statement_type="balance_sheet", symbol=symbol,
+            source=source, statement_type="balance_sheet", security_id=security_id,
             market=market, statement_code=statement_code,
             fields=self._DUPONT_BALANCE_FIELDS,
         )
 
         if not income_rows or not balance_rows:
-            raise ValueError(f"no financial data for dupont: symbol={symbol}")
+            raise ValueError(f"no financial data for dupont: security_id={security_id}")
 
         # Step 2: build period maps
         inc_map = self._build_period_map(income_rows)
@@ -113,11 +119,11 @@ class DupontMixin(BIServiceBase):
             else:
                 target_reporting_period = self._pick_latest_period(income_rows)
         if not target_reporting_period:
-            raise ValueError(f"no available period for symbol {symbol}")
+            raise ValueError(f"no available period for security_id {security_id}")
 
         # Step 4: compute core DuPont
         result, ctx = self._compute_dupont_by_kind(
-            period_kind=period_kind, symbol=symbol, source=source, market=market,
+            period_kind=period_kind, security_id=security_id, source=source, market=market,
             statement_code=statement_code,
             target_period=target_reporting_period, inc_map=inc_map, bal_map=bal_map,
         )
@@ -138,22 +144,23 @@ class DupontMixin(BIServiceBase):
         *,
         source: str,
         statement_type: str,
-        symbol: str,
+        security_id: int,
         market: str,
         statement_code: str,
         fields: List[str],
     ) -> List[Dict[str, Any]]:
         """Fetch all report_type periods, sorted newest first.
 
-        Paginates through every available period so a symbol with >150 periods
-        is not silently truncated. A single symbol's annual + quarterly history
+        Paginates through every available period so a security with >150 periods
+        is not silently truncated. A single security's annual + quarterly history
         is well under one page in practice, but we page defensively.
         """
         rows: List[Dict[str, Any]] = []
         page, page_size = 1, 200
         while True:
             resp = self.query_financial(
-                source=source, statement_type=statement_type, symbol=symbol,
+                source=source, statement_type=statement_type,
+                security_id=security_id,
                 market=market, fields=",".join(fields), format="flat",
                 period_start=None, period_end=None,
                 report_type=None, statement_code=statement_code,
@@ -169,7 +176,7 @@ class DupontMixin(BIServiceBase):
                 break
             page += 1
             if page > 200:  # hard backstop against runaway paging
-                logger.warning({"event": "dupont_fetch_paging_backstop", "symbol": symbol, "pages": page})
+                logger.warning({"event": "dupont_fetch_paging_backstop", "security_id": security_id, "pages": page})
                 break
         if not rows:
             return []
@@ -227,7 +234,7 @@ class DupontMixin(BIServiceBase):
         self,
         *,
         period_kind: Literal["annual", "single_quarter", "ytd", "ttm"],
-        symbol: str,
+        security_id: int,
         source: str,
         market: str,
         statement_code: str,
@@ -268,7 +275,7 @@ class DupontMixin(BIServiceBase):
         # Build response
         result = self._build_dupont_response(
             period_kind=period_kind, target_reporting_period=target_period,
-            symbol=symbol, source=source, market=market,
+            security_id=security_id, source=source, market=market,
             report_type=target_rt, statement_code=statement_code,
             inc_cur=inc_cur, bal_cur=bal_cur, cur=cur, prev=prev,
             prev_period=prev_period,
@@ -580,7 +587,7 @@ class DupontMixin(BIServiceBase):
         # average is unchanged.
         return self._build_dupont_response(
             period_kind="ytd", target_reporting_period=base["target_reporting_period"],
-            symbol=base["symbol"], source=base["source"], market=base["market"],
+            security_id=base["security_id"], source=base["source"], market=base["market"],
             report_type=base["report_type"], statement_code=base["statement_code"],
             inc_cur=scaled_inc, bal_cur=ctx.get("bal_cur"),
             cur=scaled_cur, prev=ext_prev,
@@ -593,7 +600,7 @@ class DupontMixin(BIServiceBase):
         *,
         period_kind: Literal["annual", "single_quarter", "ytd", "ttm"],
         target_reporting_period: str,
-        symbol: str,
+        security_id: int,
         source: str,
         market: str,
         report_type: str,
@@ -607,6 +614,8 @@ class DupontMixin(BIServiceBase):
     ) -> Dict[str, Any]:
         period = bal_cur.get("reporting_period") if bal_cur else inc_cur.get("reporting_period") if inc_cur else target_reporting_period
         security_name = (bal_cur.get("security_name") if bal_cur else inc_cur.get("security_name")) if (inc_cur or bal_cur) else None
+        # symbol is response decoration sourced from query result rows (not input)
+        symbol = (bal_cur.get("symbol") if bal_cur else None) or (inc_cur.get("symbol") if inc_cur else None) or ""
 
         # Period-specific notes (also surfaced in the frontend calc-notes panel).
         # The balance-sheet denominator endpoints differ by kind:
@@ -866,6 +875,7 @@ class DupontMixin(BIServiceBase):
             detail_equations=detail_equations, detail_stacks=detail_stacks,
             notes=notes,
         ).model_dump()
+        result["security_id"] = int(security_id)
         return result
 
     @classmethod

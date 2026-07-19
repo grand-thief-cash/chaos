@@ -1,9 +1,10 @@
 openapi: 3.0.3
 info:
-  title: PhoenixA AmazingData Dataset API
-  version: v1.24.0
+  title: PhoenixA Data and Feature Platform API
+  version: v1.38.0
   description: |
-    PhoenixA data middle-platform API for AmazingData datasets.
+    PhoenixA data middle-platform API for AmazingData datasets and governed,
+    versioned Feature Platform materializations.
 
     ## Design principle
 
@@ -125,31 +126,28 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
 
-  # ─── Discovery: per-symbol data coverage ───
-  /api/v2/catalog/securities/{symbol}/datasets/summary:
+  # ─── Discovery: per-security data coverage ───
+  /api/v2/catalog/securities/{security_id}/datasets/summary:
     get:
       tags: [Discovery]
-      summary: Per-symbol data coverage summary
+      summary: Per-security data coverage summary
       description: |
         Returns row counts and time ranges for each dataset/data_type that
-        exists for a given symbol. Covers financial_statement (by
+        exists for a given security_id. Covers financial_statement (by
         statement_type × report_type), corporate_action (by action_type),
         and equity_structure. Generic discovery API — not BI-specific.
       parameters:
         - in: path
-          name: symbol
+          name: security_id
           required: true
-          schema: { type: string }
-          description: Security code (e.g. "000001").
-        - in: query
-          name: market
-          schema: { type: string, default: zh_a }
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: security_registry.id (Phase 3 surrogate key).
       responses:
         '200':
           description: Coverage summary.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SymbolCoverageResponse' }
+              schema: { $ref: '#/components/schemas/SecurityCoverageResponse' }
 
   # ─── Discovery: field coverage ───
   /api/v2/catalog/field-coverage/scan:
@@ -243,15 +241,13 @@ paths:
             Ignored for nested format (which returns full data_json).
             Unknown fields return 400 with suggestions.
         - in: query
-          name: symbol
-          schema: { type: string }
+          name: security_id
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Single security_id (Phase 3 surrogate key) to filter on.
         - in: query
-          name: symbols
+          name: security_ids
           schema: { type: string }
-          description: Comma-separated list of symbols.
-        - in: query
-          name: market
-          schema: { type: string, default: zh_a }
+          description: Comma-separated list of security_ids.
         - in: query
           name: report_period
           schema: { type: string }
@@ -338,14 +334,13 @@ paths:
           schema: { type: string }
           description: Comma-separated raw/canonical field names for flat projection.
         - in: query
-          name: symbol
-          schema: { type: string }
+          name: security_id
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Single security_id (Phase 3 surrogate key) to filter on.
         - in: query
-          name: symbols
+          name: security_ids
           schema: { type: string }
-        - in: query
-          name: market
-          schema: { type: string }
+          description: Comma-separated list of security_ids.
         - in: query
           name: report_period
           schema: { type: string }
@@ -427,14 +422,13 @@ paths:
           name: fields
           schema: { type: string }
         - in: query
-          name: symbol
-          schema: { type: string }
+          name: security_id
+          schema: { type: integer, format: int64, minimum: 1 }
+          description: Single security_id (Phase 3 surrogate key) to filter on.
         - in: query
-          name: symbols
+          name: security_ids
           schema: { type: string }
-        - in: query
-          name: market
-          schema: { type: string }
+          description: Comma-separated list of security_ids.
         - in: query
           name: change_date
           schema: { type: string }
@@ -497,8 +491,947 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/UpsertResponse' }
 
+  # --- Feature Platform: registry and governance ---
+  /api/v2/features/registry/sync:
+    post:
+      tags: [Feature Platform]
+      summary: Synchronize governed feature manifests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureRegistrySyncRequest' }
+      responses:
+        '200':
+          description: Per-manifest synchronization result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRegistrySyncResponse' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+        '422': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/definitions:
+    get:
+      tags: [Feature Platform]
+      summary: List governed feature definitions
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: category, schema: { type: string } }
+        - { in: query, name: owner, schema: { type: string } }
+        - $ref: '#/components/parameters/FeatureLimit'
+        - $ref: '#/components/parameters/FeatureOffset'
+      responses:
+        '200':
+          description: Feature definition page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeaturePage' }
+
+  /api/v2/features/definitions/{feature_code}:
+    parameters:
+      - $ref: '#/components/parameters/FeatureCode'
+    get:
+      tags: [Feature Platform]
+      summary: Get a definition and all version summaries
+      responses:
+        '200':
+          description: Definition detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureDefinitionDetail' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/versions/{version_id}:
+    parameters:
+      - $ref: '#/components/parameters/FeatureVersionID'
+    get:
+      tags: [Feature Platform]
+      summary: Get a feature version by registry ID
+      responses:
+        '200':
+          description: Version, implementation, and dependency snapshot.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureVersionSummary' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/definitions/{feature_code}/versions/{version}:publish:
+    parameters:
+      - $ref: '#/components/parameters/FeatureCode'
+      - $ref: '#/components/parameters/FeatureVersionNumber'
+    post:
+      tags: [Feature Platform]
+      summary: Publish an immutable feature version
+      responses:
+        '200':
+          description: Version published.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureLifecycleResponse' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+        '422': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/definitions/{feature_code}/versions/{version}:deprecate:
+    parameters:
+      - $ref: '#/components/parameters/FeatureCode'
+      - $ref: '#/components/parameters/FeatureVersionNumber'
+    post:
+      tags: [Feature Platform]
+      summary: Deprecate a published feature version
+      responses:
+        '200':
+          description: Version deprecated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureLifecycleResponse' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/lineage/{feature_code}:
+    parameters:
+      - $ref: '#/components/parameters/FeatureCode'
+    get:
+      tags: [Feature Platform]
+      summary: Get versioned upstream and downstream lineage
+      responses:
+        '200':
+          description: Version-level feature and data-field lineage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureLineage' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/availability/{feature_code}:
+    parameters:
+      - $ref: '#/components/parameters/FeatureCode'
+    get:
+      tags: [Feature Platform]
+      summary: Get execution readiness and materialization availability
+      parameters:
+        - $ref: '#/components/parameters/SourceProfile'
+      responses:
+        '200':
+          description: Multi-dimensional availability assessment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureAvailability' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+
+  # --- Feature Platform: run state and persistence ---
+  /api/v2/features/runs:
+    post:
+      tags: [Feature Platform]
+      summary: Create or idempotently reuse a feature run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureRunCreateRequest' }
+      responses:
+        '200':
+          description: Existing run reused.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRunCreateResponse' }
+        '202':
+          description: New run accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRunCreateResponse' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+        '422': { $ref: '#/components/responses/FeatureError' }
+    get:
+      tags: [Feature Platform]
+      summary: List persisted feature runs
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: producer_service, schema: { type: string } }
+        - { in: query, name: feature_version_id, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: backfill_id, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/FeatureLimit'
+        - $ref: '#/components/parameters/FeatureOffset'
+      responses:
+        '200':
+          description: Feature run page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeaturePage' }
+
+  /api/v2/features/runs:reconcile-stale:
+    post:
+      tags: [Feature Platform]
+      summary: Abort runs whose heartbeat is stale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureStaleRunReconcileRequest' }
+      responses:
+        '200':
+          description: Reconciliation result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureStaleRunReconcileResponse' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/runs/{run_id}:
+    parameters:
+      - $ref: '#/components/parameters/FeatureRunID'
+    get:
+      tags: [Feature Platform]
+      summary: Get run, items, and optionally the subject snapshot
+      parameters:
+        - in: query
+          name: include_subjects
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Persisted execution evidence.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRunDetail' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+    patch:
+      tags: [Feature Platform]
+      summary: Apply an optimistic run state transition or heartbeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureStateUpdateRequest' }
+      responses:
+        '200':
+          description: Updated run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRun' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/runs/{run_id}/subjects:batch:
+    parameters:
+      - $ref: '#/components/parameters/FeatureRunID'
+    post:
+      tags: [Feature Platform]
+      summary: Persist the immutable run subject snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureSubjectsBatchRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/FeatureBatchResult' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/runs/{run_id}/items:batch:
+    parameters:
+      - $ref: '#/components/parameters/FeatureRunID'
+    post:
+      tags: [Feature Platform]
+      summary: Initialize the versioned item state for a run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureItemsBatchRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/FeatureBatchResult' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/runs/{run_id}/items/{version_id}:
+    parameters:
+      - $ref: '#/components/parameters/FeatureRunID'
+      - $ref: '#/components/parameters/FeatureVersionID'
+    patch:
+      tags: [Feature Platform]
+      summary: Update one run item's state and quality counters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureRunItemUpdateRequest' }
+      responses:
+        '200':
+          description: Updated run item.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRunItem' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/runs/{run_id}/values/numeric:batch:
+    parameters:
+      - $ref: '#/components/parameters/FeatureRunID'
+    post:
+      tags: [Feature Platform]
+      summary: Idempotently persist a numeric feature value batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureNumericBatchRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/FeatureBatchResult' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+        '422': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/runs/{run_id}:complete:
+    parameters:
+      - $ref: '#/components/parameters/FeatureRunID'
+    post:
+      tags: [Feature Platform]
+      summary: Complete a run after every item succeeds
+      responses:
+        '200':
+          description: Completed run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRun' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/runs/{run_id}:fail:
+    parameters:
+      - $ref: '#/components/parameters/FeatureRunID'
+    post:
+      tags: [Feature Platform]
+      summary: Mark a run failed with stable error evidence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureFailureRequest' }
+      responses:
+        '200':
+          description: Failed run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRun' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/runs/{run_id}:cancel:
+    parameters:
+      - $ref: '#/components/parameters/FeatureRunID'
+    post:
+      tags: [Feature Platform]
+      summary: Cancel a non-terminal run
+      responses:
+        '200':
+          description: Cancelled run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRun' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  # --- Feature Platform: query and backfill ---
+  /api/v2/features/values/numeric:
+    get:
+      tags: [Feature Platform]
+      summary: Query persisted numeric feature values
+      parameters:
+        - $ref: '#/components/parameters/FeatureCodeQuery'
+        - $ref: '#/components/parameters/FeatureVersionQuery'
+        - $ref: '#/components/parameters/FeatureVersionIDQuery'
+        - $ref: '#/components/parameters/FeatureRunIDQuery'
+        - $ref: '#/components/parameters/SecurityIDsQuery'
+        - $ref: '#/components/parameters/ObservedFromQuery'
+        - $ref: '#/components/parameters/ObservedToQuery'
+        - $ref: '#/components/parameters/FeatureLimit'
+        - $ref: '#/components/parameters/FeatureOffset'
+      responses:
+        '200': { $ref: '#/components/responses/FeatureValuePage' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/values/numeric/latest:
+    get:
+      tags: [Feature Platform]
+      summary: Query the latest successful materialization per security
+      parameters:
+        - $ref: '#/components/parameters/FeatureCodeQuery'
+        - $ref: '#/components/parameters/FeatureVersionQuery'
+        - $ref: '#/components/parameters/FeatureVersionIDQuery'
+        - $ref: '#/components/parameters/FeatureRunIDQuery'
+        - $ref: '#/components/parameters/SecurityIDsQuery'
+        - $ref: '#/components/parameters/ObservedFromQuery'
+        - $ref: '#/components/parameters/ObservedToQuery'
+        - $ref: '#/components/parameters/FeatureLimit'
+        - $ref: '#/components/parameters/FeatureOffset'
+      responses:
+        '200': { $ref: '#/components/responses/FeatureValuePage' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/values/numeric/cross-section:
+    get:
+      tags: [Feature Platform]
+      summary: Query a numeric feature cross-section at one observation time
+      parameters:
+        - $ref: '#/components/parameters/FeatureCodeQuery'
+        - $ref: '#/components/parameters/FeatureVersionQuery'
+        - $ref: '#/components/parameters/FeatureVersionIDQuery'
+        - $ref: '#/components/parameters/FeatureRunIDQuery'
+        - $ref: '#/components/parameters/SecurityIDsQuery'
+        - in: query
+          name: observed_at
+          required: true
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/FeatureLimit'
+        - $ref: '#/components/parameters/FeatureOffset'
+      responses:
+        '200': { $ref: '#/components/responses/FeatureValuePage' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/backfills:
+    post:
+      tags: [Feature Platform]
+      summary: Create a calendar-expanded feature backfill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureBackfillCreateRequest' }
+      responses:
+        '202':
+          description: Backfill job and expanded runs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureBackfillDetail' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+        '422': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/backfills/{backfill_id}:
+    parameters:
+      - $ref: '#/components/parameters/FeatureBackfillID'
+    get:
+      tags: [Feature Platform]
+      summary: Get a backfill job and its runs
+      responses:
+        '200':
+          description: Backfill detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureBackfillDetail' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/backfills/{backfill_id}:retry-failed:
+    parameters:
+      - $ref: '#/components/parameters/FeatureBackfillID'
+    post:
+      tags: [Feature Platform]
+      summary: Create retry runs for failed backfill partitions
+      responses:
+        '202':
+          description: Created retry runs.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/backfills/{backfill_id}:cancel:
+    parameters:
+      - $ref: '#/components/parameters/FeatureBackfillID'
+    post:
+      tags: [Feature Platform]
+      summary: Cancel a backfill and all non-terminal child runs
+      responses:
+        '200':
+          description: Backfill cancelled.
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string, example: cancelled } } }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
 components:
+  parameters:
+    FeatureCode:
+      in: path
+      name: feature_code
+      required: true
+      schema: { type: string, pattern: '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$' }
+    FeatureVersionNumber:
+      in: path
+      name: version
+      required: true
+      schema: { type: integer, minimum: 1 }
+    FeatureVersionID:
+      in: path
+      name: version_id
+      required: true
+      schema: { type: integer, minimum: 1 }
+    FeatureRunID:
+      in: path
+      name: run_id
+      required: true
+      schema: { type: string, format: uuid }
+    FeatureBackfillID:
+      in: path
+      name: backfill_id
+      required: true
+      schema: { type: string, format: uuid }
+    SourceProfile:
+      in: query
+      name: source_profile
+      schema: { type: string, default: default }
+    FeatureCodeQuery:
+      in: query
+      name: feature_code
+      schema: { type: string }
+    FeatureVersionQuery:
+      in: query
+      name: version
+      schema: { type: integer, minimum: 1 }
+    FeatureVersionIDQuery:
+      in: query
+      name: feature_version_id
+      schema: { type: integer, minimum: 1 }
+    FeatureRunIDQuery:
+      in: query
+      name: run_id
+      schema: { type: string, format: uuid }
+    SecurityIDsQuery:
+      in: query
+      name: security_ids
+      description: Comma-separated PhoenixA security IDs.
+      schema: { type: string, example: '1,2,3' }
+    ObservedFromQuery:
+      in: query
+      name: observed_from
+      schema: { type: string, format: date-time }
+    ObservedToQuery:
+      in: query
+      name: observed_to
+      schema: { type: string, format: date-time }
+    FeatureLimit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+    FeatureOffset:
+      in: query
+      name: offset
+      schema: { type: integer, minimum: 0, default: 0 }
+
+  responses:
+    FeatureError:
+      description: Stable Feature Platform error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/FeaturePlatformError' }
+    FeatureBatchResult:
+      description: Idempotent batch write result.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/FeatureBatchResult' }
+    FeatureValuePage:
+      description: Numeric value page.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/FeatureValuePage' }
+
   schemas:
+    FeaturePlatformError:
+      type: object
+      required: [code, error]
+      properties:
+        code: { type: string, example: MANIFEST_CHECKSUM_CONFLICT }
+        error: { type: string }
+
+    FeatureManifest:
+      type: object
+      required: [feature, version, implementation, dependencies]
+      properties:
+        feature:
+          type: object
+          required: [code, display_name, description, kind, entity_type, value_type, unit, category, owner, tags]
+          additionalProperties: false
+          properties:
+            code: { type: string }
+            display_name: { type: string }
+            description: { type: string }
+            kind: { type: string }
+            entity_type: { type: string }
+            value_type: { type: string }
+            unit: { type: string }
+            category: { type: string }
+            owner: { type: string }
+            tags: { type: array, items: { type: string } }
+        version:
+          type: object
+          required: [number, status, frequency, as_of_semantics, missing_policy, manifest_checksum]
+          additionalProperties: false
+          properties:
+            number: { type: integer, minimum: 1 }
+            status: { type: string, enum: [draft, published, deprecated] }
+            frequency: { type: string }
+            as_of_semantics: { type: string, enum: [point_in_time, latest] }
+            missing_policy: { type: string }
+            manifest_checksum: { type: string, minLength: 64, maxLength: 64 }
+        implementation:
+          type: object
+          required: [kind, producer_service, backend, entrypoint, implementation_revision, config, checksum, status]
+          additionalProperties: false
+          properties:
+            kind: { type: string }
+            producer_service: { type: string }
+            backend: { type: string }
+            entrypoint: { type: string }
+            implementation_revision: { type: integer, minimum: 1 }
+            config: { type: object, additionalProperties: true }
+            checksum: { type: string, minLength: 64, maxLength: 64 }
+            status: { type: string }
+        dependencies:
+          type: array
+          items: { type: object, additionalProperties: true }
+
+    FeatureRegistrySyncRequest:
+      type: object
+      required: [manifests]
+      properties:
+        manifests:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/FeatureManifest' }
+
+    FeatureRegistrySyncResponse:
+      type: object
+      required: [created, updated_drafts, unchanged, rejected, graph_valid]
+      properties:
+        created: { type: array, items: { type: string } }
+        updated_drafts: { type: array, items: { type: string } }
+        unchanged: { type: array, items: { type: string } }
+        rejected:
+          type: array
+          items:
+            type: object
+            required: [feature, code, error]
+            properties:
+              feature: { type: string }
+              code: { type: string }
+              error: { type: string }
+        graph_valid: { type: boolean }
+
+    FeatureDefinition:
+      type: object
+      required: [id, feature_code, display_name, kind, entity_type, value_type, status]
+      properties:
+        id: { type: integer, minimum: 1 }
+        feature_code: { type: string }
+        display_name: { type: string }
+        description: { type: string }
+        kind: { type: string }
+        entity_type: { type: string }
+        value_type: { type: string }
+        unit: { type: string }
+        category: { type: string }
+        owner: { type: string }
+        status: { type: string }
+        tags: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    FeatureVersion:
+      type: object
+      required: [id, feature_id, version_number, status, manifest_checksum]
+      properties:
+        id: { type: integer, minimum: 1 }
+        feature_id: { type: integer, minimum: 1 }
+        version_number: { type: integer, minimum: 1 }
+        status: { type: string, enum: [draft, published, deprecated] }
+        frequency: { type: string }
+        as_of_semantics: { type: string }
+        missing_policy: { type: string }
+        manifest_checksum: { type: string }
+        manifest_snapshot: { type: object, additionalProperties: true }
+        published_at: { type: string, format: date-time }
+        deprecated_at: { type: string, format: date-time }
+
+    FeatureVersionSummary:
+      type: object
+      required: [version, implementations, dependencies]
+      properties:
+        version: { $ref: '#/components/schemas/FeatureVersion' }
+        implementations: { type: array, items: { type: object, additionalProperties: true } }
+        dependencies: { type: array, items: { type: object, additionalProperties: true } }
+
+    FeatureDefinitionDetail:
+      type: object
+      required: [definition, versions]
+      properties:
+        definition: { $ref: '#/components/schemas/FeatureDefinition' }
+        versions: { type: array, items: { $ref: '#/components/schemas/FeatureVersionSummary' } }
+
+    FeaturePage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items: { type: array, items: { type: object, additionalProperties: true } }
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    FeatureLifecycleResponse:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string, enum: [published, deprecated] }
+        version: { type: integer, minimum: 1 }
+
+    FeatureLineage:
+      type: object
+      required: [feature_code, versions]
+      properties:
+        feature_code: { type: string }
+        versions:
+          type: array
+          items:
+            type: object
+            required: [feature_version_id, version_number, upstream, downstream]
+            additionalProperties: true
+
+    FeatureAvailability:
+      type: object
+      required: [feature_code, source_profile, status, execution_readiness, reasons]
+      properties:
+        feature_code: { type: string }
+        source_profile: { type: string }
+        latest_published_version_id: { type: integer, minimum: 1 }
+        latest_succeeded_run: { $ref: '#/components/schemas/FeatureRun' }
+        status: { type: string }
+        definition_status: { type: string }
+        version_status: { type: string }
+        dependency_status: { type: string }
+        data_status: { type: string }
+        implementation_status: { type: string }
+        materialization_status: { type: string }
+        execution_readiness: { type: string }
+        reasons: { type: array, items: { type: string } }
+        data_fields: { type: array, items: { type: object, additionalProperties: true } }
+
+    FeatureRunCreateRequest:
+      type: object
+      required:
+        - request_fingerprint
+        - producer_service
+        - trigger_type
+        - as_of_time
+        - data_cutoff_time
+        - source_profile
+        - market
+        - universe_hash
+        - code_revision
+        - root_feature_version_ids
+      properties:
+        run_id: { type: string, format: uuid }
+        request_fingerprint: { type: string, minLength: 64, maxLength: 64 }
+        producer_service: { type: string }
+        producer_run_ref: { type: string }
+        trigger_type: { type: string, enum: [manual, cron, api, backfill] }
+        as_of_time: { type: string, format: date-time }
+        data_cutoff_time: { type: string, format: date-time }
+        source_profile: { type: string }
+        market: { type: string }
+        universe_hash: { type: string }
+        code_revision: { type: string }
+        root_feature_version_ids: { type: array, minItems: 1, items: { type: integer, minimum: 1 } }
+        dependency_plan_checksum: { type: string }
+        parameters: { type: object, additionalProperties: true }
+        retry_of_run_id: { type: string, format: uuid }
+        force: { type: boolean, default: false }
+
+    FeatureRunCreateResponse:
+      type: object
+      required: [accepted, reused, run_id, status, request_fingerprint]
+      properties:
+        accepted: { type: boolean }
+        reused: { type: boolean }
+        run_id: { type: string, format: uuid }
+        status: { type: string }
+        request_fingerprint: { type: string }
+
+    FeatureRun:
+      type: object
+      required: [run_id, status, producer_service, as_of_time, data_cutoff_time, source_profile, code_revision]
+      properties:
+        run_id: { type: string, format: uuid }
+        request_fingerprint: { type: string }
+        producer_service: { type: string }
+        producer_run_ref: { type: string }
+        trigger_type: { type: string }
+        status: { type: string, enum: [pending, running, succeeded, failed, cancelled, aborted] }
+        worker_id: { type: string }
+        heartbeat_at: { type: string, format: date-time }
+        as_of_time: { type: string, format: date-time }
+        data_cutoff_time: { type: string, format: date-time }
+        source_profile: { type: string }
+        market: { type: string }
+        universe_hash: { type: string }
+        code_revision: { type: string }
+        root_feature_version_ids: { type: array, items: { type: integer } }
+        parameters: { type: object, additionalProperties: true }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        error_code: { type: string }
+        error_message: { type: string }
+
+    FeatureRunItem:
+      type: object
+      required: [run_id, feature_version_id, status, input_count, output_count, valid_count, missing_count, invalid_count]
+      properties:
+        run_id: { type: string, format: uuid }
+        feature_version_id: { type: integer, minimum: 1 }
+        status: { type: string }
+        input_count: { type: integer }
+        output_count: { type: integer }
+        valid_count: { type: integer }
+        missing_count: { type: integer }
+        invalid_count: { type: integer }
+        quality_summary: { type: object, additionalProperties: true }
+        duration_ms: { type: integer }
+        error_code: { type: string }
+        error_message: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+
+    FeatureRunDetail:
+      type: object
+      required: [run, items, subjects]
+      properties:
+        run: { $ref: '#/components/schemas/FeatureRun' }
+        items: { type: array, items: { $ref: '#/components/schemas/FeatureRunItem' } }
+        subjects: { type: array, items: { type: object, additionalProperties: true } }
+
+    FeatureSubjectsBatchRequest:
+      type: object
+      required: [security_ids]
+      properties:
+        security_ids: { type: array, minItems: 1, items: { type: integer, minimum: 1 } }
+        included_reason: { type: string }
+
+    FeatureItemsBatchRequest:
+      type: object
+      required: [feature_version_ids]
+      properties:
+        feature_version_ids: { type: array, minItems: 1, items: { type: integer, minimum: 1 } }
+
+    FeatureStateUpdateRequest:
+      type: object
+      required: [expected_status, new_status]
+      properties:
+        expected_status: { type: string }
+        new_status: { type: string }
+        worker_id: { type: string }
+        heartbeat_at: { type: string, format: date-time }
+        error_code: { type: string }
+        error_message: { type: string }
+
+    FeatureRunItemUpdateRequest:
+      type: object
+      required: [expected_status, new_status, input_count, output_count, valid_count, missing_count, invalid_count, duration_ms]
+      properties:
+        expected_status: { type: string }
+        new_status: { type: string }
+        input_count: { type: integer, minimum: 0 }
+        output_count: { type: integer, minimum: 0 }
+        valid_count: { type: integer, minimum: 0 }
+        missing_count: { type: integer, minimum: 0 }
+        invalid_count: { type: integer, minimum: 0 }
+        duration_ms: { type: integer, minimum: 0 }
+        quality_summary: { type: object, additionalProperties: true }
+        error_code: { type: string }
+        error_message: { type: string }
+
+    FeatureStaleRunReconcileRequest:
+      type: object
+      required: [stale_before, producer_service]
+      properties:
+        stale_before: { type: string, format: date-time }
+        producer_service: { type: string }
+
+    FeatureStaleRunReconcileResponse:
+      type: object
+      required: [stale_before, aborted_count, run_ids]
+      properties:
+        stale_before: { type: string, format: date-time }
+        aborted_count: { type: integer, minimum: 0 }
+        run_ids: { type: array, items: { type: string, format: uuid } }
+
+    FeatureNumericBatchRequest:
+      type: object
+      required: [feature_version_id, observed_at, values]
+      properties:
+        feature_version_id: { type: integer, minimum: 1 }
+        observed_at: { type: string, format: date-time }
+        values:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [security_id, value_status]
+            properties:
+              security_id: { type: integer, minimum: 1 }
+              value: { type: number, nullable: true }
+              value_status: { type: string, enum: [valid, missing, invalid] }
+              quality_flags: { type: object, additionalProperties: true }
+              source_max_available_at: { type: string, format: date-time }
+
+    FeatureNumericValue:
+      type: object
+      required: [run_id, feature_version_id, security_id, observed_at, value_status, computed_at]
+      properties:
+        run_id: { type: string, format: uuid }
+        feature_version_id: { type: integer, minimum: 1 }
+        feature_code: { type: string }
+        version_number: { type: integer, minimum: 1 }
+        security_id: { type: integer, minimum: 1 }
+        observed_at: { type: string, format: date-time }
+        value: { type: number, nullable: true }
+        value_status: { type: string, enum: [valid, missing, invalid] }
+        quality_flags: { type: object, additionalProperties: true }
+        source_max_available_at: { type: string, format: date-time }
+        computed_at: { type: string, format: date-time }
+
+    FeatureValuePage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/FeatureNumericValue' } }
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    FeatureBatchResult:
+      type: object
+      required: [status, inserted]
+      properties:
+        status: { type: string, example: ok }
+        inserted: { type: integer, minimum: 0 }
+
+    FeatureFailureRequest:
+      type: object
+      required: [error_code, error_message]
+      properties:
+        error_code: { type: string }
+        error_message: { type: string }
+
+    FeatureBackfillCreateRequest:
+      type: object
+      required: [root_feature_version_ids, start_as_of, end_as_of, step, source_profile, market, universe_request]
+      properties:
+        root_feature_version_ids: { type: array, minItems: 1, items: { type: integer, minimum: 1 } }
+        start_as_of: { type: string, format: date-time }
+        end_as_of: { type: string, format: date-time }
+        step: { type: string }
+        calendar_code: { type: string }
+        data_cutoff_policy: { type: object, additionalProperties: true }
+        source_profile: { type: string }
+        market: { type: string }
+        universe_request: { type: object, additionalProperties: true }
+        max_concurrency: { type: integer, minimum: 1 }
+
+    FeatureBackfillDetail:
+      type: object
+      required: [job, runs]
+      properties:
+        job: { type: object, additionalProperties: true }
+        runs: { type: array, items: { $ref: '#/components/schemas/FeatureRun' } }
+
     ApiError:
       type: object
       properties:
@@ -510,16 +1443,15 @@ components:
         status: { type: string, example: ok }
         count: { type: integer }
 
-    SymbolCoverageResponse:
+    SecurityCoverageResponse:
       type: object
       description: |
-        Per-symbol data coverage. Lists each dataset that has rows for this
-        symbol, broken down by data_type. For financial_statement, each
+        Per-security data coverage. Lists each dataset that has rows for this
+        security_id, broken down by data_type. For financial_statement, each
         data_type further breaks down by report_type (1=Q1, 2=H1, 3=Q3, 4=FY).
       properties:
         generated_at: { type: string, format: date-time }
-        symbol: { type: string }
-        market: { type: string }
+        security_id: { type: integer, format: int64 }
         datasets:
           type: array
           items: { $ref: '#/components/schemas/SymbolCoverageDataset' }

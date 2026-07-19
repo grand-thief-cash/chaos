@@ -297,10 +297,14 @@ func makeIndustryWeights(n int) []*model.IndustryWeight {
 	weights := make([]*model.IndustryWeight, n)
 	for i := 0; i < n; i++ {
 		weights[i] = &model.IndustryWeight{
+			CategoryID: uint64(100 + i),
+			SecurityID: uint64(200 + i),
+			TradeDate:  "2026-05-07",
+			Weight:     0.05,
+			// Input-only natural keys (gorm:"-"); present as the controller would pass
+			// them post-resolve for observability, but not persisted.
 			IndexCode: "851426.SI",
 			Symbol:    "000001",
-			TradeDate: "2026-05-07",
-			Weight:    0.05,
 		}
 	}
 	return weights
@@ -310,10 +314,11 @@ func makeIndustryDaily(n int) []*model.IndustryDaily {
 	daily := make([]*model.IndustryDaily, n)
 	for i := 0; i < n; i++ {
 		daily[i] = &model.IndustryDaily{
-			IndexCode: "851426.SI",
-			TradeDate: "2026-05-07",
-			Open:      3000.0,
-			Close:     3050.0,
+			CategoryID: uint64(100 + i),
+			TradeDate:  "2026-05-07",
+			Open:       3000.0,
+			Close:      3050.0,
+			IndexCode:  "851426.SI", // input-only (gorm:"-")
 		}
 	}
 	return daily

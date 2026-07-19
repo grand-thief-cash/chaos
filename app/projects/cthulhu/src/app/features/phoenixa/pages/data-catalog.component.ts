@@ -295,7 +295,7 @@ export class DataCatalogComponent implements OnInit, OnDestroy {
   private domainColors: Record<string, string> = {
     bars: 'blue', security: 'green', taxonomy: 'orange',
     financial: 'gold', strategy: 'purple', kg: 'magenta',
-    factor: 'cyan', regime: 'red', other: 'default'
+    market_activity: 'cyan', other: 'default'
   };
 
   ngOnInit() {
@@ -435,7 +435,7 @@ export class DataCatalogComponent implements OnInit, OnDestroy {
     const map: Record<string, string> = {
       bars: '#1890ff', security: '#52c41a', taxonomy: '#fa8c16',
       financial: '#faad14', strategy: '#722ed1', kg: '#eb2f96',
-      factor: '#13c2c2', regime: '#f5222d', other: '#8c8c8c'
+      market_activity: '#13c2c2', other: '#8c8c8c'
     };
     return map[domain] || '#8c8c8c';
   }

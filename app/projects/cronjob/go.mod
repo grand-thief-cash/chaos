@@ -65,7 +65,7 @@ require (
 )
 
 require (
-	github.com/grand-thief-cash/chaos/app/infra/go/application v0.18.3
+	github.com/grand-thief-cash/chaos/app/infra/go/application v0.18.4
 	github.com/grand-thief-cash/chaos/app/infra/go/common v1.0.0
 )
 

@@ -47,7 +47,13 @@ def test_and_print(name, url, params=None):
 
 # Test all APIs
 test_and_print("Securities List", f"{BASE_URL}/api/v2/securities", {"limit": "1"})
-test_and_print("Securities Get", f"{BASE_URL}/api/v2/securities/000001")
+# Securities Get 路径参数已从 symbol 迁移到 security_id，先从列表取一个真实 id
+try:
+    _sec_list = requests.get(f"{BASE_URL}/api/v2/securities", params={"limit": "1"}).json()
+    _sec_id = ((_sec_list.get("data") or [{}])[0]).get("security_id", "1")
+except Exception:
+    _sec_id = "1"
+test_and_print("Securities Get", f"{BASE_URL}/api/v2/securities/{_sec_id}")
 test_and_print("Securities Count", f"{BASE_URL}/api/v2/securities/count")
 
 test_and_print("Bars Query", f"{BASE_URL}/api/v2/bars/stock/zh_a", {
@@ -64,15 +70,15 @@ test_and_print("Bars Last Update", f"{BASE_URL}/api/v2/bars/stock/zh_a/last_upda
     "symbols": "000001"
 })
 
-test_and_print("Taxonomy by_security", f"{BASE_URL}/api/v2/taxonomy/by_security/000001")
+test_and_print("Taxonomy by_security", f"{BASE_URL}/api/v2/taxonomy/by_security/{_sec_id}")
 test_and_print("Taxonomy Categories", f"{BASE_URL}/api/v2/taxonomy/amazing_data/swhy/zh_a/categories", {"limit": "1"})
 
 test_and_print("Financial Statements", f"{BASE_URL}/api/v2/financial/amazing_data/balance_sheet", {
-    "symbol": "000001",
+    "security_id": "1",
     "limit": "1"
 })
 
 test_and_print("Corporate Actions", f"{BASE_URL}/api/v2/corporate-action/amazing_data/dividend", {
-    "symbol": "000001",
+    "security_id": "1",
     "limit": "1"
 })

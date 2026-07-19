@@ -73,20 +73,21 @@ class StockZhABsAdjustFactorChild(WorkerUnit):
         if result is None or (isinstance(result, pd.DataFrame) and result.empty):
             return []
 
+        security_id = ctx.params.get("security_id")
+        if not security_id:
+            # No security_id forwarded by parent → cannot write (Phase 3).
+            ctx.fail("adjust_factor child missing security_id param", phase='post_process')
+            return []
+
         processed = []
         for row in result.to_dict('records'):
-            symbol = str(row.get('symbol', '')).strip()
-            if not symbol:
-                continue
-
             divid_operate_date = normalize_date_yyyymmdd(row.get('dividOperateDate', ''))
             if not divid_operate_date:
                 continue
 
             record = {
+                'security_id': int(security_id),
                 'source': consts.DataSource.DS_BAOSTOCK.value,
-                'symbol': symbol,
-                'market': 'zh_a',
                 'divid_operate_date': divid_operate_date,
                 'fore_adjust_factor': _safe_float(row.get('foreAdjustFactor')),
                 'back_adjust_factor': _safe_float(row.get('backAdjustFactor')),
@@ -96,7 +97,7 @@ class StockZhABsAdjustFactorChild(WorkerUnit):
 
         seen = {}
         for i, rec in enumerate(processed):
-            key = (rec['source'], rec['symbol'], rec['market'], rec['divid_operate_date'])
+            key = (rec['security_id'], rec['source'], rec['divid_operate_date'])
             seen[key] = i
         if len(seen) < len(processed):
             processed = [processed[i] for i in sorted(seen.values())]

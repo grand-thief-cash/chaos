@@ -21,9 +21,8 @@ func TestCorporateActionTableName(t *testing.T) {
 
 func TestFinancialStatementJSONTags(t *testing.T) {
 	rec := FinancialStatement{
+		SecurityID:      42,
 		Source:          "src",
-		Symbol:          "sym",
-		Market:          "mkt",
 		StatementType:   "st",
 		ReportingPeriod: "rp",
 		ReportType:      "rt",
@@ -44,7 +43,7 @@ func TestFinancialStatementJSONTags(t *testing.T) {
 	json.Unmarshal(data, &m)
 
 	required := []string{
-		"source", "symbol", "market", "statement_type",
+		"security_id", "source", "statement_type",
 		"reporting_period", "report_type", "statement_code",
 		"security_name", "ann_date", "actual_ann_date",
 		"comp_type_code", "data_json",
@@ -58,9 +57,8 @@ func TestFinancialStatementJSONTags(t *testing.T) {
 
 func TestCorporateActionJSONTags(t *testing.T) {
 	rec := CorporateAction{
+		SecurityID:   42,
 		Source:       "src",
-		Symbol:       "sym",
-		Market:       "mkt",
 		ActionType:   "at",
 		ReportPeriod: "rp",
 		AnnDate:      "ad",
@@ -77,7 +75,7 @@ func TestCorporateActionJSONTags(t *testing.T) {
 	json.Unmarshal(data, &m)
 
 	required := []string{
-		"source", "symbol", "market", "action_type",
+		"security_id", "source", "action_type",
 		"report_period", "ann_date", "progress_code", "data_json",
 	}
 	for _, f := range required {

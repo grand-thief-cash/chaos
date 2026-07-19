@@ -1,5 +1,7 @@
 # Long Hu Bang API - 龙虎榜数据
 
+> Phase 3: identity is `security_id`; `symbol`/`market` removed.
+
 ## 概述
 
 提供 A 股龙虎榜营业部明细查询。该数据来自 AmazingData `InfoData.get_long_hu_bang()`，记录证券在指定交易日、指定上榜原因下的营业部买入/卖出明细，可用于跟踪异常交易、热门席位和市场情绪。
@@ -20,9 +22,8 @@
 
 | 参数名 | 类型 | 必需 | 说明 |
 |--------|------|------|------|
-| symbol | string | 否 | 单个证券代码（纯代码，如 `000001`） |
-| symbols | string | 否 | 多个证券代码，逗号分隔 |
-| market | string | 否 | 市场标识，默认常用为 `zh_a` |
+| security_id | integer | 否 | 单个证券 ID（`security_registry.id`） |
+| security_ids | string | 否 | 多个证券 ID，逗号分隔 |
 | trade_date | string | 否 | 精确交易日期，格式 `YYYY-MM-DD` |
 | start_date | string | 否 | 起始交易日期，格式 `YYYY-MM-DD` |
 | end_date | string | 否 | 截止交易日期，格式 `YYYY-MM-DD` |
@@ -54,8 +55,7 @@
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
 | source | string | 数据来源 |
-| symbol | string | 证券代码（纯代码） |
-| market | string | 市场标识 |
+| security_id | integer | 证券 ID（`security_registry.id`） |
 | trade_date | string | 交易日期，格式 `YYYY-MM-DD` |
 | security_name | string | 证券名称 |
 | reason_type | string | 上榜原因类型代码 |
@@ -70,15 +70,14 @@
 
 ## 响应示例
 
-**请求**: `GET /api/v2/long-hu-bang/amazing_data?symbol=000001&start_date=2026-05-01&end_date=2026-05-31`
+**请求**: `GET /api/v2/long-hu-bang/amazing_data?security_id=1&start_date=2026-05-01&end_date=2026-05-31`
 
 ```json
 {
   "data": [
     {
       "source": "amazing_data",
-      "symbol": "000001",
-      "market": "zh_a",
+      "security_id": 1,
       "trade_date": "2026-05-27",
       "security_name": "平安银行",
       "reason_type": "1001",

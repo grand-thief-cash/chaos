@@ -4,11 +4,11 @@
 """
 
 import json
-import requests
-import sys
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+import requests
 
 
 class APIStatus(Enum):
@@ -50,7 +50,7 @@ class APITester:
             data = resp.json()
             if "data" in data and len(data["data"]) > 0:
                 security = data["data"][0]
-                expected_fields = ["symbol", "asset_type", "market", "exchange", "name", "status", "created_at", "updated_at"]
+                expected_fields = ["security_id", "symbol", "asset_type", "market", "exchange", "name", "status", "created_at", "updated_at"]
                 actual_fields = list(security.keys())
                 missing = set(expected_fields) - set(actual_fields)
                 extra = set(actual_fields) - set(expected_fields)
@@ -70,16 +70,23 @@ class APITester:
         except Exception as e:
             self.add_result("Securities List", "/api/v2/securities", APIStatus.FAIL, str(e))
 
-        # Test 2: Get single security
+        # Test 2: Get single security by security_id (fetched from list)
         try:
-            resp = requests.get(f"{self.BASE_URL}/api/v2/securities/000001?asset_type=stock&market=zh_a")
-            data = resp.json()
-            if "data" in data:
-                self.add_result("Securities Get", "/api/v2/securities/{symbol}", APIStatus.PASS, "返回格式正确")
+            list_resp = requests.get(f"{self.BASE_URL}/api/v2/securities?limit=1")
+            list_data = list_resp.json()
+            rows = (list_data.get("data") or []) if isinstance(list_data, dict) else []
+            if not rows or "security_id" not in rows[0]:
+                self.add_result("Securities Get", "/api/v2/securities/{security_id}", APIStatus.WARN, "无法获取 security_id 用于测试")
             else:
-                self.add_result("Securities Get", "/api/v2/securities/{symbol}", APIStatus.FAIL, "响应缺少 data 字段")
+                sid = rows[0]["security_id"]
+                resp = requests.get(f"{self.BASE_URL}/api/v2/securities/{sid}")
+                data = resp.json()
+                if "data" in data:
+                    self.add_result("Securities Get", "/api/v2/securities/{security_id}", APIStatus.PASS, "返回格式正确")
+                else:
+                    self.add_result("Securities Get", "/api/v2/securities/{security_id}", APIStatus.FAIL, "响应缺少 data 字段")
         except Exception as e:
-            self.add_result("Securities Get", "/api/v2/securities/{symbol}", APIStatus.FAIL, str(e))
+            self.add_result("Securities Get", "/api/v2/securities/{security_id}", APIStatus.FAIL, str(e))
 
         # Test 3: Count securities
         try:
@@ -146,43 +153,50 @@ class APITester:
         """测试 Taxonomy API"""
         print("\n=== Testing Taxonomy API ===")
 
-        # Test 1: by_security
+        # Test 1: by_security (Phase 2: path param is security_id, not symbol)
         try:
-            resp = requests.get(f"{self.BASE_URL}/api/v2/taxonomy/by_security/000001")
-            data = resp.json()
-            if isinstance(data, list) and len(data) > 0:
-                item = data[0]
-                # 预期字段（来自 TaxonomySecurityMapWithDetail）
-                expected_fields = [
-                    "id", "source", "taxonomy", "category_code", "category_name",
-                    "level", "parent_code", "index_code",
-                    "canonical_source", "canonical_taxonomy", "canonical_level",
-                    "canonical_category_code", "canonical_category_name", "canonical_parent_code",
-                    "canonical_index_code", "derived_flags",
-                    "symbol", "asset_type", "market",
-                    "created_at", "updated_at",
-                ]
-                actual_fields = list(item.keys())
-                missing = set(expected_fields) - set(actual_fields)
-
-                if missing:
-                    self.add_result(
-                        "Taxonomy by_security",
-                        "/api/v2/taxonomy/by_security/{symbol}",
-                        APIStatus.FAIL,
-                        f"字段缺失: {missing}",
-                        {
-                            "expected": expected_fields,
-                            "actual": actual_fields,
-                            "missing": list(missing)
-                        }
-                    )
-                else:
-                    self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{symbol}", APIStatus.PASS, "字段符合文档")
+            sec_resp = requests.get(f"{self.BASE_URL}/api/v2/securities", params={"limit": "1"})
+            sec_data = sec_resp.json() if sec_resp.status_code == 200 else {}
+            sec_rows = sec_data.get("data") if isinstance(sec_data, dict) else sec_data
+            _sec_id = (sec_rows or [{}])[0].get("security_id") if sec_rows else None
+            if not _sec_id:
+                self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{security_id}", APIStatus.WARN, "无可用 security_id（security_registry 为空）")
             else:
-                self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{symbol}", APIStatus.WARN, "无数据返回")
+                resp = requests.get(f"{self.BASE_URL}/api/v2/taxonomy/by_security/{_sec_id}")
+                data = resp.json()
+                if isinstance(data, list) and len(data) > 0:
+                    item = data[0]
+                    # 预期字段（来自 TaxonomySecurityMapWithDetail，Phase 2 id-keyed）
+                    expected_fields = [
+                        "security_id", "category_id", "source", "taxonomy", "category_code", "category_name",
+                        "level", "parent_code", "index_code",
+                        "canonical_source", "canonical_taxonomy", "canonical_level",
+                        "canonical_category_code", "canonical_category_name", "canonical_parent_code",
+                        "canonical_index_code", "derived_flags",
+                        "symbol", "asset_type", "market",
+                        "created_at", "updated_at",
+                    ]
+                    actual_fields = list(item.keys())
+                    missing = set(expected_fields) - set(actual_fields)
+
+                    if missing:
+                        self.add_result(
+                            "Taxonomy by_security",
+                            "/api/v2/taxonomy/by_security/{security_id}",
+                            APIStatus.FAIL,
+                            f"字段缺失: {missing}",
+                            {
+                                "expected": expected_fields,
+                                "actual": actual_fields,
+                                "missing": list(missing)
+                            }
+                        )
+                    else:
+                        self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{security_id}", APIStatus.PASS, "字段符合文档")
+                else:
+                    self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{security_id}", APIStatus.WARN, "无数据返回")
         except Exception as e:
-            self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{symbol}", APIStatus.FAIL, str(e))
+            self.add_result("Taxonomy by_security", "/api/v2/taxonomy/by_security/{security_id}", APIStatus.FAIL, str(e))
 
         # Test 2: Categories - 响应格式检查
         try:
@@ -210,14 +224,14 @@ class APITester:
         print("\n=== Testing Financial Statements API ===")
 
         try:
-            params = {"symbol": "000001", "limit": "1"}
+            params = {"security_id": "1", "limit": "1"}
             resp = requests.get(f"{self.BASE_URL}/api/v2/financial/amazing_data/balance_sheet", params=params)
             data = resp.json()
             # 返回格式: {"data": [...], "total": ...}
             if "data" in data and "total" in data:
                 if len(data["data"]) > 0:
                     item = data["data"][0]
-                    expected_main_fields = ["id", "source", "symbol", "market", "statement_type", "reporting_period",
+                    expected_main_fields = ["id", "security_id", "source", "statement_type", "reporting_period",
                                           "report_type", "statement_code", "security_name", "ann_date", "actual_ann_date",
                                           "comp_type_code", "data_json", "created_at", "updated_at"]
                     actual_fields = list(item.keys())
@@ -242,14 +256,14 @@ class APITester:
         print("\n=== Testing Corporate Actions API ===")
 
         try:
-            params = {"symbol": "000001", "limit": "1"}
+            params = {"security_id": "1", "limit": "1"}
             resp = requests.get(f"{self.BASE_URL}/api/v2/corporate-action/amazing_data/dividend", params=params)
             data = resp.json()
             # 返回格式: {"data": [...], "total": ...}
             if "data" in data and "total" in data:
                 if len(data["data"]) > 0:
                     item = data["data"][0]
-                    expected_main_fields = ["id", "source", "symbol", "market", "action_type", "report_period",
+                    expected_main_fields = ["id", "security_id", "source", "action_type", "report_period",
                                           "ann_date", "progress_code", "data_json", "created_at", "updated_at"]
                     actual_fields = list(item.keys())
                     missing = set(expected_main_fields) - set(actual_fields)

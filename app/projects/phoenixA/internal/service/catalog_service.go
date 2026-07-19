@@ -149,7 +149,7 @@ var tableMetaRegistry = map[string]tableMeta{
 		},
 	},
 	"long_hu_bang": {
-		Domain:      "regime",
+		Domain:      "market_activity",
 		Description: "龙虎榜营业部明细",
 		TimeColumn:  "trade_date",
 		Lineage: &model.DataLineage{
@@ -157,23 +157,6 @@ var tableMetaRegistry = map[string]tableMeta{
 			IngestionMethod: "REST API batch upsert",
 			RefreshSchedule: "每日增量",
 			APIEndpoint:     "POST /api/v2/long-hu-bang/{source}/upsert",
-		},
-	},
-	// Strategy
-	"strategy_run_summary": {
-		Domain:      "strategy",
-		Description: "策略回测汇总",
-		Lineage: &model.DataLineage{
-			SourceSystem:    "artemis",
-			IngestionMethod: "REST API upsert",
-		},
-	},
-	"strategy_run_artifact": {
-		Domain:      "strategy",
-		Description: "策略回测制品",
-		Lineage: &model.DataLineage{
-			SourceSystem:    "artemis",
-			IngestionMethod: "REST API upsert",
 		},
 	},
 	// KG
@@ -223,34 +206,54 @@ var tableMetaRegistry = map[string]tableMeta{
 			SourceSystem: "atlas",
 		},
 	},
-	// Factor
-	"factor_": {
-		Domain:      "factor",
-		Description: "因子数据",
-		TimeColumn:  "trade_date",
+	// Research
+	"research_report_download_record": {
+		Domain:      "research",
+		Description: "研报下载任务状态跟踪（东方财富，PDF 存 MinIO）",
+		TimeColumn:  "publish_date",
 		Lineage: &model.DataLineage{
 			SourceSystem:    "artemis",
 			IngestionMethod: "REST API batch upsert",
-			RefreshSchedule: "每日增量",
+			RefreshSchedule: "高频增量",
+			APIEndpoint:     "POST /api/v2/research-report/{source}/upsert",
 		},
 	},
-	"factor_metadata": {
-		Domain:      "factor",
-		Description: "因子元数据（描述/参数/状态）",
-		Lineage: &model.DataLineage{
-			SourceSystem: "artemis",
-		},
+	// Feature Platform (real tables introduced by migration 0008).
+	"feature_definition": {
+		Domain: "feature", Description: "Feature 稳定业务定义", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "phoenixA", IngestionMethod: "Feature Registry API", APIEndpoint: "POST /api/v2/features/registry/sync"},
 	},
-	// Regime
-	"regime_": {
-		Domain:      "regime",
-		Description: "市场状态引擎数据",
-		TimeColumn:  "trade_date",
-		Lineage: &model.DataLineage{
-			SourceSystem:    "artemis",
-			IngestionMethod: "REST API",
-			RefreshSchedule: "每日计算",
-		},
+	"feature_version": {
+		Domain: "feature", Description: "Feature 不可变语义版本", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "phoenixA", IngestionMethod: "Feature Registry API"},
+	},
+	"feature_implementation": {
+		Domain: "feature", Description: "Feature 实现与制品修订", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "Manifest sync"},
+	},
+	"feature_dependency": {
+		Domain: "feature", Description: "FeatureVersion 与 DataField 精确依赖图", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "phoenixA", IngestionMethod: "Manifest dependency resolution"},
+	},
+	"feature_backfill_job": {
+		Domain: "feature", Description: "Feature 多日期回填编排", TimeColumn: "created_at",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "Feature Backfill API"},
+	},
+	"feature_run": {
+		Domain: "feature", Description: "Feature 冻结运行上下文", TimeColumn: "as_of_time",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "Feature Run API"},
+	},
+	"feature_run_item": {
+		Domain: "feature", Description: "Feature 运行节点状态与质量摘要",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "Feature Run API"},
+	},
+	"feature_run_subject": {
+		Domain: "feature", Description: "Feature 运行证券集合快照",
+		Lineage: &model.DataLineage{SourceSystem: "phoenixA", IngestionMethod: "Feature Run API"},
+	},
+	"feature_value_numeric": {
+		Domain: "feature", Description: "不可变数值 Feature 物化", TimeColumn: "observed_at",
+		Lineage: &model.DataLineage{SourceSystem: "artemis", IngestionMethod: "REST API batch write", APIEndpoint: "POST /api/v2/features/runs/{run_id}/values/numeric:batch"},
 	},
 }
 
@@ -291,20 +294,24 @@ var columnDescRegistry = map[string]string{
 	"*.sell_amount":        "卖出金额（元）",
 	"*.total_amount":       "实际交易金额（元）",
 	"*.total_volume":       "实际交易量（万股）",
+	"*.resource_id":        "源定义研报 ID（东方财富 infoCode）",
+	"*.publish_date":       "研报发布日期（YYYY-MM-DD）",
+	"*.pdf_object_key":     "MinIO 对象键（PDF 字节在 MinIO，phoenixA 仅存指针）",
+	"*.status":             "下载状态（pending/downloaded/no_pdf/detail_error/pdf_error）",
 }
 
 // ─── Domain label map ───
 
 var domainDescriptions = map[string]string{
-	"bars":      "行情数据（K线）",
-	"security":  "证券基础信息",
-	"taxonomy":  "分类/行业数据",
-	"financial": "财务/公司行为数据",
-	"strategy":  "策略回测数据",
-	"kg":        "知识图谱数据",
-	"factor":    "因子数据",
-	"regime":    "市场状态引擎数据",
-	"other":     "其他",
+	"bars":            "行情数据（K线）",
+	"security":        "证券基础信息",
+	"taxonomy":        "分类/行业数据",
+	"financial":       "财务/公司行为数据",
+	"market_activity": "市场交易活动数据",
+	"kg":              "知识图谱数据",
+	"research":        "研究报告数据",
+	"feature":         "Feature 注册、运行与物化数据",
+	"other":           "其他",
 }
 
 // ─── Data Capability Registry ───
@@ -324,8 +331,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{TypeValue: "bs_balance", Label: "偿债能力指标(baostock)", Description: "季频偿债能力数据：流动比率、速动比率、现金比率、资产负债率、权益乘数等", Source: "baostock"},
 		},
 		OutputFields: []model.FieldDesc{
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
-			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "security_id", Type: "bigint", Description: "证券ID（逻辑外键 → security_registry.id，Phase 3 替代 symbol/market）"},
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data/baostock）"},
 			{Name: "statement_type", Type: "varchar(32)", Description: "报表类型"},
 			{Name: "reporting_period", Type: "varchar(10)", Description: "报告期（YYYY-MM-DD）"},
@@ -337,9 +343,8 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data", "baostock"}},
 			{Name: "statement_type", Type: "string", Required: true, Description: "报表类型", Enum: []string{"balance_sheet", "income", "cashflow", "profit_express", "profit_notice", "bs_balance"}},
-			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
-			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
-			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "security_id", Type: "integer", Required: false, Description: "单个证券ID（security_registry.id）"},
+			{Name: "security_ids", Type: "string", Required: false, Description: "证券ID列表（逗号分隔）"},
 			{Name: "period_start", Type: "string", Required: false, Description: "报告期起始（YYYY-MM-DD）"},
 			{Name: "period_end", Type: "string", Required: false, Description: "报告期截止（YYYY-MM-DD）"},
 			{Name: "reporting_period", Type: "string", Required: false, Description: "单个报告期（YYYY-MM-DD）"},
@@ -363,8 +368,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{TypeValue: "bs_dividend", Label: "除权除息(baostock)", Description: "除权除息详细数据：税前/税后每股股利、每股红股、每股转增资本、各关键日期", Source: "baostock"},
 		},
 		OutputFields: []model.FieldDesc{
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
-			{Name: "market", Type: "varchar(16)", Description: "市场标识"},
+			{Name: "security_id", Type: "bigint", Description: "证券ID（逻辑外键 → security_registry.id，Phase 3 替代 symbol/market）"},
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data/baostock）"},
 			{Name: "action_type", Type: "varchar(32)", Description: "行为类型"},
 			{Name: "ann_date", Type: "varchar(10)", Description: "公告日期（YYYY-MM-DD）"},
@@ -374,7 +378,8 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data", "baostock"}},
 			{Name: "action_type", Type: "string", Required: true, Description: "行为类型", Enum: []string{"dividend", "right_issue", "bs_dividend"}},
-			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
+			{Name: "security_id", Type: "integer", Required: false, Description: "单个证券ID（security_registry.id）"},
+			{Name: "security_ids", Type: "string", Required: false, Description: "证券ID列表（逗号分隔）"},
 		},
 		RefreshSchedule:     "每日增量",
 		CoverageDescription: "A股全量，2015至今（baostock除权除息）/ 历史全量（AmazingData分红配股）",
@@ -386,8 +391,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{TypeValue: "adjust_factor", Label: "复权因子", Description: "Baostock query_adjust_factor 输出的事件级复权因子", Source: "baostock"},
 		},
 		OutputFields: []model.FieldDesc{
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
-			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "security_id", Type: "bigint", Description: "证券ID（逻辑外键 → security_registry.id，Phase 3 替代 symbol/market）"},
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（baostock）"},
 			{Name: "divid_operate_date", Type: "varchar(10)", Description: "除权除息日期（YYYY-MM-DD）"},
 			{Name: "fore_adjust_factor", Type: "numeric(20,8)", Description: "向前复权因子"},
@@ -396,9 +400,8 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		},
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"baostock"}},
-			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
-			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
-			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "security_id", Type: "integer", Required: false, Description: "单个证券ID（security_registry.id）"},
+			{Name: "security_ids", Type: "string", Required: false, Description: "证券ID列表（逗号分隔）"},
 			{Name: "start_date", Type: "string", Required: false, Description: "起始除权除息日期（YYYY-MM-DD）"},
 			{Name: "end_date", Type: "string", Required: false, Description: "截止除权除息日期（YYYY-MM-DD）"},
 			{Name: "fields", Type: "string", Required: false, Description: "返回字段列表（逗号分隔）"},
@@ -415,8 +418,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{TypeValue: "long_hu_bang", Label: "龙虎榜明细", Description: "AmazingData get_long_hu_bang 输出的营业部级龙虎榜数据", Source: "amazing_data"},
 		},
 		OutputFields: []model.FieldDesc{
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（纯代码，如000001）"},
-			{Name: "market", Type: "varchar(16)", Description: "市场标识（zh_a/hk/us）"},
+			{Name: "security_id", Type: "bigint", Description: "证券ID（逻辑外键 → security_registry.id，Phase 3 替代 symbol/market）"},
 			{Name: "source", Type: "varchar(32)", Description: "数据来源（amazing_data）"},
 			{Name: "trade_date", Type: "varchar(10)", Description: "交易日期（YYYY-MM-DD）"},
 			{Name: "security_name", Type: "varchar(128)", Description: "证券名称"},
@@ -432,9 +434,8 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		},
 		QueryParams: []model.ParamDesc{
 			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"amazing_data"}},
-			{Name: "symbol", Type: "string", Required: false, Description: "证券代码"},
-			{Name: "symbols", Type: "string", Required: false, Description: "证券代码列表（逗号分隔）"},
-			{Name: "market", Type: "string", Required: false, Description: "市场标识（如 zh_a）"},
+			{Name: "security_id", Type: "integer", Required: false, Description: "单个证券ID（security_registry.id）"},
+			{Name: "security_ids", Type: "string", Required: false, Description: "证券ID列表（逗号分隔）"},
 			{Name: "trade_date", Type: "string", Required: false, Description: "精确交易日期（YYYY-MM-DD）"},
 			{Name: "start_date", Type: "string", Required: false, Description: "起始交易日期（YYYY-MM-DD）"},
 			{Name: "end_date", Type: "string", Required: false, Description: "截止交易日期（YYYY-MM-DD）"},
@@ -450,14 +451,15 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 	},
 	"bars_": {
 		Provider:            "K线行情",
-		ProviderDescription: "股票/指数/ETF的OHLCV行情数据，支持日/周/月/分钟级别，前复权/后复权/不复权。附带估值指标扩展数据（PE/PB/PS/PCF/换手率）。",
+		ProviderDescription: "股票/指数/ETF的OHLCV行情数据，支持日/周/月/分钟级别，前复权/后复权/不复权。附带估值指标扩展数据（PE/PB/PS/PCF/换手率）。Phase 4: API 契约迁 security_id（物理表仍存 symbol，§3.2）。",
 		DataTypes: []model.DataTypeInfo{
 			{TypeValue: "daily_nf", Label: "日K线（不复权）", Description: "日频OHLCV + 估值指标"},
 			{TypeValue: "daily_hfq", Label: "日K线（后复权）", Description: "日频OHLCV后复权 + 估值指标"},
 		},
 		OutputFields: []model.FieldDesc{
+			{Name: "security_id", Type: "bigint", Description: "证券ID（响应装饰，→ security_registry.id；物理表存 symbol，§3.2）"},
 			{Name: "trade_date", Type: "varchar(10)", Description: "交易日期（YYYY-MM-DD）"},
-			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
+			{Name: "symbol", Type: "varchar(32)", Description: "证券代码（响应装饰）"},
 			{Name: "open/high/low/close", Type: "numeric", Description: "OHLC价格"},
 			{Name: "volume", Type: "bigint", Description: "成交量"},
 			{Name: "amount", Type: "bigint", Description: "成交额"},
@@ -465,17 +467,20 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 			{Name: "pe_ttm/pb_mrq/ps_ttm", Type: "numeric", Description: "估值指标（扩展表）", InJSONB: false},
 		},
 		QueryParams: []model.ParamDesc{
-			{Name: "symbol", Type: "string", Required: true, Description: "证券代码"},
-			{Name: "start_date", Type: "string", Required: false, Description: "起始日期"},
-			{Name: "end_date", Type: "string", Required: false, Description: "截止日期"},
+			{Name: "security_id", Type: "integer", Required: true, Description: "证券ID（security_registry.id）；symbol/symbols 已废弃"},
+			{Name: "period", Type: "string", Required: true, Description: "周期（daily/weekly/...）"},
+			{Name: "adjust", Type: "string", Required: true, Description: "复权（nf/qfq/hfq）"},
+			{Name: "start_date", Type: "string", Required: true, Description: "起始日期（YYYY-MM-DD）"},
+			{Name: "end_date", Type: "string", Required: true, Description: "截止日期（YYYY-MM-DD）"},
 		},
 		RefreshSchedule:     "每日增量（交易日18:00后）",
 		CoverageDescription: "A股全量（SH/SZ/BJ），2009至今（后复权）/ 2016至今（不复权）",
 	},
 	"security_registry": {
 		Provider:            "证券注册表",
-		ProviderDescription: "统一的证券基础信息注册表，包含代码、名称、市场、上市日期、资产类型等。是所有其他数据表通过 symbol 字段关联的核心维度表。",
+		ProviderDescription: "统一的证券基础信息注册表，代理主键 security_id 是 (exchange, asset_type, symbol) 自然键的代理，作为其他表逻辑外键的引用目标。包含代码、名称、市场、上市日期、资产类型等。",
 		OutputFields: []model.FieldDesc{
+			{Name: "security_id", Type: "bigint", Description: "代理主键 (BIGSERIAL)，被其他表 security_id 逻辑引用"},
 			{Name: "symbol", Type: "varchar(32)", Description: "证券代码"},
 			{Name: "name", Type: "varchar(128)", Description: "证券名称"},
 			{Name: "exchange", Type: "varchar(16)", Description: "交易所（SH/SZ/BJ）"},
@@ -486,6 +491,42 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 		RefreshSchedule:     "每日全量",
 		CoverageDescription: "A股全量（SH+SZ+BJ），含退市标记",
 	},
+	"research_report_download_record": {
+		Provider:            "研究报告",
+		ProviderDescription: "东方财富研报下载任务状态跟踪表。artemis 从东方财富抓取研报列表，下载 PDF 并入 MinIO；本表只记录下载任务所需的最小元数据 + MinIO 对象键（pdf_object_key）+ 下载状态，不存 PDF 字节，也不建模研报业务内容。report_type 区分 stock/industry/other；主体由 subject_source_code（源原始代码，stock/industry 非空）+ subject_id（解析后的项目代理 ID，命名空间由 report_type 决定：stock→security_registry.id，industry→taxonomy_category.id）共同表达。未注册主体的研报不跳过（subject_id=NULL，subject_source_code 仍记录）。subject_id 不会自动补齐，需单独 backfill 任务。状态机：pending → downloaded | no_pdf | detail_error | pdf_error。",
+		DataTypes: []model.DataTypeInfo{
+			{TypeValue: "research_report_download_record", Label: "研报下载记录", Description: "东方财富研报下载任务跟踪记录", Source: "eastmoney"},
+		},
+		OutputFields: []model.FieldDesc{
+			{Name: "source", Type: "varchar(32)", Description: "数据来源（eastmoney）"},
+			{Name: "resource_id", Type: "varchar(64)", Description: "源定义研报 ID（东方财富 infoCode，自然键）"},
+			{Name: "report_type", Type: "varchar(16)", Description: "研报类型：stock/industry/other"},
+			{Name: "subject_id", Type: "bigint", Description: "研报主体 ID；命名空间由 report_type 决定：stock→security_registry.id，industry→taxonomy_category.id；未 resolve 时为 NULL"},
+			{Name: "subject_source_code", Type: "varchar(32)", Description: "源原始主体代码（总是填充）：stock→股票代码，industry→产业代码；用于 MinIO 路径与 subject_id 补 resolve"},
+			{Name: "publish_date", Type: "varchar(10)", Description: "研报发布日期（YYYY-MM-DD）"},
+			{Name: "title", Type: "varchar(512)", Description: "研报标题"},
+			{Name: "org_name", Type: "varchar(128)", Description: "出研报的机构名称（哪家券商）"},
+			{Name: "detail_url", Type: "varchar(512)", Description: "研报详情页 URL"},
+			{Name: "pdf_url", Type: "varchar(512)", Description: "已下载 PDF 直链（下载后回填）"},
+			{Name: "pdf_object_key", Type: "varchar(512)", Description: "MinIO 对象键（PDF 字节在 MinIO，phoenixA 仅存指针）"},
+			{Name: "status", Type: "varchar(24)", Description: "下载状态：pending/downloaded/no_pdf/detail_error/pdf_error"},
+			{Name: "last_error", Type: "text", Description: "最近一次失败原因"},
+		},
+		QueryParams: []model.ParamDesc{
+			{Name: "source", Type: "string", Required: true, Description: "数据来源", Enum: []string{"eastmoney"}},
+			{Name: "subject_id", Type: "integer", Required: false, Description: "单个主体 ID（命名空间由 report_type 决定）"},
+			{Name: "subject_ids", Type: "string", Required: false, Description: "主体 ID 列表（逗号分隔）"},
+			{Name: "resource_id", Type: "string", Required: false, Description: "源定义研报 ID"},
+			{Name: "report_type", Type: "string", Required: false, Description: "研报类型", Enum: []string{"stock", "industry", "other"}},
+			{Name: "status", Type: "string", Required: false, Description: "下载状态", Enum: []string{"pending", "downloaded", "no_pdf", "detail_error", "pdf_error"}},
+			{Name: "start_date", Type: "string", Required: false, Description: "发布日期起始（YYYY-MM-DD）"},
+			{Name: "end_date", Type: "string", Required: false, Description: "发布日期截止（YYYY-MM-DD）"},
+			{Name: "page", Type: "int", Required: false, Description: "页码"},
+			{Name: "page_size", Type: "int", Required: false, Description: "每页条数"},
+		},
+		RefreshSchedule:     "高频增量",
+		CoverageDescription: "东方财富研报列表覆盖范围，PDF 落 MinIO",
+	},
 }
 
 // ─── Business API Registry ───
@@ -494,7 +535,7 @@ var tableCapabilityRegistry = map[string]*model.DataCapability{
 var tableApiMap = map[string][]model.ApiEndpointRef{
 	"security_registry": {
 		{Method: "GET", Path: "/api/v2/securities", Description: "查询证券列表"},
-		{Method: "GET", Path: "/api/v2/securities/{symbol}", Description: "查询单个证券"},
+		{Method: "GET", Path: "/api/v2/securities/{security_id}", Description: "按 security_id 查询单个证券"},
 		{Method: "POST", Path: "/api/v2/securities/upsert", Description: "批量写入证券"},
 	},
 	"financial_statement": {
@@ -513,39 +554,62 @@ var tableApiMap = map[string][]model.ApiEndpointRef{
 		{Method: "GET", Path: "/api/v2/long-hu-bang/{source}", Description: "查询龙虎榜明细"},
 		{Method: "POST", Path: "/api/v2/long-hu-bang/{source}/upsert", Description: "写入龙虎榜明细"},
 	},
+	"research_report_download_record": {
+		{Method: "GET", Path: "/api/v2/research-report/{source}", Description: "查询研报下载记录"},
+		{Method: "POST", Path: "/api/v2/research-report/{source}/upsert", Description: "写入研报下载记录（pending）"},
+		{Method: "POST", Path: "/api/v2/research-report/{source}/{resource_id}/status", Description: "更新研报下载状态"},
+		{Method: "GET", Path: "/api/v2/research-report/{source}/last-update", Description: "最近已下载研报发布日期"},
+		{Method: "GET", Path: "/api/v2/research-report/{source}/max-publish-date", Description: "已列表研报最大发布日期（游标）"},
+		{Method: "GET", Path: "/api/v2/research-report/{source}/pending", Description: "查询待下载研报"},
+	},
+	"feature_definition": {
+		{Method: "GET", Path: "/api/v2/features/definitions", Description: "查询 Feature 定义"},
+		{Method: "GET", Path: "/api/v2/features/availability/{feature_code}", Description: "查询 Feature 多维可用性"},
+		{Method: "POST", Path: "/api/v2/features/registry/sync", Description: "同步 Feature Manifest"},
+	},
+	"feature_version": {
+		{Method: "GET", Path: "/api/v2/features/versions/{version_id}", Description: "查询 FeatureVersion"},
+	},
+	"feature_dependency": {
+		{Method: "GET", Path: "/api/v2/features/lineage/{feature_code}", Description: "查询 Feature 血缘"},
+	},
+	"feature_backfill_job": {
+		{Method: "POST", Path: "/api/v2/features/backfills", Description: "创建回填任务"},
+		{Method: "GET", Path: "/api/v2/features/backfills/{backfill_id}", Description: "查询回填任务"},
+	},
+	"feature_run": {
+		{Method: "POST", Path: "/api/v2/features/runs", Description: "创建 Feature Run"},
+		{Method: "POST", Path: "/api/v2/features/runs:reconcile-stale", Description: "终止心跳过期的 Feature Run"},
+		{Method: "GET", Path: "/api/v2/features/runs", Description: "查询 Feature Run"},
+	},
+	"feature_value_numeric": {
+		{Method: "GET", Path: "/api/v2/features/values/numeric", Description: "查询数值 Feature"},
+		{Method: "GET", Path: "/api/v2/features/values/numeric/latest", Description: "查询最新成功物化"},
+		{Method: "POST", Path: "/api/v2/features/runs/{run_id}/values/numeric:batch", Description: "幂等写入数值 Feature"},
+	},
 	"taxonomy_category": {
 		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories", Description: "查询分类节点"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/categories/upsert", Description: "写入分类节点"},
 	},
 	"taxonomy_security_map": {
-		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/mapping/by_category/{code}", Description: "按分类查映射"},
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/mapping/by_category/{category_id}", Description: "按分类查映射"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/mapping/upsert", Description: "写入映射"},
 	},
 	"industry_constituent": {
-		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_index/{code}", Description: "查询行业成分"},
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/by_category/{category_id}", Description: "查询行业成分"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-constituents/upsert", Description: "写入行业成分"},
 	},
 	"industry_weight": {
-		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{code}", Description: "查询行业权重"},
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-weights/{category_id}", Description: "查询行业权重"},
 	},
 	"industry_daily": {
-		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily", Description: "查询行业日线"},
+		{Method: "GET", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily?category_id=", Description: "查询行业日线"},
 		{Method: "POST", Path: "/api/v2/taxonomy/{source}/{taxonomy}/{market}/industry-daily/upsert", Description: "写入行业日线"},
-	},
-	"strategy_run_summary": {
-		{Method: "GET", Path: "/api/v1/strategy/run/list", Description: "查询策略列表"},
-		{Method: "GET", Path: "/api/v1/strategy/run/{run_id}", Description: "查询策略详情"},
-	},
-	"strategy_run_artifact": {
-		{Method: "GET", Path: "/api/v1/strategy/run/{run_id}/artifacts", Description: "查询策略产物"},
 	},
 	"bars_": {
 		{Method: "GET", Path: "/api/v2/bars/{asset_type}/{market}", Description: "查询K线行情"},
 		{Method: "POST", Path: "/api/v2/bars/{asset_type}/{market}/upsert", Description: "写入K线行情"},
 		{Method: "GET", Path: "/api/v2/bars/{asset_type}/{market}/last_update", Description: "最近更新时间"},
-	},
-	"factor_": {
-		{Method: "GET", Path: "/api/v2/catalog/tables", Description: "因子数据（规划中）"},
 	},
 }
 
@@ -556,47 +620,42 @@ var domainApiRegistry = map[string]struct {
 	CrossRefs    []model.CrossRef
 }{
 	"bars": {
-		Description: "K线行情数据与复权支撑数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织",
+		Description: "K线行情数据与复权支撑数据，按资产类型(stock/index/etf)和市场(zh_a/hk/us)组织。Phase 4: API 契约已迁 security_id（物理表仍存 symbol，§3.2）。",
 		ExampleCalls: []model.ExampleCall{
-			{Title: "查询A股日线行情", URL: "GET /api/v2/bars/stock/zh_a?symbol=000001&start_date=2026-01-01"},
-			{Title: "查询指数行情", URL: "GET /api/v2/bars/index/zh_a?symbol=000001&start_date=2026-01-01"},
-			{Title: "查询复权因子", URL: "GET /api/v2/adjust-factors/baostock?symbol=600000&start_date=2024-01-01"},
+			{Title: "查询A股日线行情", URL: "GET /api/v2/bars/stock/zh_a?security_id=1&period=daily&adjust=nf&start_date=2026-01-01&end_date=2026-06-01"},
+			{Title: "查询指数行情", URL: "GET /api/v2/bars/index/zh_a?security_id=1&period=daily&adjust=nf&start_date=2026-01-01"},
+			{Title: "查询复权因子", URL: "GET /api/v2/adjust-factors/baostock?security_id=1&start_date=2024-01-01"},
 		},
 		CrossRefs: []model.CrossRef{
-			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（API 经 security_id 关联；bars_* 物理表仍存 symbol，§3.2 永久存储特例）"},
 		},
 	},
 	"security": {
 		Description: "证券基础信息注册表，统一的证券代码、名称、市场、上市日期等",
 		ExampleCalls: []model.ExampleCall{
 			{Title: "查询A股证券列表", URL: "GET /api/v2/securities?market=zh_a"},
-			{Title: "查询单个证券", URL: "GET /api/v2/securities/000001"},
+			{Title: "按 security_id 查询单个证券", URL: "GET /api/v2/securities/{security_id}"},
 		},
 	},
 	"taxonomy": {
 		Description: "行业分类数据，包含行业节点、证券映射、行业成分、权重、日线行情",
 		ExampleCalls: []model.ExampleCall{
 			{Title: "查询申万行业分类", URL: "GET /api/v2/taxonomy/sw/industry/zh_a/categories"},
-			{Title: "按股票查所属行业", URL: "GET /api/v2/taxonomy/by_security/000001"},
+			{Title: "按 security_id 查所属行业", URL: "GET /api/v2/taxonomy/by_security/{security_id}"},
 		},
 		CrossRefs: []model.CrossRef{
-			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（Phase 2 surrogate-key 重构后映射表经 security_id 关联）"},
+			{ToTable: "taxonomy_category", JoinKey: "category_id", Description: "行业分类节点"},
 		},
 	},
 	"financial": {
 		Description: "财务报表和公司行为数据，资产负债表/利润表/现金流量表/业绩预告/分红配股",
 		ExampleCalls: []model.ExampleCall{
-			{Title: "查询资产负债表", URL: "GET /api/v2/financial/amazing_data/balance_sheet?symbol=000001&page=1"},
-			{Title: "查询分红信息", URL: "GET /api/v2/corporate-action/amazing_data/dividend?symbol=000001"},
+			{Title: "查询资产负债表", URL: "GET /api/v2/financial/amazing_data/balance_sheet?security_id=1&page=1"},
+			{Title: "查询分红信息", URL: "GET /api/v2/corporate-action/amazing_data/dividend?security_id=1"},
 		},
 		CrossRefs: []model.CrossRef{
-			{ToTable: "security_registry", JoinKey: "symbol", Description: "证券基础信息"},
-		},
-	},
-	"strategy": {
-		Description: "策略回测运行结果和产物数据",
-		ExampleCalls: []model.ExampleCall{
-			{Title: "查询策略列表", URL: "GET /api/v1/strategy/run/list?strategy_code=momentum"},
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（Phase 3 surrogate-key 重构后经 security_id 关联）"},
 		},
 	},
 	"kg": {
@@ -605,8 +664,38 @@ var domainApiRegistry = map[string]struct {
 			{Title: "查询事件", URL: "GET /api/v1/kg/events?event_type=risk"},
 		},
 	},
-	"factor": {Description: "因子数据（规划中）"},
-	"regime": {Description: "市场状态引擎数据（规划中）"},
+	"market_activity": {
+		Description: "市场交易活动明细，当前包含龙虎榜营业部级数据",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询龙虎榜明细", URL: "GET /api/v2/long-hu-bang/amazing_data?security_id=1"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息"},
+		},
+	},
+	"research": {
+		Description: "研报下载任务状态跟踪（东方财富），phoenixA 仅存元数据 + MinIO 对象键，PDF 字节在 MinIO",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询某股票研报", URL: "GET /api/v2/research-report/eastmoney?subject_id=1&report_type=stock&page=1"},
+			{Title: "查询待下载研报", URL: "GET /api/v2/research-report/eastmoney/pending?start_date=2026-01-01&limit=100"},
+			{Title: "最近已下载研报日期", URL: "GET /api/v2/research-report/eastmoney/last-update"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "subject_id", Description: "stock 类型主体（subject_id = security_id）→ 证券基础信息；industry 类型 subject_id → taxonomy_category"},
+		},
+	},
+	"feature": {
+		Description: "Feature 的定义、不可变版本、精确依赖、运行上下文、回填和数值物化控制面",
+		ExampleCalls: []model.ExampleCall{
+			{Title: "查询 Feature 定义", URL: "GET /api/v2/features/definitions"},
+			{Title: "查询运行", URL: "GET /api/v2/features/runs?status=succeeded"},
+			{Title: "查询最新成功值", URL: "GET /api/v2/features/values/numeric/latest?feature_code=platform.security.constant_one"},
+		},
+		CrossRefs: []model.CrossRef{
+			{ToTable: "security_registry", JoinKey: "security_id", Description: "RunSubject 与 Numeric Value 的永久证券身份"},
+			{ToTable: "data_field_dictionary", JoinKey: "data_field_dictionary_id", Description: "FeatureVersion 锁定的源字段契约"},
+		},
+	},
 }
 
 func (s *CatalogService) resolveAPIs(table string) []model.ApiEndpointRef {
@@ -655,24 +744,30 @@ func (s *CatalogService) queryDataSources(ctx context.Context, schema, table, ti
 		}
 	}
 
-	// Check if table has "source" and "symbol" columns
+	// Check which identity column the table exposes: Phase 3 data tables
+	// (financial_statement / corporate_action / equity_structure / adjust_factor /
+	// long_hu_bang) use security_id; bars_* physical tables still use symbol
+	// (storage exception, §3.2 — bars API is security_id-native in Phase 4 but
+	// the physical table keeps symbol, so coverage introspection counts symbol).
 	type colCheck struct {
 		ColName string
 	}
 	var foundCols []colCheck
 	checkQ := fmt.Sprintf(
-		`SELECT column_name AS col_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' AND column_name IN ('source', 'symbol')`,
+		`SELECT column_name AS col_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' AND column_name IN ('source', 'security_id', 'symbol')`,
 		schema, table,
 	)
 	if err := s.Dao.DB().WithContext(ctx).Raw(checkQ).Scan(&foundCols).Error; err != nil {
 		return nil
 	}
-	hasSource, hasSymbol := false, false
+	hasSource, hasSecurityID, hasSymbol := false, false, false
 	for _, c := range foundCols {
-		if c.ColName == "source" {
+		switch c.ColName {
+		case "source":
 			hasSource = true
-		}
-		if c.ColName == "symbol" {
+		case "security_id":
+			hasSecurityID = true
+		case "symbol":
 			hasSymbol = true
 		}
 	}
@@ -692,7 +787,9 @@ func (s *CatalogService) queryDataSources(ctx context.Context, schema, table, ti
 	var query string
 
 	distinctExpr := "0"
-	if hasSymbol {
+	if hasSecurityID {
+		distinctExpr = "COUNT(DISTINCT security_id)"
+	} else if hasSymbol {
 		distinctExpr = "COUNT(DISTINCT symbol)"
 	}
 
@@ -1437,7 +1534,7 @@ func (s *CatalogService) GetBusinessOverview(ctx context.Context, refresh bool) 
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "strategy", "kg", "factor", "regime", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "feature", "kg", "research", "other"}
 	seen := map[string]bool{}
 	var domains []model.BusinessDomain
 
@@ -1566,7 +1663,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "strategy", "kg", "factor", "regime", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "feature", "kg", "research", "other"}
 	var capabilities []model.DomainCapability
 
 	for _, d := range domainOrder {
@@ -1754,15 +1851,15 @@ func computeUngovernedKeys(observed []model.JSONBKeyRef, governed map[string]boo
 	return out
 }
 
-// GetSymbolCoverage returns per-dataset/data_type row counts and time ranges
-// for a given symbol+market. This is a generic discovery API — callers (e.g.,
+// GetSecurityCoverage returns per-dataset/data_type row counts and time ranges
+// for a given security_id. This is a generic discovery API — callers (e.g.,
 // artemis BI layer) use it to show what data exists for a company.
-func (s *CatalogService) GetSymbolCoverage(ctx context.Context, symbol, market string) (*model.CatalogSymbolCoverage, error) {
-	rows, err := s.Dao.GetSymbolCoverage(ctx, symbol, market)
+func (s *CatalogService) GetSecurityCoverage(ctx context.Context, securityID uint64) (*model.CatalogSecurityCoverage, error) {
+	rows, err := s.Dao.GetSecurityCoverage(ctx, securityID)
 	if err != nil {
 		return nil, err
 	}
-	coverage := dao.AggregateCoverage(rows, symbol, market)
+	coverage := dao.AggregateCoverage(rows, securityID)
 	coverage.GeneratedAt = time.Now().UTC()
 	return coverage, nil
 }

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Generate AmazingData field dictionary source files and seed migration.
+"""Generate AmazingData field dictionary source files (JSONL).
 
 This script is the cross-platform source of truth for:
-  - config/field_dictionary/amazing_data/*.jsonl
-  - migrations/postgresql/security/0013_seed_amazing_data_field_dictionary.sql
+  - scripts/field_dictionary/amazing_data/*.jsonl
+  - scripts/field_dictionary/amazing_data/datasets.json
 
 It bootstraps most fields from docs/tables_description and applies a curated
 set of SDK-based corrections for metadata placement, units, enums and aliases.
+
+It does NOT generate the seed SQL migration. After running this script to
+refresh the JSONL sources, run regenerate_seed_sql.py (in the same directory)
+to produce migrations/postgresql/security/0004_govern_seed.sql.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 
-CONTRACT_VERSION = "2026-06-25"
+CONTRACT_VERSION = "2026-06-27"
 SOURCE = "amazing_data"
 
 FINANCIAL_TYPE_META: dict[str, dict[str, str]] = {
@@ -63,7 +67,6 @@ CORPORATE_TYPE_META: dict[str, dict[str, str]] = {
 }
 
 TOP_LEVEL_FINANCIAL = {
-    "MARKET_CODE": "symbol",
     "SECURITY_NAME": "security_name",
     "STATEMENT_TYPE": "statement_code",
     "REPORT_TYPE": "report_type",
@@ -74,7 +77,6 @@ TOP_LEVEL_FINANCIAL = {
 }
 
 TOP_LEVEL_CORPORATE = {
-    "MARKET_CODE": "symbol",
     "ANN_DATE": "ann_date",
     "REPORT_PERIOD": "report_period",
     "RIGHTSISSUE_YEAR": "report_period",
@@ -83,10 +85,20 @@ TOP_LEVEL_CORPORATE = {
 }
 
 TOP_LEVEL_EQUITY = {
-    "MARKET_CODE": "symbol",
     "ANN_DATE": "ann_date",
     "CHANGE_DATE": "change_date",
 }
+
+# security_id is a synthetic top-level field (not an SDK raw field) added per
+# data_type in Phase 3 of the security_registry surrogate-key refactor: the
+# MARKET_CODE → symbol mapping was removed (the symbol column is gone), and
+# security_id is now the identity column on financial_statement / corporate_action
+# / equity_structure. raw_field/canonical_field/aliases are all "security_id" so
+# `fields=security_id` resolves to the real column, while legacy `fields=symbol`
+# or `fields=MARKET_CODE` return 400 (unknown field). value_type=integer,
+# source_value_type empty (system surrogate key, not an SDK field).
+SECURITY_ID_LABEL_ZH = "证券ID"
+SECURITY_ID_DESCRIPTION = "系统代理键，逻辑外键 → ods.security_registry.id（无真实 FK，refactor §6 R9）；由 artemis 写入前 resolve"
 
 DATE_FIELDS = {
     "REPORTING_PERIOD",
@@ -133,6 +145,13 @@ ENUM_REFS = {
 }
 
 STRING_FIELDS = {"CURRENCY_CODE"}
+
+# SKIP_FIELDS are SDK fields the system no longer stores as columns or in
+# data_json, so they must not appear in the field dictionary at all. MARKET_CODE
+# (the SDK's symbol.exchange code) was the old identity mapping; Phase 3 replaced
+# it with the synthetic security_id top-level field, so exposing MARKET_CODE
+# would point Raw Data Explorer at a value that does not exist in the table.
+SKIP_FIELDS = {"MARKET_CODE"}
 
 CORE_FIELDS: dict[str, set[str]] = {
     "balance_sheet": {
@@ -230,7 +249,6 @@ ALIASES = {
 }
 
 EQUITY_RAW_FIELDS: list[tuple[str, str, str, str]] = [
-    ("MARKET_CODE", "string", "证券代码", "映射到表 symbol"),
     ("ANN_DATE", "string", "公告日期", "映射到表 ann_date"),
     ("CHANGE_DATE", "string", "变动日期", "映射到表 change_date"),
     ("SHARE_CHANGE_REASON_STR", "string", "股本变动原因描述", "PDF Markdown 断行为 SHARE_CHANGE_REA SON_STR，已校正"),
@@ -393,6 +411,61 @@ FIELD_RE = re.compile(r"^\|\s*([A-Z][A-Z0-9_]+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\
 TYPE_HEADER_RE = re.compile(r"^##\s+\d+\.\s+([a-z_]+)\s+-\s+(.+)$")
 
 
+# security_id_field_row builds the synthetic top-level security_id row for a
+# dataset/data_type (Phase 3). It is NOT an SDK raw field — it is the system
+# surrogate key that replaced the old MARKET_CODE → symbol mapping. aliases is
+# empty so legacy `fields=symbol` / `fields=MARKET_CODE` resolve to unknown
+# (→ 400) rather than silently resolving to security_id.
+def security_id_field_row(dataset: str, data_type: str, meta: dict[str, str], source_path: str) -> dict[str, Any]:
+    return {
+        "contract_version": CONTRACT_VERSION,
+        "source": SOURCE,
+        "dataset": dataset,
+        "data_type": data_type,
+        "data_type_label_zh": meta["label"],
+        "sdk_section": meta["sdk_section"],
+        "sdk_function": meta["sdk_function"],
+        "raw_field": "security_id",
+        "canonical_field": "security_id",
+        "label_zh": SECURITY_ID_LABEL_ZH,
+        "description": SECURITY_ID_DESCRIPTION,
+        "value_type": "integer",
+        "source_value_type": "",
+        "unit": "",
+        "scale": None,
+        "enum_ref": "",
+        "storage_location": "top_level",
+        "is_metadata": True,
+        "is_core": False,
+        "comp_type_scope": "all",
+        "aliases": [],
+        "source_doc": f"AmazingData {meta['sdk_section']} {meta['sdk_function']}",
+        "source_path": source_path,
+        "review_status": "synthetic_phase3_security_id",
+        "deprecated": False,
+    }
+
+
+# prepend_security_id inserts a synthetic security_id row at the top of each
+# data_type's field list. Rows keep their original relative order; security_id
+# becomes the first field per data_type (the identity column).
+def prepend_security_id(rows: list[dict[str, Any]], dataset: str, type_meta: dict[str, dict[str, str]], source_path: str) -> list[dict[str, Any]]:
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for r in rows:
+        dt = r["data_type"]
+        if dt not in by_type:
+            by_type[dt] = []
+            order.append(dt)
+        by_type[dt].append(r)
+    out: list[dict[str, Any]] = []
+    for dt in order:
+        meta = type_meta[dt]
+        out.append(security_id_field_row(dataset, dt, meta, source_path))
+        out.extend(by_type[dt])
+    return out
+
+
 def read_table_fields(
     path: Path,
     project_root: Path,
@@ -417,6 +490,8 @@ def read_table_fields(
             continue
         raw_field, source_type, label, remark = [part.strip() for part in match.groups()]
         if raw_field == "字段名":
+            continue
+        if raw_field in SKIP_FIELDS:
             continue
         rows.append(
             new_field_row(
@@ -464,6 +539,8 @@ def enum_rows() -> list[dict[str, Any]]:
         ("COMP_TYPE_CODE", "2", "银行", "银行类企业", 2, "AmazingData 财务字段备注"),
         ("COMP_TYPE_CODE", "3", "保险", "保险类企业", 3, "AmazingData 财务字段备注"),
         ("COMP_TYPE_CODE", "4", "证券", "证券类企业", 4, "AmazingData 财务字段备注"),
+        ("STATEMENT_TYPE", "1", "合并报表", "合并财务报表", 1, "AmazingData 财务字段备注"),
+        ("STATEMENT_TYPE", "2", "母公司报表", "母公司财务报表", 2, "AmazingData 财务字段备注"),
         ("BOOLEAN_FLAG", "0", "否", "否/无效/非最新", 0, "AmazingData 字段备注"),
         ("BOOLEAN_FLAG", "1", "是", "是/有效/最新", 1, "AmazingData 字段备注"),
         ("DIV_PROGRESS", "1", "董事会预案", "公司董事会提出分红方案", 1, "AmazingData 4.1.10"),
@@ -566,169 +643,47 @@ def dataset_rows() -> list[dict[str, Any]]:
     ]
 
 
-def sql_string(value: Any) -> str:
-    if value is None:
-        return "NULL"
-    return "'" + str(value).replace("'", "''") + "'"
-
-
-def sql_bool(value: bool) -> str:
-    return "TRUE" if value else "FALSE"
-
-
-def sql_number(value: Any) -> str:
-    return "NULL" if value is None else str(value)
-
-
-def sql_json(value: Any) -> str:
-    return f"{sql_string(json_compact(value))}::jsonb"
-
-
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     path.write_text("\n".join(json_compact(row) for row in rows) + "\n", encoding="utf-8")
 
 
-def write_seed_migration(
-    path: Path,
-    datasets: list[dict[str, Any]],
-    fields: list[dict[str, Any]],
-    enums: list[dict[str, Any]],
-) -> None:
-    lines: list[str] = [
-        "-- ============================================================",
-        "-- PhoenixA PostgreSQL Migration 0013: Seed AmazingData Field Dictionary",
-        "-- Generated by scripts/generate_field_dictionary_from_docs.py",
-        "-- Source files: config/field_dictionary/amazing_data/*.jsonl",
-        "--",
-        "-- This file inserts data rows into dictionary tables created by",
-        "-- 0012_field_dictionary.sql. Field meanings are intentionally stored",
-        "-- as queryable data in label_zh, description, unit, enum_ref, aliases,",
-        "-- and source_doc instead of being duplicated as per-row SQL comments.",
-        "-- Do not hand-edit this file; regenerate it from the Python script.",
-        "-- ============================================================",
-        "",
-        f"DELETE FROM data_field_dictionary WHERE source = 'amazing_data' AND contract_version = '{CONTRACT_VERSION}';",
-        f"DELETE FROM data_enum_dictionary WHERE source = 'amazing_data' AND contract_version = '{CONTRACT_VERSION}';",
-        f"DELETE FROM data_dataset_dictionary WHERE source = 'amazing_data' AND contract_version = '{CONTRACT_VERSION}';",
-        "",
-    ]
-
-    dataset_cols = (
-        "contract_version, source, dataset, label_zh, data_types, storage_table, "
-        "storage_tablespace, dictionary_tablespace, source_doc"
-    )
-    dataset_values = []
-    for row in datasets:
-        dataset_values.append(
-            "("
-            + ", ".join(
-                [
-                    sql_string(row["contract_version"]),
-                    sql_string(row["source"]),
-                    sql_string(row["dataset"]),
-                    sql_string(row["label_zh"]),
-                    sql_json(row["data_types"]),
-                    sql_string(row["storage_table"]),
-                    sql_string(row["storage_tablespace"]),
-                    sql_string(row["dictionary_tablespace"]),
-                    sql_string(row["source_doc"]),
-                ]
-            )
-            + ")"
-        )
-    lines.extend([f"INSERT INTO data_dataset_dictionary ({dataset_cols}) VALUES", ",\n".join(dataset_values) + ";", ""])
-
-    field_cols = (
-        "contract_version, source, dataset, data_type, data_type_label_zh, sdk_section, sdk_function, "
-        "raw_field, canonical_field, label_zh, description, value_type, source_value_type, unit, scale, "
-        "enum_ref, storage_location, is_metadata, is_core, comp_type_scope, aliases, source_doc, "
-        "source_path, review_status, deprecated"
-    )
-    field_values = []
-    for row in fields:
-        field_values.append(
-            "("
-            + ", ".join(
-                [
-                    sql_string(row["contract_version"]),
-                    sql_string(row["source"]),
-                    sql_string(row["dataset"]),
-                    sql_string(row["data_type"]),
-                    sql_string(row["data_type_label_zh"]),
-                    sql_string(row["sdk_section"]),
-                    sql_string(row["sdk_function"]),
-                    sql_string(row["raw_field"]),
-                    sql_string(row["canonical_field"]),
-                    sql_string(row["label_zh"]),
-                    sql_string(row["description"]),
-                    sql_string(row["value_type"]),
-                    sql_string(row["source_value_type"]),
-                    sql_string(row["unit"]),
-                    sql_number(row["scale"]),
-                    sql_string(row["enum_ref"]),
-                    sql_string(row["storage_location"]),
-                    sql_bool(row["is_metadata"]),
-                    sql_bool(row["is_core"]),
-                    sql_string(row["comp_type_scope"]),
-                    sql_json(row["aliases"]),
-                    sql_string(row["source_doc"]),
-                    sql_string(row["source_path"]),
-                    sql_string(row["review_status"]),
-                    sql_bool(row["deprecated"]),
-                ]
-            )
-            + ")"
-        )
-    lines.extend([f"INSERT INTO data_field_dictionary ({field_cols}) VALUES", ",\n".join(field_values) + ";", ""])
-
-    enum_cols = "contract_version, source, enum_name, code, label_zh, description, sort_order, source_doc, review_status, deprecated"
-    enum_values = []
-    for row in enums:
-        enum_values.append(
-            "("
-            + ", ".join(
-                [
-                    sql_string(row["contract_version"]),
-                    sql_string(row["source"]),
-                    sql_string(row["enum_name"]),
-                    sql_string(row["code"]),
-                    sql_string(row["label_zh"]),
-                    sql_string(row["description"]),
-                    sql_number(row["sort_order"]),
-                    sql_string(row["source_doc"]),
-                    sql_string(row["review_status"]),
-                    sql_bool(row["deprecated"]),
-                ]
-            )
-            + ")"
-        )
-    lines.extend([f"INSERT INTO data_enum_dictionary ({enum_cols}) VALUES", ",\n".join(enum_values) + ";", ""])
-
-    path.write_text("\n".join(lines), encoding="utf-8")
-
-
 def generate(project_root: Path) -> None:
     project_root = project_root.resolve()
-    out_dir = project_root / "config" / "field_dictionary" / "amazing_data"
+    out_dir = project_root / "scripts" / "field_dictionary" / "amazing_data"
     tables_dir = project_root / "docs" / "tables_description"
-    migration_dir = project_root / "migrations" / "postgresql" / "security"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    financial_rows = read_table_fields(
-        tables_dir / "financial_statement.md",
-        project_root,
+    financial_rows = prepend_security_id(
+        read_table_fields(
+            tables_dir / "financial_statement.md",
+            project_root,
+            "financial_statement",
+            FINANCIAL_TYPE_META,
+            TOP_LEVEL_FINANCIAL,
+        ),
         "financial_statement",
         FINANCIAL_TYPE_META,
-        TOP_LEVEL_FINANCIAL,
+        "docs/tables_description/financial_statement.md",
     )
-    corporate_rows = read_table_fields(
-        tables_dir / "corporate_action.md",
-        project_root,
+    corporate_rows = prepend_security_id(
+        read_table_fields(
+            tables_dir / "corporate_action.md",
+            project_root,
+            "corporate_action",
+            CORPORATE_TYPE_META,
+            TOP_LEVEL_CORPORATE,
+        ),
         "corporate_action",
         CORPORATE_TYPE_META,
-        TOP_LEVEL_CORPORATE,
+        "docs/tables_description/corporate_action.md",
     )
-    equity = equity_rows()
+    equity_meta = {"equity_structure": {"label": "股本结构", "sdk_section": "3.5.6.3", "sdk_function": "get_equity_structure"}}
+    equity = prepend_security_id(
+        equity_rows(),
+        "equity_structure",
+        equity_meta,
+        "docs/third_party_sdk/AmazingData_development_guide.md",
+    )
     enums = enum_rows()
     datasets = dataset_rows()
 
@@ -737,19 +692,13 @@ def generate(project_root: Path) -> None:
     write_jsonl(out_dir / "equity_structure.fields.jsonl", equity)
     write_jsonl(out_dir / "enums.jsonl", enums)
     (out_dir / "datasets.json").write_text(json.dumps(datasets, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    write_seed_migration(
-        migration_dir / "0013_seed_amazing_data_field_dictionary.sql",
-        datasets,
-        financial_rows + corporate_rows + equity,
-        enums,
-    )
 
     print(f"Generated field dictionary source files in {out_dir}")
     print(f"financial_statement fields: {len(financial_rows)}")
     print(f"corporate_action fields: {len(corporate_rows)}")
     print(f"equity_structure fields: {len(equity)}")
     print(f"enum values: {len(enums)}")
-    print("Generated seed migration migrations/postgresql/security/0013_seed_amazing_data_field_dictionary.sql")
+    print("Next: run regenerate_seed_sql.py to produce migrations/postgresql/security/0004_govern_seed.sql")
 
 
 def main() -> None:

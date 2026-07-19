@@ -50,11 +50,11 @@ func (d *LongHuBangDao) BatchUpsert(ctx context.Context, list []*model.LongHuBan
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
-				{Name: "source"}, {Name: "symbol"}, {Name: "market"},
+				{Name: "security_id"}, {Name: "source"},
 				{Name: "trade_date"}, {Name: "reason_type"}, {Name: "trader_name"}, {Name: "flow_mark"},
 			},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"security_name", "reason_type_name", "change_range", "buy_amount", "sell_amount", "total_amount", "total_volume",
+				"security_name", "reason_type_name", "change_range", "buy_amount", "sell_amount", "total_amount", "total_volume", "updated_at",
 			}),
 		}).CreateInBatches(list, 200).Error
 }
@@ -63,21 +63,18 @@ func (d *LongHuBangDao) Query(ctx context.Context, source string, f *model.LongH
 	var list []*model.LongHuBang
 	q := d.db.WithContext(ctx).Model(&model.LongHuBang{}).
 		Where("source = ?", source).
-		Order("trade_date DESC, symbol ASC, reason_type ASC, trader_name ASC, flow_mark ASC")
+		Order("trade_date DESC, security_id ASC, reason_type ASC, trader_name ASC, flow_mark ASC")
 
 	if f != nil && len(f.Fields) > 0 {
 		q = q.Select(f.Fields)
 	}
 
 	if f != nil {
-		if f.Symbol != "" {
-			q = q.Where("symbol = ?", f.Symbol)
+		if f.SecurityID != 0 {
+			q = q.Where("security_id = ?", f.SecurityID)
 		}
-		if len(f.Symbols) > 0 {
-			q = q.Where("symbol IN ?", f.Symbols)
-		}
-		if f.Market != "" {
-			q = q.Where("market = ?", f.Market)
+		if len(f.SecurityIDs) > 0 {
+			q = q.Where("security_id IN ?", f.SecurityIDs)
 		}
 		if f.TradeDate != "" {
 			q = q.Where("trade_date = ?", f.TradeDate)
@@ -114,14 +111,11 @@ func (d *LongHuBangDao) Count(ctx context.Context, source string, f *model.LongH
 	var cnt int64
 	q := d.db.WithContext(ctx).Model(&model.LongHuBang{}).Where("source = ?", source)
 	if f != nil {
-		if f.Symbol != "" {
-			q = q.Where("symbol = ?", f.Symbol)
+		if f.SecurityID != 0 {
+			q = q.Where("security_id = ?", f.SecurityID)
 		}
-		if len(f.Symbols) > 0 {
-			q = q.Where("symbol IN ?", f.Symbols)
-		}
-		if f.Market != "" {
-			q = q.Where("market = ?", f.Market)
+		if len(f.SecurityIDs) > 0 {
+			q = q.Where("security_id IN ?", f.SecurityIDs)
 		}
 		if f.TradeDate != "" {
 			q = q.Where("trade_date = ?", f.TradeDate)

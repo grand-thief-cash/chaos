@@ -4,7 +4,6 @@ from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 from artemis.consts import TaskCode
 from artemis.core import registry
 from artemis.engines.task_engine.base import BaseTaskUnit
-from artemis.engines.task_engine.backtest import BacktraderCampaignTask, BacktraderRunTask
 from artemis.engines.task_engine.download.zh import (
     StockZhAHistParent, StockZhAHistChild,
     StockZHAMktCategoryMairui, StockZHAMarketCategorySWHY,
@@ -24,8 +23,16 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_profit_express import St
 from artemis.engines.task_engine.download.zh.stock_zh_a_profit_notice import StockZHAProfitNotice
 from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHADividend
 from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
+from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import StockZhAEastmoneyReport
+from artemis.feature_platform.tasks.feature_compute_task import FeatureComputeTask
 
 __all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
+
+registry.register(
+    TaskCode.FEATURE_PLATFORM_COMPUTE,
+    module=FeatureComputeTask.__module__,
+    class_name=FeatureComputeTask.__name__,
+)
 
 registry.register(
     TaskCode.STOCK_ZH_A_LIST,
@@ -172,13 +179,7 @@ registry.register(
 )
 
 registry.register(
-    TaskCode.BACKTRADER_CAMPAIGN,
-    module=BacktraderCampaignTask.__module__,
-    class_name=BacktraderCampaignTask.__name__,
-)
-
-registry.register(
-    TaskCode.BACKTRADER_RUN,
-    module=BacktraderRunTask.__module__,
-    class_name=BacktraderRunTask.__name__,
+    TaskCode.STOCK_ZH_A_EASTMONEY_REPORT,
+    module=StockZhAEastmoneyReport.__module__,
+    class_name=StockZhAEastmoneyReport.__name__,
 )

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chaos.local/schemas/feature-manifest-v1.json",
+  "title": "Chaos Feature Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "feature",
+    "version",
+    "implementation",
+    "dependencies",
+    "materialization",
+    "quality"
+  ],
+  "properties": {
+    "api_version": {"const": "chaos.feature/v1"},
+    "feature": {"$ref": "#/$defs/feature"},
+    "version": {"$ref": "#/$defs/version"},
+    "implementation": {"$ref": "#/$defs/implementation"},
+    "dependencies": {
+      "type": "array",
+      "items": {"oneOf": [{"$ref": "#/$defs/featureDependency"}, {"$ref": "#/$defs/dataFieldDependency"}]}
+    },
+    "materialization": {"$ref": "#/$defs/materialization"},
+    "quality": {"$ref": "#/$defs/quality"}
+  },
+  "$defs": {
+    "feature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "display_name", "kind", "entity_type", "value_type"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2,}$"},
+        "display_name": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "default": ""},
+        "kind": {"enum": ["raw", "metric", "factor", "signal", "prediction", "label"]},
+        "entity_type": {"const": "security"},
+        "value_type": {"enum": ["number", "integer"]},
+        "unit": {"type": "string", "default": ""},
+        "category": {"type": "string", "default": ""},
+        "owner": {"type": "string", "default": ""},
+        "tags": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "status", "frequency", "as_of_semantics", "missing_policy"],
+      "properties": {
+        "number": {"type": "integer", "minimum": 1},
+        "status": {"enum": ["draft", "published"]},
+        "frequency": {"enum": ["on_demand", "daily", "weekly", "monthly", "quarterly"]},
+        "as_of_semantics": {"const": "snapshot"},
+        "missing_policy": {"const": "explicit_missing"},
+        "description": {"type": "string", "default": ""},
+        "manifest_checksum": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$", "default": ""}
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "producer_service", "backend", "entrypoint", "implementation_revision", "config", "status"],
+      "properties": {
+        "kind": {"const": "python"},
+        "producer_service": {"type": "string", "minLength": 1},
+        "backend": {"type": "string", "minLength": 1},
+        "entrypoint": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "implementation_revision": {"type": "integer", "minimum": 1},
+        "config": {"type": "object"},
+        "checksum": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$", "default": ""},
+        "status": {"const": "active"}
+      }
+    },
+    "featureDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "feature_code", "feature_version"],
+      "properties": {
+        "kind": {"const": "feature"},
+        "feature_code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2,}$"},
+        "feature_version": {"type": "integer", "minimum": 1}
+      }
+    },
+    "dataFieldDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source", "dataset", "data_type", "raw_field", "contract_version"],
+      "properties": {
+        "kind": {"const": "data_field"},
+        "source": {"type": "string", "minLength": 1},
+        "dataset": {"type": "string", "minLength": 1},
+        "data_type": {"type": "string", "minLength": 1},
+        "raw_field": {"type": "string", "minLength": 1},
+        "contract_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "materialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["store", "mode"],
+      "properties": {"store": {"const": "numeric"}, "mode": {"const": "snapshot"}}
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_coverage_ratio", "allow_nan", "allow_infinite", "allow_duplicates"],
+      "properties": {
+        "min_coverage_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+        "allow_nan": {"const": false},
+        "allow_infinite": {"const": false},
+        "allow_duplicates": {"const": false}
+      }
+    }
+  }
+}

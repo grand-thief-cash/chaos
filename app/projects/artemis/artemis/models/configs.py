@@ -93,16 +93,23 @@ class CacheEngineCfg(BaseModel):
     partition_rules: list[PartitionRuleCfg] = Field(default_factory=list)
 
 
-class FactorEngineCfg(BaseModel):
-    """Factor engine configuration."""
-    pass
+class FeaturePlatformCfg(BaseModel):
+    """Feature Platform manifest and execution settings."""
+
+    enabled: bool = False
+    manifest_root: str = "./config/feature_catalog"
+    max_parallel_features: int = Field(default=2, gt=0)
+    write_batch_size: int = Field(default=5000, gt=0, le=5000)
+    heartbeat_interval_seconds: int = Field(default=15, gt=0)
+    stale_run_timeout_seconds: int = Field(default=300, gt=0)
+    plugin_timeout_seconds: int = Field(default=1800, gt=0)
 
 
 class EngineCfg(BaseModel):
     """Top-level engine configuration."""
     task_engine: TaskEngineCfg = Field(default_factory=TaskEngineCfg)
     cache_engine: CacheEngineCfg = Field(default_factory=CacheEngineCfg)
-    factor_engine: FactorEngineCfg = Field(default_factory=FactorEngineCfg)
+    feature_platform: FeaturePlatformCfg = Field(default_factory=FeaturePlatformCfg)
 
 
 class DeptServicesCfg(BaseModel):
@@ -118,6 +125,31 @@ class DeptServicesCfg(BaseModel):
     cronjob: ServiceEndpointCfg = Field(default_factory=ServiceEndpointCfg)
     phoenixA: ServiceEndpointCfg = Field(default_factory=ServiceEndpointCfg)
     extras: Dict[str, ServiceEndpointCfg] = Field(default_factory=dict)
+
+
+class MinioCfg(BaseModel):
+    """MinIO object storage connection config.
+
+    Used by research-report (and future) tasks to sink downloaded PDFs.
+    `endpoint` is host:port. When endpoint is empty, MinioClient degrades to
+    NoopMinioClient so the task can be developed before real MinIO is up.
+    """
+    endpoint: Optional[str] = None
+    access_key: str = ""
+    secret_key: str = ""
+    secure: bool = False
+
+
+class MinioBusinessCfg(BaseModel):
+    """MinIO business layout for research-report storage.
+
+    Research reports are split into a stock folder and an industry folder.
+    Under the stock folder, each symbol gets its own subfolder. Object key
+    convention: "{stock_prefix}/{symbol}/{publish_date}_{title}.pdf".
+    """
+    bucket: str = "research-report"
+    stock_prefix: str = "stock"
+    industry_prefix: str = "industry"
 
 
 class DataOption(BaseModel):
@@ -158,6 +190,10 @@ class Config(BaseModel):
 
     # new preferred config
     dept_services: DeptServicesCfg = Field(default_factory=DeptServicesCfg)
+
+    # MinIO object storage (research-report PDFs sink here)
+    minio: MinioCfg = Field(default_factory=MinioCfg)
+    minio_business: MinioBusinessCfg = Field(default_factory=MinioBusinessCfg)
 
     # legacy (kept for compatibility; will be mapped to dept_services.cronjob when present)
     callback: CallbackCfg = Field(default_factory=CallbackCfg)

@@ -27,11 +27,11 @@ func init() {
 
 		r.Route("/api/v2/securities", func(r chi.Router) {
 			r.Get("/", securityCtrl.List)
+			r.Get("/search", securityCtrl.Search)
 			r.Post("/upsert", securityCtrl.BatchUpsert)
 			r.Get("/count", securityCtrl.Count)
-			r.Delete("/all", securityCtrl.DeleteAll)
-			r.Get("/{symbol}", func(w http.ResponseWriter, req *http.Request) {
-				securityCtrl.Get(w, req, chi.URLParam(req, "symbol"))
+			r.Get("/{security_id}", func(w http.ResponseWriter, req *http.Request) {
+				securityCtrl.Get(w, req, chi.URLParam(req, "security_id"))
 			})
 		})
 
@@ -56,33 +56,33 @@ func init() {
 		taxonomyCtrl := taxonomyCtrlComp.(*controller.TaxonomyController)
 
 		r.Route("/api/v2/taxonomy", func(r chi.Router) {
-			r.Get("/by_security/{symbol}", taxonomyCtrl.ListMappingsBySymbol)
+			r.Get("/by_security/{security_id}", taxonomyCtrl.ListMappingsBySecurity)
 			r.Route("/{source}/{taxonomy}", func(r chi.Router) {
-				// Mapping endpoints (no market in path)
+				// Mapping endpoints (id-keyed; no market in path)
 				r.Post("/mapping/upsert", taxonomyCtrl.BatchUpsertMappings)
-				r.Post("/mapping/replace/by_symbol", taxonomyCtrl.ReplaceCategoriesForSymbols)
-				r.Post("/mapping/replace/by_category", taxonomyCtrl.ReplaceStocksForCategories)
-				r.Get("/mapping/by_category/{categoryCode}", taxonomyCtrl.ListMappingsByCategory)
-				r.Delete("/mapping/{categoryCode}/{symbol}", taxonomyCtrl.DeleteMapping)
+				r.Post("/mapping/replace/by_security", taxonomyCtrl.ReplaceCategoriesForSecurities)
+				r.Post("/mapping/replace/by_category", taxonomyCtrl.ReplaceSecuritiesForCategories)
+				r.Get("/mapping/by_category/{category_id}", taxonomyCtrl.ListMappingsByCategory)
+				r.Delete("/mapping/{category_id}/{security_id}", taxonomyCtrl.DeleteMapping)
 
 				r.Route("/{market}", func(r chi.Router) {
-					// Categories
+					// Categories (natural-key base table, unchanged)
 					r.Get("/categories", taxonomyCtrl.ListCategories)
 					r.Post("/categories/upsert", taxonomyCtrl.BatchUpsertCategories)
 					r.Get("/categories/{code}", taxonomyCtrl.GetCategory)
 					r.Delete("/categories/{code}", taxonomyCtrl.DeleteCategory)
 
-					// Mapping sync (derives from constituents + categories)
+					// Mapping sync (single-table SELECT DISTINCT, no JOIN — refactor §2.3)
 					r.Post("/mapping/sync_from_constituents", taxonomyCtrl.SyncMappingsFromConstituents)
 
-					// Industry Constituents
+					// Industry Constituents (body carries SDK natural keys; phoenixA resolves to ids)
 					r.Post("/industry-constituents/upsert", taxonomyCtrl.BatchUpsertConstituents)
-					r.Get("/industry-constituents/by_index/{indexCode}", taxonomyCtrl.ListConstituentsByIndex)
-					r.Get("/industry-constituents/by_stock/{symbol}", taxonomyCtrl.ListConstituentsBySymbol)
+					r.Get("/industry-constituents/by_category/{category_id}", taxonomyCtrl.ListConstituentsByCategory)
+					r.Get("/industry-constituents/by_security/{security_id}", taxonomyCtrl.ListConstituentsBySecurity)
 
 					// Industry Weights
 					r.Post("/industry-weights/upsert", taxonomyCtrl.BatchUpsertWeights)
-					r.Get("/industry-weights/{indexCode}", taxonomyCtrl.ListWeightsByIndexAndDate)
+					r.Get("/industry-weights/{category_id}", taxonomyCtrl.ListWeightsByCategoryAndDate)
 
 					// Industry Daily
 					r.Post("/industry-daily/upsert", taxonomyCtrl.BatchUpsertIndustryDaily)
@@ -90,13 +90,6 @@ func init() {
 				})
 			})
 		})
-
-		// ====== Strategy Run (unchanged) ======
-		strategyRunCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_STRATEGY_RUN)
-		if err != nil {
-			return err
-		}
-		strategyRunCtrl := strategyRunCtrlComp.(*controller.StrategyRunController)
 
 		// ====== Financial Statements ======
 		finStmtCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_FINANCIAL_STMT)
@@ -158,6 +151,62 @@ func init() {
 			r.Get("/", equityStructCtrl.Query)
 		})
 
+		// ====== Research Reports ======
+		rrCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_RESEARCH_REPORT)
+		if err != nil {
+			return err
+		}
+		rrCtrl := rrCtrlComp.(*controller.ResearchReportController)
+
+		r.Route("/api/v2/research-report/{source}", func(r chi.Router) {
+			r.Post("/upsert", rrCtrl.BatchUpsert)
+			r.Post("/{resource_id}/status", rrCtrl.UpdateStatus)
+			r.Get("/last-update", rrCtrl.GetLastUpdate)
+			r.Get("/max-publish-date", rrCtrl.GetMaxPublishDate)
+			r.Get("/pending", rrCtrl.QueryPending)
+			r.Get("/", rrCtrl.Query)
+		})
+
+		// ====== Feature Platform control plane ======
+		featureCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_FEATURE)
+		if err != nil {
+			return err
+		}
+		featureCtrl := featureCtrlComp.(*controller.FeatureController)
+
+		r.Route("/api/v2/features", func(r chi.Router) {
+			r.Post("/registry/sync", featureCtrl.SyncRegistry)
+			r.Get("/definitions", featureCtrl.ListDefinitions)
+			r.Get("/definitions/{feature_code}", featureCtrl.GetDefinition)
+			r.Get("/versions/{version_id}", featureCtrl.GetVersion)
+			r.Post("/definitions/{feature_code}/versions/{version}:publish", featureCtrl.PublishVersion)
+			r.Post("/definitions/{feature_code}/versions/{version}:deprecate", featureCtrl.DeprecateVersion)
+			r.Get("/lineage/{feature_code}", featureCtrl.Lineage)
+			r.Get("/availability/{feature_code}", featureCtrl.Availability)
+
+			r.Post("/runs", featureCtrl.CreateRun)
+			r.Post("/runs:reconcile-stale", featureCtrl.ReconcileStaleRuns)
+			r.Get("/runs", featureCtrl.ListRuns)
+			r.Get("/runs/{run_id}", featureCtrl.GetRun)
+			r.Post("/runs/{run_id}/subjects:batch", featureCtrl.BatchSubjects)
+			r.Post("/runs/{run_id}/items:batch", featureCtrl.BatchItems)
+			r.Patch("/runs/{run_id}", featureCtrl.UpdateRun)
+			r.Patch("/runs/{run_id}/items/{version_id}", featureCtrl.UpdateItem)
+			r.Post("/runs/{run_id}/values/numeric:batch", featureCtrl.WriteNumericValues)
+			r.Post("/runs/{run_id}:complete", featureCtrl.CompleteRun)
+			r.Post("/runs/{run_id}:fail", featureCtrl.FailRun)
+			r.Post("/runs/{run_id}:cancel", featureCtrl.CancelRun)
+
+			r.Get("/values/numeric", featureCtrl.QueryNumericValues)
+			r.Get("/values/numeric/latest", featureCtrl.QueryLatestNumericValues)
+			r.Get("/values/numeric/cross-section", featureCtrl.QueryNumericCrossSection)
+
+			r.Post("/backfills", featureCtrl.CreateBackfill)
+			r.Get("/backfills/{backfill_id}", featureCtrl.GetBackfill)
+			r.Post("/backfills/{backfill_id}:retry-failed", featureCtrl.RetryFailedBackfill)
+			r.Post("/backfills/{backfill_id}:cancel", featureCtrl.CancelBackfill)
+		})
+
 		// ====== Schema Discovery ======
 		schemaCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_SCHEMA)
 		if err != nil {
@@ -202,7 +251,7 @@ func init() {
 			r.Get("/data-dictionary", catalogCtrl.DataDictionary)
 			r.Get("/business-overview", catalogCtrl.BusinessOverview)
 			r.Get("/capabilities", catalogCtrl.Capabilities)
-			r.Get("/securities/{symbol}/datasets/summary", catalogCtrl.GetSymbolCoverage)
+			r.Get("/securities/{security_id}/datasets/summary", catalogCtrl.GetSecurityCoverage)
 
 			// Field dictionary discovery APIs (Phase 2 of AmazingData field
 			// discovery design). Backed by data_dataset_dictionary /
@@ -308,35 +357,7 @@ func init() {
 			})
 		}
 
-		r.Route("/api/v1/strategy/run", func(r chi.Router) {
-			r.Get("/list", strategyRunCtrl.ListSummaries)
-			r.Post("/summary/upsert", strategyRunCtrl.UpsertSummary)
-			r.Post("/artifact/upsert", strategyRunCtrl.UpsertArtifacts)
-			r.Get("/{run_id}", func(w http.ResponseWriter, req *http.Request) {
-				strategyRunCtrl.GetSummary(w, req, chi.URLParam(req, "run_id"))
-			})
-			r.Get("/{run_id}/artifacts", func(w http.ResponseWriter, req *http.Request) {
-				strategyRunCtrl.ListArtifacts(w, req, chi.URLParam(req, "run_id"))
-			})
-		})
-
 		// ====== Legacy v1 routes (backward compatible - proxied to v2 logic) ======
-		// Securities legacy routes
-		r.Route("/api/v1/stock/list", func(r chi.Router) {
-			r.Get("/", securityCtrl.List)
-			r.Post("/", func(w http.ResponseWriter, req *http.Request) {
-				securityCtrl.BatchUpsert(w, req)
-			})
-			r.Get("/count", securityCtrl.Count)
-			r.Post("/batch_upsert", securityCtrl.BatchUpsert)
-			r.Delete("/all", securityCtrl.DeleteAll)
-			r.Get("/listFiltered", securityCtrl.List)
-			r.Get("/countFiltered", securityCtrl.Count)
-			r.Get("/{code}", func(w http.ResponseWriter, req *http.Request) {
-				securityCtrl.Get(w, req, chi.URLParam(req, "code"))
-			})
-		})
-
 		// Bars legacy routes
 		r.Route("/api/v1/stock/hist", func(r chi.Router) {
 			r.Post("/upsert", barsCtrl.Upsert)
@@ -344,20 +365,11 @@ func init() {
 			r.Get("/get_data", barsCtrl.Query)
 		})
 
-		// Taxonomy legacy routes
-		r.Route("/api/v1/market_category", func(r chi.Router) {
-			r.Post("/upsert/{source}", taxonomyCtrl.BatchUpsertCategories)
-			r.Get("/{source}", taxonomyCtrl.ListCategories)
-		})
-		r.Route("/api/v1/category_stock_map", func(r chi.Router) {
-			r.Post("/upsert", taxonomyCtrl.BatchUpsertMappings)
-			r.Post("/replace/by_stock", func(w http.ResponseWriter, req *http.Request) {
-				taxonomyCtrl.ReplaceCategoriesForSymbols(w, req)
-			})
-			r.Post("/replace/by_category", func(w http.ResponseWriter, req *http.Request) {
-				taxonomyCtrl.ReplaceStocksForCategories(w, req)
-			})
-		})
+		// Legacy v1 taxonomy routes (market_category / category_stock_map) removed in
+		// Phase 2 surrogate-key refactor — no caller (artemis uses /api/v2/taxonomy/*;
+		// grep of /api/v1/(market_category|category_stock_map) hits only this file and
+		// stale design docs). Per the "no legacy / no dual-track" principle (Phase 1
+		// already removed /api/v1/stock/list/*).
 
 		// OpenAPI spec endpoint
 		r.Get("/openapi.yaml", func(w http.ResponseWriter, req *http.Request) {

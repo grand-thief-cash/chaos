@@ -8,9 +8,9 @@ This is a one-way consistency check, not a full OpenAPI lint. It catches the
 most common drift: someone adds a route to the router but forgets to document
 it, or documents a path that no longer exists.
 
-Scope: only AmazingData dataset APIs (discovery, query, coverage, write).
-Other route groups (bars, taxonomy, KG, graph, legacy v1) are out of scope
-and ignored on both sides.
+Scope: AmazingData dataset APIs and the Feature Platform API. Other route
+groups (bars, taxonomy, KG, graph, legacy v1) are out of scope and ignored
+on both sides.
 
 Exit code 0 = consistent, 1 = drift detected.
 """
@@ -30,6 +30,7 @@ SCOPE_PREFIXES = (
     "/api/v2/financial",
     "/api/v2/corporate-action",
     "/api/v2/equity-structure",
+    "/api/v2/features",
 )
 
 
@@ -46,7 +47,7 @@ def openapi_paths() -> set[str]:
             if line and not line.startswith(" ") and not line.startswith("#"):
                 in_paths = False
                 continue
-            m = re.match(r"^  (/[^:]+):\s*$", line)
+            m = re.match(r"^  (/.+):\s*$", line)
             if m:
                 paths.add(m.group(1))
     return paths
@@ -74,7 +75,7 @@ def router_paths() -> set[str]:
     i = 0
     n = len(text)
     pat_route = re.compile(r'r\.Route\(\s*""\s*,\s*func\([^)]*\)\s*\{')
-    pat_method = re.compile(r'r\.(?:Get|Post|Put|Delete)\(\s*""')
+    pat_method = re.compile(r'r\.(?:Get|Post|Put|Patch|Delete)\(\s*""')
     # We replaced strings with "" — but we lost the actual path. Re-approach:
     # instead of stripping strings, leave them and match them in the regex.
 
@@ -82,7 +83,7 @@ def router_paths() -> set[str]:
     text = re.sub(r"//.*", "", text)
     # Don't strip strings — we need them.
     pat_route = re.compile(r'r\.Route\(\s*"([^"]+)"')
-    pat_method = re.compile(r'r\.(?:Get|Post|Put|Delete)\(\s*"([^"]+)"')
+    pat_method = re.compile(r'r\.(?:Get|Post|Put|Patch|Delete)\(\s*"([^"]+)"')
 
     depth = 0
     stack: list[tuple[str, int]] = []

@@ -1,5 +1,15 @@
 # Financial Statements API - 财务报表数据
 
+> Phase 3: identity is `security_id`; `symbol`/`market` removed.
+
+> **Field dictionary scope:** `fields=` (flat projection) is governed for
+> `amazing_data` statement_types only (balance_sheet/income/cashflow/
+> profit_express/profit_notice). The baostock `bs_balance` data_json fields
+> (currentRatio, quickRatio, …) are ungoverned — out of Phase 3 scope. For
+> baostock rows, use the default `nested` format (returns `security_id` +
+> full `data_json`); `fields=security_id` resolves only on amazing_data
+> datasets. `security_id` itself is a top-level column for ALL sources.
+
 ## 概述
 
 提供上市公司财务报表数据查询，包括资产负债表、利润表、现金流量表、业绩快报、业绩预告。
@@ -14,9 +24,8 @@
 
 | 参数名 | 类型 | 必需 | 说明 |
 |--------|------|------|------|
-| symbol | string | 否 | 单个证券代码 |
-| symbols | string | 否 | 证券代码列表（逗号分隔） |
-| market | string | 否 | 市场标识（如 `zh_a`） |
+| security_id | integer | 否 | 单个证券 ID（`security_registry.id`） |
+| security_ids | string | 否 | 证券 ID 列表（逗号分隔） |
 | period_start | string | 否 | 起始报告期（格式 YYYY-MM-DD） |
 | period_end | string | 否 | 截止报告期（格式 YYYY-MM-DD） |
 | reporting_period | string | 否 | 单个报告期（格式 YYYY-MM-DD） |
@@ -35,12 +44,12 @@
 **格式**: `fields=字段1,字段2,字段3`
 
 **支持的字段类型**:
-1. **常规字段**: 直接使用表字段名，如 `symbol`, `reporting_period`, `ann_date`
+1. **常规字段**: 直接使用表字段名，如 `security_id`, `reporting_period`, `ann_date`
 2. **JSONB 嵌套字段**: 使用 `data_json.字段名` 格式，如 `data_json.TOTAL_ASSETS`, `data_json.DVD_PER_SHARE_PRE_TAX_CASH`
 
 **示例**:
-- `fields=symbol,reporting_period,ann_date` - 只返回基本字段
-- `fields=symbol,data_json.TOTAL_ASSETS,data_json.TOT_OPERA_REV` - 返回特定 JSONB 字段
+- `fields=security_id,reporting_period,ann_date` - 只返回基本字段
+- `fields=security_id,data_json.TOTAL_ASSETS,data_json.TOT_OPERA_REV` - 返回特定 JSONB 字段
 - `fields=data_json.DVD_PER_SHARE_PRE_TAX_CASH,data_json.DATE_EQY_RECORD` - 返回分红相关 JSONB 字段
 
 ## 路径参数
@@ -82,8 +91,7 @@
 |--------|----------|------|
 | id | integer | 主键 ID |
 | source | string | 数据源 |
-| symbol | string | 证券代码（纯代码） |
-| market | string | 市场标识 |
+| security_id | integer | 证券 ID（`security_registry.id`） |
 | statement_type | string | 报表类型 |
 | reporting_period | string | 报告期（格式 YYYY-MM-DD） |
 | report_type | string | 报告期名称 |
@@ -98,7 +106,7 @@
 
 ## data_json 字段说明
 
-**注意**: `MARKET_CODE`, `SECURITY_NAME`, `STATEMENT_TYPE`, `REPORT_TYPE`, `REPORTING_PERIOD`, `ANN_DATE`, `ACTUAL_ANN_DATE`, `COMP_TYPE_CODE` 等元数据字段存储为顶层字段，不包含在 `data_json` 中。
+**注意**: `SECURITY_NAME`, `STATEMENT_TYPE`, `REPORT_TYPE`, `REPORTING_PERIOD`, `ANN_DATE`, `ACTUAL_ANN_DATE`, `COMP_TYPE_CODE` 等元数据字段存储为顶层列；`security_id` 为身份列。这些字段均不包含在 `data_json` 中。
 
 以下字段存储在 `data_json` 中（SDK 原始字段名，大写格式）：
 
@@ -557,7 +565,7 @@
 
 ### 查询利润表数据
 
-**请求**: `GET /api/v2/financial/amazing_data/income?symbol=000001&page=1&page_size=10`
+**请求**: `GET /api/v2/financial/amazing_data/income?security_id=1&page=1&page_size=10`
 
 ```json
 {
@@ -565,8 +573,7 @@
     {
       "id": 500001,
       "source": "amazing_data",
-      "symbol": "000001",
-      "market": "zh_a",
+      "security_id": 1,
       "statement_type": "income",
       "reporting_period": "2023-12-31",
       "report_type": "2023年报",
@@ -599,13 +606,13 @@
 
 ### 查询利润表数据（使用 fields 参数过滤字段）
 
-**请求**: `GET /api/v2/financial/amazing_data/income?symbol=000001&page=1&page_size=10&fields=symbol,reporting_period,data_json.TOT_OPERA_REV,data_json.NET_PRO_EXCL_MIN_INT_INC,data_json.EBITDA`
+**请求**: `GET /api/v2/financial/amazing_data/income?security_id=1&page=1&page_size=10&fields=security_id,reporting_period,data_json.TOT_OPERA_REV,data_json.NET_PRO_EXCL_MIN_INT_INC,data_json.EBITDA`
 
 ```json
 {
   "data": [
     {
-      "symbol": "000001",
+      "security_id": 1,
       "reporting_period": "2023-12-31",
       "data_json": {
         "TOT_OPERA_REV": 12345678900.0,
@@ -620,4 +627,4 @@
 
 ---
 
-*文档最后更新: 2026-05-14*
+*文档最后更新: 2026-07-03*

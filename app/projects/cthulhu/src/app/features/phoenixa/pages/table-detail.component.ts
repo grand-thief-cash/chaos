@@ -336,7 +336,7 @@ export class TableDetailComponent implements OnInit {
     const map: Record<string, string> = {
       bars: 'blue', security: 'green', taxonomy: 'orange',
       financial: 'gold', strategy: 'purple', kg: 'magenta',
-      factor: 'cyan', regime: 'red', other: 'default'
+      market_activity: 'cyan', other: 'default'
     };
     return map[domain] || 'default';
   }

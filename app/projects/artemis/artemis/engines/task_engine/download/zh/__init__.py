@@ -15,6 +15,7 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_bs_dividend_child import
 from artemis.engines.task_engine.download.zh.stock_zh_a_bs_adjust_factor_parent import StockZhABsAdjustFactorParent
 from artemis.engines.task_engine.download.zh.stock_zh_a_bs_adjust_factor_child import StockZhABsAdjustFactorChild
 from artemis.engines.task_engine.download.zh.stock_zh_a_long_hu_bang import StockZHALongHuBang
+from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import StockZhAEastmoneyReport
 
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "StockZhABsDividendParent", "StockZhABsDividendChild",
     "StockZhABsAdjustFactorParent", "StockZhABsAdjustFactorChild",
     "StockZHALongHuBang",
+    "StockZhAEastmoneyReport",
 ]

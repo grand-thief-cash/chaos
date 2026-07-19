@@ -23,16 +23,15 @@ type TaxonomyCategory struct {
 func (TaxonomyCategory) TableName() string { return "ods.taxonomy_category" }
 
 // TaxonomySecurityMap maps a category to a security.
+// Phase 2 surrogate-key refactor: pure (security_id, category_id) join table —
+// the redundant source/taxonomy/category_code/symbol/asset_type/market columns
+// were removed (refactor §2.3/§10.a). Provenance is recovered via category_id → taxonomy_category.
 // Table: taxonomy_security_map
 type TaxonomySecurityMap struct {
-	Source       string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"source"`
-	Taxonomy     string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"taxonomy"`
-	CategoryCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_cat_sec" json:"category_code"`
-	Symbol       string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_cat_sec" json:"symbol"`
-	AssetType    string    `gorm:"type:varchar(16);not null;default:'stock';uniqueIndex:uk_src_tax_cat_sec" json:"asset_type"`
-	Market       string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_cat_sec" json:"market"`
-	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at,omitempty"`
-	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updated_at,omitempty"`
+	SecurityID uint64    `gorm:"not null;primaryKey" json:"security_id"`
+	CategoryID uint64    `gorm:"not null;primaryKey" json:"category_id"`
+	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at,omitempty"`
+	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at,omitempty"`
 }
 
 func (TaxonomySecurityMap) TableName() string { return "ods.taxonomy_security_map" }
@@ -53,64 +52,72 @@ type TaxonomyCategoryDerivedFlags struct {
 func (TaxonomyCategoryDerivedFlags) TableName() string { return "dwd.taxonomy_category_derived_flags" }
 
 // IndustryConstituent represents a constituent stock of an industry index.
+// Phase 2 surrogate-key refactor: compressed to (category_id, security_id, in_date, out_date).
+// IndexCode/ConCode/Symbol are input-only natural keys (gorm:"-"); phoenixA resolves them
+// to CategoryID/SecurityID at upsert time via the in-memory resolve cache (refactor §2.3/§10.c).
 // Table: industry_constituent
 type IndustryConstituent struct {
-	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
-	Source    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym" json:"source"`
-	Taxonomy  string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym" json:"taxonomy"`
-	Market    string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_idx_sym" json:"market"`
-	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_idx_sym" json:"index_code"`
-	ConCode   string    `gorm:"type:varchar(64);not null;default:''" json:"con_code"`
-	Symbol    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym" json:"symbol"`
-	IndexName string    `gorm:"type:varchar(255);not null;default:''" json:"index_name"`
-	InDate    *string   `gorm:"type:varchar(10)" json:"in_date,omitempty"`
-	OutDate   *string   `gorm:"type:varchar(10)" json:"out_date,omitempty"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
+	CategoryID uint64    `gorm:"not null;uniqueIndex:uk_cat_sec" json:"category_id"`
+	SecurityID uint64    `gorm:"not null;uniqueIndex:uk_cat_sec" json:"security_id"`
+	InDate     *string   `gorm:"type:varchar(10)" json:"in_date,omitempty"`
+	OutDate    *string   `gorm:"type:varchar(10)" json:"out_date,omitempty"`
+	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+
+	// Input-only natural keys (not persisted; resolved to CategoryID/SecurityID at upsert).
+	IndexCode string `gorm:"-" json:"index_code,omitempty"`
+	ConCode   string `gorm:"-" json:"con_code,omitempty"`
+	Symbol    string `gorm:"-" json:"symbol,omitempty"`
 }
 
 func (IndustryConstituent) TableName() string { return "ods.industry_constituent" }
 
 // IndustryWeight represents a daily weight of a constituent in an industry index.
+// Phase 2 surrogate-key refactor: compressed to (category_id, security_id, trade_date, weight).
+// Primary key is composite (category_id, security_id, trade_date) for TimescaleDB hypertable.
+// IndexCode/ConCode/Symbol are input-only (gorm:"-").
 // Table: industry_weight
 type IndustryWeight struct {
-	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
-	Source    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"source"`
-	Taxonomy  string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"taxonomy"`
-	Market    string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_idx_sym_dt" json:"market"`
-	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"index_code"`
-	ConCode   string    `gorm:"type:varchar(64);not null;default:''" json:"con_code"`
-	Symbol    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"symbol"`
-	TradeDate string    `gorm:"type:date;not null;uniqueIndex:uk_src_tax_idx_sym_dt" json:"trade_date"`
-	Weight    float64   `gorm:"type:decimal(10,6)" json:"weight"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	CategoryID uint64    `gorm:"not null;primaryKey" json:"category_id"`
+	SecurityID uint64    `gorm:"not null;primaryKey" json:"security_id"`
+	TradeDate  string    `gorm:"type:date;not null;primaryKey" json:"trade_date"`
+	Weight     float64   `gorm:"type:decimal(10,6)" json:"weight"`
+	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+
+	// Input-only natural keys (not persisted; resolved to CategoryID/SecurityID at upsert).
+	IndexCode string `gorm:"-" json:"index_code,omitempty"`
+	ConCode   string `gorm:"-" json:"con_code,omitempty"`
+	Symbol    string `gorm:"-" json:"symbol,omitempty"`
 }
 
 func (IndustryWeight) TableName() string { return "ods.industry_weight" }
 
 // IndustryDaily represents daily OHLCV + valuation data for an industry index.
+// Phase 2 surrogate-key refactor: compressed to (category_id, trade_date, ...).
+// Primary key is composite (category_id, trade_date) for TimescaleDB hypertable.
+// Index-level data has no security_id. IndexCode is input-only (gorm:"-").
 // Table: industry_daily
 type IndustryDaily struct {
-	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
-	Source    string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"source"`
-	Taxonomy  string    `gorm:"type:varchar(32);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"taxonomy"`
-	Market    string    `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_src_tax_idx_mkt_dt" json:"market"`
-	IndexCode string    `gorm:"type:varchar(64);not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"index_code"`
-	TradeDate string    `gorm:"type:date;not null;uniqueIndex:uk_src_tax_idx_mkt_dt" json:"trade_date"`
-	Open      float64   `gorm:"type:decimal(20,4)" json:"open"`
-	High      float64   `gorm:"type:decimal(20,4)" json:"high"`
-	Close     float64   `gorm:"type:decimal(20,4)" json:"close"`
-	Low       float64   `gorm:"type:decimal(20,4)" json:"low"`
-	PreClose  float64   `gorm:"type:decimal(20,4)" json:"pre_close"`
-	Amount    float64   `gorm:"type:decimal(20,4)" json:"amount"`
-	Volume    float64   `gorm:"type:decimal(20,4)" json:"volume"`
-	PB        float64   `gorm:"type:decimal(20,4)" json:"pb"`
-	PE        float64   `gorm:"type:decimal(20,4)" json:"pe"`
-	TotalCap  float64   `gorm:"type:decimal(20,4)" json:"total_cap"`
-	AFloatCap float64   `gorm:"type:decimal(20,4)" json:"a_float_cap"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+	CategoryID uint64    `gorm:"not null;primaryKey" json:"category_id"`
+	TradeDate  string    `gorm:"type:date;not null;primaryKey" json:"trade_date"`
+	Open       float64   `gorm:"type:decimal(20,4)" json:"open"`
+	High       float64   `gorm:"type:decimal(20,4)" json:"high"`
+	Close      float64   `gorm:"type:decimal(20,4)" json:"close"`
+	Low        float64   `gorm:"type:decimal(20,4)" json:"low"`
+	PreClose   float64   `gorm:"type:decimal(20,4)" json:"pre_close"`
+	Amount     float64   `gorm:"type:decimal(20,4)" json:"amount"`
+	Volume     float64   `gorm:"type:decimal(20,4)" json:"volume"`
+	PB         float64   `gorm:"type:decimal(20,4)" json:"pb"`
+	PE         float64   `gorm:"type:decimal(20,4)" json:"pe"`
+	TotalCap   float64   `gorm:"type:decimal(20,4)" json:"total_cap"`
+	AFloatCap  float64   `gorm:"type:decimal(20,4)" json:"a_float_cap"`
+	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+
+	// Input-only natural key (not persisted; resolved to CategoryID at upsert).
+	IndexCode string `gorm:"-" json:"index_code,omitempty"`
 }
 
 func (IndustryDaily) TableName() string { return "ods.industry_daily" }
@@ -132,10 +139,15 @@ type TaxonomyCategoryFilters struct {
 	AttrsHasKey string
 }
 
-// TaxonomySecurityMapWithDetail is the response structure for GET /api/v2/taxonomy/by_security/{symbol}
+// TaxonomySecurityMapWithDetail is the response structure for GET /api/v2/taxonomy/by_security/{security_id}
 // It includes fields from both taxonomy_security_map and taxonomy_category tables.
+// Phase 2 surrogate-key refactor: keyed by security_id/category_id; the natural-key display
+// fields (source/taxonomy/category_code/symbol/...) are populated by enriching the id-keyed
+// mapping rows with taxonomy_category (looked up by category_id) + security_registry (resolved
+// by security_id) at read time.
 type TaxonomySecurityMapWithDetail struct {
-	ID           uint64 `json:"id,omitempty"`
+	SecurityID   uint64 `json:"security_id"`
+	CategoryID   uint64 `json:"category_id"`
 	Source       string `json:"source"`
 	Taxonomy     string `json:"taxonomy"`
 	CategoryCode string `json:"category_code"`

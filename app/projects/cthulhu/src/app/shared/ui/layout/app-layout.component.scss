@@ -24,6 +24,7 @@
 
 .inner-layout {
   padding: 0 12px 12px;
+  min-width: 0;
 }
 
 nz-breadcrumb {
@@ -33,9 +34,19 @@ nz-breadcrumb {
 nz-content {
   background: #fff;
   padding: 24px;
+  min-width: 0;
   min-height: 280px;
 }
 
 .breadcrumb-bar { display: flex; align-items: center; gap: 12px; margin: 8px 0 16px; }
 .breadcrumb-bar nz-breadcrumb { flex: 1; }
 .sider-toggle-btn { line-height: 1; display: flex; align-items: center; }
+
+@media (max-width: 760px) {
+  .header-bar { display: flex; overflow: hidden; padding-left: 8px; }
+  .logo { flex: 0 0 36px; }
+  .header-menu { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; white-space: nowrap; }
+  .inner-layout { padding: 0 4px 8px; }
+  .breadcrumb-bar { gap: 4px; margin-bottom: 8px; overflow: hidden; }
+  nz-content { padding: 8px !important; }
+}

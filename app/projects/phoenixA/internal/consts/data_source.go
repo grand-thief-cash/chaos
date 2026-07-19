@@ -10,4 +10,5 @@ const (
 	SOURCE_AKSHARE      = "akshare"
 	SOURCE_BAOSTOCK     = "baostock"
 	SOURCE_CSV_IMPORT   = "csv_import"
+	SOURCE_EASTMONEY    = "eastmoney"
 )

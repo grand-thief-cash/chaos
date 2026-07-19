@@ -49,7 +49,7 @@ func (d *AdjustFactorDao) BatchUpsert(ctx context.Context, list []*model.AdjustF
 	}
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "source"}, {Name: "symbol"}, {Name: "market"}, {Name: "divid_operate_date"}},
+			Columns: []clause.Column{{Name: "security_id"}, {Name: "source"}, {Name: "divid_operate_date"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"fore_adjust_factor", "back_adjust_factor", "adjust_factor",
 			}),
@@ -60,21 +60,18 @@ func (d *AdjustFactorDao) Query(ctx context.Context, source string, f *model.Adj
 	var list []*model.AdjustFactor
 	q := d.db.WithContext(ctx).Model(&model.AdjustFactor{}).
 		Where("source = ?", source).
-		Order("symbol ASC, divid_operate_date DESC")
+		Order("security_id ASC, divid_operate_date DESC")
 
 	if f != nil && len(f.Fields) > 0 {
 		q = q.Select(f.Fields)
 	}
 
 	if f != nil {
-		if f.Symbol != "" {
-			q = q.Where("symbol = ?", f.Symbol)
+		if f.SecurityID != 0 {
+			q = q.Where("security_id = ?", f.SecurityID)
 		}
-		if len(f.Symbols) > 0 {
-			q = q.Where("symbol IN ?", f.Symbols)
-		}
-		if f.Market != "" {
-			q = q.Where("market = ?", f.Market)
+		if len(f.SecurityIDs) > 0 {
+			q = q.Where("security_id IN ?", f.SecurityIDs)
 		}
 		if f.StartDate != "" {
 			q = q.Where("divid_operate_date >= ?", f.StartDate)
@@ -99,14 +96,11 @@ func (d *AdjustFactorDao) Count(ctx context.Context, source string, f *model.Adj
 	var cnt int64
 	q := d.db.WithContext(ctx).Model(&model.AdjustFactor{}).Where("source = ?", source)
 	if f != nil {
-		if f.Symbol != "" {
-			q = q.Where("symbol = ?", f.Symbol)
+		if f.SecurityID != 0 {
+			q = q.Where("security_id = ?", f.SecurityID)
 		}
-		if len(f.Symbols) > 0 {
-			q = q.Where("symbol IN ?", f.Symbols)
-		}
-		if f.Market != "" {
-			q = q.Where("market = ?", f.Market)
+		if len(f.SecurityIDs) > 0 {
+			q = q.Where("security_id IN ?", f.SecurityIDs)
 		}
 		if f.StartDate != "" {
 			q = q.Where("divid_operate_date >= ?", f.StartDate)

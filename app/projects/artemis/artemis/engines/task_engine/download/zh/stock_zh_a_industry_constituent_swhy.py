@@ -73,8 +73,8 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
                     "index_code": index_code,
                     "con_code": con_code,
                     "symbol": symbol,
-                    "indate": str(row.get("INDATE", "")),
-                    "outdate": str(row.get("OUTDATE", "")),
+                    "in_date": str(row.get("INDATE", "")),
+                    "out_date": str(row.get("OUTDATE", "")),
                     "index_name": str(row.get("INDEX_NAME", "")),
                 })
         if dup_count > 0:

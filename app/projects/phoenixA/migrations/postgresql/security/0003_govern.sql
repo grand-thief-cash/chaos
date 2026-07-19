@@ -1,87 +1,20 @@
 -- ============================================================
 -- PhoenixA PostgreSQL Migration 0003: Govern layer (PhoenixA-owned governance / metadata)
 -- Layer: govern
--- Scope: strategy_run_summary, strategy_run_artifact,
---        data_dataset_dictionary, data_field_dictionary, data_enum_dictionary,
+-- Scope: data_dataset_dictionary, data_field_dictionary, data_enum_dictionary,
 --        data_field_coverage_observation
 --
--- Govern = PhoenixA-owned governance / observability metadata and artemis-
--- produced operational records (backtest runs). External-source landing
--- tables (including the security_registry master) live in ods.
+-- Govern = PhoenixA-owned governance / observability metadata. External-source
+-- landing tables (including the security_registry master) live in ods.
 --
 -- Storage tier (see 2026-05-09 STORAGE_TIER_PLANNING.md v2):
---   - strategy_run_summary / dictionary tables /
---     data_field_coverage_observation -> pg_default (NVMe, metadata)
---   - strategy_run_artifact -> warm_storage (SATA, large JSON)
+--   - dictionary tables / data_field_coverage_observation -> pg_default (NVMe, metadata)
 -- ============================================================
 
 CREATE SCHEMA IF NOT EXISTS govern;
 
 -- ──────────────────────────────────────────────────────────
--- 1. strategy_run_summary
--- ──────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS govern.strategy_run_summary (
-    run_id         VARCHAR(128)   PRIMARY KEY,
-    parent_run_id  VARCHAR(128),
-    task_code      VARCHAR(64)    NOT NULL,
-    mode           VARCHAR(32)    NOT NULL,
-    strategy_code  VARCHAR(64)    NOT NULL,
-    symbol         VARCHAR(32)    NOT NULL,
-    period         VARCHAR(32)    NOT NULL,
-    start_date     DATE,
-    end_date       DATE,
-    start_cash     DECIMAL(20,4),
-    end_value      DECIMAL(20,4),
-    pnl            DECIMAL(20,4),
-    pnl_pct        DECIMAL(20,6),
-    max_drawdown   DECIMAL(20,6),
-    sharpe         DECIMAL(20,6),
-    trade_count    INT            NOT NULL DEFAULT 0,
-    win_count      INT            NOT NULL DEFAULT 0,
-    loss_count     INT            NOT NULL DEFAULT 0,
-    win_rate       DECIMAL(20,6),
-    bars_processed INT            NOT NULL DEFAULT 0,
-    status         VARCHAR(32)    NOT NULL,
-    stop_reason    VARCHAR(128),
-    error_message  TEXT,
-    duration_ms    BIGINT         NOT NULL DEFAULT 0,
-    created_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    updated_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW()
-) TABLESPACE pg_default;
-
-CREATE INDEX IF NOT EXISTS idx_srs_parent_run_id
-    ON govern.strategy_run_summary (parent_run_id)
-    WHERE parent_run_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_srs_strategy_code
-    ON govern.strategy_run_summary (strategy_code);
-CREATE INDEX IF NOT EXISTS idx_srs_symbol
-    ON govern.strategy_run_summary (symbol);
-CREATE INDEX IF NOT EXISTS idx_srs_status
-    ON govern.strategy_run_summary (status);
-CREATE INDEX IF NOT EXISTS idx_srs_created_at
-    ON govern.strategy_run_summary (created_at);
-
--- ──────────────────────────────────────────────────────────
--- 2. strategy_run_artifact
--- ──────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS govern.strategy_run_artifact (
-    id              BIGSERIAL      PRIMARY KEY,
-    run_id          VARCHAR(128)   NOT NULL,
-    artifact_type   VARCHAR(64)    NOT NULL,
-    payload_json    JSONB          NOT NULL DEFAULT '{}',
-    payload_version VARCHAR(32)    NOT NULL,
-    created_at      TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_sra_run_type UNIQUE (run_id, artifact_type)
-) TABLESPACE warm_storage;
-
-CREATE INDEX IF NOT EXISTS idx_sra_run_id
-    ON govern.strategy_run_artifact (run_id) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_sra_payload_gin
-    ON govern.strategy_run_artifact USING GIN (payload_json jsonb_path_ops) TABLESPACE warm_storage;
-
--- ──────────────────────────────────────────────────────────
--- 3. data_dataset_dictionary
+-- 1. data_dataset_dictionary
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS govern.data_dataset_dictionary (
     id                    BIGSERIAL      PRIMARY KEY,
@@ -103,7 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_data_dataset_dict_source
     ON govern.data_dataset_dictionary (source, dataset) TABLESPACE pg_default;
 
 -- ──────────────────────────────────────────────────────────
--- 4. data_field_dictionary
+-- 2. data_field_dictionary
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS govern.data_field_dictionary (
     id                 BIGSERIAL      PRIMARY KEY,
@@ -157,7 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_data_field_dict_aliases_gin
     ON govern.data_field_dictionary USING GIN (aliases jsonb_path_ops) TABLESPACE pg_default;
 
 -- ──────────────────────────────────────────────────────────
--- 5. data_enum_dictionary
+-- 3. data_enum_dictionary
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS govern.data_enum_dictionary (
     id               BIGSERIAL      PRIMARY KEY,
@@ -185,7 +118,7 @@ FROM govern.data_field_dictionary
 WHERE deprecated = FALSE;
 
 -- ──────────────────────────────────────────────────────────
--- 6. data_field_coverage_observation
+-- 4. data_field_coverage_observation
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS govern.data_field_coverage_observation (
     dataset       VARCHAR(64)  NOT NULL,

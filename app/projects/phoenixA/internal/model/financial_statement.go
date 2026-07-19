@@ -8,12 +8,12 @@ import (
 // FinancialStatement stores financial statement data (balance sheet, income statement, cash flow)
 // using a JSON column for the large number of numeric fields.
 // Table: financial_statement
+// security_id is a logical FK to ods.security_registry.id (no real FK constraint, refactor §6 R9).
 type FinancialStatement struct {
 	ID              uint64          `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
+	SecurityID      uint64          `gorm:"column:security_id;not null;uniqueIndex:uk_fin_stmt;index:idx_security_type" json:"security_id"`
 	Source          string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_fin_stmt" json:"source"`
-	Symbol          string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_fin_stmt;index:idx_symbol_type" json:"symbol"`
-	Market          string          `gorm:"type:varchar(16);not null;default:'zh_a';uniqueIndex:uk_fin_stmt" json:"market"`
-	StatementType   string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_fin_stmt;index:idx_symbol_type" json:"statement_type"` // balance_sheet / income / cashflow
+	StatementType   string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_fin_stmt;index:idx_security_type" json:"statement_type"` // balance_sheet / income / cashflow
 	ReportingPeriod string          `gorm:"type:varchar(10);not null;uniqueIndex:uk_fin_stmt;index:idx_report_period" json:"reporting_period"`
 	ReportType      string          `gorm:"type:varchar(32);not null;default:'';uniqueIndex:uk_fin_stmt" json:"report_type"`    // 报告期名称
 	StatementCode   string          `gorm:"type:varchar(32);not null;default:'';uniqueIndex:uk_fin_stmt" json:"statement_code"` // 报表类型代码
@@ -30,9 +30,8 @@ func (FinancialStatement) TableName() string { return "ods.financial_statement" 
 
 // FinancialStatementFilters for querying financial statements.
 type FinancialStatementFilters struct {
-	Symbol           string
-	Symbols          []string // batch query for multiple symbols
-	Market           string
+	SecurityID       uint64
+	SecurityIDs      []uint64 // batch query for multiple securities
 	StatementType    string
 	StatementCode    string   // report type code (e.g., "合并报表", "母公司报表")
 	ReportingPeriod  string   // exact match
@@ -42,7 +41,7 @@ type FinancialStatementFilters struct {
 	AnnDateBefore    string   // PIT filter: ann_date < this value (avoids look-ahead bias)
 	ReportType       string
 	CompTypeCode     *int
-	Fields           []string // fields to return (e.g., ["symbol", "data_json->TOTAL_ASSETS"])
+	Fields           []string // fields to return (e.g., ["security_id", "data_json->TOTAL_ASSETS"])
 	// PostgreSQL JSONB filters
 	DataContains map[string]interface{} // data_json @> '{"key": value}'  containment query
 	DataHasKey   string                 // data_json ? 'key'  key existence check

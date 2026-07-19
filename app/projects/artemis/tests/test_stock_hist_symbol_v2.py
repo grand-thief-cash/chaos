@@ -22,8 +22,12 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent import Stock
 
 # ── Helpers ──
 
-def _make_baostock_df(symbol: str = "600000", rows: int = 3) -> pd.DataFrame:
-    """Simulate a DataFrame as returned by execute() — baostock fields + symbol column."""
+def _make_baostock_df(symbol: str = "600000", rows: int = 3, security_id: int = 1) -> pd.DataFrame:
+    """Simulate a DataFrame as returned by execute() — baostock fields + identity.
+
+    execute() attaches both symbol (physical key, §3.2) and security_id (Phase 4
+    API identity) to each row.
+    """
     data = []
     for i in range(rows):
         data.append({
@@ -44,6 +48,7 @@ def _make_baostock_df(symbol: str = "600000", rows: int = 3) -> pd.DataFrame:
         })
     df = pd.DataFrame(data)
     df["symbol"] = symbol
+    df["security_id"] = security_id
     return df
 
 
@@ -84,10 +89,12 @@ class FakePhoenixClient:
     def get_securities(self, *, symbols=None, asset_type="stock", market="zh_a",
                        exchanges=None, limit=20000):
         syms = symbols or ["600000", "000001"]
-        return {s: {"symbol": s, "exchange": "SH"} for s in syms}
+        return {s: {"symbol": s, "exchange": "SH", "security_id": i + 1}
+                for i, s in enumerate(syms)}
 
     def get_bars_last_update(self, *, asset_type="stock", market="zh_a",
-                             period="daily", adjust="nf", symbols=None):
+                             period="daily", adjust="nf",
+                             security_ids=None, symbols=None, exchange=None):
         return {}
 
 
@@ -146,7 +153,7 @@ class TestPostProcessBarExtSplit(unittest.TestCase):
         df = _make_baostock_df()
         result = self.child.post_process(self.ctx, df)
         bars_df = result["bars"]
-        expected = {"trade_date", "symbol", "open", "high", "low", "close",
+        expected = {"security_id", "trade_date", "symbol", "open", "high", "low", "close",
                     "preclose", "volume", "amount", "pct_chg"}
         self.assertEqual(set(bars_df.columns), expected)
 
@@ -154,7 +161,7 @@ class TestPostProcessBarExtSplit(unittest.TestCase):
         df = _make_baostock_df()
         result = self.child.post_process(self.ctx, df)
         ext_df = result["ext"]
-        expected = {"trade_date", "symbol", "turn", "pe_ttm", "ps_ttm", "pb_mrq", "pcf_ncf_ttm"}
+        expected = {"security_id", "trade_date", "symbol", "turn", "pe_ttm", "ps_ttm", "pb_mrq", "pcf_ncf_ttm"}
         self.assertEqual(set(ext_df.columns), expected)
 
     def test_ext_fields_renamed_to_snake_case(self):
@@ -235,7 +242,7 @@ class TestSinkCallsV2API(unittest.TestCase):
 
     def test_sink_bars_have_trade_date_and_symbol(self):
         ctx = self._make_sink_ctx(symbol="000001")
-        df = _make_baostock_df(symbol="000001")
+        df = _make_baostock_df(symbol="000001", security_id=7)
         processed = self.child.post_process(ctx, df)
         self.child.sink(ctx, processed)
 
@@ -243,9 +250,23 @@ class TestSinkCallsV2API(unittest.TestCase):
         for bar in bars:
             self.assertIn("trade_date", bar)
             self.assertIn("symbol", bar)
+            self.assertIn("security_id", bar)  # Phase 4 identity
             self.assertNotIn("date", bar)
             self.assertNotIn("code", bar)
             self.assertEqual(bar["symbol"], "000001")
+            self.assertEqual(bar["security_id"], 7)
+
+    def test_sink_ext_carries_security_id(self):
+        """Phase 4: ext rows also carry security_id (phoenixA resolves per row)."""
+        ctx = self._make_sink_ctx()
+        df = _make_baostock_df(security_id=9)
+        processed = self.child.post_process(ctx, df)
+        self.child.sink(ctx, processed)
+
+        ext = self.fake_client.upsert_calls[0]["ext"]
+        self.assertIsNotNone(ext)
+        for row in ext:
+            self.assertEqual(row["security_id"], 9)
 
     def test_sink_ext_has_snake_case_fields(self):
         ctx = self._make_sink_ctx()
@@ -266,6 +287,23 @@ class TestSinkCallsV2API(unittest.TestCase):
         processed = {"bars": pd.DataFrame(), "ext": pd.DataFrame()}
         self.child.sink(ctx, processed)
         self.assertEqual(len(self.fake_client.upsert_calls), 0)
+
+    def test_execute_fails_without_security_id(self):
+        """Phase 4 orphan defense: missing security_id fails before baostock fetch."""
+        ctx = _make_ctx_mock({
+            "bs_code": "sh.600000",
+            "symbol": "600000",
+            # security_id intentionally missing
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-31",
+            "bs_period": "d",
+            "bs_adjust": "1",
+            "fields": "date,open,close",
+        })
+        df = self.child.execute(ctx)
+        self.assertTrue(df.empty)
+        ctx.fail.assert_called_once()
+        self.assertIn("security_id", str(ctx.fail.call_args))
 
     def test_sink_failure_calls_ctx_fail(self):
         self.fake_client._upsert_ok = False
@@ -295,7 +333,7 @@ class TestParentPlanUsesSymbol(unittest.TestCase):
             "start_date": "2024-01-01",
             "fields": "date,open,close",
             "symbol_infos": {
-                "600000": {"symbol": "600000", "exchange": "SH"},
+                "600000": {"symbol": "600000", "exchange": "SH", "security_id": 1},
             },
             "last_updates_map": {},
         })
@@ -315,6 +353,8 @@ class TestParentPlanUsesSymbol(unittest.TestCase):
 
         self.assertEqual(child_params["bs_code"], "sh.600000")
         self.assertEqual(child_params["symbol"], "600000")
+        # Phase 4: security_id is passed through to the child for the upsert payload.
+        self.assertEqual(child_params["security_id"], 1)
 
     def test_plan_works_without_code_field_in_symbol_infos(self):
         """get_securities() no longer returns 'code' — plan must still work."""
@@ -324,7 +364,7 @@ class TestParentPlanUsesSymbol(unittest.TestCase):
             "start_date": "2024-01-01",
             "fields": "date,open,close",
             "symbol_infos": {
-                "000001": {"symbol": "000001", "exchange": "SZ"},
+                "000001": {"symbol": "000001", "exchange": "SZ", "security_id": 2},
             },
             "last_updates_map": {},
         })
@@ -344,9 +384,9 @@ class TestParentPlanUsesSymbol(unittest.TestCase):
             "start_date": "2020-01-01",
             "fields": "date,open,close",
             "symbol_infos": {
-                "600000": {"symbol": "600000", "exchange": "SH"},
+                "600000": {"symbol": "600000", "exchange": "SH", "security_id": 1},
             },
-            "last_updates_map": {"600000": "2099-12-31"},
+            "last_updates_map": {1: "2099-12-31"},
         })
 
         with patch("artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent.convert_to_baostock_params",
@@ -362,8 +402,8 @@ class TestParentPlanUsesSymbol(unittest.TestCase):
             "start_date": "2024-01-01",
             "fields": "date,open,close",
             "symbol_infos": {
-                "600000": {"symbol": "600000", "exchange": "SH"},
-                "000001": {"symbol": "000001", "exchange": "SZ"},
+                "600000": {"symbol": "600000", "exchange": "SH", "security_id": 1},
+                "000001": {"symbol": "000001", "exchange": "SZ", "security_id": 2},
             },
             "last_updates_map": {},
         })
@@ -394,8 +434,8 @@ class TestGetSecuritiesNoCodeField(unittest.TestCase):
         fake_resp.status_code = 200
         fake_resp.json.return_value = {
             "data": [
-                {"symbol": "600000", "name": "浦发银行", "exchange": "SH"},
-                {"symbol": "000001", "name": "平安银行", "exchange": "SZ"},
+                {"security_id": 1, "symbol": "600000", "name": "浦发银行", "exchange": "SH"},
+                {"security_id": 2, "symbol": "000001", "name": "平安银行", "exchange": "SZ"},
             ]
         }
 
@@ -403,10 +443,11 @@ class TestGetSecuritiesNoCodeField(unittest.TestCase):
             result = client.get_securities()
 
         self.assertEqual(len(result), 2)
-        for sym, info in result.items():
+        # get_securities returns a dict keyed by security_id
+        for sid, info in result.items():
             self.assertIn("symbol", info)
             self.assertNotIn("code", info)
-            self.assertEqual(info["symbol"], sym)
+            self.assertEqual(info["security_id"], sid)
 
 
 if __name__ == "__main__":

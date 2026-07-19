@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
@@ -14,6 +13,12 @@ import (
 )
 
 // BarsService handles business logic for unified bars data.
+//
+// Phase 4: identity resolution (security_id → physical symbol) happens in the
+// controller, so the service receives already-resolved physical rows. bars_*
+// tables keep symbol as their primary key (§3.2); the service does not need the
+// ResolveCache (no orphan defense here — the controller's resolve IS the
+// existence check, refactor §10.d.2).
 type BarsService struct {
 	*core.BaseComponent
 	Dao *dao.BarsDao `infra:"dep:dao_bars"`
@@ -34,23 +39,15 @@ func (s *BarsService) Start(ctx context.Context) error {
 
 func (s *BarsService) Stop(ctx context.Context) error { return s.BaseComponent.Stop(ctx) }
 
-// BatchUpsert writes standard bars.
-func (s *BarsService) BatchUpsert(ctx context.Context, q *model.BarsQuery, barsJSON json.RawMessage) error {
-	var bars []*model.StandardBar
-	if err := json.Unmarshal(barsJSON, &bars); err != nil {
-		return err
-	}
+// BatchUpsert writes standard bars (already resolved to physical symbol).
+func (s *BarsService) BatchUpsert(ctx context.Context, q *model.BarsQuery, bars []*model.StandardBar) error {
 	logging.Infof(ctx, "BarsService BatchUpsert %d bars for %s/%s/%s/%s",
 		len(bars), q.AssetType, q.Market, q.Period, q.Adjust)
 	return s.Dao.BatchUpsert(ctx, q, bars)
 }
 
-// BatchUpsertExt writes source-specific extension bars.
-func (s *BarsService) BatchUpsertExt(ctx context.Context, source string, q *model.BarsQuery, extJSON json.RawMessage) error {
-	var ext []*model.BarsExtBaostock
-	if err := json.Unmarshal(extJSON, &ext); err != nil {
-		return err
-	}
+// BatchUpsertExt writes source-specific extension bars (already resolved).
+func (s *BarsService) BatchUpsertExt(ctx context.Context, source string, q *model.BarsQuery, ext []*model.BarsExtBaostock) error {
 	logging.Infof(ctx, "BarsService BatchUpsertExt %d ext rows from %s", len(ext), source)
 	return s.Dao.BatchUpsertExt(ctx, source, q, ext)
 }

@@ -15,7 +15,8 @@ import (
 
 type CorporateActionService struct {
 	*core.BaseComponent
-	Dao *dao.CorporateActionDao `infra:"dep:dao_corp_action"`
+	Dao     *dao.CorporateActionDao `infra:"dep:dao_corp_action"`
+	Resolve *ResolveCache           `infra:"dep:svc_resolve_cache"`
 }
 
 func NewCorporateActionService() *CorporateActionService {
@@ -28,6 +29,9 @@ func (s *CorporateActionService) Start(ctx context.Context) error {
 	if s.Dao == nil {
 		return errors.New("dao_corp_action is nil")
 	}
+	if s.Resolve == nil {
+		return errors.New("svc_resolve_cache is nil (required for Phase 3 orphan defense)")
+	}
 	return s.BaseComponent.Start(ctx)
 }
 
@@ -36,6 +40,13 @@ func (s *CorporateActionService) Stop(ctx context.Context) error { return s.Base
 func (s *CorporateActionService) BatchUpsert(ctx context.Context, list []*model.CorporateAction) error {
 	if len(list) == 0 {
 		return nil
+	}
+	ids := make([]uint64, 0, len(list))
+	for _, item := range list {
+		ids = append(ids, item.SecurityID)
+	}
+	if err := s.Resolve.ValidateSecurityIDsExist(ctx, ids); err != nil {
+		return err
 	}
 	logging.Infof(ctx, "CorporateActionService BatchUpsert count=%d", len(list))
 	return s.Dao.BatchUpsert(ctx, list)

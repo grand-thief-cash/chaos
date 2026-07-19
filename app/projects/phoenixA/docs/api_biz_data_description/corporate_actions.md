@@ -1,5 +1,13 @@
 # Corporate Actions API - 公司行为数据
 
+> Phase 3: identity is `security_id`; `symbol`/`market` removed.
+
+> **Field dictionary scope:** `fields=` (flat projection) is governed for
+> `amazing_data` action_types only (dividend/right_issue). The baostock
+> `bs_dividend` data_json fields are ungoverned (out of Phase 3 scope); use
+> the default `nested` format for baostock rows. `security_id` is a top-level
+> column for ALL sources.
+
 ## 概述
 
 提供上市公司各类公司行为事件数据查询，包括分红、配股等股东权益变更事件。
@@ -14,9 +22,8 @@
 
 | 参数名 | 类型 | 必需 | 说明 |
 |--------|------|------|------|
-| symbol | string | 否 | 证券代码 |
-| symbols | string | 否 | 证券代码列表（逗号分隔） |
-| market | string | 否 | 市场标识（如 `zh_a`） |
+| security_id | integer | 否 | 单个证券 ID（`security_registry.id`） |
+| security_ids | string | 否 | 证券 ID 列表（逗号分隔） |
 | period_start | string | 否 | 起始公告日期（格式 YYYY-MM-DD） |
 | period_end | string | 否 | 截止公告日期（格式 YYYY-MM-DD） |
 | report_period | string | 否 | 按报告期过滤 |
@@ -33,12 +40,12 @@
 **格式**: `fields=字段1,字段2,字段3`
 
 **支持的字段类型**:
-1. **常规字段**: 直接使用表字段名，如 `symbol`, `report_period`, `ann_date`
+1. **常规字段**: 直接使用表字段名，如 `security_id`, `report_period`, `ann_date`
 2. **JSONB 嵌套字段**: 使用 `data_json.字段名` 格式，如 `data_json.DVD_PER_SHARE_PRE_TAX_CASH`, `data_json.DATE_EQY_RECORD`
 
 **示例**:
-- `fields=symbol,report_period,ann_date` - 只返回基本字段
-- `fields=symbol,data_json.DVD_PER_SHARE_PRE_TAX_CASH,data_json.DATE_EQY_RECORD` - 返回分红特定字段
+- `fields=security_id,report_period,ann_date` - 只返回基本字段
+- `fields=security_id,data_json.DVD_PER_SHARE_PRE_TAX_CASH,data_json.DATE_EQY_RECORD` - 返回分红特定字段
 - `fields=data_json.PRICE,data_json.RATIO,data_json.COLLECTION_FUND` - 返回配股特定字段
 
 ## 路径参数
@@ -78,8 +85,7 @@
 |--------|----------|------|
 | id | integer | 主键 ID |
 | source | string | 数据源 |
-| symbol | string | 证券代码（纯代码） |
-| market | string | 市场标识（默认 zh_a） |
+| security_id | integer | 证券 ID（`security_registry.id`） |
 | action_type | string | 行为类型 |
 | report_period | string | 报告期（格式 YYYY-MM-DD） |
 | ann_date | string | 公告日期（格式 YYYY-MM-DD） |
@@ -94,7 +100,6 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| MARKET_CODE | string | 证券代码 |
 | DIV_PROGRESS | string | 方案进度 |
 | DVD_PER_SHARE_STK | float64 | 每股送转（送股数量，股/股） |
 | DVD_PER_SHARE_PRE_TAX_CASH | float64 | 每股派息(税前)(元/股) |
@@ -123,7 +128,6 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| MARKET_CODE | string | 证券代码 |
 | PROGRESS | integer | 方案进度 |
 | PRICE | float64 | 配股价格(元/股) |
 | RATIO | float64 | 配股比例 |
@@ -174,21 +178,19 @@
 
 ### 查询分红数据
 
-**请求**: `GET /api/v2/corporate-action/amazing_data/dividend?symbol=000001&page=1&page_size=10`
+**请求**: `GET /api/v2/corporate-action/amazing_data/dividend?security_id=1&page=1&page_size=10`
 
 ```json
 [
   {
     "id": 100001,
     "source": "amazing_data",
-    "symbol": "000001",
-    "market": "zh_a",
+    "security_id": 1,
     "action_type": "dividend",
     "report_period": "2023",
     "ann_date": "2024-06-11",
     "progress_code": "3",
     "data_json": {
-      "MARKET_CODE": "000001",
       "DIV_PROGRESS": "3",
       "DVD_PER_SHARE_STK": 0.5,
       "DVD_PER_SHARE_PRE_TAX_CASH": 2,
@@ -221,7 +223,7 @@
 
 ### 查询分红数据（使用 fields 参数过滤字段）
 
-**请求**: `GET /api/v2/corporate-action/amazing_data/dividend?symbol=000001&fields=ann_date,report_period,data_json.DVD_PER_SHARE_PRE_TAX_CASH,data_json.DATE_EQY_RECORD,data_json.DATE_EX`
+**请求**: `GET /api/v2/corporate-action/amazing_data/dividend?security_id=1&fields=ann_date,report_period,data_json.DVD_PER_SHARE_PRE_TAX_CASH,data_json.DATE_EQY_RECORD,data_json.DATE_EX`
 
 ```json
 [
@@ -237,4 +239,4 @@
 
 ---
 
-*文档最后更新: 2026-05-13*
+*文档最后更新: 2026-07-03*

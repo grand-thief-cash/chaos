@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 
 import { ArtemisBiService } from '../services/artemis-bi.service';
 import { BIDupontResponse, BIDupontMetricNode, DupontPeriodKind } from '../models/bi.models';
+import { SecuritySearchInputComponent } from '../../../shared/ui/security-search-input.component';
+import { SecuritySearchItem } from '../../../core/services/security-lookup.service';
 
 type TrendDirection = 'up' | 'down' | 'flat';
 type NodeTone = 'navy' | 'blue' | 'sky' | 'pale' | 'slate';
@@ -76,7 +78,7 @@ interface NodeLayout {
 @Component({
   selector: 'app-bi-dupont-analysis-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SecuritySearchInputComponent],
   template: `
     <section class="dupont-page">
       <header class="dashboard-header">
@@ -85,6 +87,13 @@ interface NodeLayout {
           <span class="update-date">{{ securityName ? securityName + ' · ' : '' }}{{ updateDate }}</span>
         </div>
         <div class="filter-row" aria-label="杜邦分析筛选条件">
+          <label class="security-search-label">
+            <span>证券</span>
+            <app-security-search-input
+              (securitySelected)="onSecuritySelected($event)"
+              placeholder="名称或代码"
+            />
+          </label>
           <label>
             <span>口径</span>
             <select [(ngModel)]="selectedPeriodKind" (ngModelChange)="onPeriodKindChange()">
@@ -113,6 +122,7 @@ interface NodeLayout {
               切换：{{ viewLabel }}
             </button>
           }
+          <button type="button" class="view-toggle" (click)="load()" [disabled]="!securityId || securityId <= 0">查询</button>
         </div>
       </header>
 
@@ -781,9 +791,10 @@ interface NodeLayout {
 export class DupontAnalysisPageComponent implements OnInit {
   private readonly bi = inject(ArtemisBiService);
 
-  // Hard-coded for the first integration: only 000021 (深科技) has full
-  // financial data from 2015. Parameters will be wired to the filter row later.
-  private readonly symbol = '000021';
+  // security_id is permanent once assigned, but remains an internal identifier.
+  // Resolve it from the selected name/symbol instead of hardcoding an
+  // environment-specific numeric ID.
+  securityId: number | null = null;
   private readonly source = 'amazing_data';
 
   organizations = ['上市公司合并口径'];
@@ -902,10 +913,21 @@ export class DupontAnalysisPageComponent implements OnInit {
   loadError: string | null = null;
 
   ngOnInit(): void {
-    this.load();
+    // Wait for the user to pick a security via the name/symbol search input; — BIGSERIAL is not stable across
+    // registry rebuilds, so no hardcoded default.
   }
 
-  private load(): void {
+  onSecuritySelected(item: SecuritySearchItem | null): void {
+    // Resolved from the name/symbol search; null when the user edits the text
+    // after a selection, which keeps the 查询 button disabled (no stale-id query).
+    this.securityId = item?.security_id ?? null;
+  }
+
+  load(): void {
+    if (!this.securityId || this.securityId <= 0 || !Number.isInteger(this.securityId)) {
+      this.loadError = '请先选择证券';
+      return;
+    }
     this.loadError = null;
     this.updateDate = '加载中…';
     const opts: Parameters<ArtemisBiService['getDupont']>[1] = {
@@ -914,7 +936,7 @@ export class DupontAnalysisPageComponent implements OnInit {
     };
     if (this.selectedReportingPeriod) opts.target_reporting_period = this.selectedReportingPeriod;
     if (this.extrapolateQ4 && this.canExtrapolate) opts.extrapolate_q4 = true;
-    this.bi.getDupont(this.symbol, opts).subscribe({
+    this.bi.getDupont(this.securityId, opts).subscribe({
       next: (resp) => {
         this.currentResp = resp;
         this.hasExtrapolated = !!resp.extrapolated_full_year;

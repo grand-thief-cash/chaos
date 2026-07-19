@@ -1,4 +1,4 @@
-"""Discovery: datasets, fields, enums, and per-symbol coverage.
+"""Discovery: datasets, fields, enums, and per-security coverage.
 
 Raw passthrough to the phoenixA catalog APIs.
 """
@@ -10,7 +10,7 @@ from artemis.services.bi.base import BIServiceBase
 
 
 class DiscoveryMixin(BIServiceBase):
-    """Dataset/field/enum discovery and per-symbol coverage."""
+    """Dataset/field/enum discovery and per-security coverage."""
 
     # ─── Discovery: datasets, fields, enums ───
 
@@ -55,13 +55,26 @@ class DiscoveryMixin(BIServiceBase):
         resp.raise_for_status()
         return resp.json()
 
-    # ─── Per-symbol coverage ───
+    # ─── Per-security coverage ───
 
-    def get_symbol_coverage(self, symbol: str, market: str = "zh_a") -> Dict[str, Any]:
+    def get_security_coverage(
+        self,
+        security_id: int,
+        market: str = "zh_a",
+    ) -> Dict[str, Any]:
+        """Per-security data coverage summary.
+
+        Identity is security_id (Phase 4, no dual-track). ``security_id`` is
+        required.
+        """
         client = self._client()
         resp = client.get(
-            f"/api/v2/catalog/securities/{symbol}/datasets/summary",
-            params={"market": market},
+            f"/api/v2/catalog/securities/{security_id}/datasets/summary",
         )
+        # 404 is a normal outcome after a registry rebuild (old security_id no
+        # longer exists) — surface it as ValueError so the route maps to 404,
+        # not as a generic 500 (raise_for_status would raise HTTPError → 500).
+        if resp.status_code == 404:
+            raise ValueError(f"security_id {security_id} not found")
         resp.raise_for_status()
         return resp.json()

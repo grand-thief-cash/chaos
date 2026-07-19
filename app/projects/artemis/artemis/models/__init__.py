@@ -8,6 +8,8 @@ from artemis.models.configs import (
     DeptServicesCfg,
     HttpClientCfg,
     LoggingCfg,
+    MinioCfg,
+    MinioBusinessCfg,
     PartitionRuleCfg,
     ServerCfg,
     ServiceEndpointCfg,
@@ -25,7 +27,6 @@ from artemis.models.runtime_update import (
     TaskUnitRegisterResp,
 )
 from artemis.models.task_req import TaskRunReq, CallbackEndpoints
-from artemis.models.workbench import WorkbenchRunReq
 
 __all__ = [
     "TaskRunReq",
@@ -35,6 +36,8 @@ __all__ = [
     "PartitionRuleCfg",
     "ServiceEndpointCfg",
     "DeptServicesCfg",
+    "MinioCfg",
+    "MinioBusinessCfg",
     "Config",
     "DataOption",
     "DataOptionsCfg",
@@ -52,5 +55,4 @@ __all__ = [
     "TaskUnitFileCreateReq",
     "TaskUnitRegisterReq",
     "TaskUnitRegisterResp",
-    "WorkbenchRunReq",
 ]

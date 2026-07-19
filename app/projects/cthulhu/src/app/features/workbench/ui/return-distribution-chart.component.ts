@@ -6,7 +6,7 @@ import { NzStatisticModule } from 'ng-zorro-antd/statistic';
 import { NzGridModule } from 'ng-zorro-antd/grid';
 import { NgxEchartsModule } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
-import { BacktestArtifacts, Bar } from '../models/workbench.model';
+import { Bar } from '../models/workbench.model';
 
 interface DistributionStats {
   mean: number;
@@ -72,7 +72,6 @@ interface DistributionStats {
   `,
 })
 export class ReturnDistributionChartComponent implements OnChanges {
-  @Input() artifacts: BacktestArtifacts | null = null;
   @Input() bars: Bar[] | null = null;
 
   stats: DistributionStats | null = null;
@@ -89,13 +88,13 @@ export class ReturnDistributionChartComponent implements OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['artifacts'] || changes['bars']) {
+    if (changes['bars']) {
       this.compute();
     }
   }
 
   private compute(): void {
-    const bars = this.artifacts?.bars ?? this.bars;
+    const bars = this.bars;
     if (!bars || bars.length < 3) {
       this.stats = null;
       this.chartOptions = null;

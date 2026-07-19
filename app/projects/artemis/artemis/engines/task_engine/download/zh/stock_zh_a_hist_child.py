@@ -17,11 +17,19 @@ class StockZhAHistChild(WorkerUnit):
 
         bs_code = params.get("bs_code")
         symbol = params.get("symbol")
+        security_id = params.get("security_id")
         start_date = params.get("start_date")
         end_date = params.get("end_date")
         bs_period = params.get("bs_period")
         bs_adjust = params.get("bs_adjust")
         fields_str = params.get("fields")
+
+        # Phase 4: every bar row must carry a security_id (phoenixA resolves it
+        # → physical symbol; a missing/zero id would 400 at upsert). Fail fast
+        # rather than fetch data we cannot sink.
+        if not security_id:
+            ctx.fail(f"missing security_id for symbol={symbol}; registry must upsert it first", phase='execute')
+            return pd.DataFrame()
 
         rs = bs.query_history_k_data_plus(
             bs_code,
@@ -51,8 +59,10 @@ class StockZhAHistChild(WorkerUnit):
             return pd.DataFrame()
 
         df = pd.DataFrame(data_list, columns=fields_str.split(','))
-        # Attach symbol (PhoenixA v2 unified field name)
+        # Attach identity (PhoenixA v2 unified field names). security_id is the
+        # Phase 4 identity; symbol is kept as the physical storage key (§3.2).
         df['symbol'] = symbol
+        df['security_id'] = int(security_id)
         return df
 
     def post_process(self, ctx: TaskContext, df: pd.DataFrame) -> dict:
@@ -77,7 +87,10 @@ class StockZhAHistChild(WorkerUnit):
             df["trade_date"] = pd.to_datetime(df["trade_date"], errors="coerce").dt.strftime("%Y-%m-%d")
 
         # ── Standard bars fields (PhoenixA StandardBar) ──
+        # security_id is the Phase 4 API identity; symbol is kept as the
+        # physical storage key (§3.2). phoenixA resolves security_id → symbol.
         standard_cols = [
+            "security_id",
             "trade_date",
             "symbol",
             "open",
@@ -130,10 +143,11 @@ class StockZhAHistChild(WorkerUnit):
         # Build standard bars DataFrame
         bars_df = df[[c for c in standard_cols if c in df.columns]].copy()
 
-        # Build ext DataFrame (trade_date + symbol + ext columns)
+        # Build ext DataFrame (security_id + trade_date + symbol + ext columns)
         ext_src_cols = [k for k in ext_rename_map if k in df.columns]
         if ext_src_cols:
-            ext_df = df[["trade_date", "symbol"] + ext_src_cols].copy()
+            ext_base = ["security_id", "trade_date", "symbol"] if "security_id" in df.columns else ["trade_date", "symbol"]
+            ext_df = df[ext_base + ext_src_cols].copy()
             ext_df.rename(columns=ext_rename_map, inplace=True)
         else:
             ext_df = pd.DataFrame()

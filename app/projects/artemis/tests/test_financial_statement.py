@@ -4,7 +4,6 @@ Unit tests for financial statement task post_process logic.
 Tests the data transformation from SDK DataFrame to PhoenixA-compatible dicts,
 covering all 5 statement types and edge cases.
 """
-import json
 import numpy as np
 import pandas as pd
 import pytest
@@ -18,6 +17,12 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_cash_flow import StockZH
 from artemis.engines.task_engine.download.zh.stock_zh_a_income import StockZHAIncome
 from artemis.engines.task_engine.download.zh.stock_zh_a_profit_express import StockZHAProfitExpress
 from artemis.engines.task_engine.download.zh.stock_zh_a_profit_notice import StockZHAProfitNotice
+
+
+SECURITY_MAP = {
+    '000001.SZ': {'symbol': '000001', 'exchange': 'SZ', 'security_id': 1},
+    '600519.SH': {'symbol': '600519', 'exchange': 'SH', 'security_id': 2},
+}
 
 
 # ── Helpers ──────────────────────────────────────────
@@ -146,6 +151,7 @@ class TestBalanceSheetPostProcess:
 
     def test_basic_transform(self):
         task = StockZHABalanceSheet()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = {'000001.SZ': _make_balance_sheet_df()}
 
@@ -153,19 +159,18 @@ class TestBalanceSheetPostProcess:
 
         assert len(processed) == 1
         rec = processed[0]
-        assert rec['symbol'] == '000001.SZ'
-        assert rec['market'] == 'zh_a'
+        assert rec['security_id'] == 1
         assert rec['statement_type'] == 'balance_sheet'
-        assert rec['reporting_period'] == '20231231'
+        assert rec['reporting_period'] == '2023-12-31'
         assert rec['report_type'] == '4'
         assert rec['statement_code'] == '1'
         assert rec['security_name'] == '平安银行'
-        assert rec['ann_date'] == '20240320'
-        assert rec['actual_ann_date'] == '20240320'
+        assert rec['ann_date'] == '2024-03-20'
+        assert rec['actual_ann_date'] == '2024-03-20'
         assert rec['comp_type_code'] == 2
 
         # Verify data_json
-        data = json.loads(rec['data_json'])
+        data = rec['data_json']
         assert data['TOTAL_ASSETS'] == 5600000000000.0
         assert data['TOTAL_LIAB'] == 5100000000000.0
         assert data['CAP_STOCK'] == 19405918198.0
@@ -175,11 +180,12 @@ class TestBalanceSheetPostProcess:
 
     def test_metadata_fields_excluded_from_data_json(self):
         task = StockZHABalanceSheet()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = {'000001.SZ': _make_balance_sheet_df()}
 
         processed = task.post_process(ctx, result)
-        data = json.loads(processed[0]['data_json'])
+        data = processed[0]['data_json']
 
         for field in METADATA_FIELDS:
             assert field not in data, f"{field} should not be in data_json"
@@ -197,6 +203,7 @@ class TestBalanceSheetPostProcess:
 
     def test_missing_reporting_period_skipped(self):
         task = StockZHABalanceSheet()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         df = _make_balance_sheet_df()
         df.at[0, 'REPORTING_PERIOD'] = ''
@@ -205,6 +212,7 @@ class TestBalanceSheetPostProcess:
 
     def test_missing_market_code_skipped(self):
         task = StockZHABalanceSheet()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         df = _make_balance_sheet_df()
         df.at[0, 'MARKET_CODE'] = ''
@@ -214,13 +222,14 @@ class TestBalanceSheetPostProcess:
     def test_numpy_types_converted(self):
         """Ensure numpy float64/int64 are converted to native Python types."""
         task = StockZHABalanceSheet()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         df = _make_balance_sheet_df()
         # Ensure columns are numpy types
         df['TOTAL_ASSETS'] = df['TOTAL_ASSETS'].astype(np.float64)
         result = {'000001.SZ': df}
         processed = task.post_process(ctx, result)
-        data = json.loads(processed[0]['data_json'])
+        data = processed[0]['data_json']
         # json.dumps would fail if numpy types weren't converted
         assert isinstance(data['TOTAL_ASSETS'], float)
 
@@ -229,6 +238,7 @@ class TestCashFlowPostProcess:
 
     def test_basic_transform(self):
         task = StockZHACashFlow()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = {'600519.SH': _make_cashflow_df()}
 
@@ -237,8 +247,8 @@ class TestCashFlowPostProcess:
         assert len(processed) == 1
         rec = processed[0]
         assert rec['statement_type'] == 'cashflow'
-        assert rec['symbol'] == '600519.SH'
-        data = json.loads(rec['data_json'])
+        assert rec['security_id'] == 2
+        data = rec['data_json']
         assert data['NET_CASH_FLOWS_OPERA_ACT'] == 70000000000.0
         # CURRENCY_CODE is str 'CNY', not NaN — should be in data_json
         assert data['CURRENCY_CODE'] == 'CNY'
@@ -249,6 +259,7 @@ class TestIncomePostProcess:
 
     def test_basic_transform(self):
         task = StockZHAIncome()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = {'600519.SH': _make_income_df()}
 
@@ -257,7 +268,7 @@ class TestIncomePostProcess:
         assert len(processed) == 1
         rec = processed[0]
         assert rec['statement_type'] == 'income'
-        data = json.loads(rec['data_json'])
+        data = rec['data_json']
         assert data['OPERA_REV'] == 150000000000.0
         assert data['BASIC_EPS'] == 59.49
 
@@ -267,6 +278,7 @@ class TestProfitExpressPostProcess:
     def test_single_dataframe_result(self):
         """profit_express returns DataFrame, not dict."""
         task = StockZHAProfitExpress()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = _make_profit_express_df()
 
@@ -275,14 +287,14 @@ class TestProfitExpressPostProcess:
         assert len(processed) == 1
         rec = processed[0]
         assert rec['statement_type'] == 'profit_express'
-        assert rec['symbol'] == '000001.SZ'
+        assert rec['security_id'] == 1
         # These fields are absent from profit_express SDK data
         assert rec['report_type'] == ''
         assert rec['statement_code'] == ''
         assert rec['security_name'] == ''
         assert rec['comp_type_code'] == 0
 
-        data = json.loads(rec['data_json'])
+        data = rec['data_json']
         assert data['TOTAL_ASSETS'] == 5600000000000.0
         assert data['EPS_BASIC'] == 2.37
         assert 'PERFORMANCE_SUMMARY' in data
@@ -290,6 +302,7 @@ class TestProfitExpressPostProcess:
     def test_dict_result_also_works(self):
         """In case SDK returns dict, should still work."""
         task = StockZHAProfitExpress()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = {'all': _make_profit_express_df()}
 
@@ -306,6 +319,7 @@ class TestProfitNoticePostProcess:
 
     def test_single_dataframe_result(self):
         task = StockZHAProfitNotice()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = _make_profit_notice_df()
 
@@ -314,14 +328,14 @@ class TestProfitNoticePostProcess:
         assert len(processed) == 1
         rec = processed[0]
         assert rec['statement_type'] == 'profit_notice'
-        assert rec['symbol'] == '600519.SH'
+        assert rec['security_id'] == 2
         assert rec['report_type'] == '4'
         assert rec['security_name'] == '贵州茅台'
         assert rec['statement_code'] == ''
         assert rec['actual_ann_date'] == ''
         assert rec['comp_type_code'] == 0
 
-        data = json.loads(rec['data_json'])
+        data = rec['data_json']
         assert data['P_TYPECODE'] == '10'
         assert data['P_CHANGE_MAX'] == 20.5
         assert data['NET_PROFIT_MAX'] == 8000000.0
@@ -336,7 +350,7 @@ class TestFieldMapping:
     """Verify Artemis output field names match PhoenixA model exactly."""
 
     PHOENIXA_JSON_FIELDS = {
-        'source', 'symbol', 'market', 'statement_type',
+        'source', 'security_id', 'statement_type',
         'reporting_period', 'report_type', 'statement_code',
         'security_name', 'ann_date', 'actual_ann_date',
         'comp_type_code', 'data_json',
@@ -353,6 +367,7 @@ class TestFieldMapping:
         """Every record produced by post_process must have exactly the fields
         that PhoenixA's FinancialStatement model expects."""
         task = task_cls()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = result_factory()
 
@@ -376,12 +391,13 @@ class TestFieldMapping:
     def test_data_json_is_valid_json(self, task_cls, result_factory):
         """data_json must be a valid JSON string."""
         task = task_cls()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = result_factory()
 
         processed = task.post_process(ctx, result)
         for rec in processed:
-            data = json.loads(rec['data_json'])
+            data = rec['data_json']
             assert isinstance(data, dict)
 
     @pytest.mark.parametrize("task_cls,result_factory", [
@@ -394,12 +410,13 @@ class TestFieldMapping:
     def test_data_json_excludes_metadata(self, task_cls, result_factory):
         """data_json must NOT contain any METADATA_FIELDS."""
         task = task_cls()
+        task._security_map = SECURITY_MAP
         ctx = _FakeCtx()
         result = result_factory()
 
         processed = task.post_process(ctx, result)
         for rec in processed:
-            data = json.loads(rec['data_json'])
+            data = rec['data_json']
             for field in METADATA_FIELDS:
                 assert field not in data, (
                     f"{task_cls.__name__}: {field} leaked into data_json"

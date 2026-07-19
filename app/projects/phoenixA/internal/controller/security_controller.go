@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -54,12 +55,26 @@ func (c *SecurityController) List(w http.ResponseWriter, r *http.Request) {
 		Name:      q.Get("name"),
 		Status:    q.Get("status"),
 	}
-	// Defaults
-	if f.AssetType == "" {
-		f.AssetType = bizConsts.ASSET_TYPE_STOCK
+	hasSecurityID := false
+	if sid := q.Get("security_id"); sid != "" {
+		id, err := strconv.ParseUint(sid, 10, 64)
+		if err != nil || id == 0 {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id"})
+			return
+		}
+		f.SecurityID = id
+		hasSecurityID = true
 	}
-	if f.Market == "" {
-		f.Market = bizConsts.MARKET_ZH_A
+	// Defaults: only apply when not querying by id — id uniquely identifies the
+	// row, and coupling an id query to default asset_type/market would silently
+	// filter out non-stock rows once more asset types exist.
+	if !hasSecurityID {
+		if f.AssetType == "" {
+			f.AssetType = bizConsts.ASSET_TYPE_STOCK
+		}
+		if f.Market == "" {
+			f.Market = bizConsts.MARKET_ZH_A
+		}
 	}
 
 	list, err := c.Svc.ListFiltered(ctx, f, limit, offset)
@@ -70,14 +85,54 @@ func (c *SecurityController) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: list})
 }
 
-// GET /api/v2/securities/{symbol}
-func (c *SecurityController) Get(w http.ResponseWriter, r *http.Request, symbol string) {
+// GET /api/v2/securities/search
+//
+// One-pass search returning {items, total, limit, offset} computed over a
+// single L1 snapshot, so list and count cannot diverge (the legacy
+// /securities + /securities/count pair had an inconsistency window and doubled
+// the work). q is the unified free-text term: symbol exact (case-insensitive)
+// OR name contains (case-sensitive) - any one suffices. Legacy name/symbol
+// params are still accepted for backward-compatible callers. status is optional
+// (delisted securities remain queryable for historical DuPont).
+func (c *SecurityController) Search(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	limit, offset := parseLimitOffset(r)
 	q := r.URL.Query()
-	assetType := q.Get("asset_type")
-	market := q.Get("market")
 
-	s, err := c.Svc.Get(ctx, symbol, assetType, market)
+	f := &model.SecurityFilters{
+		AssetType: q.Get("asset_type"),
+		Market:    q.Get("market"),
+		Exchanges: parseFieldsParam(q.Get("exchange")),
+		Name:      q.Get("name"),
+		Q:         q.Get("q"),
+		Status:    q.Get("status"),
+		Symbol:    q.Get("symbol"),
+	}
+	// Default scope to stock/zh_a so the L1 snapshot key is well-defined.
+	if f.AssetType == "" {
+		f.AssetType = bizConsts.ASSET_TYPE_STOCK
+	}
+	if f.Market == "" {
+		f.Market = bizConsts.MARKET_ZH_A
+	}
+
+	res, err := c.Svc.SearchPage(ctx, f, limit, offset)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse[any]{Data: res})
+}
+
+// GET /api/v2/securities/{security_id}
+func (c *SecurityController) Get(w http.ResponseWriter, r *http.Request, securityIDStr string) {
+	ctx := r.Context()
+	securityID, err := strconv.ParseUint(securityIDStr, 10, 64)
+	if err != nil || securityID == 0 {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id"})
+		return
+	}
+	s, err := c.Svc.GetByID(ctx, securityID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeJSON(w, http.StatusNotFound, apiError{Error: "not found"})
@@ -112,7 +167,7 @@ func (c *SecurityController) Count(w http.ResponseWriter, r *http.Request) {
 	f := &model.SecurityFilters{
 		AssetType: q.Get("asset_type"),
 		Market:    q.Get("market"),
-		Exchange:  q.Get("exchange"),
+		Exchanges: parseFieldsParam(q.Get("exchange")),
 		Name:      q.Get("name"),
 		Status:    q.Get("status"),
 	}
@@ -128,18 +183,4 @@ func (c *SecurityController) Count(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"count": cnt}})
-}
-
-// DELETE /api/v2/securities/all
-func (c *SecurityController) DeleteAll(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	q := r.URL.Query()
-	assetType := q.Get("asset_type")
-	market := q.Get("market")
-	affected, err := c.Svc.DeleteAll(ctx, assetType, market)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, apiResponse[any]{Data: map[string]any{"rows": affected}})
 }

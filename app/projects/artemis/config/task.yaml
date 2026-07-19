@@ -85,7 +85,7 @@ tasks:
         config:
           start_date: "2015-01-01"     # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"       # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]
+          symbols: ["000021"]
           exchange : "SZ"
 
   STOCK_ZH_A_CASH_FLOW:
@@ -94,7 +94,7 @@ tasks:
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-06-01"               # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          symbols: ["000021"]        # 纯代码格式，缺省则全量下载
           exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_INCOME:
@@ -103,7 +103,7 @@ tasks:
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
           end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
+          symbols: ["000021"]        # 纯代码格式，缺省则全量下载
           exchange: "SZ"             # 与 symbols 配合使用
 
   STOCK_ZH_A_PROFIT_EXPRESS:
@@ -245,4 +245,24 @@ tasks:
           data_provider_code: "phoenixa_hist_daily"
           analyzer_profile: "default_hist_v1"
           persist_artifacts: ["analyzers", "trades", "equity_curve", "plot_manifest", "plot_series"]
+
+  # Eastmoney stock research-report PDF download
+  # 单次运行：LIST 阶段按 [list_cursor, today] 从旧到新翻页 upsert 元数据（pending），
+  # PROCESS 阶段取最早 N 份 pending 研报：详情页→PDF→MinIO→phoenixA 标记 downloaded。
+  # 断点续传：pending/error 研报下次运行继续。受东财反爬限速，单次耗时取决于 download_limit。
+  # 全量回补在多次运行中完成（list_cursor 单调推进，不会卡在旧页）。
+  STOCK_ZH_A_EASTMONEY_REPORT:
+    variants:
+      - match: {}
+        config:
+          earliest_date: "2024-07-01"   # 东财滚动 ~2 年窗口；首次运行（phoenixA 无数据时）从此开始
+          end_date: "2024-07-20" # null=今天，或 "YYYY-MM-DD"
+          download_limit: 20            # 单次最多完整处理（详情+PDF）的研报数
+          list_page_limit: 10           # 单次最多翻的列表页数（限制首次回补耗时）
+          page_size: 50                 # 东财页大小，保持 50
+          # 保守限速（东财反爬强制），可按需调整
+          list_page_sleep: [3.0, 6.0]
+          detail_page_sleep: [7.0, 15.0]
+          pdf_download_sleep: [9.0, 18.0]
+          retry_sleep: [45.0, 120.0]
 

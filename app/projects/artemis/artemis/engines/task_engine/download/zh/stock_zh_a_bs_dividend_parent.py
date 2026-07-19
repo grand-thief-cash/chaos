@@ -79,7 +79,9 @@ class StockZhABsDividendParent(OrchestratorUnit):
         for _, info in symbol_infos.items():
             symbol = info.get("symbol")
             exchange = info.get("exchange")
-            if not symbol or not exchange:
+            security_id = info.get("security_id")
+            if not symbol or not exchange or not security_id:
+                # No security_id → cannot write (Phase 3 orphan defense); skip.
                 continue
 
             bs_code = symbol_exchange_to_bs_code(symbol, exchange)
@@ -92,6 +94,7 @@ class StockZhABsDividendParent(OrchestratorUnit):
                     "params": {
                         "bs_code": bs_code,
                         "symbol": symbol,
+                        "security_id": int(security_id),
                         "year": str(year),
                         "year_type": year_type,
                     },

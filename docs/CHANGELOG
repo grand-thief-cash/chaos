@@ -1,7 +1,12 @@
 # VERSION
-v0.4.1
+v0.4.3
 
 # Changelog
+- v0.4.3
+    - Updated 2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md
+    - Provided extra docs for FEATURE_PLATFORM
+- v0.4.2
+    - Added 2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md
 - v0.4.1
     - Added limit_up.md
 - v0.4.0

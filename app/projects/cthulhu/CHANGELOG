@@ -1,7 +1,32 @@
 # VERSION
-v0.17.2
+v0.21.0
 
 # Changelog
+- v0.21.0
+    - **Feature Platform workbench.** Added typed PhoenixA/Artemis clients and routed Registry, Definition Detail, Lineage, Runs, Run Detail, Values, and Manual Compute pages under `/workbench/features`.
+    - **Traceable and fail-closed operations.** The UI keeps source profile, Feature version, Run ID, as-of/cutoff, quality, partial/unknown/deprecated/dirty states, and structured 409/422 errors visible; URL-backed filters recover after refresh and manual compute accepts published versions only.
+    - **Responsive and tested delivery.** Added API/store/utility/route coverage, narrow-screen layouts, and automatic side-menu collapse on mobile; remote `development-home` build and 11 targeted Angular/layout tests pass.
+- v0.20.0
+    - **Reusable securities typeahead.** Added `SecurityLookupService` (HTTP + models) and `SecuritySearchInputComponent` (autocomplete): `debounceTime(300)` + `distinctUntilChanged` + `switchMap` (cancels stale requests), `catchError` so an HTTP failure doesn't kill the stream, min-length gating, and synchronous selection-clear on text edit - so a parent gating on a non-null selection can't fire a stale `security_id` during the debounce window.
+    - **DuPont input switched from `security_id` to name/symbol.** The numeric `Security ID` box is replaced by the typeahead; the resolved `security_id` drives `/bi/dupont/{security_id}` unchanged. The 查询 button is enabled only after an explicit dropdown selection.
+- v0.19.0
+    - **BI static financial dashboard expansion**
+        - Added financial ability dashboards for growth, operating, and solvency analysis with mock KPI cards, benchmark views, trend selectors, detail tables, and explanatory notes.
+        - Added a new nested Profit & Revenue Analysis menu with three static pages: profit-income analysis, profit comparison analysis, and revenue analysis.
+        - Preserved core business relationships in the mock dashboards, including revenue/cost/expense-to-profit breakdowns and revenue composition views.
+        - Improved static BI navigation ordering for financial summary, financial ability, profit & revenue analysis, DuPont analysis, and metric dictionary.
+- v0.18.0
+    - **Fully migrated to `security_id` (lockstep with artemis v0.41.0, no-compat).**
+        - BI: `ArtemisBiService` query methods (`queryFinancial`/`queryCorporateAction`/`queryEquityStructure`) + `getSecurityCoverage`/`getDupont` take `security_id`/`security_ids` (was `symbol`/`symbols`); routes `company/:symbol` → `company/:security_id`; URL paths `/bi/catalog/securities/{symbol}/datasets/summary` and `/bi/dupont/{symbol}` → `/{security_id}`. Models gain `security_id` (`BISymbolCoverageResponse` renamed → `BISecurityCoverageResponse`, `BISecurityItem`, `BIDupontResponse`). `symbol` survives only as response decoration — pages set it from `resp.symbol` for display.
+        - Param serialization switched from truthy-check (`if (opts.symbol)`) to null-check (`if (opts.security_id != null)`) so `security_id=0` is sent → backend 400, not silently dropped (which would degrade to an unfiltered query).
+        - Workbench market-data: `getMarketData(securityId)` + `IndicatorsCalcRequest`/`MarketDataResponse`/`IndicatorsCalcResponse` carry `security_id`; hardcoded `symbol='000001'` → user-entered `securityId` (fail-closed on null/≤0). Header falls back to `#<id>` until the response returns the symbol.
+        - Workbench factor-engine: `computeIncremental(securityIds: number[])` sends `security_ids` as a comma-joined query param (body null, was `symbols` array body); `getSnapshot(securityId)` takes `security_id`; `FactorRankItem` gains `security_id`; `FactorComputeResult.symbols_count` → `securities_count`. Incremental input is fail-closed — any empty/non-numeric/non-positive token aborts the whole batch (no silent filter, which would bypass the backend strict-identity 400).
+        - DuPont page: hardcoded `symbol='000021'` removed → user-entered `securityId` with fail-closed validation (null/≤0/non-integer → error); `ngOnInit` no longer auto-loads (waits for 查询). BIGSERIAL is not stable across registry rebuilds, so a stale hardcoded id would silently show the wrong security.
+        - Incidental fix: `stock-list.page.ts` search button `(click)="onSearch"` → `"onSearch()"` (handler was not being invoked).
+    - **Workbench backtest + industry + strategy components removed (will be redesigned later).**
+        - Deleted 8 files: `workbench-research` + `industry-explorer` pages, `strategy-config` + 5 backtest chart/stats components (`backtest-chart`, `backtest-kline-chart`, `backtest-stats`, `return-curve-chart`, `backtest-diagnostics`). `return-distribution-chart` retained (still used by `market-data` with `[bars]` input — dropped its `artifacts` input).
+        - `workbench.model.ts` dropped all strategy/backtest/industry interfaces (~190 lines); `WorkbenchApiService` dropped `getStrategies`/`runBacktest`/`getIndustry*`; `WorkbenchStore` dropped the `_strategies`/`_result`/`_loading`/`_running` signals + `loadStrategies`/`runBacktest`/`clearResult`.
+        - Routes `research` + `industry` removed; default redirect `research` → `market-data`; menu orders renumbered; `index.ts` exports pruned. Retained: market-data + factor-engine pages (migrated to `security_id` above).
 - v0.17.2
     - **BI: removed dead `BiApiService` methods**
         - Deleted 6 zero-caller methods from `bi-api.service.ts`: `getCompanyDashboard`, `getCompanyDupont`, `getCompanyQuality`, `getCompanyInsight`, `searchSecurities`, `getPeerComparison` — all targeted the long-deleted artemis old-BI endpoints (`/bi/financial/company/{symbol}/{dashboard,dupont,quality,insight}`, `/bi/search/securities`, `/bi/financial/peer-comparison`) and had no remaining caller in the codebase. The live `getMetricDefinitions` (used by the `metric-dictionary` page) is kept. Pruned the now-unused `HttpParams` import and 7 now-unused response-type imports from the service line; the type definitions remain in `bi-legacy.models.ts`.

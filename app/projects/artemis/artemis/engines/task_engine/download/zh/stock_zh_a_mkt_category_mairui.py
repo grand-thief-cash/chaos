@@ -46,9 +46,9 @@ class StockZHAMktCategoryMairui(WorkerUnit):
 
     def sink(self, ctx, processed: List[Dict[str, Any]]):
         phoenixA_client = ctx.dept_http.get(DeptServices.PHOENIXA)
-        ok = phoenixA_client.upsert_market_categories(
+        ok = phoenixA_client.upsert_taxonomy_categories(
             processed,
-            consts.DataSource.DS_MAIRUI.value,
+            source=consts.DataSource.DS_MAIRUI.value,
             taxonomy=consts.Taxonomy.MAIRUI.value,
             market="zh_a",
             run_id=ctx.run_id,

@@ -27,6 +27,10 @@ func (c *AdjustFactorController) Start(ctx context.Context) error { return c.Bas
 func (c *AdjustFactorController) Stop(ctx context.Context) error  { return c.BaseComponent.Stop(ctx) }
 
 // POST /api/v2/adjust-factors/{source}/upsert
+//
+// Request body: JSON array of adjust-factor rows. Each row MUST carry a
+// security_id resolved from security_registry; rows with a missing/unknown
+// security_id are rejected with 400 (orphan defense, refactor §10.c).
 func (c *AdjustFactorController) BatchUpsert(w http.ResponseWriter, r *http.Request) {
 	source := chi.URLParam(r, "source")
 	if source == "" {
@@ -40,13 +44,10 @@ func (c *AdjustFactorController) BatchUpsert(w http.ResponseWriter, r *http.Requ
 	}
 	for _, item := range list {
 		item.Source = source
-		if item.Market == "" {
-			item.Market = "zh_a"
-		}
 		item.DividOperateDate = normalizeDateYYYYMMDD(item.DividOperateDate)
 	}
 	if err := c.Svc.BatchUpsert(r.Context(), list); err != nil {
-		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
+		writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "count": len(list)})
@@ -60,16 +61,28 @@ func (c *AdjustFactorController) Query(w http.ResponseWriter, r *http.Request) {
 	pageSize, _ := strconv.Atoi(q.Get("page_size"))
 
 	f := &model.AdjustFactorFilters{
-		Symbol:    q.Get("symbol"),
-		Market:    q.Get("market"),
 		StartDate: normalizeDateYYYYMMDD(q.Get("start_date")),
 		EndDate:   normalizeDateYYYYMMDD(q.Get("end_date")),
 	}
+	if q.Has("security_id") {
+		v := q.Get("security_id")
+		id, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || id == 0 {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid security_id: must be a positive integer"})
+			return
+		}
+		f.SecurityID = id
+	}
+	if q.Has("security_ids") {
+		ids, err := parseUint64ListStrict(q.Get("security_ids"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
+			return
+		}
+		f.SecurityIDs = ids
+	}
 	if v := q.Get("fields"); v != "" {
 		f.Fields = strings.Split(v, ",")
-	}
-	if v := q.Get("symbols"); v != "" {
-		f.Symbols = strings.Split(v, ",")
 	}
 
 	list, count, err := c.Svc.Query(r.Context(), source, f, page, pageSize)

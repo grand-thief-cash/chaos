@@ -93,7 +93,7 @@ def test_single_quarter_detail_uses_single_quarter_caliber():
     """single_quarter: detail stacks must be on single-quarter (YTD−prior YTD) caliber."""
     svc = _make_service()
     resp = svc.get_dupont_analysis(
-        symbol="000021", source="amazing_data",
+        security_id=1, source="amazing_data",
         period_kind="single_quarter", target_reporting_period="2025-06-30",
     )
 
@@ -131,7 +131,7 @@ def test_ytd_q3_extrapolation_scales_detail_stacks():
     """ytd + Q3 extrapolation: detail stacks must scale by 4/3 with the ratios."""
     svc = _make_service()
     resp = svc.get_dupont_analysis(
-        symbol="000021", source="amazing_data",
+        security_id=1, source="amazing_data",
         period_kind="ytd", target_reporting_period="2025-09-30",
         extrapolate_q4=True,
     )
@@ -187,7 +187,7 @@ def test_prev_period_is_populated():
     """prev_period must be carried into the response (was always None before)."""
     svc = _make_service()
     resp = svc.get_dupont_analysis(
-        symbol="000021", source="amazing_data",
+        security_id=1, source="amazing_data",
         period_kind="ytd", target_reporting_period="2025-09-30",
     )
     # ytd → 同比 → prior year same period.
@@ -202,7 +202,7 @@ def test_statement_code_is_passed_through():
     """
     svc = _make_service()
     resp = svc.get_dupont_analysis(
-        symbol="000021", source="amazing_data",
+        security_id=1, source="amazing_data",
         statement_code="6",
         period_kind="ytd", target_reporting_period="2025-09-30",
     )

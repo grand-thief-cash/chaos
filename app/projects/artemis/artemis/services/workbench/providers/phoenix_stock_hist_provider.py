@@ -23,7 +23,7 @@ class PhoenixBarsProvider(MarketDataProvider):
         return client.get_bars(
             asset_type=query.asset_type,
             market=query.market,
-            symbol=query.symbol,
+            security_id=query.security_id,
             start_date=query.start_date,
             end_date=query.end_date,
             period=query.period,

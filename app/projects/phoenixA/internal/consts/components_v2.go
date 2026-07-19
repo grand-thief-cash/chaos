@@ -8,7 +8,6 @@ const (
 	COMP_DAO_BARS_EXT          = "dao_bars_ext"
 	COMP_DAO_TAXONOMY          = "dao_taxonomy"
 	COMP_DAO_TAXONOMY_MAP      = "dao_taxonomy_map"
-	COMP_DAO_STRATEGY_RUN      = "dao_strategy_run"
 	COMP_DAO_FINANCIAL_STMT    = "dao_financial_stmt"
 	COMP_DAO_CORP_ACTION       = "dao_corp_action"
 	COMP_DAO_ADJUST_FACTOR     = "dao_adjust_factor"
@@ -20,12 +19,15 @@ const (
 	COMP_DAO_CATALOG           = "dao_catalog"
 	COMP_DAO_FIELD_DICTIONARY  = "dao_field_dictionary"
 	COMP_DAO_FIELD_COVERAGE    = "dao_field_coverage"
+	COMP_DAO_RESEARCH_REPORT   = "dao_research_report"
+	COMP_DAO_FEATURE_REGISTRY  = "dao_feature_registry"
+	COMP_DAO_FEATURE_RUN       = "dao_feature_run"
 
 	// Service components
 	COMP_SVC_SECURITY         = "svc_security"
 	COMP_SVC_BARS             = "svc_bars"
 	COMP_SVC_TAXONOMY         = "svc_taxonomy"
-	COMP_SVC_STRATEGY_RUN     = "svc_strategy_run"
+	COMP_SVC_RESOLVE_CACHE    = "svc_resolve_cache"
 	COMP_SVC_FINANCIAL_STMT   = "svc_financial_stmt"
 	COMP_SVC_CORP_ACTION      = "svc_corp_action"
 	COMP_SVC_ADJUST_FACTOR    = "svc_adjust_factor"
@@ -36,6 +38,9 @@ const (
 	COMP_SVC_CATALOG          = "svc_catalog"
 	COMP_SVC_FIELD_DICTIONARY = "svc_field_dictionary"
 	COMP_SVC_FIELD_COVERAGE   = "svc_field_coverage"
+	COMP_SVC_RESEARCH_REPORT  = "svc_research_report"
+	COMP_SVC_FEATURE_REGISTRY = "svc_feature_registry"
+	COMP_SVC_FEATURE_RUN      = "svc_feature_run"
 
 	// Buffer components
 	COMP_WRITE_BUFFER = "write_buffer_mgr"
@@ -44,7 +49,6 @@ const (
 	COMP_CTRL_SECURITY         = "ctrl_security"
 	COMP_CTRL_BARS             = "ctrl_bars"
 	COMP_CTRL_TAXONOMY         = "ctrl_taxonomy"
-	COMP_CTRL_STRATEGY_RUN     = "ctrl_strategy_run"
 	COMP_CTRL_FINANCIAL_STMT   = "ctrl_financial_stmt"
 	COMP_CTRL_CORP_ACTION      = "ctrl_corp_action"
 	COMP_CTRL_ADJUST_FACTOR    = "ctrl_adjust_factor"
@@ -56,4 +60,6 @@ const (
 	COMP_CTRL_CATALOG          = "ctrl_catalog"
 	COMP_CTRL_FIELD_DICTIONARY = "ctrl_field_dictionary"
 	COMP_CTRL_FIELD_COVERAGE   = "ctrl_field_coverage"
+	COMP_CTRL_RESEARCH_REPORT  = "ctrl_research_report"
+	COMP_CTRL_FEATURE          = "ctrl_feature"
 )

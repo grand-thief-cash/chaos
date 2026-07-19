@@ -53,18 +53,7 @@ func (d *SecurityRegistryDao) BatchUpsert(ctx context.Context, list []*model.Sec
 		chunkSize = 200
 	}
 	for _, s := range list {
-		s.Symbol = strings.TrimSpace(s.Symbol)
-		s.Exchange = strings.ToUpper(strings.TrimSpace(s.Exchange))
-		s.Name = strings.TrimSpace(s.Name)
-		if s.AssetType == "" {
-			s.AssetType = bizConsts.ASSET_TYPE_STOCK
-		}
-		if s.Market == "" {
-			s.Market = bizConsts.MARKET_ZH_A
-		}
-		if s.Status == "" {
-			s.Status = "active"
-		}
+		normalizeSecurityForUpsert(s)
 	}
 	var affected int64
 	for i := 0; i < len(list); i += chunkSize {
@@ -74,10 +63,7 @@ func (d *SecurityRegistryDao) BatchUpsert(ctx context.Context, list []*model.Sec
 		}
 		batch := list[i:end]
 		res := d.db.WithContext(ctx).
-			Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "symbol"}, {Name: "asset_type"}, {Name: "market"}},
-				DoUpdates: clause.AssignmentColumns([]string{"exchange", "name", "full_name", "status", "list_date", "delist_date", "updated_at"}),
-			}).Create(&batch)
+			Clauses(securityUpsertOnConflict()).Create(&batch)
 		if res.Error != nil {
 			return affected, res.Error
 		}
@@ -86,10 +72,57 @@ func (d *SecurityRegistryDao) BatchUpsert(ctx context.Context, list []*model.Sec
 	return affected, nil
 }
 
-func (d *SecurityRegistryDao) Get(ctx context.Context, symbol, assetType, market string) (*model.SecurityRegistry, error) {
+// normalizeSecurityForUpsert applies the canonical natural-key representation.
+// A caller-supplied ID is always discarded: new IDs are database-assigned, while
+// an existing row is matched by its natural key and keeps its permanent ID.
+func normalizeSecurityForUpsert(s *model.SecurityRegistry) {
+	s.ID = 0
+	s.Symbol = strings.TrimSpace(s.Symbol)
+	s.Exchange = strings.ToUpper(strings.TrimSpace(s.Exchange))
+	s.Name = strings.TrimSpace(s.Name)
+	if s.AssetType == "" {
+		s.AssetType = bizConsts.ASSET_TYPE_STOCK
+	}
+	if s.Market == "" {
+		s.Market = bizConsts.MARKET_ZH_A
+	}
+	if s.Status == "" {
+		s.Status = "active"
+	}
+}
+
+// securityUpsertOnConflict is deliberately centralized and tested. The update
+// set must never contain id or a natural-key column; changing either would make
+// historical security_id references point at a different instrument.
+func securityUpsertOnConflict() clause.OnConflict {
+	return clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "exchange"},
+			{Name: "asset_type"},
+			{Name: "symbol"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"name",
+			"full_name",
+			"status",
+			"list_date",
+			"delist_date",
+			"market",
+			"updated_at",
+		}),
+	}
+}
+
+// Get retrieves a security by its natural key (exchange, asset_type, symbol).
+// asset_type is expected to be passed explicitly (callers use consts.ASSET_TYPE_STOCK).
+// exchange/symbol are normalized to match BatchUpsert's storage form, so callers
+// may pass "sz"/" 000001 " and still resolve the row.
+func (d *SecurityRegistryDao) Get(ctx context.Context, exchange, assetType, symbol string) (*model.SecurityRegistry, error) {
+	exchange = strings.ToUpper(strings.TrimSpace(exchange))
+	symbol = strings.TrimSpace(symbol)
 	var s model.SecurityRegistry
 	err := d.db.WithContext(ctx).
-		Where("symbol = ? AND asset_type = ? AND market = ?", symbol, assetType, market).
+		Where("exchange = ? AND asset_type = ? AND symbol = ?", exchange, assetType, symbol).
 		First(&s).Error
 	if err != nil {
 		return nil, err
@@ -97,9 +130,38 @@ func (d *SecurityRegistryDao) Get(ctx context.Context, symbol, assetType, market
 	return &s, nil
 }
 
+// GetByID retrieves a security by its surrogate id.
+func (d *SecurityRegistryDao) GetByID(ctx context.Context, id uint64) (*model.SecurityRegistry, error) {
+	var s model.SecurityRegistry
+	err := d.db.WithContext(ctx).Where("id = ?", id).First(&s).Error
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// GetAll returns all securities (ordered by symbol), used to build resolve caches.
+func (d *SecurityRegistryDao) GetAll(ctx context.Context) ([]*model.SecurityRegistry, error) {
+	return d.ListFiltered(ctx, nil, 0, 0)
+}
+
 func (d *SecurityRegistryDao) ListFiltered(ctx context.Context, f *model.SecurityFilters, limit, offset int) ([]*model.SecurityRegistry, error) {
 	var list []*model.SecurityRegistry
-	q := d.db.WithContext(ctx).Model(&model.SecurityRegistry{}).Order("symbol ASC")
+	q := d.db.WithContext(ctx).Model(&model.SecurityRegistry{})
+	if f != nil && f.Q != "" {
+		// Exact-symbol (case-insensitive) tier first, then symbol ASC - mirrors
+		// the in-memory SearchPage sort. Parameter-bound via clause.Expr so user
+		// input never reaches raw SQL (no manual quote escaping, no dependence on
+		// the DB's string-literal config).
+		q = q.Clauses(clause.OrderBy{
+			Expression: clause.Expr{
+				SQL:  "CASE WHEN UPPER(symbol) = UPPER(?) THEN 0 ELSE 1 END, symbol ASC",
+				Vars: []interface{}{strings.TrimSpace(f.Q)},
+			},
+		})
+	} else {
+		q = q.Order("symbol ASC")
+	}
 	q = applySecurityFilters(q, f)
 	if limit > 0 {
 		q = q.Limit(limit)
@@ -123,21 +185,12 @@ func (d *SecurityRegistryDao) CountFiltered(ctx context.Context, f *model.Securi
 	return cnt, nil
 }
 
-func (d *SecurityRegistryDao) DeleteAll(ctx context.Context, assetType, market string) (int64, error) {
-	q := d.db.WithContext(ctx)
-	if assetType != "" {
-		q = q.Where("asset_type = ?", assetType)
-	}
-	if market != "" {
-		q = q.Where("market = ?", market)
-	}
-	res := q.Delete(&model.SecurityRegistry{})
-	return res.RowsAffected, res.Error
-}
-
 func applySecurityFilters(q *gorm.DB, f *model.SecurityFilters) *gorm.DB {
 	if f == nil {
 		return q
+	}
+	if f.SecurityID != 0 {
+		q = q.Where("id = ?", f.SecurityID)
 	}
 	if f.AssetType != "" {
 		q = q.Where("asset_type = ?", f.AssetType)
@@ -156,6 +209,13 @@ func applySecurityFilters(q *gorm.DB, f *model.SecurityFilters) *gorm.DB {
 	}
 	if f.Name != "" {
 		q = q.Where("name LIKE ?", "%"+strings.TrimSpace(f.Name)+"%")
+	}
+	if f.Q != "" {
+		// Q: symbol exact (case-insensitive) OR name contains (case-sensitive).
+		// % and _ are escaped to literals so a user q cannot inject LIKE wildcards.
+		trimmed := strings.TrimSpace(f.Q)
+		escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(trimmed)
+		q = q.Where("UPPER(symbol) = UPPER(?) OR name LIKE ? ESCAPE '\\'", trimmed, "%"+escaped+"%")
 	}
 	if len(f.Symbols) > 0 {
 		q = q.Where("symbol IN ?", f.Symbols)

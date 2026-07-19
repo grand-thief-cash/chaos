@@ -1,11 +1,10 @@
-"""策略研发工作台 API 路由。"""
+"""Workbench API routes — market data + indicators + cache management."""
 
 from fastapi import APIRouter, HTTPException
 
 from artemis.core import cfg_mgr
-from artemis.services.workbench import list_strategies, run_backtest
 from artemis.log.logger import get_logger
-from artemis.models.workbench import WorkbenchRunReq, IndicatorsRequest, CompactRequest
+from artemis.models.workbench import IndicatorsRequest, CompactRequest
 
 logger = get_logger("workbench.routes")
 
@@ -24,15 +23,9 @@ async def get_data_options():
     return cfg_mgr.data_options_config().model_dump()
 
 
-@router.get("/strategies")
-async def get_strategies():
-    """返回所有可用策略及其参数 schema。"""
-    return list_strategies()
-
-
 @router.get("/market-data")
 async def get_market_data(
-    symbol: str,
+    security_id: int,
     start_date: str,
     end_date: str,
     period: str = "daily",
@@ -42,12 +35,12 @@ async def get_market_data(
     source: str | None = None,
     use_cache: bool = True,
 ):
-    """获取 K 线 OHLCV 数据。"""
+    """获取 K 线 OHLCV 数据。Identity is security_id."""
     from artemis.services.workbench import get_market_bars
 
     try:
         return get_market_bars(
-            symbol=symbol,
+            security_id=security_id,
             start_date=start_date,
             end_date=end_date,
             period=period,
@@ -75,16 +68,15 @@ async def list_indicators():
 
 @router.post("/indicators")
 async def compute_indicators(req: IndicatorsRequest):
-    """计算技术指标。"""
+    """计算技术指标。Identity is security_id."""
     import pandas as pd
 
     from artemis.engines.indicator_engine import compute_indicators as do_compute
     from artemis.services.workbench import get_market_bars
 
     try:
-        # 1. 获取 K 线数据
         market_data = get_market_bars(
-            symbol=req.symbol,
+            security_id=req.security_id,
             start_date=req.start_date,
             end_date=req.end_date,
             period=req.period,
@@ -95,12 +87,12 @@ async def compute_indicators(req: IndicatorsRequest):
         )
         df = pd.DataFrame(market_data["bars"])
 
-        # 2. 计算指标
         indicator_requests = [r.model_dump() for r in req.indicators]
         series, meta = do_compute(df, indicator_requests)
 
         return {
-            "symbol": req.symbol,
+            "security_id": req.security_id,
+            "symbol": market_data.get("symbol", ""),
             "period": req.period,
             "indicators": series,
             "indicator_meta": meta,
@@ -113,20 +105,9 @@ async def compute_indicators(req: IndicatorsRequest):
         raise HTTPException(status_code=500, detail="internal error")
 
 
-@router.post("/run")
-async def run(req: WorkbenchRunReq):
-    """同步执行一次回测，返回完整结果 JSON。"""
-    try:
-        return run_backtest(req)
-    except ValueError as e:
-        logger.warning({"event": "workbench_run_validation_error", "error": str(e)})
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error({"event": "workbench_run_failed", "error": str(e)}, exc_info=True)
-        raise HTTPException(status_code=500, detail="internal error")
-
-
 # ── Cache API ─────────────────────────────────────────────────
+# cache_engine is symbol-keyed (§3.2 permanent-storage exception); compaction
+# operates on the physical symbol key directly.
 
 
 @router.post("/cache/compact")
@@ -188,98 +169,3 @@ async def cache_stats():
         "total_size_bytes": total_size,
         "total_size_mb": round(total_size / (1024 * 1024), 2),
     }
-
-
-# ── Industry Explorer API ─────────────────────────────────────
-
-def _get_industry_client():
-    """Build PhoenixA client for industry endpoints."""
-    from artemis.services.workbench.market_data import _build_phoenix_client
-    return _build_phoenix_client()
-
-
-@router.get("/industry/categories")
-async def get_industry_categories(
-    source: str = "amazing_data",
-    level: int | None = None,
-    parent_code: str | None = None,
-    name: str | None = None,
-    page: int = 1,
-    page_size: int = 500,
-):
-    """查询行业分类列表。"""
-    try:
-        client = _get_industry_client()
-        return client.query_industry_categories(
-            source=source, level=level, parent_code=parent_code,
-            name=name, page=page, page_size=page_size,
-        )
-    except ValueError as e:
-        logger.warning({"event": "industry_categories_config_error", "error": str(e)})
-        return {"list": [], "total": 0}
-    except Exception as e:
-        logger.error({"event": "industry_categories_failed", "error": str(e)}, exc_info=True)
-        return {"list": [], "total": 0}
-
-
-@router.get("/industry/constituents")
-async def get_industry_constituents(
-    index_code: str,
-    source: str = "amazing_data",
-    page: int = 1,
-    page_size: int = 500,
-):
-    """查询指定行业指数的成分股列表。"""
-    try:
-        client = _get_industry_client()
-        return client.query_industry_constituents_by_index(
-            source=source, index_code=index_code, page=page, page_size=page_size,
-        )
-    except ValueError as e:
-        logger.warning({"event": "industry_constituents_config_error", "error": str(e)})
-        return {"list": [], "count": 0}
-    except Exception as e:
-        logger.error({"event": "industry_constituents_failed", "error": str(e)}, exc_info=True)
-        return {"list": [], "count": 0}
-
-
-@router.get("/industry/by-stock")
-async def get_industries_by_stock(
-    con_code: str,
-    source: str = "amazing_data",
-):
-    """查询指定股票所属的行业列表。"""
-    try:
-        client = _get_industry_client()
-        result = client.query_industry_constituents_by_stock(source=source, con_code=con_code)
-        return {"list": result, "count": len(result)}
-    except ValueError as e:
-        logger.warning({"event": "industries_by_stock_config_error", "error": str(e)})
-        return {"list": [], "count": 0}
-    except Exception as e:
-        logger.error({"event": "industries_by_stock_failed", "error": str(e)}, exc_info=True)
-        return {"list": [], "count": 0}
-
-
-@router.get("/industry/daily")
-async def get_industry_daily(
-    index_code: str,
-    start_date: str = "",
-    end_date: str = "",
-    source: str = "amazing_data",
-    limit: int = 5000,
-):
-    """查询行业指数日行情数据。"""
-    try:
-        client = _get_industry_client()
-        bars = client.query_industry_daily(
-            source=source, index_code=index_code,
-            start_date=start_date, end_date=end_date, limit=limit,
-        )
-        return {"index_code": index_code, "bars": bars, "count": len(bars)}
-    except ValueError as e:
-        logger.warning({"event": "industry_daily_config_error", "error": str(e)})
-        return {"index_code": index_code, "bars": [], "count": 0}
-    except Exception as e:
-        logger.error({"event": "industry_daily_failed", "error": str(e)}, exc_info=True)
-        return {"index_code": index_code, "bars": [], "count": 0}

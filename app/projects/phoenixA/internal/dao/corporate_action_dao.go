@@ -47,7 +47,7 @@ func (d *CorporateActionDao) Stop(ctx context.Context) error {
 }
 
 // BatchUpsert upserts corporate actions. Unique key:
-// (source, symbol, market, action_type, report_period, ann_date).
+// (security_id, source, action_type, report_period, ann_date).
 func (d *CorporateActionDao) BatchUpsert(ctx context.Context, list []*model.CorporateAction) error {
 	if len(list) == 0 {
 		return nil
@@ -55,7 +55,7 @@ func (d *CorporateActionDao) BatchUpsert(ctx context.Context, list []*model.Corp
 	return d.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{
-				{Name: "source"}, {Name: "symbol"}, {Name: "market"},
+				{Name: "security_id"}, {Name: "source"},
 				{Name: "action_type"}, {Name: "report_period"}, {Name: "ann_date"},
 			},
 			DoUpdates: clause.AssignmentColumns([]string{
@@ -69,7 +69,7 @@ func (d *CorporateActionDao) Query(ctx context.Context, source string, f *model.
 	var list []*model.CorporateAction
 	q := d.db.WithContext(ctx).Model(&model.CorporateAction{}).
 		Where("source = ?", source).
-		Order("symbol ASC, report_period DESC, ann_date DESC")
+		Order("security_id ASC, report_period DESC, ann_date DESC")
 
 	// Handle field selection
 	if f != nil && len(f.Fields) > 0 {
@@ -87,14 +87,11 @@ func (d *CorporateActionDao) Query(ctx context.Context, source string, f *model.
 	}
 
 	if f != nil {
-		if f.Symbol != "" {
-			q = q.Where("symbol = ?", f.Symbol)
+		if f.SecurityID != 0 {
+			q = q.Where("security_id = ?", f.SecurityID)
 		}
-		if f.Market != "" {
-			q = q.Where("market = ?", f.Market)
-			if len(f.Symbols) > 0 {
-				q = q.Where("symbol IN ?", f.Symbols)
-			}
+		if len(f.SecurityIDs) > 0 {
+			q = q.Where("security_id IN ?", f.SecurityIDs)
 		}
 		if f.ActionType != "" {
 			q = q.Where("action_type = ?", f.ActionType)
@@ -143,14 +140,11 @@ func (d *CorporateActionDao) Count(ctx context.Context, source string, f *model.
 	var cnt int64
 	q := d.db.WithContext(ctx).Model(&model.CorporateAction{}).Where("source = ?", source)
 	if f != nil {
-		if f.Symbol != "" {
-			q = q.Where("symbol = ?", f.Symbol)
+		if f.SecurityID != 0 {
+			q = q.Where("security_id = ?", f.SecurityID)
 		}
-		if len(f.Symbols) > 0 {
-			q = q.Where("symbol IN ?", f.Symbols)
-		}
-		if f.Market != "" {
-			q = q.Where("market = ?", f.Market)
+		if len(f.SecurityIDs) > 0 {
+			q = q.Where("security_id IN ?", f.SecurityIDs)
 		}
 		if f.ActionType != "" {
 			q = q.Where("action_type = ?", f.ActionType)
@@ -186,20 +180,19 @@ func (d *CorporateActionDao) Count(ctx context.Context, source string, f *model.
 	return cnt, nil
 }
 
-// applyCorpActionFilters mutates the gorm query with corporate-action WHERE
-// clauses. Shared between QueryFlat and QueryNested.
-func applyCorpActionFilters(q *gorm.DB, f *model.CorporateActionFilters) {
+// applyCorpActionFilters returns the gorm query with corporate-action WHERE
+// clauses applied. Shared between QueryFlat and QueryNested. MUST return the
+// *gorm.DB (gorm v2 Where returns a new session; callers must reassign:
+// q = applyCorpActionFilters(q, f)).
+func applyCorpActionFilters(q *gorm.DB, f *model.CorporateActionFilters) *gorm.DB {
 	if f == nil {
-		return
+		return q
 	}
-	if f.Symbol != "" {
-		q = q.Where("symbol = ?", f.Symbol)
+	if f.SecurityID != 0 {
+		q = q.Where("security_id = ?", f.SecurityID)
 	}
-	if len(f.Symbols) > 0 {
-		q = q.Where("symbol IN ?", f.Symbols)
-	}
-	if f.Market != "" {
-		q = q.Where("market = ?", f.Market)
+	if len(f.SecurityIDs) > 0 {
+		q = q.Where("security_id IN ?", f.SecurityIDs)
 	}
 	if f.ActionType != "" {
 		q = q.Where("action_type = ?", f.ActionType)
@@ -227,6 +220,7 @@ func applyCorpActionFilters(q *gorm.DB, f *model.CorporateActionFilters) {
 	if f.DataHasKey != "" {
 		q = q.Where("data_json ?? ?", f.DataHasKey)
 	}
+	return q
 }
 
 // ResolveQueryFields resolves user-supplied field names against the field
@@ -241,8 +235,8 @@ func (d *CorporateActionDao) ResolveQueryFields(ctx context.Context, source, dat
 func (d *CorporateActionDao) QueryFlat(ctx context.Context, source string, f *model.CorporateActionFilters, resolved []ResolvedField, limit, offset int) ([]map[string]any, error) {
 	selectClause, _ := BuildFlatSelect(resolved)
 	q := d.db.WithContext(ctx).Table("ods.corporate_action").Where("source = ?", source)
-	applyCorpActionFilters(q, f)
-	q = q.Order("symbol ASC, report_period DESC, ann_date DESC")
+	q = applyCorpActionFilters(q, f)
+	q = q.Order("security_id ASC, report_period DESC, ann_date DESC")
 	if selectClause != "" {
 		q = q.Select(selectClause)
 	}
@@ -265,7 +259,7 @@ func (d *CorporateActionDao) QueryNested(ctx context.Context, source string, f *
 	topLevel, dataJSONFields := SplitResolved(resolved)
 
 	selectParts := []string{
-		"source", "symbol", "market", "action_type", "report_period",
+		"security_id", "source", "action_type", "report_period",
 		"ann_date", "progress_code",
 	}
 	seen := map[string]bool{}
@@ -289,8 +283,8 @@ func (d *CorporateActionDao) QueryNested(ctx context.Context, source string, f *
 		Table("corporate_action").
 		Select(strings.Join(selectParts, ", ")).
 		Where("source = ?", source)
-	applyCorpActionFilters(q, f)
-	q = q.Order("symbol ASC, report_period DESC, ann_date DESC")
+	q = applyCorpActionFilters(q, f)
+	q = q.Order("security_id ASC, report_period DESC, ann_date DESC")
 	if limit > 0 {
 		q = q.Limit(limit)
 	}
@@ -299,9 +293,8 @@ func (d *CorporateActionDao) QueryNested(ctx context.Context, source string, f *
 	}
 
 	type rawNestedRow struct {
+		SecurityID   uint64 `gorm:"column:security_id"`
 		Source       string `gorm:"column:source"`
-		Symbol       string `gorm:"column:symbol"`
-		Market       string `gorm:"column:market"`
 		ActionType   string `gorm:"column:action_type"`
 		ReportPeriod string `gorm:"column:report_period"`
 		AnnDate      string `gorm:"column:ann_date"`
@@ -317,9 +310,8 @@ func (d *CorporateActionDao) QueryNested(ctx context.Context, source string, f *
 	for _, r := range rawRows {
 		row := model.NestedRow{
 			TopLevel: map[string]any{
+				"security_id":   r.SecurityID,
 				"source":        r.Source,
-				"symbol":        r.Symbol,
-				"market":        r.Market,
 				"action_type":   r.ActionType,
 				"report_period": r.ReportPeriod,
 				"ann_date":      r.AnnDate,

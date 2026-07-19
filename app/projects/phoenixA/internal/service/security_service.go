@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
+	"sync"
 	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/components/logging"
@@ -21,12 +21,21 @@ import (
 type SecurityService struct {
 	*core.BaseComponent
 	Dao       *dao.SecurityRegistryDao   `infra:"dep:dao_security_registry"`
+	Resolve   *ResolveCache              `infra:"dep:svc_resolve_cache?"`
 	RedisComp *infraRedis.RedisComponent `infra:"dep:redis?"`
+
+	// L1 process-local snapshot cache + singleflight gate (see security_search.go).
+	l1Mu       sync.RWMutex
+	l1         map[string]*securitySnapshot
+	inflightMu sync.Mutex
+	inflight   map[string]*snapshotCall
 }
 
 func NewSecurityService() *SecurityService {
 	return &SecurityService{
 		BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_SECURITY, consts.COMPONENT_LOGGING),
+		l1:            make(map[string]*securitySnapshot),
+		inflight:      make(map[string]*snapshotCall),
 	}
 }
 
@@ -45,18 +54,32 @@ func (s *SecurityService) BatchUpsert(ctx context.Context, list []*model.Securit
 	if err != nil {
 		return affected, err
 	}
-	s.invalidateAggregateCaches(ctx, list)
+	s.invalidateAllSecurityCaches(ctx)
+	// New securities change the natural-key → id map the taxonomy resolve cache
+	// holds; invalidate so industry writes can resolve them immediately.
+	if s.Resolve != nil {
+		s.Resolve.Invalidate()
+	}
 	return affected, nil
 }
 
-func (s *SecurityService) Get(ctx context.Context, symbol, assetType, market string) (*model.SecurityRegistry, error) {
+// Get retrieves a security by its natural key (exchange, asset_type, symbol).
+// asset_type defaults to stock. Used for resolve (natural key -> row with id).
+func (s *SecurityService) Get(ctx context.Context, exchange, assetType, symbol string) (*model.SecurityRegistry, error) {
 	if assetType == "" {
 		assetType = bizConsts.ASSET_TYPE_STOCK
 	}
-	if market == "" {
-		market = bizConsts.MARKET_ZH_A
-	}
-	return s.Dao.Get(ctx, symbol, assetType, market)
+	return s.Dao.Get(ctx, exchange, assetType, symbol)
+}
+
+// GetByID retrieves a security by its surrogate id.
+func (s *SecurityService) GetByID(ctx context.Context, id uint64) (*model.SecurityRegistry, error) {
+	return s.Dao.GetByID(ctx, id)
+}
+
+// GetAll returns all securities, used to build resolve caches.
+func (s *SecurityService) GetAll(ctx context.Context) ([]*model.SecurityRegistry, error) {
+	return s.Dao.GetAll(ctx)
 }
 
 func (s *SecurityService) ListFiltered(ctx context.Context, f *model.SecurityFilters, limit, offset int) ([]*model.SecurityRegistry, error) {
@@ -103,25 +126,6 @@ func (s *SecurityService) CountFiltered(ctx context.Context, f *model.SecurityFi
 	return s.Dao.CountFiltered(ctx, f)
 }
 
-func (s *SecurityService) DeleteAll(ctx context.Context, assetType, market string) (int64, error) {
-	logging.Infof(ctx, "SecurityService DeleteAll asset_type=%s market=%s", assetType, market)
-	affected, err := s.Dao.DeleteAll(ctx, assetType, market)
-	if err != nil {
-		return affected, err
-	}
-	if assetType == "" || market == "" {
-		if err := s.invalidateAggregateCachesByScope(ctx, assetType, market); err != nil {
-			logging.Warnf(ctx, "security cache wildcard invalidation after delete_all failed: %v", err)
-		}
-		return affected, nil
-	}
-	resolvedAssetType, resolvedMarket := normalizeSecurityAggregateScope(assetType, market)
-	if delErr := cache.DeleteKeys(ctx, s.redisClient(), bizConsts.BuildSecurityListCacheKey(resolvedAssetType, resolvedMarket), bizConsts.BuildSecurityCountCacheKey(resolvedAssetType, resolvedMarket)); delErr != nil {
-		logging.Warnf(ctx, "security cache invalidation after delete_all failed: %v", delErr)
-	}
-	return affected, nil
-}
-
 func (s *SecurityService) redisClient() redislib.UniversalClient {
 	if s.RedisComp == nil {
 		return nil
@@ -129,39 +133,24 @@ func (s *SecurityService) redisClient() redislib.UniversalClient {
 	return s.RedisComp.Client()
 }
 
-func (s *SecurityService) invalidateAggregateCaches(ctx context.Context, list []*model.SecurityRegistry) {
-	if len(list) == 0 {
+// invalidateAllSecurityCaches clears L1 (process-local) and pattern-deletes the
+// entire security:list / security:count Redis namespace. Used on BatchUpsert:
+// broad invalidation covers the case where a security's market/asset_type was
+// reassigned (the old scope's cache would otherwise linger until its 6h TTL).
+// Registry upserts are low-frequency batch ops, so a namespace-wide scan is
+// cheap and correct. Other replicas' L1 converges via the L1 TTL (v1 SLA).
+func (s *SecurityService) invalidateAllSecurityCaches(ctx context.Context) {
+	s.invalidateL1()
+	client := s.redisClient()
+	if client == nil {
 		return
 	}
-	touched := make(map[string]struct{})
-	keys := make([]string, 0, len(list)*2)
-	for _, item := range list {
-		if item == nil {
-			continue
-		}
-		assetType, market := normalizeSecurityAggregateScope(item.AssetType, item.Market)
-		scope := assetType + ":" + market
-		if _, ok := touched[scope]; ok {
-			continue
-		}
-		touched[scope] = struct{}{}
-		keys = append(keys,
-			bizConsts.BuildSecurityListCacheKey(assetType, market),
-			bizConsts.BuildSecurityCountCacheKey(assetType, market),
-		)
+	if err := cache.DeleteByPattern(ctx, client, bizConsts.BuildSecurityListCachePattern("", "")); err != nil {
+		logging.Warnf(ctx, "security list cache pattern invalidation failed: %v", err)
 	}
-	if err := cache.DeleteKeys(ctx, s.redisClient(), keys...); err != nil {
-		logging.Warnf(ctx, "security cache invalidation after batch_upsert failed: %v", err)
+	if err := cache.DeleteByPattern(ctx, client, bizConsts.BuildSecurityCountCachePattern("", "")); err != nil {
+		logging.Warnf(ctx, "security count cache pattern invalidation failed: %v", err)
 	}
-}
-
-func (s *SecurityService) invalidateAggregateCachesByScope(ctx context.Context, assetType, market string) error {
-	listPattern := bizConsts.BuildSecurityListCachePattern(assetType, market)
-	countPattern := bizConsts.BuildSecurityCountCachePattern(assetType, market)
-	if err := cache.DeleteByPattern(ctx, s.redisClient(), listPattern); err != nil {
-		return err
-	}
-	return cache.DeleteByPattern(ctx, s.redisClient(), countPattern)
 }
 
 func securityAggregateCacheScope(f *model.SecurityFilters, limit, offset int) (string, string, bool) {
@@ -173,7 +162,7 @@ func securityAggregateCacheScope(f *model.SecurityFilters, limit, offset int) (s
 		return assetType, market, true
 	}
 	assetType, market = normalizeSecurityAggregateScope(f.AssetType, f.Market)
-	if f.Symbol != "" || len(f.Symbols) > 0 || f.Exchange != "" || len(f.Exchanges) > 0 || f.Name != "" || f.Status != "" {
+	if f.SecurityID != 0 || f.Symbol != "" || len(f.Symbols) > 0 || f.Exchange != "" || len(f.Exchanges) > 0 || f.Name != "" || f.Status != "" {
 		return "", "", false
 	}
 	return assetType, market, true
@@ -187,56 +176,4 @@ func normalizeSecurityAggregateScope(assetType, market string) (string, string) 
 		market = bizConsts.MARKET_ZH_A
 	}
 	return assetType, market
-}
-
-// ConvertFromLegacy creates a SecurityRegistry from legacy StockZhAList fields.
-func ConvertFromLegacy(symbol, name, exchange string) *model.SecurityRegistry {
-	return &model.SecurityRegistry{
-		Symbol:    symbol,
-		AssetType: bizConsts.ASSET_TYPE_STOCK,
-		Market:    bizConsts.MARKET_ZH_A,
-		Exchange:  exchange,
-		Name:      name,
-		Status:    "active",
-	}
-}
-
-// ConvertToLegacy converts a SecurityRegistry to legacy StockZhAList format.
-func ConvertToLegacy(s *model.SecurityRegistry) map[string]any {
-	return map[string]any{
-		"code":     s.Symbol,
-		"company":  s.Name,
-		"exchange": s.Exchange,
-	}
-}
-
-// ConvertToLegacyList converts a list of SecurityRegistry to legacy format.
-func ConvertToLegacyList(list []*model.SecurityRegistry) []map[string]any {
-	out := make([]map[string]any, 0, len(list))
-	for _, s := range list {
-		out = append(out, map[string]any{
-			"code":     s.Symbol,
-			"company":  s.Name,
-			"exchange": s.Exchange,
-		})
-	}
-	return out
-}
-
-// LegacyBatchUpsertFromStockList handles legacy /api/v1/stock/list/batch_upsert payload.
-func (s *SecurityService) LegacyBatchUpsertFromStockList(ctx context.Context, legacyList []map[string]any) (int64, error) {
-	var list []*model.SecurityRegistry
-	for _, item := range legacyList {
-		symbol, _ := item["code"].(string)
-		name, _ := item["company"].(string)
-		exchange, _ := item["exchange"].(string)
-		if symbol == "" {
-			continue
-		}
-		list = append(list, ConvertFromLegacy(symbol, name, exchange))
-	}
-	if len(list) == 0 {
-		return 0, fmt.Errorf("no valid items in batch")
-	}
-	return s.BatchUpsert(ctx, list, 200)
 }
