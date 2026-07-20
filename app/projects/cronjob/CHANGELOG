@@ -1,7 +1,9 @@
 # VERSION
-v0.15.1
+v0.15.2
 
 # Changelog
+- v0.15.2
+    - Added docs/system_design/2026-07-20 FINANCIAL_FEATURE_PACK_V1_HANDS_ON_GUIDE.md.
 - v0.15.1
     - Upgraded infro to v0.18.4.
 - v0.15.0

@@ -3,6 +3,8 @@
 > 状态：Phase 5 交付版
 >
 > 目标：在不破坏版本、PIT、身份和审计边界的前提下新增 Artemis FeaturePlugin
+>
+> 首个财务业务 Feature 的逐步实战流程见 `2026-07-20 FINANCIAL_FEATURE_PACK_V1_HANDS_ON_GUIDE.md`。
 
 ## 1. 开发原则
 
@@ -28,7 +30,9 @@ app/projects/artemis/
     └── test_feature_platform_planning_execution.py
 ```
 
-每个版本使用独立 Manifest 文件，并在 `config/feature_catalog/manifest.yaml` 的 `manifests` 列表中注册。一个 Definition 的 V1、V2 可以指向不同 entrypoint，但 code 必须相同、version number 必须不同。
+每个版本使用独立 Manifest 文件，并在 `config/feature_catalog/manifest.yaml` 的 `features` 列表中注册。一个 Definition 的 V1、V2 可以指向不同 entrypoint，但 code 必须相同、version number 必须不同。
+
+`feature-manifest.schema.json` 用于静态结构、IDE 和 CI 校验；当前运行时实际由 Pydantic `FeatureManifest`、`validate_manifest` 和 PhoenixA Registry 再次校验。新增 Feature 时必须让 YAML 同时通过 JSON Schema 和运行时校验，不能只通过其中一层。
 
 ## 3. Manifest 契约
 
