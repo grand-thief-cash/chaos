@@ -32,7 +32,17 @@ import {FormsModule} from '@angular/forms';
       <nz-form-item>
         <nz-form-label>Cron表达式</nz-form-label>
         <nz-form-control nzHasFeedback [nzErrorTip]="'必填'">
-          <input nz-input formControlName="cron_expr" />
+          <div style="display:flex; gap:8px; align-items:center;">
+            <input nz-input formControlName="cron_expr" style="flex:1" />
+            <button nz-button nzType="default" type="button" (click)="previewCron()" [nzLoading]="cronPreviewLoading">预览下几次</button>
+          </div>
+          @if (cronPreview.length) {
+            <ul style="margin:8px 0 0; padding-left:20px; color:#555; font-size:12px; line-height:1.6;">
+              @for (t of cronPreview; track t) {
+                <li>{{ t }}</li>
+              }
+            </ul>
+          }
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
@@ -225,6 +235,10 @@ export class CronjobTaskFormComponent implements OnChanges {
   taskYamlLoading = false;
   taskYamlSaving = false;
 
+  // cron 预览
+  cronPreview: string[] = [];
+  cronPreviewLoading = false;
+
   get isArtemisTask(): boolean {
     return this.form.value.target_service === 'artemis';
   }
@@ -262,6 +276,34 @@ export class CronjobTaskFormComponent implements OnChanges {
       this.save.emit(payload);
       this.msg.success('表单已提交');
     }
+  }
+
+  previewCron(){
+    const expr = (this.form.value.cron_expr || '').trim();
+    if(!expr){
+      this.msg.warning('请先填写 Cron 表达式');
+      return;
+    }
+    if(!(this as any).api || typeof (this as any).api.previewCron !== 'function'){
+      this.msg.error('预览接口不可用');
+      return;
+    }
+    this.cronPreviewLoading = true;
+    this.cronPreview = [];
+    (this as any).api.previewCron(expr, 3).subscribe({
+      next: (resp: { expr?: string; next?: string[] }) => {
+        this.cronPreview = resp?.next || [];
+        this.cronPreviewLoading = false;
+        if(this.cronPreview.length === 0){
+          this.msg.warning('未找到未来触发时间，请检查表达式');
+        }
+      },
+      error: (err: any) => {
+        this.cronPreviewLoading = false;
+        const m = err?.error?.error || err?.message || '未知错误';
+        this.msg.error('预览失败：' + m);
+      }
+    });
   }
 
   extractedTaskCode(): string {

@@ -1,7 +1,9 @@
 # VERSION
-v0.21.0
+v0.21.1
 
 # Changelog
+- v0.21.1
+    - Added a "预览下几次" button next to the Cron expression field on the task edit form that calls cronjob `GET /api/v1/tasks/cron-preview?expr=&n=3` and lists the next fire times, so the schedule can be sanity-checked before saving.
 - v0.21.0
     - **Feature Platform workbench.** Added typed PhoenixA/Artemis clients and routed Registry, Definition Detail, Lineage, Runs, Run Detail, Values, and Manual Compute pages under `/workbench/features`.
     - **Traceable and fail-closed operations.** The UI keeps source profile, Feature version, Run ID, as-of/cutoff, quality, partial/unknown/deprecated/dirty states, and structured 409/422 errors visible; URL-backed filters recover after refresh and manual compute accepts published versions only.
