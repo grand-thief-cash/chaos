@@ -75,6 +75,14 @@ USER_AGENT = (
     "Chrome/149.0.0.0 Safari/537.36"
 )
 
+# Eastmoney ratingChange code -> human label (mirrors the original crawler).
+RATING_CHANGE_NAMES = {
+    1: "调高",
+    2: "首次",
+    3: "维持",
+    4: "调低",
+}
+
 # Conservative pacing (mandated by eastmoney anti-bot). All overridable via
 # task.yaml variant config.
 DEFAULT_PAGE_SIZE = 50
@@ -291,6 +299,11 @@ class StockZhAEastmoneyReport(WorkerUnit):
             if not rows:
                 continue
 
+            # currentYear labels the predictThisYear/predictNextYear fields in
+            # the extra JSON; capture it per page so the year labels stay right
+            # even across a year boundary mid-walk.
+            current_year = to_int_or_none(payload.get("currentYear"))
+
             # Resolve subject_id for all stock_codes on this page (batched, cached).
             stock_codes = [str(r.get("stockCode") or "").strip() for r in rows]
             self._resolve_security_ids(ctx, phoenix_client, stock_codes)
@@ -300,7 +313,7 @@ class StockZhAEastmoneyReport(WorkerUnit):
             skipped_empty_subject = 0
             for raw in rows:
                 try:
-                    rep = normalize_report(raw, self._security_id_cache)
+                    rep = normalize_report(raw, self._security_id_cache, current_year)
                 except Exception as e:
                     ctx.logger.warning({"event": "normalize_report_failed", "error": str(e), "run_id": ctx.run_id})
                     continue
@@ -532,12 +545,17 @@ class StockZhAEastmoneyReport(WorkerUnit):
 def normalize_report(
     raw_report: Dict[str, Any],
     security_id_cache: Dict[str, Optional[int]],
+    current_year: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Normalize a raw eastmoney list row into a phoenixA download-record row.
 
-    Returns DOWNLOAD-TASK metadata only (no status/pdf_object_key/pdf_url/
-    last_error — phoenixA sets those). Research-report business content is NOT
-    curated — this table is a download tracker, not a report-content table.
+    Returns DOWNLOAD-TASK metadata plus an `extra` JSONB object holding the
+    report-content fields the user asked to preserve (rating, rating change,
+    last-month report count, current/next-year EPS & PE predictions with
+    explicit year labels, industry, researcher, stock name). phoenixA sets
+    status/pdf_object_key/pdf_url/last_error. Research-report business content
+    beyond `extra` is NOT curated as typed columns — this table is a download
+    tracker; `extra` is a convenience capture at list time.
     `subject_id` is None when the stock is not yet in the registry; the report
     is still upserted (with subject_source_code set) so it is tracked and the
     list cursor advances past it. subject_id is NOT auto-back-filled (the list
@@ -557,7 +575,59 @@ def normalize_report(
         "title": text_or_empty(raw_report.get("title")),
         "org_name": text_or_empty(raw_report.get("orgName")),
         "detail_url": DETAIL_URL_TEMPLATE.format(info_code=info_code),
+        "extra": build_extra(raw_report, current_year),
     }
+
+
+def build_extra(raw_report: Dict[str, Any], current_year: Optional[int]) -> Dict[str, Any]:
+    """Build the `extra` JSONB object from an eastmoney list row.
+
+    Captures: em_rating_name (东财评级), last_em_rating_name (上次评级),
+    rating_change + rating_change_name (评级变动), report_count_1m (近一月个股研报数),
+    predict_this_year / predict_next_year ({year, eps, pe} - 盈利预测),
+    industry_code / industry_name (行业), researcher (研究员), stock_name (股票名称).
+    `current_year` comes from the list payload's currentYear; when present it
+    labels predict_this_year=current_year, predict_next_year=current_year+1 so
+    the JSON is self-describing. Missing values degrade to "" / None, never
+    absent keys, so downstream `extra->>'key'` queries are stable.
+    """
+    rating_change = to_int_or_none(raw_report.get("ratingChange"))
+    this_year = current_year
+    next_year = current_year + 1 if current_year is not None else None
+    return {
+        "em_rating_name": text_or_empty(raw_report.get("emRatingName")),
+        "last_em_rating_name": text_or_empty(raw_report.get("lastEmRatingName")),
+        "rating_change": rating_change,
+        "rating_change_name": RATING_CHANGE_NAMES.get(rating_change, "") if rating_change is not None else "",
+        "report_count_1m": to_int_or_none(raw_report.get("count")),
+        "predict_this_year": {
+            "year": this_year,
+            "eps": text_or_empty(raw_report.get("predictThisYearEps")),
+            "pe": text_or_empty(raw_report.get("predictThisYearPe")),
+        },
+        "predict_next_year": {
+            "year": next_year,
+            "eps": text_or_empty(raw_report.get("predictNextYearEps")),
+            "pe": text_or_empty(raw_report.get("predictNextYearPe")),
+        },
+        "industry_code": text_or_empty(
+            raw_report.get("indvInduCode") or raw_report.get("industryCode")
+        ),
+        "industry_name": text_or_empty(
+            raw_report.get("indvInduName") or raw_report.get("industryName")
+        ),
+        "researcher": text_or_empty(raw_report.get("researcher")),
+        "stock_name": text_or_empty(raw_report.get("stockName")),
+    }
+
+
+def to_int_or_none(value: Any) -> Optional[int]:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def extract_pdf_url(detail_html: str) -> str:
@@ -587,7 +657,7 @@ def build_object_key(report: Dict[str, Any], minio_client, subject: str = "") ->
     subject_safe = safe_filename_part(subject or "unknown")
     publish_date = str(report.get("publish_date") or "unknown-date")
     title = safe_filename_part(str(report.get("title") or "untitled"), max_len=120)
-    return f"{prefix}/zh/{subject_safe}/{publish_date}_{title}.pdf"
+    return f"{prefix}/{subject_safe}/{publish_date}_{title}.pdf"
 
 
 def is_valid_pdf_bytes(data: bytes) -> bool:

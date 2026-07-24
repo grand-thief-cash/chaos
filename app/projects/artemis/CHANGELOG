@@ -1,7 +1,10 @@
 # VERSION
-v0.47.1
+v0.47.2
 
 # Changelog
+- v0.47.2
+    - **Eastmoney report `extra` metadata.** `normalize_report` now captures rating, rating change, last-month report count, current/next-year EPS & PE predictions (with year labels), industry, researcher, and stock name into an `extra` JSONB object written to phoenixA at list time.
+    - **Fixed `build_object_key` path.** Removed a stray `/zh/` segment so the MinIO key is `{prefix}/{subject}/{date}_{title}.pdf`, matching the documented convention and tests.
 - v0.47.1
     - **Development MinIO storage.** Configured the home development profile to use the `chaos-dev` bucket through the MinIO S3 API and verified application-level upload, readback, and cleanup.
     - **Changed writing path in minIO.
