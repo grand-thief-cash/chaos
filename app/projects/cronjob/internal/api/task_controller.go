@@ -315,6 +315,32 @@ func (tmc *TaskMgmtController) refreshCache(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, map[string]any{"refreshed": true})
 }
 
+// previewCron 预览 cron 表达式未来 n 次触发时间。
+// GET /api/v1/tasks/cron-preview?expr=...&n=3
+func (tmc *TaskMgmtController) previewCron(w http.ResponseWriter, r *http.Request) {
+	expr := strings.TrimSpace(r.URL.Query().Get("expr"))
+	if expr == "" {
+		writeErr(w, 400, "expr is required")
+		return
+	}
+	n := 3
+	if v := strings.TrimSpace(r.URL.Query().Get("n")); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i > 0 {
+			n = i
+		}
+	}
+	times, err := tmc.Sched.PreviewNext(expr, n, time.Now())
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	out := make([]string, 0, len(times))
+	for _, t := range times {
+		out = append(out, t.Format(time.RFC3339))
+	}
+	writeJSON(w, map[string]any{"expr": model.NormalizeCron(expr), "next": out})
+}
+
 // ExportTasks 导出任务配置，支持导出单个或所有任务
 func (tmc *TaskMgmtController) ExportTasks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

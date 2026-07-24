@@ -111,3 +111,90 @@ func TestFailureRetryIncrement(t *testing.T) {
 		t.Fatalf("expected attempt=3, got %d", run.Attempt)
 	}
 }
+
+// 窗口匹配：60s 轮询不对齐墙钟整秒时，仍能在窗口内捕获到 cron 命中点。
+func TestFiresInWindowEveryMinute(t *testing.T) {
+	loc := time.Local
+	// "0 * * * * *" = 每分钟第 0 秒。窗口 (19:00:30, 19:01:30] 应命中 19:01:00。
+	from := time.Date(2026, 7, 24, 19, 0, 30, 0, loc)
+	to := time.Date(2026, 7, 24, 19, 1, 30, 0, loc)
+	got := firesInWindow("0 * * * * *", from, to)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 fire, got %d: %v", len(got), got)
+	}
+	want := time.Date(2026, 7, 24, 19, 1, 0, 0, loc)
+	if !got[0].Equal(want) {
+		t.Fatalf("expected %v, got %v", want, got[0])
+	}
+}
+
+func TestFiresInWindowEverySecond(t *testing.T) {
+	loc := time.Local
+	// "* * * * * *" = 每秒。窗口 (19:00:00, 19:00:03] = 3 秒。
+	from := time.Date(2026, 7, 24, 19, 0, 0, 0, loc)
+	to := time.Date(2026, 7, 24, 19, 0, 3, 0, loc)
+	got := firesInWindow("* * * * * *", from, to)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 fires, got %d: %v", len(got), got)
+	}
+}
+
+// 预览：用户表达式 0 0 */2 * * *（每 2 小时）的下次 3 个触发点。
+func TestPreviewNextEvery2Hours(t *testing.T) {
+	e := &Engine{}
+	loc := time.Local
+	from := time.Date(2026, 7, 24, 19, 40, 5, 0, loc) // 模拟 tick 落在 :05
+	got, err := e.PreviewNext("0 0 */2 * * *", 3, from)
+	if err != nil {
+		t.Fatalf("PreviewNext error: %v", err)
+	}
+	want := []time.Time{
+		time.Date(2026, 7, 24, 20, 0, 0, 0, loc),
+		time.Date(2026, 7, 24, 22, 0, 0, 0, loc),
+		time.Date(2026, 7, 25, 0, 0, 0, 0, loc),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d times, got %d: %v", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if !got[i].Equal(w) {
+			t.Fatalf("times[%d]: expected %v, got %v", i, w, got[i])
+		}
+	}
+}
+
+// 预览：5 字段表达式应自动补秒。
+func TestPreviewNextNormalizes5Field(t *testing.T) {
+	e := &Engine{}
+	loc := time.Local
+	// "0 0 * * *" (5字段) -> "0 0 0 * * *"：每天 00:00:00
+	from := time.Date(2026, 7, 24, 19, 40, 5, 0, loc)
+	got, err := e.PreviewNext("0 0 * * *", 2, from)
+	if err != nil {
+		t.Fatalf("PreviewNext error: %v", err)
+	}
+	want := []time.Time{
+		time.Date(2026, 7, 25, 0, 0, 0, 0, loc),
+		time.Date(2026, 7, 26, 0, 0, 0, 0, loc),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d times, got %d: %v", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if !got[i].Equal(w) {
+			t.Fatalf("times[%d]: expected %v, got %v", i, w, got[i])
+		}
+	}
+}
+
+// 预览：非法/超范围表达式应返回错误。
+func TestPreviewNextInvalid(t *testing.T) {
+	e := &Engine{}
+	if _, err := e.PreviewNext("not a cron", 3, time.Now()); err == nil {
+		t.Fatalf("expected error for invalid field count")
+	}
+	// hour=25 超范围 -> 该字段匹配空集 -> error
+	if _, err := e.PreviewNext("0 0 25 * * *", 3, time.Now()); err == nil {
+		t.Fatalf("expected error for out-of-range hour")
+	}
+}

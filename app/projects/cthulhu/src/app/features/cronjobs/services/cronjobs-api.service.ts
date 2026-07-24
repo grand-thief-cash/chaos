@@ -117,6 +117,12 @@ export class CronjobsApiService {
     );
   }
 
+  // 预览 cron 表达式未来 n 次触发时间（用于编辑页判断调度是否合理）
+  previewCron(expr: string, n: number = 3): Observable<{ expr: string; next: string[] }> {
+    const params = new HttpParams().set('expr', expr).set('n', String(n));
+    return this._http.get<{ expr: string; next: string[] }>(`${this.API_BASE}/tasks/cron-preview`, { params });
+  }
+
   // 导出任务配置
   exportTasks(taskId?: number): Observable<Blob> {
     let url = `${this.API_BASE}/tasks/export`;

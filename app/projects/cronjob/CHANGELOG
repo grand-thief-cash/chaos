@@ -1,7 +1,10 @@
 # VERSION
-v0.15.2
+v0.15.3
 
 # Changelog
+- v0.15.3
+    - Fixed scheduler never auto-firing cron tasks: the 60s poll ticker is not wall-clock aligned, so exact-second `shouldFire` matching missed every fire point (e.g. `0 0 */2 * * *`). `scan` now window-matches `(lastTick, now]` and schedules at the matched second; the first tick establishes a baseline without backfilling.
+    - Added `GET /api/v1/tasks/cron-preview?expr=&n=3` to preview the next N future fire times of a cron expression.
 - v0.15.2
     - Added docs/system_design/2026-07-20 FINANCIAL_FEATURE_PACK_V1_HANDS_ON_GUIDE.md.
 - v0.15.1

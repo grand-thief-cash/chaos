@@ -48,6 +48,7 @@ func init() {
 			}
 			r.Get("/", taskCtrl.listTasks)
 			r.Post("/", taskCtrl.createTask)
+			r.Get("/cron-preview", taskCtrl.previewCron) // 字面量路由，Chi 优先于 /{id}
 			r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) { taskCtrl.getTask(w, req, getTaskID(req)) })
 			r.Put("/{id}", func(w http.ResponseWriter, req *http.Request) { taskCtrl.updateTask(w, req, getTaskID(req)) })
 			r.Patch("/{id}", func(w http.ResponseWriter, req *http.Request) { taskCtrl.updateTask(w, req, getTaskID(req)) })
