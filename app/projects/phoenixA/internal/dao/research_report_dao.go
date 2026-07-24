@@ -49,7 +49,9 @@ func (d *ResearchReportDao) Stop(ctx context.Context) error {
 // is (source, resource_id). On conflict, ONLY metadata columns are refreshed —
 // status, pdf_object_key, pdf_url, last_error and updated_at are deliberately
 // left untouched so an already-downloaded row stays downloaded (artemis
-// re-scraping the listing must not reset the download lifecycle).
+// re-scraping the listing must not reset the download lifecycle). Extra (the
+// report-content JSONB) IS refreshed, so re-listing updates ratings/predictions
+// if Eastmoney revises them.
 func (d *ResearchReportDao) BatchUpsertPending(ctx context.Context, list []*model.ResearchReport) error {
 	if len(list) == 0 {
 		return nil
@@ -61,7 +63,7 @@ func (d *ResearchReportDao) BatchUpsertPending(ctx context.Context, list []*mode
 			},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"report_type", "subject_id", "subject_source_code", "publish_date",
-				"title", "org_name", "detail_url",
+				"title", "org_name", "detail_url", "extra",
 			}),
 		}).CreateInBatches(list, 200).Error
 }

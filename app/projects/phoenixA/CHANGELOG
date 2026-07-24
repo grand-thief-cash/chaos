@@ -1,7 +1,9 @@
 # VERSION
-v1.38.0
+v1.38.1
 
 # Changelog
+- v1.38.1
+    - **Research-report `extra` column.** Added `extra JSONB` (object, CHECK-constrained) to `ods.research_report_download_record` for Eastmoney report-content metadata (rating, predictions, industry, etc.); the upsert refreshes it on conflict and the controller defaults missing payloads to `{}`.
 - v1.38.0
     - **Feature Platform Phase 5 API contract.** Expanded `openapi.yaml` with all 27 registry, lifecycle, lineage, availability, run-state, numeric value, and backfill routes; the route verifier now covers Feature Platform, PATCH methods, and colon-suffixed actions.
     - **Repeatable capacity evidence.** Added a read-only benchmark for definition, lineage, availability, run, latest-value, run-detail, and run-value endpoints with per-endpoint throughput and latency percentiles.

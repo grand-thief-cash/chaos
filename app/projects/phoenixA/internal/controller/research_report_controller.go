@@ -61,6 +61,11 @@ func (c *ResearchReportController) BatchUpsert(w http.ResponseWriter, r *http.Re
 		if item.ReportType == "" {
 			item.ReportType = "stock"
 		}
+		// Extra is NOT NULL with jsonb_typeof='object'; default a missing/empty
+		// payload to {} so callers that omit extra don't violate the CHECK.
+		if len(item.Extra) == 0 {
+			item.Extra = json.RawMessage("{}")
+		}
 		if !validReportTypes[item.ReportType] {
 			writeJSON(w, http.StatusBadRequest, apiError{Error: fmt.Sprintf("invalid report_type: %q (want stock|industry|other)", item.ReportType)})
 			return
