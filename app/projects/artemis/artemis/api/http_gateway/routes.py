@@ -30,8 +30,9 @@ async def lifespan(_: FastAPI):
     from artemis.feature_platform.domain.errors import FeaturePlatformError
     from artemis.services.feature_service import FeatureService
 
+    feature_service = FeatureService(engine)
     try:
-        result = FeatureService(engine).reconcile_stale_runs()
+        result = feature_service.reconcile_stale_runs()
         logger.info(
             {
                 "event": "feature_stale_run_reconciliation",
@@ -56,7 +57,15 @@ async def lifespan(_: FastAPI):
                 "error": str(exc),
             }
         )
-    yield
+    try:
+        feature_service.start_backfill_dispatcher()
+    except FeaturePlatformError as exc:
+        if exc.code != "FEATURE_PLATFORM_DISABLED":
+            logger.warning({"event": "backfill_dispatcher_start_failed", "error_code": exc.code, "error": str(exc)})
+    try:
+        yield
+    finally:
+        feature_service.stop_backfill_dispatcher()
 
 
 app = FastAPI(

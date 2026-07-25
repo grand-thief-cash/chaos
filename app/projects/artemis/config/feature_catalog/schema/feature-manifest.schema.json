@@ -23,7 +23,12 @@
       "items": {"oneOf": [{"$ref": "#/$defs/featureDependency"}, {"$ref": "#/$defs/dataFieldDependency"}]}
     },
     "materialization": {"$ref": "#/$defs/materialization"},
-    "quality": {"$ref": "#/$defs/quality"}
+    "quality": {"$ref": "#/$defs/quality"},
+    "preview_parameters": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/previewParameter"},
+      "default": {}
+    }
   },
   "$defs": {
     "feature": {
@@ -72,7 +77,8 @@
         "implementation_revision": {"type": "integer", "minimum": 1},
         "config": {"type": "object"},
         "checksum": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$", "default": ""},
-        "status": {"const": "active"}
+        "status": {"const": "active"},
+        "preview_supported": {"type": "boolean", "default": true}
       }
     },
     "featureDependency": {
@@ -113,6 +119,18 @@
         "allow_nan": {"const": false},
         "allow_infinite": {"const": false},
         "allow_duplicates": {"const": false}
+      }
+    },
+    "previewParameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"enum": ["integer", "number", "boolean", "string"]},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "enum": {"type": "array", "uniqueItems": true},
+        "default": {}
       }
     }
   }

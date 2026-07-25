@@ -70,6 +70,8 @@ class BaseTaskUnit:
         Returns (result, duration_ms). Exceptions propagate upward after logging.
         """
         start = time.time()
+        if ctx.is_cancel_requested():
+            raise RuntimeError("task cancellation requested")
         if ctx.logger:
             ctx.logger.debug({'event': 'phase', 'phase': name, 'action': 'enter', 'run_id': ctx.run_id})
         try:

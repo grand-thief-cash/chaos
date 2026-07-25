@@ -8,13 +8,21 @@ from pydantic import ValidationError
 
 from artemis.core import cfg_mgr
 from artemis.feature_platform.domain.errors import FeaturePlatformError
-from artemis.feature_platform.domain.models import FeatureComputeRequest, RegistryFeatureVersion
-from artemis.feature_platform.manifests.checksum import manifest_registry_checksum
+from artemis.feature_platform.domain.models import (
+    FeatureComputeRequest,
+    ManifestSelectionRequest,
+    RegistryFeatureVersion,
+    RegistrySyncRequest,
+)
+from artemis.feature_platform.manifests.checksum import (
+    manifest_registry_checksum,
+    registry_projection,
+)
 from artemis.feature_platform.manifests.loader import FeatureManifestLoader
 from artemis.feature_platform.planning import DependencyPlanner
 from artemis.feature_platform.registry.client import FeatureRegistryClient
 from artemis.feature_platform.tasks.feature_compute_task import FeatureComputeTask
-from artemis.services.feature_service import FeatureService
+from artemis.services.feature_service import FeatureService, _registry_change
 
 
 CATALOG_ROOT = Path(__file__).parents[1] / "config" / "feature_catalog"
@@ -99,6 +107,32 @@ class _RegistryClient:
         }
 
 
+class _MissingCatalogRegistry:
+    def __init__(self):
+        self.definition_requests = []
+        self.synced = None
+
+    def get_definition(self, feature_code):
+        self.definition_requests.append(feature_code)
+        raise FeaturePlatformError(
+            "FEATURE_NOT_FOUND",
+            f"feature {feature_code} was not found",
+            status_code=404,
+        )
+
+    def sync_manifests(self, manifests):
+        self.synced = {
+            "identities": [manifest.identity for manifest in manifests],
+        }
+        return {
+            "created": self.synced["identities"],
+            "updated_drafts": [],
+            "unchanged": [],
+            "rejected": [],
+            "graph_valid": True,
+        }
+
+
 def _request():
     return FeatureComputeRequest.model_validate(
         {
@@ -124,7 +158,6 @@ def test_compute_request_rejects_coerced_identity_and_sensitive_parameters():
     with pytest.raises(ValidationError, match="sensitive runtime parameter"):
         FeatureComputeRequest.model_validate(raw)
 
-
 def test_feature_service_freezes_run_and_submits_async_task():
     task_engine = _TaskEngine()
     registry = _RegistryClient()
@@ -133,15 +166,24 @@ def test_feature_service_freezes_run_and_submits_async_task():
         registry_factory=lambda profile: registry,
         code_revision="test-revision",
     )
-    response = service.compute(_request())
+    request = _request().model_copy(
+        update={
+            "idempotency_key": "caller-request-42",
+            "parameters": {"acceptance_scenario": "p2a"},
+        }
+    )
+    response = service.compute(request)
     assert response.status == "queued"
     assert registry.subjects == [1, 2, 3]
     assert registry.payload["dependency_plan_checksum"]
     assert registry.payload["root_feature_version_ids"] == [11]
+    assert registry.payload["producer_run_ref"] == "caller-request-42"
+    assert registry.payload["parameters"] == {"acceptance_scenario": "p2a"}
     assert len(task_engine.requests) == 1
     task = task_engine.requests[0]
     assert task.task_meta.exec_type == "ASYNC"
     assert task.task_body["expected_plan_checksum"] == registry.payload["dependency_plan_checksum"]
+    assert task.task_body["parameters"] == {}
 
 
 def test_feature_service_reused_run_does_not_resubmit_or_rewrite_subjects():
@@ -156,6 +198,74 @@ def test_feature_service_reused_run_does_not_resubmit_or_rewrite_subjects():
     assert response.reused is True
     assert registry.subjects == []
     assert task_engine.requests == []
+
+
+def test_feature_service_catalog_and_sync_preview_are_non_mutating():
+    registry = _MissingCatalogRegistry()
+    service = FeatureService(_TaskEngine(), registry_factory=lambda profile: registry)
+    service._loader = lambda: FeatureManifestLoader(CATALOG_ROOT)
+
+    catalog = service.list_manifest_catalog(source_profile="home")
+    assert catalog.count == 3
+    assert {item.registry_status for item in catalog.items} == {"missing"}
+    assert len(registry.definition_requests) == 2
+
+    preview = service.preview_registry_sync(
+        ManifestSelectionRequest(source_profile="home")
+    )
+    assert len(preview.changes) == 3
+    assert not preview.blocked
+    assert not preview.unchanged
+    assert registry.synced is None
+
+    with pytest.raises(FeaturePlatformError, match="changed after sync preview"):
+        service.sync_registry(
+            RegistrySyncRequest(
+                source_profile="home",
+                expected_catalog_checksum="0" * 64,
+            )
+        )
+    result = service.sync_registry(
+        RegistrySyncRequest(
+            source_profile="home",
+            expected_catalog_checksum=preview.catalog_checksum,
+        )
+    )
+    assert result["catalog_checksum"] == preview.catalog_checksum
+    assert registry.synced["identities"]
+
+
+def test_registry_change_detects_immutable_checksum_conflict():
+    manifest = FeatureManifestLoader(CATALOG_ROOT).load().get(
+        "platform.security.constant_one",
+        1,
+    )
+    desired = registry_projection(manifest)
+    definition = {
+        "feature_code": manifest.feature.code,
+        **desired["feature"],
+    }
+    definition.pop("code")
+    current_version = dict(desired["version"])
+    current_version.update(
+        {
+            "id": 11,
+            "version_number": 1,
+            "status": "published",
+            "manifest_checksum": "f" * 64,
+        }
+    )
+
+    change = _registry_change(
+        manifest,
+        {
+            "definition": definition,
+            "versions": [{"version": current_version}],
+        },
+    )
+    assert change.action == "blocked"
+    assert change.code == "MANIFEST_CHECKSUM_CONFLICT"
+    assert change.changed_fields == ["version.manifest_checksum"]
 
 
 def test_feature_service_reconciles_runs_older_than_configured_timeout():
@@ -232,6 +342,9 @@ class _TaskContext:
 
     def has_failed(self):
         return self.status == "FAILED"
+
+    def is_cancel_requested(self):
+        return False
 
     def fail(self, error, phase=None):
         self.status = "FAILED"
@@ -352,7 +465,7 @@ def test_registry_client_preserves_phoenixa_conflict_code():
         def get(self, path, params=None):
             return Response()
 
-        def post(self, path, payload):
+        def post(self, path, payload, headers=None):
             return Response()
 
     with pytest.raises(FeaturePlatformError) as error:

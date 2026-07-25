@@ -98,6 +98,22 @@ engine:
     heartbeat_interval_seconds: 15
     stale_run_timeout_seconds: 300
     plugin_timeout_seconds: 1800
+    preview_max_securities: 100
+    preview_max_evaluations: 20
+    preview_max_root_features: 5
+    preview_max_dag_nodes: 20
+    preview_max_execution_cells: 5000
+    preview_max_rows: 5000
+    preview_timeout_seconds: 60
+    preview_max_concurrency: 2
+    backfill_max_securities: 20000
+    backfill_max_evaluations: 2000
+    backfill_max_execution_cells: 2000000
+    backfill_global_max_concurrency: 4
+    backfill_max_concurrency_per_job: 4
+    backfill_dispatch_interval_seconds: 2
+    backfill_confirmation_ttl_seconds: 900
+    backfill_confirmation_secret: "change-me-feature-platform"
   task_engine:
     worker_task_timeout: 180
     amazing_data_cache_dir: "../cache/artemis/amazing_data"

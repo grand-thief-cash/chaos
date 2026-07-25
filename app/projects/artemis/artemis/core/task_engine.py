@@ -127,6 +127,7 @@ class TaskEngine:
         ctx = TaskContext(task_run_req)
         run_id = ctx.run_id
         cancel_event = self._register_task(run_id)
+        ctx.cancel_event = cancel_event
 
         # Capture current OTEL trace context for propagation to async threads
         otel_context = None

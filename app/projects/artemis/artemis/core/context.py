@@ -142,6 +142,10 @@ class TaskContext:
     def is_finished(self) -> bool:
         return self.status in (TaskStatus.SUCCESS.value, TaskStatus.FAILED.value, TaskStatus.CANCELED.value, TaskStatus.SKIPPED.value)
 
+    def is_cancel_requested(self) -> bool:
+        event = getattr(self, "cancel_event", None)
+        return bool(event and event.is_set())
+
     @property
     def run_id(self) -> int | str:
         return self.task_meta.run_id

@@ -1,7 +1,11 @@
 # VERSION
-v0.47.2
+v0.48.0
 
 # Changelog
+- v0.48.0
+    - **Manifest governance facade.** Added catalog inspection, selected/all validation, deterministic Registry diff preview, checksum-guarded synchronization, and lifecycle clients while keeping Manifest files Git-owned and PhoenixA as the Registry source of truth.
+    - **One execution engine for Preview and persistence.** Extracted the shared Feature execution engine, added bounded point/range Preview with frozen universes and in-memory collection, declarative parameter validation, quality summaries, and explicit compute scope parameters without writing Preview results.
+    - **Recoverable Backfill orchestration.** Added impact preview with confirmation tokens and execution-cell limits, persisted Backfill creation/list/detail/cancel/retry APIs, startup-resuming dispatcher, atomic Run claim, bounded concurrency, and cooperative cancellation over immutable subject snapshots.
 - v0.47.2
     - **Eastmoney report `extra` metadata.** `normalize_report` now captures rating, rating change, last-month report count, current/next-year EPS & PE predictions (with year labels), industry, researcher, and stock name into an `extra` JSONB object written to phoenixA at list time.
     - **Fixed `build_object_key` path.** Removed a stray `/zh/` segment so the MinIO key is `{prefix}/{subject}/{date}_{title}.pdf`, matching the documented convention and tests.

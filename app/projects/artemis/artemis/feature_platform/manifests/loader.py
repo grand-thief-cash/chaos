@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -12,11 +14,29 @@ from artemis.feature_platform.domain.models import FeatureManifest
 from artemis.feature_platform.manifests.validator import validate_manifest
 
 
+def _catalog_checksum(source_checksums: dict[str, str]) -> str:
+    payload = [
+        {"path": path, "content_checksum": source_checksums[path]}
+        for path in sorted(source_checksums)
+    ]
+    canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 @dataclass(frozen=True)
 class LoadedCatalog:
     root: Path
     manifests: tuple[FeatureManifest, ...]
     source_paths: dict[str, Path]
+    source_checksums: dict[str, str]
+
+    @property
+    def checksum(self) -> str:
+        by_path = {
+            path.relative_to(self.root).as_posix(): self.source_checksums[identity]
+            for identity, path in self.source_paths.items()
+        }
+        return _catalog_checksum(by_path)
 
     def get(self, feature_code: str, version: int) -> FeatureManifest:
         key = f"{feature_code}@{version}"
@@ -28,6 +48,14 @@ class LoadedCatalog:
             f"local manifest {key} was not found",
             status_code=404,
         )
+
+
+@dataclass(frozen=True)
+class ManifestInspection:
+    relative_path: str
+    content_checksum: str
+    manifest: FeatureManifest | None
+    error: FeaturePlatformError | None
 
 
 class FeatureManifestLoader:
@@ -56,6 +84,17 @@ class FeatureManifestLoader:
             with path.open("r", encoding="utf-8") as handle:
                 return yaml.safe_load(handle)
         except (OSError, yaml.YAMLError) as exc:
+            raise FeaturePlatformError(
+                "MANIFEST_READ_FAILED",
+                f"cannot read manifest {path}: {exc}",
+                status_code=400,
+            ) from exc
+
+    @staticmethod
+    def _content_checksum(path: Path) -> str:
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as exc:
             raise FeaturePlatformError(
                 "MANIFEST_READ_FAILED",
                 f"cannot read manifest {path}: {exc}",
@@ -126,6 +165,7 @@ class FeatureManifestLoader:
     ) -> LoadedCatalog:
         manifests: list[FeatureManifest] = []
         source_paths: dict[str, Path] = {}
+        source_checksums: dict[str, str] = {}
         for path in self._selected_paths(paths):
             if not path.is_file():
                 raise FeaturePlatformError(
@@ -143,7 +183,56 @@ class FeatureManifestLoader:
             validate_manifest(manifest, check_entrypoint=check_entrypoints)
             manifests.append(manifest)
             source_paths[manifest.identity] = path
-        return LoadedCatalog(self.root, tuple(manifests), source_paths)
+            source_checksums[manifest.identity] = self._content_checksum(path)
+        return LoadedCatalog(self.root, tuple(manifests), source_paths, source_checksums)
+
+    def inspect(
+        self,
+        paths: Iterable[str] | None = None,
+        *,
+        check_entrypoints: bool = True,
+    ) -> tuple[ManifestInspection, ...]:
+        inspections: list[ManifestInspection] = []
+        seen: set[str] = set()
+        for path in self._selected_paths(paths):
+            relative_path = path.relative_to(self.root).as_posix()
+            checksum = ""
+            manifest: FeatureManifest | None = None
+            error: FeaturePlatformError | None = None
+            try:
+                if not path.is_file():
+                    raise FeaturePlatformError(
+                        "MANIFEST_NOT_FOUND",
+                        f"manifest file was not found: {path}",
+                        status_code=404,
+                    )
+                checksum = self._content_checksum(path)
+                manifest = self._parse(self._read_yaml(path), relative_path)
+                if manifest.identity in seen:
+                    raise FeaturePlatformError(
+                        "MANIFEST_DUPLICATE",
+                        f"duplicate local manifest {manifest.identity}",
+                        status_code=400,
+                    )
+                seen.add(manifest.identity)
+                validate_manifest(manifest, check_entrypoint=check_entrypoints)
+            except FeaturePlatformError as exc:
+                error = exc
+            inspections.append(
+                ManifestInspection(
+                    relative_path=relative_path,
+                    content_checksum=checksum,
+                    manifest=manifest,
+                    error=error,
+                )
+            )
+        return tuple(inspections)
+
+    @staticmethod
+    def inspection_checksum(inspections: Iterable[ManifestInspection]) -> str:
+        return _catalog_checksum(
+            {inspection.relative_path: inspection.content_checksum for inspection in inspections}
+        )
 
     def load_inline(
         self,

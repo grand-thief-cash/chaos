@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,11 +10,8 @@ from artemis.core import cfg_mgr
 from artemis.engines.task_engine.base import BaseTaskUnit
 from artemis.feature_platform.domain.errors import FeaturePlatformError
 from artemis.feature_platform.domain.models import FeatureReference, FeatureNumericOutput
-from artemis.feature_platform.execution.context import FeatureExecutionContext
-from artemis.feature_platform.execution.output_validator import OutputValidator, ValidatedOutput
-from artemis.feature_platform.execution.python_executor import PythonFeatureExecutor
-from artemis.feature_platform.execution.runner import FeatureRunner
-from artemis.feature_platform.manifests.checksum import manifest_registry_checksum
+from artemis.feature_platform.execution.engine import FeatureExecutionEngine
+from artemis.feature_platform.execution.output_validator import ValidatedOutput
 from artemis.feature_platform.manifests.loader import FeatureManifestLoader, LoadedCatalog
 from artemis.feature_platform.planning import DependencyPlanner, ExecutionPlan
 from artemis.feature_platform.providers.phoenixa import PhoenixAFeatureProvider
@@ -38,6 +34,7 @@ class _TaskPayload(BaseModel):
     source_profile: str
     market: str
     parameters: dict[str, Any] = Field(default_factory=dict)
+    preclaimed: bool = False
 
     @field_validator("root_feature_version_ids", "security_ids")
     @classmethod
@@ -68,7 +65,7 @@ class FeatureComputeTask(BaseTaskUnit):
         self.client: FeatureRegistryClient | None = None
         self.catalog: LoadedCatalog | None = None
         self.plan: ExecutionPlan | None = None
-        self.runner: FeatureRunner | None = None
+        self.execution_engine: FeatureExecutionEngine | None = None
         self.provider: PhoenixAFeatureProvider | None = None
         self.writer: PhoenixAFeatureWriter | None = None
         self.results: dict[int, ValidatedOutput] = {}
@@ -183,12 +180,15 @@ class FeatureComputeTask(BaseTaskUnit):
     def before_execute(self, ctx) -> None:
         if not self.payload or not self.client or not self.catalog:
             raise FeaturePlatformError("INTERNAL_ERROR", "feature task dependencies are unavailable")
-        self._update_remote_run(
-            "queued",
-            "planning",
-            worker_id=f"artemis:{ctx.task_id}",
-            heartbeat_at=datetime.now(timezone.utc),
-        )
+        if self.payload.preclaimed:
+            self.remote_status = "planning"
+        else:
+            self._update_remote_run(
+                "queued",
+                "planning",
+                worker_id=f"artemis:{ctx.task_id}",
+                heartbeat_at=datetime.now(timezone.utc),
+            )
         self._start_heartbeat(ctx)
         self.plan = DependencyPlanner(self.client.resolve_version).build(self.payload.root_features)
         self.plan.ensure_executable()
@@ -203,36 +203,18 @@ class FeatureComputeTask(BaseTaskUnit):
                 "replanned root feature version ids differ from the frozen run roots",
             )
 
-        for node in self.plan.ordered_nodes:
-            manifest = self.catalog.get(
-                node.registry_version.feature_code,
-                node.registry_version.version_number,
-            )
-            if manifest_registry_checksum(manifest) != node.registry_version.manifest_checksum:
-                raise FeaturePlatformError(
-                    "MANIFEST_CHECKSUM_CONFLICT",
-                    f"local manifest {manifest.identity} differs from the published registry version",
-                )
-            upstream_requires = any(
-                self.requires_availability.get(upstream_id, False)
-                for upstream_id in node.feature_dependency_ids
-            )
-            self.requires_availability[node.id] = bool(node.data_field_dependencies) or upstream_requires
-
         self.client.batch_items(self.payload.run_id, self.plan.feature_version_ids)
         self.item_states = {version_id: "queued" for version_id in self.plan.feature_version_ids}
         settings = cfg_mgr.engine_config().feature_platform
-        self.runner = FeatureRunner(
-            PythonFeatureExecutor(settings.plugin_timeout_seconds),
-            OutputValidator(),
-        )
+        self.execution_engine = FeatureExecutionEngine(settings.plugin_timeout_seconds)
+        self.requires_availability = self.execution_engine.validate_plan(self.plan, self.catalog)
         self.provider = PhoenixAFeatureProvider(self.client)
         self.writer = PhoenixAFeatureWriter(self.client, settings.write_batch_size)
         ctx.stats["execution_plan"] = self.plan.summary()
 
     def execute(self, ctx) -> dict[int, ValidatedOutput]:
         payload, client, catalog, plan = self._require_state()
-        if not self.runner or not self.provider:
+        if not self.execution_engine or not self.provider:
             raise FeaturePlatformError("INTERNAL_ERROR", "feature runner is unavailable")
         self._update_remote_run(
             "planning",
@@ -241,15 +223,11 @@ class FeatureComputeTask(BaseTaskUnit):
             heartbeat_at=datetime.now(timezone.utc),
         )
 
-        for node in plan.ordered_nodes:
+        def on_started(node) -> None:
+            self._raise_if_cancelled(ctx)
             self.current_feature_version_id = node.id
             client.update_item(payload.run_id, node.id, "queued", "running")
             self.item_states[node.id] = "running"
-            started = time.monotonic()
-            manifest = catalog.get(
-                node.registry_version.feature_code,
-                node.registry_version.version_number,
-            )
             if ctx.logger:
                 ctx.logger.info(
                     {
@@ -265,28 +243,9 @@ class FeatureComputeTask(BaseTaskUnit):
                         "status": "running",
                     }
                 )
-            dependency_outputs = {
-                upstream_id: self.outputs[upstream_id]
-                for upstream_id in node.feature_dependency_ids
-            }
-            execution_context = FeatureExecutionContext(
-                run_id=payload.run_id,
-                node=node,
-                manifest=manifest,
-                as_of_time=payload.as_of_time,
-                data_cutoff_time=payload.data_cutoff_time,
-                security_ids=tuple(payload.security_ids),
-                source_profile=payload.source_profile,
-                market=payload.market,
-                parameters=dict(payload.parameters),
-                dependency_outputs=dependency_outputs,
-            )
-            validated = self.runner.compute(
-                execution_context,
-                self.provider,
-                requires_source_availability=self.requires_availability[node.id],
-            )
-            duration_ms = int((time.monotonic() - started) * 1000)
+
+        def on_completed(node, validated: ValidatedOutput, duration_ms: int) -> None:
+            self._raise_if_cancelled(ctx)
             client.update_item(
                 payload.run_id,
                 node.id,
@@ -317,6 +276,24 @@ class FeatureComputeTask(BaseTaskUnit):
                         **validated.quality_summary(),
                     }
                 )
+
+        execution = self.execution_engine.execute(
+            execution_id=payload.run_id,
+            plan=plan,
+            catalog=catalog,
+            provider=self.provider,
+            security_ids=tuple(payload.security_ids),
+            as_of_time=payload.as_of_time,
+            data_cutoff_time=payload.data_cutoff_time,
+            source_profile=payload.source_profile,
+            market=payload.market,
+            requires_availability=self.requires_availability,
+            on_node_started=on_started,
+            on_node_completed=on_completed,
+        )
+        self.results = execution.validated
+        self.outputs = execution.outputs
+        self.item_durations = execution.durations_ms
         self.current_feature_version_id = None
         return self.results
 
@@ -336,6 +313,7 @@ class FeatureComputeTask(BaseTaskUnit):
         total_written = 0
         item_stats: list[dict[str, Any]] = []
         for node in plan.ordered_nodes:
+            self._raise_if_cancelled(ctx)
             self.current_feature_version_id = node.id
             validated = processed[node.id]
             written = self.writer.write(payload.run_id, validated)
@@ -480,7 +458,9 @@ class FeatureComputeTask(BaseTaskUnit):
         try:
             detail = self.client.get_run(self.payload.run_id, include_subjects=False)
             status = str((detail.get("run") or {}).get("status", self.remote_status))
-            if status == "queued":
+            if error_code == "RUN_CANCELLED" and status in {"queued", "planning", "running"}:
+                self.client.cancel_run(self.payload.run_id)
+            elif status == "queued":
                 self.client.cancel_run(self.payload.run_id)
             elif status in {"planning", "running", "validating"}:
                 self.client.fail_run(self.payload.run_id, error_code, message)
@@ -513,10 +493,17 @@ class FeatureComputeTask(BaseTaskUnit):
                 }
             )
 
+    @staticmethod
+    def _raise_if_cancelled(ctx) -> None:
+        if ctx.is_cancel_requested():
+            raise FeaturePlatformError("RUN_CANCELLED", "feature run cancellation requested")
+
     def run(self, ctx) -> None:
         try:
             super().run(ctx)
         except Exception as exc:
+            if ctx.is_cancel_requested() and not isinstance(exc, FeaturePlatformError):
+                exc = FeaturePlatformError("RUN_CANCELLED", "feature run cancellation requested")
             self._cleanup_failed_run(ctx, exc)
             raise
         finally:

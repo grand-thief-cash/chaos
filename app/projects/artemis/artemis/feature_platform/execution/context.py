@@ -19,6 +19,7 @@ class FeatureExecutionContext:
     source_profile: str
     market: str
     parameters: dict[str, Any] = field(default_factory=dict)
+    implementation_overrides: dict[str, Any] = field(default_factory=dict)
     dependency_outputs: dict[int, FeatureNumericOutput] = field(default_factory=dict)
 
     @property
@@ -31,4 +32,7 @@ class FeatureExecutionContext:
 
     @property
     def implementation_config(self) -> dict[str, Any]:
-        return dict(self.manifest.implementation.config)
+        return {
+            **self.manifest.implementation.config,
+            **self.implementation_overrides,
+        }

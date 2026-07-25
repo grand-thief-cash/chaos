@@ -1,4 +1,5 @@
 import json
+import shutil
 from copy import deepcopy
 from pathlib import Path
 
@@ -61,3 +62,30 @@ def test_loader_rejects_paths_outside_catalog_root():
     with pytest.raises(FeaturePlatformError) as error:
         loader.load(["../config.yaml"])
     assert error.value.code == "MANIFEST_PATH_INVALID"
+
+
+def test_catalog_inspection_is_best_effort_and_checksum_tracks_content(tmp_path):
+    root = tmp_path / "feature_catalog"
+    shutil.copytree(CATALOG_ROOT, root)
+    loader = FeatureManifestLoader(root)
+
+    first = loader.inspect()
+    assert len(first) == 3
+    assert all(item.error is None for item in first)
+    first_checksum = loader.inspection_checksum(first)
+    assert len(first_checksum) == 64
+    assert first_checksum == loader.load().checksum
+
+    target = root / first[0].relative_path
+    target.write_text(
+        target.read_text("utf-8").replace(
+            "display_name: Platform Constant One",
+            "display_name:",
+        ),
+        encoding="utf-8",
+    )
+    second = loader.inspect()
+    assert loader.inspection_checksum(second) != first_checksum
+    assert second[0].error is not None
+    assert second[0].error.code == "MANIFEST_INVALID"
+    assert len(second) == len(first)

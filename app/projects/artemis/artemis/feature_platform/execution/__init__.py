@@ -8,3 +8,9 @@ __all__ = [
     "PythonFeatureExecutor",
     "ValidatedOutput",
 ]
+from artemis.feature_platform.execution.engine import (
+    FeatureExecutionEngine,
+    FeatureExecutionResult,
+)
+
+__all__ = ["FeatureExecutionEngine", "FeatureExecutionResult"]

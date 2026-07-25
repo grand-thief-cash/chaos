@@ -66,6 +66,83 @@ class ExecutionPlan:
             "unsupported_nodes": list(self.unsupported_nodes),
         }
 
+    def snapshot(self) -> dict:
+        root_ids = set(self.root_version_ids)
+        nodes = []
+        edges = []
+        data_field_nodes: dict[str, dict] = {}
+        for order, node in enumerate(self.ordered_nodes):
+            version = node.registry_version
+            dependency_payload = {
+                "feature_dependencies": list(node.feature_dependency_ids),
+                "data_field_dependencies": list(node.data_field_dependencies),
+            }
+            dependency_checksum = hashlib.sha256(
+                json.dumps(
+                    dependency_payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            nodes.append(
+                {
+                    "id": f"fv:{node.id}",
+                    "node_type": "feature_version",
+                    "label": node.identity,
+                    "feature_version_id": node.id,
+                    "feature_code": version.feature_code,
+                    "version_number": version.version_number,
+                    "status": version.status,
+                    "root": node.id in root_ids,
+                    "execution_order": order,
+                    "manifest_checksum": version.manifest_checksum,
+                    "implementation_checksum": str(
+                        version.implementation.get("checksum", "")
+                    ),
+                    "dependency_checksum": dependency_checksum,
+                }
+            )
+            for upstream_id in node.feature_dependency_ids:
+                edges.append(
+                    {
+                        "id": f"feature:{upstream_id}:{node.id}",
+                        "source": f"fv:{upstream_id}",
+                        "target": f"fv:{node.id}",
+                        "kind": "feature",
+                    }
+                )
+            for field in node.data_field_dependencies:
+                field_identity = "|".join(
+                    str(field.get(key, ""))
+                    for key in ("source", "dataset", "data_type", "raw_field", "contract_version")
+                )
+                dictionary_id = field.get("data_field_dictionary_id")
+                field_id = str(dictionary_id or hashlib.sha256(field_identity.encode("utf-8")).hexdigest()[:16])
+                data_field_nodes[field_id] = {
+                    "id": f"df:{field_id}",
+                    "node_type": "data_field",
+                    "label": f"{field.get('source', '')}/{field.get('dataset', '')}/{field.get('raw_field', '')}",
+                    "data_field_dictionary_id": dictionary_id,
+                    "status": "active",
+                    "root": False,
+                }
+                edges.append(
+                    {
+                        "id": f"data_field:{field_id}:{node.id}",
+                        "source": f"df:{field_id}",
+                        "target": f"fv:{node.id}",
+                        "kind": "data_field",
+                    }
+                )
+        return {
+            "schema_version": 1,
+            "plan_checksum": self.plan_checksum,
+            "root_feature_version_ids": list(self.root_version_ids),
+            "nodes": list(data_field_nodes.values()) + nodes,
+            "edges": edges,
+        }
+
 
 class DependencyPlanner:
     def __init__(self, resolver: Callable[[str, int], RegistryFeatureVersion]) -> None:
@@ -157,7 +234,14 @@ class DependencyPlanner:
                             f"registry data field dependency for {code}@{number} is unresolved",
                             status_code=422,
                         )
-                    node_fields.append(snapshot)
+                    node_fields.append(
+                        {
+                            **snapshot,
+                            "data_field_dictionary_id": int(
+                                dependency["data_field_dictionary_id"]
+                            ),
+                        }
+                    )
                 else:
                     raise FeaturePlatformError(
                         "DEPENDENCY_KIND_INVALID",

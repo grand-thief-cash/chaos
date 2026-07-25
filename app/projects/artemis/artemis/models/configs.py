@@ -103,6 +103,22 @@ class FeaturePlatformCfg(BaseModel):
     heartbeat_interval_seconds: int = Field(default=15, gt=0)
     stale_run_timeout_seconds: int = Field(default=300, gt=0)
     plugin_timeout_seconds: int = Field(default=1800, gt=0)
+    preview_max_securities: int = Field(default=100, gt=0)
+    preview_max_evaluations: int = Field(default=20, gt=0)
+    preview_max_root_features: int = Field(default=5, gt=0)
+    preview_max_dag_nodes: int = Field(default=20, gt=0)
+    preview_max_execution_cells: int = Field(default=5000, gt=0)
+    preview_max_rows: int = Field(default=5000, gt=0)
+    preview_timeout_seconds: int = Field(default=60, gt=0)
+    preview_max_concurrency: int = Field(default=2, gt=0)
+    backfill_max_securities: int = Field(default=20000, gt=0)
+    backfill_max_evaluations: int = Field(default=2000, gt=0)
+    backfill_max_execution_cells: int = Field(default=2000000, gt=0)
+    backfill_global_max_concurrency: int = Field(default=4, gt=0)
+    backfill_max_concurrency_per_job: int = Field(default=4, gt=0)
+    backfill_dispatch_interval_seconds: int = Field(default=2, gt=0)
+    backfill_confirmation_ttl_seconds: int = Field(default=900, gt=0)
+    backfill_confirmation_secret: str = Field(default="change-me-feature-platform", min_length=16)
 
 
 class EngineCfg(BaseModel):

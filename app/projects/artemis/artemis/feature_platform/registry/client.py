@@ -84,7 +84,9 @@ class FeatureRegistryClient:
             ) from exc
 
     def sync_manifests(self, manifests: Iterable[FeatureManifest]) -> dict[str, Any]:
-        payload = {"manifests": [registry_projection(manifest) for manifest in manifests]}
+        payload = {
+            "manifests": [registry_projection(manifest) for manifest in manifests],
+        }
         return dict(self._post(f"{self.BASE_PATH}/registry/sync", payload))
 
     def get_definition(self, feature_code: str) -> dict[str, Any]:
@@ -92,6 +94,40 @@ class FeatureRegistryClient:
 
     def get_version(self, version_id: int) -> dict[str, Any]:
         return dict(self._get(f"{self.BASE_PATH}/versions/{version_id}"))
+
+    def list_active_securities(
+        self,
+        market: str,
+        *,
+        hard_limit: int = 20000,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        offset = 0
+        page_size = 1000
+        while True:
+            payload = self._get(
+                "/api/v2/securities/search",
+                {
+                    "market": market,
+                    "asset_type": "stock",
+                    "status": "active",
+                    "limit": page_size,
+                    "offset": offset,
+                },
+            )
+            data = payload.get("data", payload) if isinstance(payload, dict) else {}
+            page = list(data.get("items") or [])
+            total = int(data.get("total", len(page)))
+            items.extend(dict(item) for item in page)
+            if len(items) > hard_limit:
+                raise FeaturePlatformError(
+                    "UNIVERSE_LIMIT_EXCEEDED",
+                    f"active universe exceeds the platform limit of {hard_limit}",
+                    status_code=422,
+                )
+            if not page or len(items) >= total:
+                return items
+            offset += len(page)
 
     def resolve_version(self, feature_code: str, version_number: int) -> RegistryFeatureVersion:
         detail = self.get_definition(feature_code)
@@ -252,6 +288,56 @@ class FeatureRegistryClient:
                 params={"include_subjects": str(include_subjects).lower()},
             )
         )
+
+    def create_backfill(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return dict(self._post(f"{self.BASE_PATH}/backfills", payload))
+
+    def list_backfills(
+        self,
+        *,
+        status: str = "",
+        source_profile: str = "",
+        market: str = "",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        return dict(self._get(
+            f"{self.BASE_PATH}/backfills",
+            params={
+                "status": status, "source_profile": source_profile, "market": market,
+                "limit": limit, "offset": offset,
+            },
+        ))
+
+    def get_backfill(self, backfill_id: str) -> dict[str, Any]:
+        return dict(self._get(f"{self.BASE_PATH}/backfills/{backfill_id}"))
+
+    def claim_backfill_run(
+        self,
+        backfill_id: str,
+        *,
+        worker_id: str,
+        global_max_concurrency: int,
+    ) -> dict[str, Any]:
+        return dict(self._post(
+            f"{self.BASE_PATH}/backfills/{backfill_id}/runs:claim",
+            {
+                "worker_id": worker_id,
+                "global_max_concurrency": global_max_concurrency,
+            },
+        ))
+
+    def cancel_backfill(self, backfill_id: str) -> dict[str, Any]:
+        return dict(self._post(
+            f"{self.BASE_PATH}/backfills/{backfill_id}:cancel",
+            {},
+        ))
+
+    def retry_failed_backfill(self, backfill_id: str) -> dict[str, Any]:
+        return dict(self._post(
+            f"{self.BASE_PATH}/backfills/{backfill_id}:retry-failed",
+            {},
+        ))
 
     def reconcile_stale_runs(
         self,
