@@ -14,9 +14,13 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
           <p>Registry semantics, execution evidence and materialized values in one traceable workspace.</p>
         </div>
         <nav aria-label="Feature Platform sections">
-          <a routerLink="registry" routerLinkActive="active">Registry</a>
+          <a routerLink="manifests" routerLinkActive="active">Manifests</a>
+        <a routerLink="registry" routerLinkActive="active">Registry</a>
+        <a routerLink="preview" routerLinkActive="active">Preview</a>
           <a routerLink="runs" routerLinkActive="active">Runs</a>
+          <a routerLink="backfills" routerLinkActive="active">Backfills</a>
           <a routerLink="values" routerLinkActive="active">Values</a>
+          <a routerLink="purges" routerLinkActive="active">Purges</a>
           <a routerLink="compute" routerLinkActive="active">Compute</a>
         </nav>
       </header>

@@ -9,6 +9,8 @@ export function featureStatusTone(status: string | null | undefined): FeatureSta
     case 'valid':
     case 'published':
     case 'loadable':
+    case 'in_sync':
+    case 'canonical':
     case 'available':
     case 'succeeded':
     case 'active':
@@ -21,14 +23,20 @@ export function featureStatusTone(status: string | null | undefined): FeatureSta
     case 'partial':
     case 'draft':
     case 'deprecated':
+    case 'drift':
+    case 'unchecked':
     case 'dirty':
     case 'stale':
     case 'not_ready':
+    case 'not_persisted':
+    case 'non_canonical':
       return 'warning';
     case 'failed':
     case 'missing':
     case 'invalid':
     case 'unloadable':
+    case 'blocked':
+    case 'unavailable':
     case 'unsupported':
     case 'disabled':
     case 'aborted':

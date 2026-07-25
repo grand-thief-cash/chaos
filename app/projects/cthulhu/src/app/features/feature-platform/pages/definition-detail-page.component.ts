@@ -1,13 +1,22 @@
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subject, catchError, forkJoin, of, switchMap, takeUntil } from 'rxjs';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCollapseModule } from 'ng-zorro-antd/collapse';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
+import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTableModule } from 'ng-zorro-antd/table';
-import { FeatureAvailability, FeatureDefinitionDetail, FeatureRun } from '../models/feature-platform.models';
+import {
+  FeatureAvailability,
+  FeatureDefinitionDetail,
+  FeatureLifecycleEvent,
+  FeatureRun,
+  FeatureVersion,
+} from '../models/feature-platform.models';
 import { featurePlatformError, unknownAvailability } from '../models/feature-platform.utils';
 import { FeaturePlatformApiService } from '../services/feature-platform-api.service';
 import { FeaturePlatformStore } from '../state/feature-platform.store';
@@ -16,7 +25,10 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
 @Component({
   selector: 'app-feature-definition-detail-page',
   standalone: true,
-  imports: [CommonModule, RouterLink, NzButtonModule, NzCollapseModule, NzEmptyModule, NzSpinModule, NzTableModule, FeatureStatusBadgeComponent],
+  imports: [
+    CommonModule, FormsModule, RouterLink, NzButtonModule, NzCollapseModule, NzEmptyModule,
+    NzInputModule, NzModalModule, NzSpinModule, NzTableModule, FeatureStatusBadgeComponent,
+  ],
   template: `
     <div class="fp-page">
       @if (error) { <div class="fp-alert danger"><strong>{{ error.code }}</strong> {{ error.message }}</div> }
@@ -29,6 +41,7 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
                 <a nz-button [routerLink]="['../../lineage', data.definition.feature_code]">Lineage</a>
                 <a nz-button [routerLink]="['../../runs']" [queryParams]="{ feature_version_id: availability?.latest_published_version_id }">Runs</a>
                 <a nz-button [routerLink]="['../../values']" [queryParams]="{ feature_code: data.definition.feature_code, latest: true }">Values</a>
+                <a nz-button nzDanger [routerLink]="['../../purges']" [queryParams]="{ feature_code: data.definition.feature_code }">Purge values</a>
                 <a nz-button nzType="primary" [routerLink]="['../../compute']" [queryParams]="{ feature_code: data.definition.feature_code, version: latestPublishedVersion() }">Compute</a>
               </div>
             </div>
@@ -41,6 +54,12 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
               <div class="fp-meta"><label>Tags</label><div class="fp-chip-list">@for (tag of data.definition.tags; track tag) { <span class="fp-chip">{{ tag }}</span> }</div></div>
               <div class="fp-meta"><label>Updated</label>{{ data.definition.updated_at | date:'medium' }}</div>
             </div>
+            @if (data.latest_purge; as purge) {
+              <div class="fp-alert" style="margin-top:12px">
+                Latest purge <span class="fp-code">{{ purge.purge_id }}</span>
+                is <strong>{{ purge.status }}</strong>: {{ purge.deleted_rows }} of {{ purge.estimated_rows }} estimated rows removed.
+              </div>
+            }
           </section>
 
           @if (availability; as state) {
@@ -76,6 +95,14 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
                     <div class="fp-meta"><label>Published</label>{{ summary.version.published_at ? (summary.version.published_at | date:'medium') : 'Not published' }}</div>
                     <div class="fp-meta"><label>Quality gate</label><pre class="fp-json">{{ qualityGate(summary.version.manifest_snapshot) | json }}</pre></div>
                   </div>
+                  <div class="fp-actions" style="margin:12px 0">
+                    @if (summary.version.status === 'draft') {
+                      <button nz-button nzType="primary" (click)="openTransition('publish', summary.version)">Publish version</button>
+                    }
+                    @if (summary.version.status === 'published') {
+                      <button nz-button nzDanger (click)="openTransition('deprecate', summary.version)">Deprecate version</button>
+                    }
+                  </div>
                   <h4>Implementation</h4>
                   @for (implementation of summary.implementations; track implementation.id) {
                     <div class="fp-meta-grid" style="margin-bottom:8px">
@@ -108,11 +135,54 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
               </nz-table>
             </section>
           }
+
+          <section class="fp-panel">
+            <div class="fp-panel-title">
+              <div><div class="fp-eyebrow">Immutable state history</div><h3>Lifecycle History</h3></div>
+              <span class="fp-muted">{{ lifecycleEvents.length }} recent events</span>
+            </div>
+            @if (!lifecycleEvents.length) {
+              <nz-empty nzNotFoundContent="No lifecycle events recorded."></nz-empty>
+            } @else {
+              <nz-table #auditTable [nzData]="lifecycleEvents" nzSize="small" [nzPageSize]="20">
+                <thead><tr><th>Time</th><th>Action</th><th>Version ID</th><th>Transition</th></tr></thead>
+                <tbody>
+                  @for (event of auditTable.data; track event.id) {
+                    <tr>
+                      <td>{{ event.created_at | date:'medium' }}</td>
+                      <td><app-feature-status-badge [status]="event.action"></app-feature-status-badge></td>
+                      <td class="fp-code">{{ event.feature_version_id }}</td>
+                      <td>{{ event.before_status || 'none' }} → {{ event.after_status }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </nz-table>
+            }
+          </section>
         }
       </nz-spin>
+
+      <nz-modal
+        [(nzVisible)]="transitionModalVisible"
+        [nzTitle]="transitionAction === 'publish' ? 'Publish Feature version' : 'Deprecate Feature version'"
+        [nzOkDanger]="transitionAction === 'deprecate'"
+        [nzOkLoading]="transitioning"
+        [nzOkText]="transitionAction === 'publish' ? 'Publish' : 'Deprecate'"
+        (nzOnCancel)="transitionModalVisible = false"
+        (nzOnOk)="confirmTransition()">
+        <ng-container *nzModalContent>
+          <div class="fp-alert">
+            This transition uses expected status and manifest checksum guards. A concurrent Registry change will be rejected.
+          </div>
+          <div class="transition-fields">
+            <div class="fp-field"><label>Version</label><span class="fp-code">v{{ transitionTarget?.version_number }} · {{ transitionTarget?.manifest_checksum }}</span></div>
+          </div>
+        </ng-container>
+      </nz-modal>
     </div>
   `,
   styleUrls: ['../feature-platform-page.scss'],
+  styles: [`.transition-fields { display:grid; gap:12px; margin-top:14px; }`],
 })
 export class DefinitionDetailPageComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
@@ -122,8 +192,13 @@ export class DefinitionDetailPageComponent implements OnInit, OnDestroy {
   detail: FeatureDefinitionDetail | null = null;
   availability: FeatureAvailability | null = null;
   recentRuns: FeatureRun[] = [];
+  lifecycleEvents: FeatureLifecycleEvent[] = [];
   loading = true;
   error: ReturnType<typeof featurePlatformError> | null = null;
+  transitionModalVisible = false;
+  transitioning = false;
+  transitionAction: 'publish' | 'deprecate' = 'publish';
+  transitionTarget: FeatureVersion | null = null;
 
   ngOnInit(): void {
     this.route.paramMap.pipe(
@@ -140,6 +215,9 @@ export class DefinitionDetailPageComponent implements OnInit, OnDestroy {
                 catchError((error) => of(unknownAvailability(featureCode, this.store.sourceProfile(), featurePlatformError(error).message))),
               ),
               runs: published ? this.api.listRuns({ feature_version_id: published.id, limit: 5 }).pipe(catchError(() => of({ items: [], total: 0, limit: 5, offset: 0 }))) : of({ items: [], total: 0, limit: 5, offset: 0 }),
+              lifecycle: this.api.listLifecycleEvents(featureCode).pipe(
+                catchError(() => of({ items: [] as FeatureLifecycleEvent[], total: 0 })),
+              ),
             });
           }),
           takeUntil(this.destroy$),
@@ -147,13 +225,53 @@ export class DefinitionDetailPageComponent implements OnInit, OnDestroy {
       }),
       takeUntil(this.destroy$),
     ).subscribe({
-      next: ({ detail, availability, runs }) => { this.detail = detail; this.availability = availability; this.recentRuns = runs.items; this.loading = false; },
+      next: ({ detail, availability, runs, lifecycle }) => {
+        this.detail = detail;
+        this.availability = availability;
+        this.recentRuns = runs.items;
+        this.lifecycleEvents = lifecycle.items;
+        this.loading = false;
+      },
       error: (error) => { this.error = featurePlatformError(error); this.loading = false; },
     });
   }
 
   latestPublishedVersion(): number | undefined {
     return this.detail?.versions.map((item) => item.version).filter((item) => item.status === 'published').sort((a, b) => b.version_number - a.version_number)[0]?.version_number;
+  }
+
+  openTransition(action: 'publish' | 'deprecate', version: FeatureVersion): void {
+    this.transitionAction = action;
+    this.transitionTarget = version;
+    this.transitionModalVisible = true;
+  }
+
+  confirmTransition(): void {
+    const target = this.transitionTarget;
+    const featureCode = this.detail?.definition.feature_code;
+    if (!target || !featureCode) return;
+    this.transitioning = true;
+    this.error = null;
+    const request = {
+      expected_status: target.status as 'draft' | 'published',
+      expected_manifest_checksum: target.manifest_checksum,
+    };
+    const transition = this.transitionAction === 'publish'
+      ? this.api.publishVersion(featureCode, target.version_number, request)
+      : this.api.deprecateVersion(featureCode, target.version_number, request);
+    transition.subscribe({
+      next: (result) => {
+        target.status = result.status;
+        this.lifecycleEvents = [result.event, ...this.lifecycleEvents];
+        this.transitioning = false;
+        this.transitionModalVisible = false;
+      },
+      error: (error) => {
+        this.error = featurePlatformError(error);
+        this.transitioning = false;
+        this.transitionModalVisible = false;
+      },
+    });
   }
 
   qualityGate(snapshot: Record<string, unknown>): unknown { return snapshot['quality'] ?? {}; }

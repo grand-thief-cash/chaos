@@ -1,7 +1,10 @@
 import {TestBed} from '@angular/core/testing';
-import {HttpClient, provideHttpClient, withInterceptors} from '@angular/common/http';
+import {HttpClient, HttpContext, provideHttpClient, withInterceptors} from '@angular/common/http';
 import {HttpTestingController, provideHttpClientTesting} from '@angular/common/http/testing';
-import {errorNotificationInterceptor} from './error-notification.interceptor';
+import {
+  errorNotificationInterceptor,
+  SKIP_GLOBAL_ERROR_NOTIFICATION,
+} from './error-notification.interceptor';
 import {ErrorNotificationService} from './error-notification.service';
 
 describe('errorNotificationInterceptor', () => {
@@ -42,6 +45,18 @@ describe('errorNotificationInterceptor', () => {
     }});
     const req = ctrl.expectOne('/network');
     req.error(new ProgressEvent('error'));
+    ctrl.verify();
+  });
+
+  it('keeps locally handled errors out of the global notification stream', () => {
+    http.get('/local-error', {
+      context: new HttpContext().set(SKIP_GLOBAL_ERROR_NOTIFICATION, true),
+    }).subscribe({
+      next: () => fail('should have errored'),
+      error: () => expect(service.getRecordsSnapshot()).toEqual([]),
+    });
+    const req = ctrl.expectOne('/local-error');
+    req.flush({ code: 'CATALOG_UNAVAILABLE' }, { status: 503, statusText: 'Unavailable' });
     ctrl.verify();
   });
 });

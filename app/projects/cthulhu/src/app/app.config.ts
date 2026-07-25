@@ -13,15 +13,16 @@ import {
   MenuFoldOutline,
   MenuUnfoldOutline,
   NotificationOutline,
+  ReloadOutline,
   UserOutline
 } from '@ant-design/icons-angular/icons';
 import {provideEchartsCore} from 'ngx-echarts';
 import * as echarts from 'echarts/core';
-import {LineChart, ScatterChart, CandlestickChart, BarChart, PieChart} from 'echarts/charts';
+import {LineChart, ScatterChart, CandlestickChart, BarChart, PieChart, GraphChart} from 'echarts/charts';
 import {GridComponent, TooltipComponent, LegendComponent, DataZoomComponent} from 'echarts/components';
 import {CanvasRenderer} from 'echarts/renderers';
 
-echarts.use([LineChart, ScatterChart, CandlestickChart, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer]);
+echarts.use([LineChart, ScatterChart, CandlestickChart, BarChart, PieChart, GraphChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer]);
 import {errorNotificationInterceptor} from './core/errors/error-notification.interceptor';
 import {ERROR_NOTIFICATIONS_OPTIONS, STATUS_MESSAGE_MAP} from './core/errors/error-notification.model';
 
@@ -30,7 +31,7 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideAnimations(), // 启用动画
     provideHttpClient(withInterceptors([errorNotificationInterceptor])), // HttpClient + 全局错误拦截
-    {provide: NZ_ICONS, useValue: [UserOutline, LaptopOutline, NotificationOutline, MenuFoldOutline, MenuUnfoldOutline, LineChartOutline, BarsOutline, DatabaseOutline, DeploymentUnitOutline]},
+    {provide: NZ_ICONS, useValue: [UserOutline, LaptopOutline, NotificationOutline, MenuFoldOutline, MenuUnfoldOutline, LineChartOutline, BarsOutline, DatabaseOutline, DeploymentUnitOutline, ReloadOutline]},
     provideEchartsCore({echarts}),
     {provide: STATUS_MESSAGE_MAP, useValue: {/* 可自定义覆盖 */}},
     {provide: ERROR_NOTIFICATIONS_OPTIONS, useValue: {maxItems: 5, dedupeWindowMs: 10000, autoDismissMs: 0}}

@@ -53,6 +53,8 @@ func writeFeatureError(w http.ResponseWriter, err error) {
 			status = http.StatusBadRequest
 		case model.FeatureErrorNotFound:
 			status = http.StatusNotFound
+		case model.FeatureErrorForbidden:
+			status = http.StatusForbidden
 		case model.FeatureErrorConflict:
 			status = http.StatusConflict
 		case model.FeatureErrorUnprocessable:
@@ -125,11 +127,16 @@ func (c *FeatureController) PublishVersion(w http.ResponseWriter, r *http.Reques
 		writeFeatureError(w, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_VERSION_INVALID", "version must be a positive integer"))
 		return
 	}
-	if err := c.Registry.Publish(r.Context(), chi.URLParam(r, "feature_code"), version); err != nil {
+	var req model.FeatureLifecycleTransitionRequest
+	if !decodeFeatureJSON(w, r, &req) {
+		return
+	}
+	event, err := c.Registry.Publish(r.Context(), chi.URLParam(r, "feature_code"), version, req)
+	if err != nil {
 		writeFeatureError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "published", "version": version})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "published", "version": version, "event": event})
 }
 
 func (c *FeatureController) DeprecateVersion(w http.ResponseWriter, r *http.Request) {
@@ -138,11 +145,30 @@ func (c *FeatureController) DeprecateVersion(w http.ResponseWriter, r *http.Requ
 		writeFeatureError(w, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_VERSION_INVALID", "version must be a positive integer"))
 		return
 	}
-	if err := c.Registry.Deprecate(r.Context(), chi.URLParam(r, "feature_code"), version); err != nil {
+	var req model.FeatureLifecycleTransitionRequest
+	if !decodeFeatureJSON(w, r, &req) {
+		return
+	}
+	event, err := c.Registry.Deprecate(r.Context(), chi.URLParam(r, "feature_code"), version, req)
+	if err != nil {
 		writeFeatureError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "deprecated", "version": version})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deprecated", "version": version, "event": event})
+}
+
+func (c *FeatureController) ListLifecycleEvents(w http.ResponseWriter, r *http.Request) {
+	limit, _ := parseLimitOffset(r)
+	rows, err := c.Registry.ListLifecycleEvents(
+		r.Context(),
+		chi.URLParam(r, "feature_code"),
+		limit,
+	)
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": rows, "total": len(rows)})
 }
 
 func (c *FeatureController) Lineage(w http.ResponseWriter, r *http.Request) {
@@ -360,6 +386,19 @@ func (c *FeatureController) QueryNumericCrossSection(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, map[string]any{"items": rows, "total": total, "limit": query.Limit, "offset": query.Offset})
 }
 
+func (c *FeatureController) NumericValueStats(w http.ResponseWriter, r *http.Request) {
+	var req model.FeatureNumericStatsRequest
+	if !decodeFeatureJSON(w, r, &req) {
+		return
+	}
+	stats, err := c.Runs.NumericValueStats(r.Context(), req)
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
 func (c *FeatureController) queryNumericValues(w http.ResponseWriter, r *http.Request, latest bool) {
 	query, ok := parseFeatureValueQuery(w, r, latest)
 	if !ok {
@@ -439,6 +478,19 @@ func (c *FeatureController) CreateBackfill(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "runs": runs})
 }
 
+func (c *FeatureController) ListBackfills(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	q := r.URL.Query()
+	jobs, total, err := c.Runs.ListBackfills(r.Context(), model.FeatureBackfillFilters{
+		Status: q.Get("status"), SourceProfile: q.Get("source_profile"), Market: q.Get("market"),
+	}, limit, offset)
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": jobs, "total": total, "limit": limit, "offset": offset})
+}
+
 func (c *FeatureController) GetBackfill(w http.ResponseWriter, r *http.Request) {
 	job, runs, err := c.Runs.GetBackfill(r.Context(), chi.URLParam(r, "backfill_id"))
 	if err != nil {
@@ -457,8 +509,84 @@ func (c *FeatureController) RetryFailedBackfill(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusAccepted, map[string]any{"runs": runs, "count": len(runs)})
 }
 
+func (c *FeatureController) ClaimBackfillRun(w http.ResponseWriter, r *http.Request) {
+	var req model.FeatureBackfillClaimRequest
+	if !decodeFeatureJSON(w, r, &req) {
+		return
+	}
+	detail, err := c.Runs.ClaimBackfillRun(r.Context(), chi.URLParam(r, "backfill_id"), req)
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	if detail == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
 func (c *FeatureController) CancelBackfill(w http.ResponseWriter, r *http.Request) {
 	if err := c.Runs.CancelBackfill(r.Context(), chi.URLParam(r, "backfill_id")); err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
+}
+
+func (c *FeatureController) PreviewPurge(w http.ResponseWriter, r *http.Request) {
+	var req model.FeaturePurgePreviewRequest
+	if !decodeFeatureJSON(w, r, &req) {
+		return
+	}
+	preview, err := c.Runs.PreviewPurge(r.Context(), req)
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
+func (c *FeatureController) SubmitPurge(w http.ResponseWriter, r *http.Request) {
+	var req model.FeaturePurgeSubmitRequest
+	if !decodeFeatureJSON(w, r, &req) {
+		return
+	}
+	detail, err := c.Runs.SubmitPurge(r.Context(), req)
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, detail)
+}
+
+func (c *FeatureController) ListPurges(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	q := r.URL.Query()
+	jobs, total, err := c.Runs.ListPurges(r.Context(), model.FeaturePurgeFilters{
+		Status: q.Get("status"), ScopeType: q.Get("scope_type"),
+	}, limit, offset)
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": jobs, "total": total,
+		"limit": normalizedLimit(limit, 100, 500), "offset": maxInt(offset, 0),
+	})
+}
+
+func (c *FeatureController) GetPurge(w http.ResponseWriter, r *http.Request) {
+	detail, err := c.Runs.GetPurge(r.Context(), chi.URLParam(r, "purge_id"))
+	if err != nil {
+		writeFeatureError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (c *FeatureController) CancelPurge(w http.ResponseWriter, r *http.Request) {
+	if err := c.Runs.CancelPurge(r.Context(), chi.URLParam(r, "purge_id")); err != nil {
 		writeFeatureError(w, err)
 		return
 	}

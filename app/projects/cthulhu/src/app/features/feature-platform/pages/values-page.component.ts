@@ -1,7 +1,10 @@
-import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import type { EChartsOption } from 'echarts';
+import { NgxEchartsModule } from 'ngx-echarts';
+import { forkJoin } from 'rxjs';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { NzInputModule } from 'ng-zorro-antd/input';
@@ -9,11 +12,9 @@ import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzStatisticModule } from 'ng-zorro-antd/statistic';
 import { NzSwitchModule } from 'ng-zorro-antd/switch';
 import { NzTableModule } from 'ng-zorro-antd/table';
-import { NgxEchartsModule } from 'ngx-echarts';
-import type { EChartsOption } from 'echarts';
 import { SecuritySearchItem } from '../../../core/services/security-lookup.service';
 import { SecuritySearchInputComponent } from '../../../shared/ui/security-search-input.component';
-import { FeatureNumericValue } from '../models/feature-platform.models';
+import { FeatureNumericStats, FeatureNumericStatsRequest, FeatureNumericValue, ValueFilters } from '../models/feature-platform.models';
 import { featurePlatformError } from '../models/feature-platform.utils';
 import { FeaturePlatformApiService } from '../services/feature-platform-api.service';
 import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.component';
@@ -21,7 +22,11 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
 @Component({
   selector: 'app-feature-values-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, NzButtonModule, NzEmptyModule, NzInputModule, NzSpinModule, NzStatisticModule, NzSwitchModule, NzTableModule, NgxEchartsModule, SecuritySearchInputComponent, FeatureStatusBadgeComponent],
+  imports: [
+    CommonModule, FormsModule, NgxEchartsModule, NzButtonModule, NzEmptyModule,
+    NzInputModule, NzSpinModule, NzStatisticModule, NzSwitchModule, NzTableModule,
+    SecuritySearchInputComponent, FeatureStatusBadgeComponent,
+  ],
   template: `
     <div class="fp-page">
       <section class="fp-toolbar value-toolbar">
@@ -37,19 +42,33 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
         </div>
         <button nz-button nzType="primary" (click)="load()" [nzLoading]="loading">Query values</button>
       </section>
+
       @if (error) { <div class="fp-alert danger"><strong>{{ error.code }}</strong> {{ error.message }}</div> }
       <section class="summary-grid">
-        <div class="fp-panel"><nz-statistic nzTitle="Rows returned" [nzValue]="values.length"></nz-statistic></div>
-        <div class="fp-panel"><nz-statistic nzTitle="Total matched" [nzValue]="total"></nz-statistic></div>
+        <div class="fp-panel"><nz-statistic nzTitle="Rows sampled" [nzValue]="values.length"></nz-statistic></div>
+        <div class="fp-panel"><nz-statistic nzTitle="Total matched" [nzValue]="stats?.count || 0"></nz-statistic></div>
         <div class="fp-panel"><nz-statistic nzTitle="Valid coverage" [nzValue]="validCoverage()" nzSuffix="%"></nz-statistic></div>
-        <div class="fp-panel"><div class="fp-eyebrow">Preview mode</div><strong>{{ previewMode }}</strong><div class="fp-muted">Succeeded materializations remain explicit.</div></div>
+        <div class="fp-panel">
+          <div class="fp-eyebrow">Observed range</div>
+          <strong>{{ stats?.observed_from ? (stats?.observed_from | date:'shortDate') : 'n/a' }}</strong>
+          <div class="fp-muted">to {{ stats?.observed_to ? (stats?.observed_to | date:'shortDate') : 'n/a' }}</div>
+        </div>
       </section>
+
       <nz-spin [nzSpinning]="loading">
-        @if (!loading && !values.length) { <nz-empty nzNotFoundContent="No numeric values match this contract."></nz-empty> }
-        @if (chartOptions) { <section class="fp-panel"><div class="fp-panel-title"><h3>{{ previewMode }} preview</h3><span class="fp-muted">Numeric values only · quality remains in the table</span></div><div echarts [options]="chartOptions" style="height:340px;width:100%"></div></section> }
+        @if (!loading && !stats?.count) { <nz-empty nzNotFoundContent="No numeric values match this contract."></nz-empty> }
+        @if (stats?.count) {
+          <section class="chart-grid">
+            <div class="fp-panel"><div class="fp-panel-title"><h3>Distribution</h3><span class="fp-muted">server-side histogram</span></div><div echarts [options]="histogramOptions" class="value-chart"></div></div>
+            <div class="fp-panel"><div class="fp-panel-title"><h3>Five-number summary</h3><span class="fp-muted">P25 / median / P75</span></div><div echarts [options]="boxOptions" class="value-chart"></div></div>
+            <div class="fp-panel"><div class="fp-panel-title"><h3>Quality mix</h3><span class="fp-muted">{{ stats?.count }} evaluated rows</span></div><div echarts [options]="qualityOptions" class="value-chart"></div></div>
+            <div class="fp-panel"><div class="fp-panel-title"><h3>Observed trend</h3><span class="fp-muted">mean with min/max envelope</span></div><div echarts [options]="trendOptions" class="value-chart"></div></div>
+          </section>
+        }
+
         @if (values.length) {
           <section class="fp-panel">
-            <div class="fp-panel-title"><h3>Value evidence</h3><span class="fp-muted">{{ total }} total rows</span></div>
+            <div class="fp-panel-title"><h3>Value evidence sample</h3><span class="fp-muted">First {{ values.length }} of {{ stats?.count || 0 }} rows; charts use all matched rows.</span></div>
             <nz-table #valuesTable [nzData]="values" nzSize="small" [nzPageSize]="25" [nzShowSizeChanger]="true">
               <thead><tr><th>Run</th><th>Version</th><th>Security</th><th>Observed</th><th>Value</th><th>Status</th><th>Source max available</th><th>Quality flags</th><th>Computed</th></tr></thead>
               <tbody>@for (value of valuesTable.data; track value.run_id + '-' + value.feature_version_id + '-' + value.security_id + '-' + value.observed_at) {<tr>
@@ -68,6 +87,9 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
     .value-toolbar { align-items:stretch; }
     .summary-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:10px; }
     .summary-grid .fp-panel { padding:14px; }
+    .chart-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px; }
+    .value-chart { height:300px;width:100%; }
+    @media(max-width:1100px){.chart-grid{grid-template-columns:1fr}}
     @media(max-width:900px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:520px){.summary-grid{grid-template-columns:minmax(0,1fr)}}
   `],
@@ -76,6 +98,7 @@ export class ValuesPageComponent implements OnInit {
   private readonly api = inject(FeaturePlatformApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+
   featureCode = '';
   version: number | null = null;
   runId = '';
@@ -84,11 +107,13 @@ export class ValuesPageComponent implements OnInit {
   observedFrom = '';
   observedTo = '';
   values: FeatureNumericValue[] = [];
-  total = 0;
+  stats: FeatureNumericStats | null = null;
   loading = false;
   error: ReturnType<typeof featurePlatformError> | null = null;
-  chartOptions: EChartsOption | null = null;
-  previewMode = 'Cross-section';
+  histogramOptions: EChartsOption = {};
+  boxOptions: EChartsOption = {};
+  qualityOptions: EChartsOption = {};
+  trendOptions: EChartsOption = {};
 
   ngOnInit(): void {
     const query = this.route.snapshot.queryParamMap;
@@ -113,26 +138,44 @@ export class ValuesPageComponent implements OnInit {
     this.error = null;
     const observedFrom = this.toIso(this.observedFrom);
     const observedTo = this.toIso(this.observedTo);
-    this.router.navigate([], { relativeTo: this.route, replaceUrl: true, queryParams: {
-      feature_code: this.featureCode.trim() || null,
-      version: this.version || null,
-      run_id: this.runId.trim() || null,
-      latest: this.runId ? false : this.latest,
-      security_ids: securityIds.length ? securityIds.join(',') : null,
-      observed_from: observedFrom || null,
-      observed_to: observedTo || null,
-    }});
-    this.api.queryValues({
+    const filters: ValueFilters = {
       feature_code: this.featureCode.trim() || undefined,
       version: this.version || undefined,
       run_id: this.runId.trim() || undefined,
       security_ids: securityIds.length ? securityIds : undefined,
       observed_from: observedFrom || undefined,
       observed_to: observedTo || undefined,
-      limit: 500,
-    }, !this.runId && this.latest).subscribe({
-      next: (response) => { this.values = response.items; this.total = response.total; this.buildChart(); this.loading = false; },
-      error: (error) => { this.error = featurePlatformError(error); this.values = []; this.chartOptions = null; this.loading = false; },
+    };
+    const statsRequest: FeatureNumericStatsRequest = {
+      ...filters,
+      latest: !this.runId && this.latest,
+      histogram_buckets: 16,
+    };
+    this.router.navigate([], { relativeTo: this.route, replaceUrl: true, queryParams: {
+      feature_code: filters.feature_code || null,
+      version: filters.version || null,
+      run_id: filters.run_id || null,
+      latest: this.runId ? false : this.latest,
+      security_ids: securityIds.length ? securityIds.join(',') : null,
+      observed_from: observedFrom || null,
+      observed_to: observedTo || null,
+    }});
+    forkJoin({
+      values: this.api.queryValues({ ...filters, limit: 100 }, !this.runId && this.latest),
+      stats: this.api.numericValueStats(statsRequest),
+    }).subscribe({
+      next: ({ values, stats }) => {
+        this.values = values.items;
+        this.stats = stats;
+        this.buildCharts(stats);
+        this.loading = false;
+      },
+      error: (error) => {
+        this.error = featurePlatformError(error);
+        this.values = [];
+        this.stats = null;
+        this.loading = false;
+      },
     });
   }
 
@@ -144,7 +187,7 @@ export class ValuesPageComponent implements OnInit {
   }
 
   validCoverage(): number {
-    return this.values.length ? Math.round(this.values.filter((value) => value.value_status === 'valid').length / this.values.length * 1000) / 10 : 0;
+    return this.stats?.count ? Math.round(this.stats.valid_count / this.stats.count * 1000) / 10 : 0;
   }
 
   private parseSecurityIds(showError = true): number[] | null {
@@ -158,28 +201,55 @@ export class ValuesPageComponent implements OnInit {
     return [...new Set(ids)];
   }
 
-  private buildChart(): void {
-    const numeric = this.values.filter((value) => value.value !== null);
-    if (!numeric.length) { this.chartOptions = null; return; }
-    const observed = [...new Set(numeric.map((value) => value.observed_at))].sort();
-    if (observed.length === 1) {
-      this.previewMode = 'Cross-section';
-      this.chartOptions = {
-        color: ['#d96c24'], tooltip: { trigger: 'axis' }, grid: { left: 75, right: 24, top: 20, bottom: 42 },
-        xAxis: { type: 'category', data: numeric.map((value) => `#${value.security_id}`), axisLabel: { rotate: 35 } },
-        yAxis: { type: 'value', scale: true }, series: [{ type: 'bar', data: numeric.map((value) => value.value) }],
-      };
-      return;
-    }
-    this.previewMode = 'Time series';
-    const securityIds = [...new Set(numeric.map((value) => value.security_id))].slice(0, 12);
-    this.chartOptions = {
-      tooltip: { trigger: 'axis' }, legend: { type: 'scroll' }, grid: { left: 65, right: 24, top: 48, bottom: 55 },
-      xAxis: { type: 'category', data: observed.map((time) => new Date(time).toLocaleDateString()), axisLabel: { rotate: 30 } }, yAxis: { type: 'value', scale: true },
-      series: securityIds.map((securityId) => ({ name: `#${securityId}`, type: 'line', showSymbol: false, data: observed.map((time) => numeric.find((value) => value.security_id === securityId && value.observed_at === time)?.value ?? null) })),
+  private buildCharts(stats: FeatureNumericStats): void {
+    this.histogramOptions = {
+      color: ['#d66a2b'], tooltip: { trigger: 'axis' },
+      grid: { left: 58, right: 18, top: 18, bottom: 58 },
+      xAxis: { type: 'category', data: stats.histogram.map((bucket) => `${this.short(bucket.lower)}-${this.short(bucket.upper)}`), axisLabel: { rotate: 35 } },
+      yAxis: { type: 'value', minInterval: 1 },
+      series: [{ type: 'bar', data: stats.histogram.map((bucket) => bucket.count), barMaxWidth: 34 }],
+    };
+    const five = [stats.min, stats.p25, stats.p50, stats.p75, stats.max];
+    this.boxOptions = five.every((value) => value !== null) ? {
+      tooltip: { trigger: 'item' }, grid: { left: 58, right: 22, top: 25, bottom: 35 },
+      xAxis: { type: 'category', data: ['matched values'] }, yAxis: { type: 'value', scale: true },
+      series: [{ type: 'boxplot', data: [five as number[]], itemStyle: { color: '#d9e5df', borderColor: '#426f7d' } }],
+    } : {};
+    this.qualityOptions = {
+      tooltip: { trigger: 'item' }, legend: { bottom: 0 },
+      series: [{
+        type: 'pie', radius: ['42%', '68%'], center: ['50%', '44%'],
+        data: [
+          { name: 'valid', value: stats.valid_count, itemStyle: { color: '#4b8062' } },
+          { name: 'missing', value: stats.missing_count, itemStyle: { color: '#c49a45' } },
+          { name: 'invalid', value: stats.invalid_count, itemStyle: { color: '#b44137' } },
+        ],
+        label: { formatter: '{b}: {c}' },
+      }],
+    };
+    const dates = stats.trend.map((point) => new Date(point.observed_at).toLocaleDateString());
+    this.trendOptions = {
+      tooltip: { trigger: 'axis' }, legend: { top: 0 },
+      grid: { left: 58, right: 18, top: 42, bottom: 48 },
+      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+      yAxis: { type: 'value', scale: true },
+      series: [
+        { name: 'mean', type: 'line', showSymbol: stats.trend.length < 40, data: stats.trend.map((point) => point.mean), lineStyle: { width: 3, color: '#d66a2b' } },
+        { name: 'min', type: 'line', showSymbol: false, data: stats.trend.map((point) => point.min), lineStyle: { type: 'dashed', color: '#7f969b' } },
+        { name: 'max', type: 'line', showSymbol: false, data: stats.trend.map((point) => point.max), lineStyle: { type: 'dashed', color: '#7f969b' } },
+      ],
     };
   }
 
+  private short(value: number): string {
+    return Math.abs(value) >= 1000 ? value.toExponential(1) : Number(value.toPrecision(4)).toString();
+  }
+
   private toIso(value: string): string { return value ? new Date(value).toISOString() : ''; }
-  private toLocalInput(value: string | null): string { if (!value) return ''; const date = new Date(value); const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000); return shifted.toISOString().slice(0, 16); }
+  private toLocalInput(value: string | null): string {
+    if (!value) return '';
+    const date = new Date(value);
+    const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+    return shifted.toISOString().slice(0, 16);
+  }
 }

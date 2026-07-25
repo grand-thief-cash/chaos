@@ -79,3 +79,4 @@ go.sum
 *.whl
 
 /app/projects/phoenixA/bin/phoenixA
+/app/projects/artemis/config/task-prod.yaml

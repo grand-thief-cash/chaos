@@ -1,9 +1,13 @@
 # VERSION
-v0.21.1
+v0.22.0
 
 # Changelog
+- v0.22.0
+    - **Feature governance workbench.** Added Manifest Catalog validation/diff/sync and checksum-guarded Definition publish/deprecate management alongside the existing Registry, Run, Value, and Manual Compute pages. Structured page errors remain isolated from global duplicate notifications.
+    - **Scoped Preview and visual diagnostics.** Added a reusable universe/evaluation/cutoff editor, non-persisted point/range Preview with quality and CSV/JSON export, ECharts lineage and execution DAGs, numeric histogram/trend views, and accessible table fallbacks.
+    - **Backfill and purge management.** Added impact-first Backfill creation, progress heatmap, recovery-aware cancel/retry controls, and exact-confirmation purge workflows for Run, Feature Version, and all-version scopes. The internal-network UI deliberately has no Feature-specific role, Actor/Reason, rate-limit, or tracing layer.
 - v0.21.1
-    - Added a "预览下几次" button next to the Cron expression field on the task edit form that calls cronjob `GET /api/v1/tasks/cron-preview?expr=&n=3` and lists the next fire times, so the schedule can be sanity-checked before saving.
+    - Added a "Preview Next Runs" button next to the Cron expression field on the task edit form that calls cronjob `GET /api/v1/tasks/cron-preview?expr=&n=3` and lists the next fire times, so the schedule can be sanity-checked before saving.
 - v0.21.0
     - **Feature Platform workbench.** Added typed PhoenixA/Artemis clients and routed Registry, Definition Detail, Lineage, Runs, Run Detail, Values, and Manual Compute pages under `/workbench/features`.
     - **Traceable and fail-closed operations.** The UI keeps source profile, Feature version, Run ID, as-of/cutoff, quality, partial/unknown/deprecated/dirty states, and structured 409/422 errors visible; URL-backed filters recover after refresh and manual compute accepts published versions only.

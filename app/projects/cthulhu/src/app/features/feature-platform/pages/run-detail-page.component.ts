@@ -1,6 +1,8 @@
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import type { EChartsOption } from 'echarts';
+import { NgxEchartsModule } from 'ngx-echarts';
 import { catchError, forkJoin, of } from 'rxjs';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
@@ -16,7 +18,7 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
 @Component({
   selector: 'app-feature-run-detail-page',
   standalone: true,
-  imports: [CommonModule, RouterLink, NzButtonModule, NzEmptyModule, NzProgressModule, NzSpinModule, NzTableModule, NzTimelineModule, FeatureStatusBadgeComponent],
+  imports: [CommonModule, RouterLink, NgxEchartsModule, NzButtonModule, NzEmptyModule, NzProgressModule, NzSpinModule, NzTableModule, NzTimelineModule, FeatureStatusBadgeComponent],
   template: `
     <div class="fp-page">
       @if (error) { <div class="fp-alert danger"><strong>{{ error.code }}</strong> {{ error.message }}</div> }
@@ -60,12 +62,30 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
             </div>
           </section>
 
+          @if (executionGraphOptions) {
+            <section class="fp-panel run-graph">
+              <div class="fp-panel-title">
+                <div><div class="fp-eyebrow">Immutable request evidence</div><h3>Execution DAG snapshot</h3></div>
+                <span class="fp-code">{{ data.run.request_payload.dependency_plan_checksum }}</span>
+              </div>
+              <div echarts [options]="executionGraphOptions" style="height:460px;width:100%"></div>
+              <div class="fp-muted">Node status is overlaid from this Run's work items; topology comes from the creation-time snapshot.</div>
+            </section>
+          } @else {
+            <section class="fp-panel">
+              <div class="fp-panel-title"><h3>Execution DAG snapshot</h3></div>
+              <nz-empty nzNotFoundContent="This Run predates immutable plan snapshots. The item table remains the authoritative fallback."></nz-empty>
+            </section>
+          }
+
           <section class="fp-panel">
             <div class="fp-panel-title"><div><div class="fp-eyebrow">Dependency-closed work units</div><h3>Run Items</h3></div><span class="fp-muted">{{ data.items.length }} items</span></div>
             <nz-table #itemsTable [nzData]="data.items" nzSize="small" [nzShowPagination]="false">
-              <thead><tr><th>Version ID</th><th>Status</th><th>Input</th><th>Output</th><th>Valid</th><th>Missing</th><th>Invalid</th><th>Coverage</th><th>Duration</th><th>Quality / error</th></tr></thead>
+              <thead><tr><th>Version ID</th><th>Status</th><th>Materialization</th><th>Rows</th><th>Input</th><th>Output</th><th>Valid</th><th>Missing</th><th>Invalid</th><th>Coverage</th><th>Duration</th><th>Quality / error</th></tr></thead>
               <tbody>@for (item of itemsTable.data; track item.feature_version_id) {<tr>
                 <td class="fp-code">{{ item.feature_version_id }}</td><td><app-feature-status-badge [status]="item.status"></app-feature-status-badge></td>
+                <td><app-feature-status-badge [status]="item.materialization_state"></app-feature-status-badge>@if (item.last_purge_id) { <div class="fp-code">{{ item.last_purge_id }}</div> }</td>
+                <td>{{ item.materialized_row_count }}</td>
                 <td>{{ item.input_count }}</td><td>{{ item.output_count }}</td><td>{{ item.valid_count }}</td><td>{{ item.missing_count }}</td><td>{{ item.invalid_count }}</td>
                 <td><nz-progress [nzPercent]="coverage(item)" nzSize="small" [nzStatus]="item.status === 'failed' ? 'exception' : 'normal'"></nz-progress></td>
                 <td>{{ item.duration_ms }} ms</td>
@@ -97,6 +117,7 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
   styleUrls: ['../feature-platform-page.scss'],
   styles: [`
     .timeline-layout { display:grid; grid-template-columns:minmax(260px,.8fr) minmax(320px,1.2fr); gap:16px; }
+    .run-graph { background:linear-gradient(145deg,#fffdf8,#eef3f0); }
     @media(max-width:850px){.timeline-layout{grid-template-columns:1fr}}
   `],
 })
@@ -107,6 +128,7 @@ export class RunDetailPageComponent implements OnInit, OnDestroy {
   values: FeatureNumericValue[] = [];
   loading = true;
   error: ReturnType<typeof featurePlatformError> | null = null;
+  executionGraphOptions: EChartsOption | null = null;
   private runId = '';
   private timer?: ReturnType<typeof setInterval>;
 
@@ -122,7 +144,12 @@ export class RunDetailPageComponent implements OnInit, OnDestroy {
       detail: this.api.getRun(this.runId, true),
       values: this.api.queryValues({ run_id: this.runId, limit: 20 }).pipe(catchError(() => of({ items: [], total: 0, limit: 20, offset: 0 }))),
     }).subscribe({
-      next: ({ detail, values }) => { this.detail = detail; this.values = values.items; this.loading = false; },
+      next: ({ detail, values }) => {
+        this.detail = detail;
+        this.values = values.items;
+        this.buildExecutionGraph(detail);
+        this.loading = false;
+      },
       error: (error) => { this.error = featurePlatformError(error); this.loading = false; },
     });
   }
@@ -132,5 +159,44 @@ export class RunDetailPageComponent implements OnInit, OnDestroy {
   isPartial(items: FeatureRunItem[]): boolean { return items.some((item) => item.status === 'succeeded') && items.some((item) => item.status !== 'succeeded'); }
   dirty(run: FeatureRun): boolean { return isDirtyRevision(run.code_revision); }
   isActive(status: string): boolean { return ['queued', 'planning', 'running', 'validating'].includes(status); }
+
+  private buildExecutionGraph(detail: FeatureRunDetail): void {
+    const snapshot = detail.run.request_payload.dependency_plan_snapshot;
+    if (!snapshot?.nodes?.length) { this.executionGraphOptions = null; return; }
+    const itemStatus = new Map(detail.items.map((item) => [item.feature_version_id, item.status]));
+    const color = (status: string, root: boolean): string => {
+      if (root) return '#d75f22';
+      if (status === 'succeeded') return '#4b8062';
+      if (status === 'failed' || status === 'aborted') return '#b44137';
+      if (status === 'running' || status === 'validating') return '#d39a2c';
+      return '#71868d';
+    };
+    this.executionGraphOptions = {
+      tooltip: {
+        formatter: (params: unknown) => {
+          const value = params as { dataType?: string; data?: { label?: string; name?: string; status?: string } };
+          return value.dataType === 'node' && value.data
+            ? `<strong>${value.data.label || value.data.name}</strong><br>${value.data.name}<br>${value.data.status || 'unknown'}`
+            : '';
+        },
+      },
+      series: [{
+        type: 'graph', layout: 'force', roam: true, draggable: true,
+        edgeSymbol: ['none', 'arrow'], edgeSymbolSize: 8,
+        force: { repulsion: 440, edgeLength: [100, 180], gravity: 0.1 },
+        data: snapshot.nodes.map((node) => {
+          const status = node.feature_version_id ? itemStatus.get(node.feature_version_id) || node.status || 'queued' : node.status || 'data_field';
+          return {
+            ...node, name: node.id, status, symbolSize: node.root ? 62 : node.node_type === 'data_field' ? 34 : 47,
+            itemStyle: { color: node.node_type === 'data_field' ? '#b0913e' : color(status, node.root), borderColor: '#fff', borderWidth: 2 },
+            label: { show: true, formatter: node.label, position: 'bottom', color: '#2d383e', fontSize: 11 },
+          };
+        }),
+        links: snapshot.edges.map((edge) => ({ ...edge, lineStyle: { color: edge.kind === 'data_field' ? '#b0913e' : '#788f95', curveness: 0.08 } })),
+        emphasis: { focus: 'adjacency' },
+      }],
+    };
+  }
+
   ngOnDestroy(): void { if (this.timer) clearInterval(this.timer); }
 }
