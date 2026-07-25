@@ -1,7 +1,9 @@
 # VERSION
-v0.4.3
+v0.4.4
 
 # Changelog
+- v0.4.4
+    - Added docs for hands-on feature platform.
 - v0.4.3
     - Updated 2026-07-14 FEATURE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md
     - Provided extra docs for FEATURE_PLATFORM

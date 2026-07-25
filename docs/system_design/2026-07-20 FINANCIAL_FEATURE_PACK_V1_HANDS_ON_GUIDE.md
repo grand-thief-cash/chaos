@@ -97,25 +97,51 @@ contract_version = 2026-06-27
 ## 3. 先弄清五个容易混淆的对象
 
 ### 3.1 一张关系图
-
 ```mermaid
-flowchart LR
-    IDX["Artemis manifest.yaml\n本地 Feature Catalog 索引"] --> YAML["Feature version YAML\n业务与执行契约"]
-    SCHEMA["feature-manifest.schema.json\n静态结构说明"] -. "编辑器/CI 校验" .-> YAML
-    YAML --> LOADER["FeatureManifestLoader\nYAML -> Pydantic"]
-    LOADER --> VALIDATOR["validator + checksum\nentrypoint/安全键/投影"]
-    VALIDATOR --> SYNC["Artemis /features/registry/sync"]
-    SYNC --> REG["PhoenixA Feature Registry\nDefinition/Version/Implementation/Dependency"]
-    REG --> CAT["PhoenixA Data Catalog\nDataField 精确解析与 lineage"]
-    YAML --> ENTRY["implementation.entrypoint"]
-    ENTRY --> PLUGIN["Python FeaturePlugin\nload_inputs/compute"]
-    REG --> PLAN["DependencyPlanner + Run"]
+flowchart TB
+
+    IDX["Artemis manifest.yaml<br/>本地 Feature Catalog 索引"]
+    SCHEMA["feature-manifest.schema.json<br/>静态结构说明"]
+    YAML["Feature version YAML<br/>业务与执行契约"]
+
+    LOADER["FeatureManifestLoader<br/>YAML → Pydantic"]
+    VALIDATOR["validator + checksum<br/>entrypoint/安全键/投影"]
+    SYNC["Artemis /features/registry/sync"]
+
+    REG["PhoenixA Feature Registry<br/>Definition / Version / Implementation / Dependency"]
+    CAT["PhoenixA Data Catalog<br/>DataField 精确解析与 lineage"]
+
+    ENTRY["implementation.entrypoint"]
+    PLUGIN["Python FeaturePlugin<br/>load_inputs / compute"]
+
+    PLAN["DependencyPlanner + Run"]
+    PROVIDER["PhoenixAFeatureProvider<br/>PIT 数据读取"]
+
+    VALUE["PhoenixA Numeric Values"]
+    UI["Cthulhu<br/>Registry / Lineage / Runs / Values"]
+
+%% 注册链路
+    IDX --> YAML
+    SCHEMA -. 编辑器/CI 校验 .-> YAML
+    YAML --> LOADER
+    LOADER --> VALIDATOR
+    VALIDATOR --> SYNC
+    SYNC --> REG
+    REG --> CAT
+
+%% 执行链路
+    YAML --> ENTRY
+    ENTRY --> PLUGIN
+
+    REG --> PLAN
     PLAN --> PLUGIN
-    CAT --> PROVIDER["PhoenixAFeatureProvider\nPIT 数据读取"]
+
+    CAT --> PROVIDER
     PROVIDER --> PLUGIN
-    PLUGIN --> VALUE["PhoenixA Numeric Values"]
-    REG --> UI["Cthulhu Registry/Lineage/Runs/Values"]
+
+    PLUGIN --> VALUE
     VALUE --> UI
+    REG --> UI
 ```
 
 ### 3.2 `config/feature_catalog/manifest.yaml`：本地索引
