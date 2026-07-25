@@ -1,7 +1,10 @@
 # VERSION
-v0.15.3
+v0.15.4
 
 # Changelog
+- v0.15.4
+    - Fixed cron tasks silently skipping fires every few hours (e.g. 20:00/22:00 Beijing missed after 12/14/16/18 succeeded). `task_runs` time columns were `TIMESTAMP WITHOUT TIME ZONE` while the container runs TZ=Asia/Shanghai and the postgres session is UTC, so Beijing wall-clock values read back shifted +8h; the scheduler dedup `existing[ft.Unix()]` then collided a 20:00 Beijing fire with a 12:00 Beijing run and returned without firing. Migration `0002_timestamptz.sql` converts all time columns to `TIMESTAMPTZ`, reinterpreting existing values as Asia/Shanghai (with a CASE for `scheduled_time` rows written as UTC via manual `time.Now().UTC()`).
+    - Fixed manually-triggered runs showing an 8h gap between scheduled_time and start_time: `triggerTask` now uses `time.Now()` instead of `time.Now().UTC()`.
 - v0.15.3
     - Fixed scheduler never auto-firing cron tasks: the 60s poll ticker is not wall-clock aligned, so exact-second `shouldFire` matching missed every fire point (e.g. `0 0 */2 * * *`). `scan` now window-matches `(lastTick, now]` and schedules at the matched second; the first tick establishes a baseline without backfilling.
     - Added `GET /api/v1/tasks/cron-preview?expr=&n=3` to preview the next N future fire times of a cron expression.

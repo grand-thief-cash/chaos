@@ -11,7 +11,7 @@ import (
 type TaskRun struct {
 	ID                 int64            `json:"id"`                            // 主键 ID，唯一标识一次运行
 	TaskID             int64            `json:"task_id"`                       // 关联的 Task ID，指向所属的定时任务
-	ScheduledTime      time.Time        `json:"scheduled_time"`                // 计划执行时间（UTC），由调度器分配
+	ScheduledTime      time.Time        `json:"scheduled_time"`                // 计划执行时间，由调度器分配（DB 列为 timestamptz，存真实时刻）
 	StartTime          *time.Time       `json:"start_time"`                    // 实际开始时间，任务开始时记录
 	EndTime            *time.Time       `json:"end_time"`                      // 实际结束时间，任务完成时记录
 	Status             consts.RunStatus `json:"status"`                        // 运行状态，见 RunStatus 枚举

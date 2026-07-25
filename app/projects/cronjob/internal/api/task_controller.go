@@ -268,8 +268,9 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 	}
 
 	// FIX: 手动触发时，也需要从 Task 把快照字段填充到 TaskRun，否则 Executor 执行时会拿到空的 target/body
-	// Use factory for consistency
-	run := tmc.TaskSvc.CreateTaskRun(t, time.Now().UTC().Truncate(time.Second), 1)
+	// Use factory for consistency. scheduled_time 用 time.Now()（与 auto 路径的 ft 一致，均为本地 time.Time）；
+	// DB 列已是 timestamptz，会存正确时刻，无需显式 .UTC()。
+	run := tmc.TaskSvc.CreateTaskRun(t, time.Now().Truncate(time.Second), 1)
 	if run.TargetService == "" {
 		logging.Error(r.Context(), fmt.Sprintf("triggerTask: target_service is empty for task_id=%d", t.ID))
 		writeErr(w, 400, "target_service_empty")
