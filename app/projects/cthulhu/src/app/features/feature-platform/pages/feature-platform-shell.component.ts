@@ -15,8 +15,9 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
         </div>
         <nav aria-label="Feature Platform sections">
           <a routerLink="manifests" routerLinkActive="active">Manifests</a>
-        <a routerLink="registry" routerLinkActive="active">Registry</a>
-        <a routerLink="preview" routerLinkActive="active">Preview</a>
+          <a routerLink="registry" routerLinkActive="active">Registry</a>
+          <a routerLink="lineage" routerLinkActive="active">Lineage</a>
+          <a routerLink="preview" routerLinkActive="active">Preview</a>
           <a routerLink="runs" routerLinkActive="active">Runs</a>
           <a routerLink="backfills" routerLinkActive="active">Backfills</a>
           <a routerLink="values" routerLinkActive="active">Values</a>

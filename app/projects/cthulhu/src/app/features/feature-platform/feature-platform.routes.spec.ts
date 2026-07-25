@@ -6,6 +6,7 @@ describe('Feature Platform routes', () => {
     expect(paths).toContain('manifests');
     expect(paths).toContain('registry');
     expect(paths).toContain('definitions/:featureCode');
+    expect(paths).toContain('lineage');
     expect(paths).toContain('lineage/:featureCode');
     expect(paths).toContain('preview');
     expect(paths).toContain('runs');

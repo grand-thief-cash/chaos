@@ -1,7 +1,9 @@
 # VERSION
-v0.22.0
+v0.22.1
 
 # Changelog
+- v0.22.1
+    - **Visible Lineage entry.** Added Lineage to the Feature Platform navigation with a direct Feature Code lookup page; the existing interactive ECharts DAG and definition deep links remain unchanged.
 - v0.22.0
     - **Feature governance workbench.** Added Manifest Catalog validation/diff/sync and checksum-guarded Definition publish/deprecate management alongside the existing Registry, Run, Value, and Manual Compute pages. Structured page errors remain isolated from global duplicate notifications.
     - **Scoped Preview and visual diagnostics.** Added a reusable universe/evaluation/cutoff editor, non-persisted point/range Preview with quality and CSV/JSON export, ECharts lineage and execution DAGs, numeric histogram/trend views, and accessible table fallbacks.

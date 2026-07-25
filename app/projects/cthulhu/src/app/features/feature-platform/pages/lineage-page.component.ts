@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { ECharts, EChartsOption } from 'echarts';
 import { NgxEchartsModule } from 'ngx-echarts';
-import { Subject, combineLatest, map, switchMap, takeUntil } from 'rxjs';
+import { Subject, combineLatest, map, of, switchMap, takeUntil } from 'rxjs';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { NzInputModule } from 'ng-zorro-antd/input';
@@ -30,15 +30,19 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
           <h2 style="margin:3px 0 0">Lineage / <span class="fp-code">{{ lineage?.feature_code }}</span></h2>
         </div>
         <div class="fp-toolbar-fields">
+          <div class="fp-field"><label>Feature code</label><input nz-input [(ngModel)]="featureCodeInput" (keyup.enter)="openLineage()" placeholder="financial.pe_ttm" style="width:220px" /></div>
+          <button nz-button nzType="primary" (click)="openLineage()">Open</button>
+          @if (lineage) {
           <div class="fp-field"><label>Version</label><nz-select [(ngModel)]="selectedVersionId" (ngModelChange)="selectVersion($event)" style="width:150px">
-            @for (version of lineage?.versions || []; track version.feature_version_id) {
+            @for (version of lineage.versions; track version.feature_version_id) {
               <nz-option [nzValue]="version.feature_version_id" [nzLabel]="'v' + version.version_number + ' / ID ' + version.feature_version_id"></nz-option>
             }
           </nz-select></div>
           <div class="fp-field"><label>Find node</label><input nz-input [(ngModel)]="searchText" (keyup.enter)="locateNode()" placeholder="code, field, or fv:ID" style="width:220px" /></div>
           <button nz-button (click)="locateNode()">Locate</button>
           <button nz-button (click)="resetGraph()">Refocus</button>
-          <a nz-button [routerLink]="['../../definitions', lineage?.feature_code]">Definition</a>
+          <a nz-button [routerLink]="['../../definitions', lineage.feature_code]">Definition</a>
+          }
         </div>
       </section>
       @if (error) { <div class="fp-alert danger"><strong>{{ error.code }}</strong> {{ error.message }}</div> }
@@ -78,7 +82,7 @@ import { FeatureStatusBadgeComponent } from '../ui/feature-status-badge.componen
             </div>
           </section>
         } @else if (!loading) {
-          <nz-empty nzNotFoundContent="No lineage versions are available."></nz-empty>
+          <nz-empty [nzNotFoundContent]="lineage ? 'No lineage versions are available.' : 'Enter a Feature Code to open its lineage DAG.'"></nz-empty>
         }
       </nz-spin>
     </div>
@@ -109,6 +113,7 @@ export class LineagePageComponent implements OnInit, OnDestroy {
   loading = true;
   error: ReturnType<typeof featurePlatformError> | null = null;
   graphOptions: EChartsOption = {};
+  featureCodeInput = '';
   searchText = '';
   searchMessage = '';
 
@@ -118,14 +123,19 @@ export class LineagePageComponent implements OnInit, OnDestroy {
         this.loading = true;
         this.error = null;
         const requested = Number(query.get('version_id')) || null;
-        return this.api.getLineage(params.get('featureCode') || '').pipe(map((lineage) => ({ lineage, requested })));
+        const featureCode = params.get('featureCode') || '';
+        this.featureCodeInput = featureCode;
+        if (!featureCode) {
+          return of({ lineage: null, requested });
+        }
+        return this.api.getLineage(featureCode).pipe(map((lineage) => ({ lineage, requested })));
       }),
       takeUntil(this.destroy$),
     ).subscribe({
       next: ({ lineage, requested }) => {
         this.lineage = lineage;
-        this.selectedVersionId = lineage.versions.some((item) => item.feature_version_id === requested)
-          ? requested : lineage.versions[0]?.feature_version_id ?? null;
+        this.selectedVersionId = lineage?.versions.some((item) => item.feature_version_id === requested)
+          ? requested : lineage?.versions[0]?.feature_version_id ?? null;
         this.buildGraph();
         this.loading = false;
       },
@@ -135,6 +145,16 @@ export class LineagePageComponent implements OnInit, OnDestroy {
 
   selected(): FeatureLineageVersion | undefined {
     return this.lineage?.versions.find((item) => item.feature_version_id === this.selectedVersionId);
+  }
+
+  openLineage(): void {
+    const featureCode = this.featureCodeInput.trim();
+    if (!featureCode) {
+      this.searchMessage = 'Enter a Feature Code.';
+      return;
+    }
+    this.searchMessage = '';
+    this.router.navigate(['/workbench/features/lineage', featureCode]);
   }
 
   selectVersion(versionId: number): void {
