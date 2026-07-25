@@ -47,7 +47,11 @@ func (d *FeatureRegistryDao) Stop(ctx context.Context) error { return d.BaseComp
 // as drafts first so database immutability guards never observe a partially
 // published version; the final publish transition happens after dependency
 // resolution and full-graph cycle validation.
-func (d *FeatureRegistryDao) SyncManifest(ctx context.Context, manifest model.FeatureManifest, snapshot model.JSONValue) (string, error) {
+func (d *FeatureRegistryDao) SyncManifest(
+	ctx context.Context,
+	manifest model.FeatureManifest,
+	snapshot model.JSONValue,
+) (string, error) {
 	action := ""
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "feature_registry:"+manifest.Feature.Code).Error; err != nil {
@@ -102,6 +106,7 @@ func (d *FeatureRegistryDao) SyncManifest(ctx context.Context, manifest model.Fe
 		if err != nil && !newVersion {
 			return err
 		}
+		beforeStatus := version.Status
 
 		if newVersion {
 			var maxVersion int
@@ -137,7 +142,17 @@ func (d *FeatureRegistryDao) SyncManifest(ctx context.Context, manifest model.Fe
 					}
 					action = "updated_draft"
 				}
-				return nil
+				_, err := d.createLifecycleEventTx(
+					tx,
+					definition.ID,
+					version.ID,
+					"registry_sync",
+					beforeStatus,
+					version.Status,
+					version.ManifestChecksum,
+					map[string]any{"sync_action": action},
+				)
+				return err
 			}
 			if version.Status != "draft" {
 				return model.NewFeatureError(model.FeatureErrorConflict, "MANIFEST_CHECKSUM_CONFLICT",
@@ -197,7 +212,17 @@ func (d *FeatureRegistryDao) SyncManifest(ctx context.Context, manifest model.Fe
 				return err
 			}
 		}
-		return nil
+		_, err = d.createLifecycleEventTx(
+			tx,
+			definition.ID,
+			version.ID,
+			"registry_sync",
+			beforeStatus,
+			version.Status,
+			version.ManifestChecksum,
+			map[string]any{"sync_action": action},
+		)
+		return err
 	})
 	return action, err
 }
@@ -385,29 +410,42 @@ func DetectFeatureDependencyCycle(edges map[uint64][]uint64) []uint64 {
 	return nil
 }
 
-func (d *FeatureRegistryDao) Publish(ctx context.Context, featureCode string, versionNumber int) error {
-	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var definition model.FeatureDefinition
-		if err := tx.Where("feature_code = ?", featureCode).First(&definition).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return model.NewFeatureError(model.FeatureErrorNotFound, "FEATURE_NOT_FOUND", "feature %s was not found", featureCode)
-			}
-			return err
-		}
-		var version model.FeatureVersion
-		if err := tx.Where("feature_id = ? AND version_number = ?", definition.ID, versionNumber).First(&version).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return model.NewFeatureError(model.FeatureErrorNotFound, "FEATURE_VERSION_NOT_FOUND",
-					"feature %s@%d was not found", featureCode, versionNumber)
-			}
-			return err
-		}
-		return d.publishVersionTx(tx, definition.ID, &version)
-	})
+func (d *FeatureRegistryDao) createLifecycleEventTx(
+	tx *gorm.DB,
+	featureID uint64,
+	featureVersionID uint64,
+	action string,
+	beforeStatus string,
+	afterStatus string,
+	manifestChecksum string,
+	details map[string]any,
+) (*model.FeatureLifecycleEvent, error) {
+	event := &model.FeatureLifecycleEvent{
+		FeatureID:        featureID,
+		FeatureVersionID: featureVersionID,
+		Action:           action,
+		BeforeStatus:     beforeStatus,
+		AfterStatus:      afterStatus,
+		ManifestChecksum: manifestChecksum,
+		Details:          model.NewJSONValue(details),
+	}
+	if err := tx.Create(event).Error; err != nil {
+		return nil, err
+	}
+	return event, nil
 }
 
-func (d *FeatureRegistryDao) Deprecate(ctx context.Context, featureCode string, versionNumber int) error {
-	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (d *FeatureRegistryDao) Publish(
+	ctx context.Context,
+	featureCode string,
+	versionNumber int,
+	req model.FeatureLifecycleTransitionRequest,
+) (*model.FeatureLifecycleEvent, error) {
+	var event *model.FeatureLifecycleEvent
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "feature_registry:"+featureCode).Error; err != nil {
+			return err
+		}
 		var definition model.FeatureDefinition
 		if err := tx.Where("feature_code = ?", featureCode).First(&definition).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -423,29 +461,141 @@ func (d *FeatureRegistryDao) Deprecate(ctx context.Context, featureCode string, 
 			}
 			return err
 		}
-		if version.Status == "deprecated" {
-			return nil
+		if version.Status != req.ExpectedStatus {
+			return model.NewFeatureError(
+				model.FeatureErrorConflict,
+				"LIFECYCLE_STATUS_CONFLICT",
+				"feature %s@%d is %s, expected %s",
+				featureCode,
+				versionNumber,
+				version.Status,
+				req.ExpectedStatus,
+			)
 		}
-		if version.Status != "published" {
-			return model.NewFeatureError(model.FeatureErrorConflict, "FEATURE_VERSION_NOT_PUBLISHED",
-				"feature %s@%d is %s and cannot be deprecated", featureCode, versionNumber, version.Status)
+		if version.ManifestChecksum != req.ExpectedManifestChecksum {
+			return model.NewFeatureError(
+				model.FeatureErrorConflict,
+				"LIFECYCLE_CHECKSUM_CONFLICT",
+				"feature %s@%d checksum changed after confirmation",
+				featureCode,
+				versionNumber,
+			)
 		}
+		beforeStatus := version.Status
+		if err := d.publishVersionTx(tx, definition.ID, &version); err != nil {
+			return err
+		}
+		var err error
+		event, err = d.createLifecycleEventTx(
+			tx,
+			definition.ID,
+			version.ID,
+			"publish",
+			beforeStatus,
+			version.Status,
+			version.ManifestChecksum,
+			map[string]any{},
+		)
+		return err
+	})
+	return event, err
+}
+
+func (d *FeatureRegistryDao) Deprecate(
+	ctx context.Context,
+	featureCode string,
+	versionNumber int,
+	req model.FeatureLifecycleTransitionRequest,
+) (*model.FeatureLifecycleEvent, error) {
+	var event *model.FeatureLifecycleEvent
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "feature_registry:"+featureCode).Error; err != nil {
+			return err
+		}
+		var definition model.FeatureDefinition
+		if err := tx.Where("feature_code = ?", featureCode).First(&definition).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return model.NewFeatureError(model.FeatureErrorNotFound, "FEATURE_NOT_FOUND", "feature %s was not found", featureCode)
+			}
+			return err
+		}
+		var version model.FeatureVersion
+		if err := tx.Where("feature_id = ? AND version_number = ?", definition.ID, versionNumber).First(&version).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return model.NewFeatureError(model.FeatureErrorNotFound, "FEATURE_VERSION_NOT_FOUND",
+					"feature %s@%d was not found", featureCode, versionNumber)
+			}
+			return err
+		}
+		if version.Status != req.ExpectedStatus {
+			return model.NewFeatureError(
+				model.FeatureErrorConflict,
+				"LIFECYCLE_STATUS_CONFLICT",
+				"feature %s@%d is %s, expected %s",
+				featureCode,
+				versionNumber,
+				version.Status,
+				req.ExpectedStatus,
+			)
+		}
+		if version.ManifestChecksum != req.ExpectedManifestChecksum {
+			return model.NewFeatureError(
+				model.FeatureErrorConflict,
+				"LIFECYCLE_CHECKSUM_CONFLICT",
+				"feature %s@%d checksum changed after confirmation",
+				featureCode,
+				versionNumber,
+			)
+		}
+		beforeStatus := version.Status
 		now := time.Now().UTC()
 		if err := tx.Model(&version).Updates(map[string]any{
 			"status": "deprecated", "deprecated_at": now, "updated_at": now,
 		}).Error; err != nil {
 			return err
 		}
+		version.Status = "deprecated"
 		var publishedCount int64
 		if err := tx.Model(&model.FeatureVersion{}).
 			Where("feature_id = ? AND status = 'published'", definition.ID).Count(&publishedCount).Error; err != nil {
 			return err
 		}
 		if publishedCount == 0 {
-			return tx.Model(&definition).Updates(map[string]any{"status": "deprecated", "updated_at": now}).Error
+			if err := tx.Model(&definition).Updates(map[string]any{"status": "deprecated", "updated_at": now}).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		var err error
+		event, err = d.createLifecycleEventTx(
+			tx,
+			definition.ID,
+			version.ID,
+			"deprecate",
+			beforeStatus,
+			version.Status,
+			version.ManifestChecksum,
+			map[string]any{},
+		)
+		return err
 	})
+	return event, err
+}
+
+func (d *FeatureRegistryDao) ListLifecycleEvents(
+	ctx context.Context,
+	featureCode string,
+	limit int,
+) ([]model.FeatureLifecycleEvent, error) {
+	var rows []model.FeatureLifecycleEvent
+	err := d.db.WithContext(ctx).
+		Table("govern.feature_lifecycle_event AS event").
+		Select("event.*").
+		Joins("JOIN govern.feature_definition AS definition ON definition.id = event.feature_id").
+		Where("definition.feature_code = ?", featureCode).
+		Order("event.created_at DESC, event.id DESC").
+		Limit(limit).
+		Scan(&rows).Error
+	return rows, err
 }
 
 func (d *FeatureRegistryDao) ListDefinitions(ctx context.Context, status, category, owner string, limit, offset int) ([]model.FeatureDefinition, int64, error) {
@@ -501,7 +651,21 @@ func (d *FeatureRegistryDao) GetDefinitionDetail(ctx context.Context, featureCod
 		}
 		summaries = append(summaries, model.FeatureVersionSummary{Version: version, Implementations: implementations, Dependencies: dependencies})
 	}
-	return &model.FeatureDefinitionDetail{Definition: definition, Versions: summaries}, nil
+	detail := &model.FeatureDefinitionDetail{Definition: definition, Versions: summaries}
+	var latestPurge model.FeatureDataPurgeJob
+	purgeErr := d.db.WithContext(ctx).Table("govern.feature_data_purge_job AS purge").
+		Select("purge.*").
+		Joins("JOIN govern.feature_data_purge_target AS target ON target.purge_id = purge.purge_id").
+		Joins("JOIN govern.feature_version AS version ON version.id = target.feature_version_id").
+		Where("version.feature_id = ?", definition.ID).
+		Order("purge.created_at DESC").
+		First(&latestPurge).Error
+	if purgeErr == nil {
+		detail.LatestPurge = &latestPurge
+	} else if !errors.Is(purgeErr, gorm.ErrRecordNotFound) {
+		return nil, purgeErr
+	}
+	return detail, nil
 }
 
 func (d *FeatureRegistryDao) GetVersionSummary(ctx context.Context, versionID uint64) (*model.FeatureVersionSummary, error) {
@@ -547,6 +711,10 @@ func (d *FeatureRegistryDao) GetLineage(ctx context.Context, featureCode string)
 		if err != nil {
 			return nil, err
 		}
+		nodes, edges, err := d.lineageGraph(ctx, summary.Version.ID)
+		if err != nil {
+			return nil, err
+		}
 		result.Versions = append(result.Versions, model.FeatureLineageVersion{
 			FeatureVersionID:   summary.Version.ID,
 			VersionNumber:      summary.Version.VersionNumber,
@@ -555,9 +723,112 @@ func (d *FeatureRegistryDao) GetLineage(ctx context.Context, featureCode string)
 			UpstreamFeatures:   upstreamFeatures,
 			DownstreamFeatures: downstreamFeatures,
 			UpstreamDataFields: dataFields,
+			Nodes:              nodes,
+			Edges:              edges,
 		})
 	}
 	return result, nil
+}
+
+func (d *FeatureRegistryDao) lineageGraph(ctx context.Context, rootID uint64) ([]model.FeatureGraphNode, []model.FeatureGraphEdge, error) {
+	var relatedIDs []uint64
+	if err := d.db.WithContext(ctx).Raw(`
+		WITH RECURSIVE feature_edges AS (
+			SELECT feature_version_id AS downstream_id,
+			       depends_on_feature_version_id AS upstream_id
+			FROM govern.feature_dependency
+			WHERE dependency_kind = 'feature'
+		), related(id) AS (
+			SELECT ?::bigint
+			UNION
+			SELECT CASE WHEN edge.downstream_id = related.id
+			            THEN edge.upstream_id ELSE edge.downstream_id END
+			FROM related
+			JOIN feature_edges AS edge
+			  ON edge.downstream_id = related.id OR edge.upstream_id = related.id
+		)
+		SELECT id FROM related ORDER BY id`, rootID).Scan(&relatedIDs).Error; err != nil {
+		return nil, nil, err
+	}
+	if len(relatedIDs) == 0 {
+		relatedIDs = []uint64{rootID}
+	}
+
+	type featureNodeRow struct {
+		FeatureVersionID uint64
+		FeatureCode      string
+		VersionNumber    int
+		Status           string
+	}
+	var featureRows []featureNodeRow
+	if err := d.db.WithContext(ctx).Table("govern.feature_version AS version").
+		Select("version.id AS feature_version_id, definition.feature_code, version.version_number, version.status").
+		Joins("JOIN govern.feature_definition AS definition ON definition.id = version.feature_id").
+		Where("version.id IN ?", relatedIDs).
+		Order("definition.feature_code, version.version_number, version.id").
+		Scan(&featureRows).Error; err != nil {
+		return nil, nil, err
+	}
+	nodes := make([]model.FeatureGraphNode, 0, len(featureRows))
+	for _, row := range featureRows {
+		id := row.FeatureVersionID
+		nodes = append(nodes, model.FeatureGraphNode{
+			ID: fmt.Sprintf("fv:%d", id), NodeType: "feature_version",
+			Label:            fmt.Sprintf("%s@%d", row.FeatureCode, row.VersionNumber),
+			FeatureVersionID: &id, FeatureCode: row.FeatureCode,
+			VersionNumber: row.VersionNumber, Status: row.Status, Root: id == rootID,
+		})
+	}
+
+	var dependencies []model.FeatureDependency
+	if err := d.db.WithContext(ctx).Where("feature_version_id IN ?", relatedIDs).
+		Order("feature_version_id, ordinal, id").Find(&dependencies).Error; err != nil {
+		return nil, nil, err
+	}
+	fieldIDs := make([]uint64, 0)
+	for _, dependency := range dependencies {
+		if dependency.DependencyKind == "data_field" && dependency.DataFieldDictionaryID != nil {
+			fieldIDs = append(fieldIDs, *dependency.DataFieldDictionaryID)
+		}
+	}
+	fieldByID := make(map[uint64]model.FeatureLineageDataField)
+	if len(fieldIDs) > 0 {
+		var fields []model.FeatureLineageDataField
+		if err := d.db.WithContext(ctx).Table("govern.data_field_dictionary").
+			Select("id AS data_field_dictionary_id, source, dataset, data_type, raw_field, contract_version, storage_location, deprecated").
+			Where("id IN ?", fieldIDs).Order("id").Scan(&fields).Error; err != nil {
+			return nil, nil, err
+		}
+		for _, field := range fields {
+			fieldByID[field.DataFieldDictionaryID] = field
+			id := field.DataFieldDictionaryID
+			nodes = append(nodes, model.FeatureGraphNode{
+				ID: fmt.Sprintf("df:%d", id), NodeType: "data_field",
+				Label:                 fmt.Sprintf("%s/%s/%s", field.Source, field.Dataset, field.RawField),
+				DataFieldDictionaryID: &id, Status: map[bool]string{true: "deprecated", false: "active"}[field.Deprecated],
+			})
+		}
+	}
+	edges := make([]model.FeatureGraphEdge, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		if dependency.DependencyKind == "feature" && dependency.DependsOnFeatureVersionID != nil {
+			source := *dependency.DependsOnFeatureVersionID
+			edges = append(edges, model.FeatureGraphEdge{
+				ID:     fmt.Sprintf("feature:%d:%d", source, dependency.FeatureVersionID),
+				Source: fmt.Sprintf("fv:%d", source), Target: fmt.Sprintf("fv:%d", dependency.FeatureVersionID), Kind: "feature",
+			})
+		}
+		if dependency.DependencyKind == "data_field" && dependency.DataFieldDictionaryID != nil {
+			fieldID := *dependency.DataFieldDictionaryID
+			if _, ok := fieldByID[fieldID]; ok {
+				edges = append(edges, model.FeatureGraphEdge{
+					ID:     fmt.Sprintf("data_field:%d:%d", fieldID, dependency.FeatureVersionID),
+					Source: fmt.Sprintf("df:%d", fieldID), Target: fmt.Sprintf("fv:%d", dependency.FeatureVersionID), Kind: "data_field",
+				})
+			}
+		}
+	}
+	return nodes, edges, nil
 }
 
 func (d *FeatureRegistryDao) lineageFeatureReferences(ctx context.Context, versionID uint64, downstream bool) ([]model.FeatureLineageReference, error) {
@@ -746,23 +1017,35 @@ func (d *FeatureRegistryDao) GetAvailability(ctx context.Context, featureCode, s
 		Joins("JOIN govern.feature_run_item AS item ON item.run_id = run.run_id").
 		Where("item.feature_version_id = ?", version.ID).
 		Order("CASE WHEN run.status IN ('queued', 'planning', 'running', 'validating') THEN 0 ELSE 1 END").
-		Order("COALESCE(run.finished_at, run.updated_at, run.created_at) DESC, run.created_at DESC").
+		Order("COALESCE(run.finished_at, run.updated_at, run.created_at) DESC, run.as_of_time DESC, run.created_at DESC, run.run_id DESC").
 		First(&latestRun).Error
 	if latestErr != nil && !errors.Is(latestErr, gorm.ErrRecordNotFound) {
 		return nil, latestErr
 	}
+	latestMaterializationState := ""
+	if latestErr == nil {
+		if err := d.db.WithContext(ctx).Model(&model.FeatureRunItem{}).
+			Select("materialization_state").
+			Where("run_id = ? AND feature_version_id = ?", latestRun.RunID, version.ID).
+			Scan(&latestMaterializationState).Error; err != nil {
+			return nil, err
+		}
+	}
 	var latestSucceeded model.FeatureRun
 	succeededErr := d.db.WithContext(ctx).Table("govern.feature_run AS run").Select("run.*").
 		Joins("JOIN govern.feature_run_item AS item ON item.run_id = run.run_id").
-		Where("item.feature_version_id = ? AND item.status = 'succeeded' AND run.status = 'succeeded'", version.ID).
-		Order("run.as_of_time DESC, run.created_at DESC").First(&latestSucceeded).Error
+		Where("item.feature_version_id = ? AND item.status = 'succeeded' AND item.materialization_state = 'available' AND run.status = 'succeeded'", version.ID).
+		Order("run.as_of_time DESC, run.created_at DESC, run.run_id DESC").First(&latestSucceeded).Error
 	if succeededErr == nil {
 		availability.LatestSucceededRun = &latestSucceeded
 		availability.Status = "available"
 	} else if !errors.Is(succeededErr, gorm.ErrRecordNotFound) {
 		return nil, succeededErr
 	}
-	availability.MaterializationStatus = featureMaterializationStatus(latestErr, latestRun.Status, succeededErr)
+	availability.MaterializationStatus = featureMaterializationStatus(latestErr, latestRun.Status, latestMaterializationState, succeededErr)
+	if availability.MaterializationStatus == "purged" {
+		availability.Reasons = append(availability.Reasons, "latest materialized values were purged")
+	}
 
 	availability.ExecutionReadiness = featureExecutionReadiness(
 		definition, availability.DefinitionStatus, availability.VersionStatus,
@@ -857,7 +1140,7 @@ func featureImplementationStatus(rows []model.FeatureImplementation) string {
 	return "loadable"
 }
 
-func featureMaterializationStatus(latestErr error, latestStatus string, succeededErr error) string {
+func featureMaterializationStatus(latestErr error, latestStatus, latestMaterializationState string, succeededErr error) string {
 	if errors.Is(latestErr, gorm.ErrRecordNotFound) {
 		return "never"
 	}
@@ -868,6 +1151,12 @@ func featureMaterializationStatus(latestErr error, latestStatus string, succeede
 	case "queued", "planning", "running", "validating":
 		return "running"
 	case "succeeded":
+		if latestMaterializationState == "purging" {
+			return "purging"
+		}
+		if latestMaterializationState == "purged" {
+			return "purged"
+		}
 		return "succeeded"
 	default:
 		if succeededErr == nil {

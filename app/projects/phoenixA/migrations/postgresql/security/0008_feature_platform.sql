@@ -60,6 +60,28 @@ CREATE TABLE IF NOT EXISTS govern.feature_version (
 CREATE INDEX IF NOT EXISTS idx_feature_version_status
     ON govern.feature_version (status, feature_id, version_number DESC);
 
+CREATE TABLE IF NOT EXISTS govern.feature_lifecycle_event (
+    id                  BIGSERIAL PRIMARY KEY,
+    feature_id          BIGINT NOT NULL REFERENCES govern.feature_definition(id),
+    feature_version_id  BIGINT NOT NULL REFERENCES govern.feature_version(id),
+    action              VARCHAR(32) NOT NULL,
+    before_status       VARCHAR(32) NOT NULL DEFAULT '',
+    after_status        VARCHAR(32) NOT NULL DEFAULT '',
+    manifest_checksum   CHAR(64) NOT NULL,
+    details             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_feature_lifecycle_action
+        CHECK (action IN (
+            'registry_sync','publish','deprecate',
+            'backfill_create','backfill_cancel','backfill_retry',
+            'purge_create','purge_complete','purge_fail','purge_cancel'
+        )),
+    CONSTRAINT chk_feature_lifecycle_details CHECK (jsonb_typeof(details) = 'object')
+) TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_feature_lifecycle_lookup
+    ON govern.feature_lifecycle_event (feature_id, created_at DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS govern.feature_implementation (
     id                       BIGSERIAL PRIMARY KEY,
     feature_version_id       BIGINT NOT NULL REFERENCES govern.feature_version(id),
@@ -159,6 +181,10 @@ CREATE TABLE IF NOT EXISTS govern.feature_backfill_job (
     )
 ) TABLESPACE pg_default;
 
+CREATE INDEX IF NOT EXISTS idx_feature_backfill_job_dispatch
+    ON govern.feature_backfill_job (status, created_at)
+    WHERE status IN ('queued', 'running');
+
 CREATE TABLE IF NOT EXISTS govern.feature_run (
     run_id                  UUID PRIMARY KEY,
     request_fingerprint     CHAR(64) NOT NULL,
@@ -212,6 +238,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_feature_run_backfill_attempt
     ON govern.feature_run (backfill_id, as_of_time, backfill_attempt)
     WHERE backfill_id IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS idx_feature_run_backfill_claim
+    ON govern.feature_run (backfill_id, status, backfill_sequence, backfill_attempt DESC)
+    WHERE status IN ('queued', 'planning', 'running', 'validating');
+
 CREATE INDEX IF NOT EXISTS idx_feature_run_stale_active
     ON govern.feature_run
     (producer_service, (COALESCE(heartbeat_at, updated_at, created_at)))
@@ -232,6 +262,10 @@ CREATE TABLE IF NOT EXISTS govern.feature_run_item (
     duration_ms             BIGINT NOT NULL DEFAULT 0,
     error_code              VARCHAR(64) NOT NULL DEFAULT '',
     error_message           TEXT NOT NULL DEFAULT '',
+    materialization_state   VARCHAR(16) NOT NULL DEFAULT 'none',
+    materialized_row_count  BIGINT NOT NULL DEFAULT 0,
+    purged_at               TIMESTAMPTZ,
+    last_purge_id           UUID,
     started_at              TIMESTAMPTZ,
     finished_at             TIMESTAMPTZ,
     PRIMARY KEY (run_id, feature_version_id),
@@ -240,7 +274,10 @@ CREATE TABLE IF NOT EXISTS govern.feature_run_item (
     CONSTRAINT chk_feature_run_item_counts CHECK (
         input_count >= 0 AND output_count >= 0 AND valid_count >= 0
         AND missing_count >= 0 AND invalid_count >= 0 AND duration_ms >= 0
+        AND materialized_row_count >= 0
     ),
+    CONSTRAINT chk_feature_run_item_materialization
+        CHECK (materialization_state IN ('none','available','purging','purged')),
     CONSTRAINT chk_feature_run_item_quality CHECK (jsonb_typeof(quality_summary) = 'object')
 ) TABLESPACE pg_default;
 
@@ -299,6 +336,64 @@ CREATE INDEX IF NOT EXISTS idx_feature_numeric_cross_section
 
 CREATE INDEX IF NOT EXISTS idx_feature_numeric_run
     ON dwd.feature_value_numeric (run_id, feature_version_id);
+
+CREATE TABLE IF NOT EXISTS govern.feature_data_purge_job (
+    purge_id                  UUID PRIMARY KEY,
+    scope_type                VARCHAR(32) NOT NULL,
+    criteria_snapshot         JSONB NOT NULL,
+    criteria_checksum         CHAR(64) NOT NULL,
+    confirmation_token_hash   CHAR(64) NOT NULL,
+    confirmation_expires_at   TIMESTAMPTZ NOT NULL,
+    confirmation_text         VARCHAR(256) NOT NULL,
+    status                    VARCHAR(32) NOT NULL,
+    estimated_rows            BIGINT NOT NULL DEFAULT 0,
+    deleted_rows              BIGINT NOT NULL DEFAULT 0,
+    affected_run_count        INTEGER NOT NULL DEFAULT 0,
+    affected_version_count    INTEGER NOT NULL DEFAULT 0,
+    affects_latest            BOOLEAN NOT NULL DEFAULT FALSE,
+    observed_from             TIMESTAMPTZ,
+    observed_to               TIMESTAMPTZ,
+    started_at                TIMESTAMPTZ,
+    finished_at               TIMESTAMPTZ,
+    error_summary             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_feature_purge_scope
+        CHECK (scope_type IN ('run','feature_version','feature_all_versions')),
+    CONSTRAINT chk_feature_purge_status
+        CHECK (status IN ('previewed','queued','running','succeeded','failed','cancelled')),
+    CONSTRAINT chk_feature_purge_counts
+        CHECK (estimated_rows >= 0 AND deleted_rows >= 0
+               AND affected_run_count >= 0 AND affected_version_count >= 0),
+    CONSTRAINT chk_feature_purge_criteria CHECK (jsonb_typeof(criteria_snapshot) = 'object'),
+    CONSTRAINT chk_feature_purge_error CHECK (jsonb_typeof(error_summary) = 'object')
+) TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_feature_data_purge_job_dispatch
+    ON govern.feature_data_purge_job (status, created_at)
+    WHERE status IN ('queued','running');
+
+CREATE TABLE IF NOT EXISTS govern.feature_data_purge_target (
+    purge_id            UUID NOT NULL REFERENCES govern.feature_data_purge_job(purge_id),
+    run_id              UUID NOT NULL,
+    feature_version_id  BIGINT NOT NULL,
+    status              VARCHAR(16) NOT NULL DEFAULT 'pending',
+    estimated_rows      BIGINT NOT NULL DEFAULT 0,
+    deleted_rows        BIGINT NOT NULL DEFAULT 0,
+    started_at          TIMESTAMPTZ,
+    finished_at         TIMESTAMPTZ,
+    error_message       TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (purge_id, run_id, feature_version_id),
+    FOREIGN KEY (run_id, feature_version_id)
+        REFERENCES govern.feature_run_item(run_id, feature_version_id),
+    CONSTRAINT chk_feature_purge_target_status
+        CHECK (status IN ('pending','running','succeeded','failed','cancelled')),
+    CONSTRAINT chk_feature_purge_target_counts
+        CHECK (estimated_rows >= 0 AND deleted_rows >= 0)
+) TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_feature_data_purge_target_dispatch
+    ON govern.feature_data_purge_target (purge_id, status, run_id, feature_version_id);
 
 -- Stable definition identity: code and type semantics never mutate in place.
 CREATE OR REPLACE FUNCTION govern.reject_feature_definition_identity_change()
@@ -407,7 +502,23 @@ CREATE TRIGGER trg_feature_value_numeric_data_cutoff
 
 CREATE OR REPLACE FUNCTION dwd.reject_feature_value_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    purge_status VARCHAR(32);
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        BEGIN
+            SELECT status INTO purge_status
+            FROM govern.feature_data_purge_job
+            WHERE purge_id = NULLIF(
+                current_setting('feature_platform.purge_id', TRUE), ''
+            )::uuid;
+        EXCEPTION WHEN invalid_text_representation THEN
+            purge_status := NULL;
+        END;
+        IF purge_status = 'running' THEN
+            RETURN OLD;
+        END IF;
+    END IF;
     RAISE EXCEPTION 'feature values are immutable; write a new run instead';
 END;
 $$;

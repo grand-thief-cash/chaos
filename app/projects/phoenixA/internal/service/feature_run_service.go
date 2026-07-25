@@ -9,6 +9,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -22,14 +23,34 @@ type FeatureRunService struct {
 	Dao         *dao.FeatureRunDao      `infra:"dep:dao_feature_run"`
 	RegistryDao *dao.FeatureRegistryDao `infra:"dep:dao_feature_registry"`
 	Resolve     *ResolveCache           `infra:"dep:svc_resolve_cache"`
+	purgeStop   chan struct{}
+	purgeWake   chan struct{}
+	purgeWG     sync.WaitGroup
 }
 
 func NewFeatureRunService() *FeatureRunService {
 	return &FeatureRunService{BaseComponent: core.NewBaseComponent(bizConsts.COMP_SVC_FEATURE_RUN)}
 }
 
-func (s *FeatureRunService) Start(ctx context.Context) error { return s.BaseComponent.Start(ctx) }
-func (s *FeatureRunService) Stop(ctx context.Context) error  { return s.BaseComponent.Stop(ctx) }
+func (s *FeatureRunService) Start(ctx context.Context) error {
+	if err := s.BaseComponent.Start(ctx); err != nil {
+		return err
+	}
+	s.purgeStop = make(chan struct{})
+	s.purgeWake = make(chan struct{}, 1)
+	s.purgeWG.Add(1)
+	go s.purgeLoop()
+	return nil
+}
+
+func (s *FeatureRunService) Stop(ctx context.Context) error {
+	if s.purgeStop != nil {
+		close(s.purgeStop)
+		s.purgeWG.Wait()
+		s.purgeStop = nil
+	}
+	return s.BaseComponent.Stop(ctx)
+}
 
 func (s *FeatureRunService) CreateRun(ctx context.Context, req model.FeatureRunCreateRequest) (*model.FeatureRunCreateResponse, error) {
 	if err := normalizeRunRequest(&req); err != nil {
@@ -49,6 +70,7 @@ func (s *FeatureRunService) CreateRun(ctx context.Context, req model.FeatureRunC
 	payload := model.NewJSONValue(map[string]any{
 		"root_feature_version_ids": req.RootFeatureVersionIDs,
 		"dependency_plan_checksum": req.DependencyPlanChecksum,
+		"dependency_plan_snapshot": req.DependencyPlanSnapshot,
 		"parameters":               req.Parameters,
 	})
 	run := &model.FeatureRun{
@@ -332,6 +354,12 @@ func (s *FeatureRunService) UpdateItem(ctx context.Context, runID string, versio
 		"quality_summary": model.NewJSONValue(req.QualitySummary),
 		"error_code":      req.ErrorCode, "error_message": req.ErrorMessage,
 	}
+	if req.NewStatus == "succeeded" {
+		updates["materialization_state"] = "available"
+		updates["materialized_row_count"] = req.OutputCount
+		updates["purged_at"] = nil
+		updates["last_purge_id"] = nil
+	}
 	return s.Dao.UpdateItemStatus(ctx, runID, versionID, req.ExpectedStatus, req.NewStatus, updates)
 }
 
@@ -535,7 +563,7 @@ func (s *FeatureRunService) Cancel(ctx context.Context, runID string) (*model.Fe
 	if err != nil {
 		return nil, err
 	}
-	if run.Status != "queued" && run.Status != "planning" && run.Status != "running" {
+	if run.Status != "queued" && run.Status != "planning" && run.Status != "running" && run.Status != "validating" {
 		return nil, model.NewFeatureError(model.FeatureErrorConflict, "RUN_STATE_CONFLICT", "run %s cannot be cancelled from %s", runID, run.Status)
 	}
 	return s.UpdateRun(ctx, runID, model.FeatureStateUpdateRequest{ExpectedStatus: run.Status, NewStatus: "cancelled"})
@@ -559,8 +587,8 @@ func (s *FeatureRunService) GetRun(ctx context.Context, runID string, includeSub
 }
 
 func (s *FeatureRunService) QueryValues(ctx context.Context, q model.FeatureValueQuery) ([]model.FeatureNumericValue, int64, error) {
-	if q.FeatureVersionID == 0 && q.FeatureCode == "" {
-		return nil, 0, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_REQUIRED", "feature_code or feature_version_id is required")
+	if q.FeatureVersionID == 0 && q.FeatureCode == "" && q.RunID == "" {
+		return nil, 0, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_REQUIRED", "feature_code, feature_version_id, or run_id is required")
 	}
 	if q.RunID != "" && !validUUID(q.RunID) {
 		return nil, 0, model.NewFeatureError(model.FeatureErrorValidation, "RUN_ID_INVALID", "run_id must be a UUID")
@@ -572,6 +600,34 @@ func (s *FeatureRunService) QueryValues(ctx context.Context, q model.FeatureValu
 		q.Limit = 500
 	}
 	return s.Dao.QueryValues(ctx, q)
+}
+
+func (s *FeatureRunService) NumericValueStats(ctx context.Context, req model.FeatureNumericStatsRequest) (*model.FeatureNumericStats, error) {
+	q := model.FeatureValueQuery{
+		FeatureCode: req.FeatureCode, VersionNumber: req.VersionNumber,
+		FeatureVersionID: req.FeatureVersionID, SecurityIDs: req.SecurityIDs,
+		ObservedFrom: req.ObservedFrom, ObservedTo: req.ObservedTo,
+		RunID: req.RunID, Latest: req.Latest,
+	}
+	if q.FeatureVersionID == 0 && q.FeatureCode == "" && q.RunID == "" {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_REQUIRED", "feature_code, feature_version_id, or run_id is required")
+	}
+	if q.RunID != "" && !validUUID(q.RunID) {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "RUN_ID_INVALID", "run_id must be a UUID")
+	}
+	if q.Latest && q.FeatureVersionID == 0 && q.FeatureCode == "" {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "LATEST_FEATURE_REQUIRED", "latest statistics require a feature reference")
+	}
+	if q.ObservedFrom != nil && q.ObservedTo != nil && q.ObservedFrom.After(*q.ObservedTo) {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "OBSERVED_RANGE_INVALID", "observed_from must not be later than observed_to")
+	}
+	if req.HistogramBuckets <= 0 {
+		req.HistogramBuckets = 12
+	}
+	if req.HistogramBuckets > 100 {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "HISTOGRAM_BUCKETS_INVALID", "histogram_buckets must not exceed 100")
+	}
+	return s.Dao.NumericValueStats(ctx, q, req.HistogramBuckets)
 }
 
 func (s *FeatureRunService) CreateBackfill(ctx context.Context, req model.FeatureBackfillCreateRequest) (*model.FeatureBackfillJob, []model.FeatureRun, error) {
@@ -619,6 +675,35 @@ func (s *FeatureRunService) CreateBackfill(ctx context.Context, req model.Featur
 	if req.UniverseRequest == nil {
 		req.UniverseRequest = map[string]any{}
 	}
+	if len(req.SecurityIDs) == 0 {
+		return nil, nil, model.NewFeatureError(model.FeatureErrorValidation, "RUN_SUBJECT_REQUIRED", "security_ids must not be empty")
+	}
+	if len(times)*len(req.SecurityIDs) > 2000000 {
+		return nil, nil, model.NewFeatureError(model.FeatureErrorValidation, "BACKFILL_TOO_LARGE", "backfill subject snapshots exceed 2000000 rows")
+	}
+	securitySnapshots := make([]model.FeatureRunSubject, 0, len(req.SecurityIDs))
+	seenSecurity := make(map[uint64]struct{}, len(req.SecurityIDs))
+	sort.Slice(req.SecurityIDs, func(i, j int) bool { return req.SecurityIDs[i] < req.SecurityIDs[j] })
+	for _, id := range req.SecurityIDs {
+		if id == 0 {
+			return nil, nil, model.NewFeatureError(model.FeatureErrorValidation, "INVALID_SUBJECT", "security_id must be positive")
+		}
+		if _, duplicate := seenSecurity[id]; duplicate {
+			return nil, nil, model.NewFeatureError(model.FeatureErrorValidation, "INVALID_SUBJECT", "security_id %d is duplicated", id)
+		}
+		seenSecurity[id] = struct{}{}
+		security, found, err := s.Resolve.ResolveSecurity(ctx, id)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve security_id %d: %w", id, err)
+		}
+		if !found {
+			return nil, nil, model.NewFeatureError(model.FeatureErrorUnprocessable, "INVALID_SUBJECT", "security_id %d does not exist", id)
+		}
+		securitySnapshots = append(securitySnapshots, model.FeatureRunSubject{
+			SecurityID: id, SymbolSnapshot: security.Symbol, Exchange: security.Exchange,
+			AssetType: security.AssetType, IncludedReason: "backfill_universe_snapshot",
+		})
+	}
 	backfillID := newUUID()
 	expandedStrings := make([]string, len(times))
 	rootIDs := make(model.Int64Array, len(req.RootFeatureVersionIDs))
@@ -630,8 +715,8 @@ func (s *FeatureRunService) CreateBackfill(ctx context.Context, req model.Featur
 		StartAsOf: req.StartAsOf, EndAsOf: req.EndAsOf, Step: req.Step,
 		CalendarCode: req.CalendarCode, DataCutoffPolicy: model.NewJSONValue(req.DataCutoffPolicy),
 		SourceProfile: req.SourceProfile, Market: req.Market,
-		UniverseRequest: model.NewJSONValue(req.UniverseRequest), MaxConcurrency: req.MaxConcurrency,
-		Status: "queued", TotalCount: len(times),
+		UniverseRequest: model.NewJSONValue(req.UniverseRequest),
+		MaxConcurrency:  req.MaxConcurrency, Status: "queued", TotalCount: len(times),
 	}
 	runs := make([]model.FeatureRun, 0, len(times))
 	for i, asOf := range times {
@@ -642,7 +727,12 @@ func (s *FeatureRunService) CreateBackfill(ctx context.Context, req model.Featur
 		}
 		attempt := 1
 		sequence := i
-		payload := map[string]any{"root_feature_version_ids": req.RootFeatureVersionIDs, "dependency_plan_checksum": req.DependencyPlanChecksum, "backfill_id": backfillID, "backfill_sequence": i}
+		payload := map[string]any{
+			"root_feature_version_ids": req.RootFeatureVersionIDs,
+			"dependency_plan_checksum": req.DependencyPlanChecksum,
+			"dependency_plan_snapshot": req.DependencyPlanSnapshot,
+			"backfill_id":              backfillID, "backfill_sequence": i,
+		}
 		fingerprint := checksumJSON(map[string]any{
 			"versions": req.RootFeatureVersionIDs, "as_of": asOf.UTC().Format(time.RFC3339Nano),
 			"cutoff": cutoff.UTC().Format(time.RFC3339Nano), "source_profile": req.SourceProfile,
@@ -658,7 +748,15 @@ func (s *FeatureRunService) CreateBackfill(ctx context.Context, req model.Featur
 		})
 	}
 	job.ExpandedAsOfTimes = model.NewJSONValue(expandedStrings)
-	if err := s.Dao.CreateBackfill(ctx, job, runs); err != nil {
+	subjects := make([]model.FeatureRunSubject, 0, len(runs)*len(securitySnapshots))
+	for _, run := range runs {
+		for _, snapshot := range securitySnapshots {
+			row := snapshot
+			row.RunID = run.RunID
+			subjects = append(subjects, row)
+		}
+	}
+	if err := s.Dao.CreateBackfill(ctx, job, runs, subjects); err != nil {
 		return nil, nil, err
 	}
 	return job, runs, nil
@@ -769,7 +867,43 @@ func (s *FeatureRunService) GetBackfill(ctx context.Context, backfillID string) 
 	if !validUUID(backfillID) {
 		return nil, nil, model.NewFeatureError(model.FeatureErrorValidation, "BACKFILL_ID_INVALID", "backfill_id must be a UUID")
 	}
+	if err := s.Dao.RefreshBackfillCounts(ctx, backfillID); err != nil {
+		return nil, nil, err
+	}
 	return s.Dao.GetBackfill(ctx, backfillID)
+}
+
+func (s *FeatureRunService) ListBackfills(
+	ctx context.Context,
+	f model.FeatureBackfillFilters,
+	limit, offset int,
+) ([]model.FeatureBackfillJob, int64, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.Dao.ListBackfills(ctx, f, limit, offset)
+}
+
+func (s *FeatureRunService) ClaimBackfillRun(
+	ctx context.Context,
+	backfillID string,
+	req model.FeatureBackfillClaimRequest,
+) (*model.FeatureRunDetail, error) {
+	if !validUUID(backfillID) {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "BACKFILL_ID_INVALID", "backfill_id must be a UUID")
+	}
+	req.WorkerID = strings.TrimSpace(req.WorkerID)
+	if req.WorkerID == "" {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "WORKER_ID_REQUIRED", "worker_id is required")
+	}
+	run, err := s.Dao.ClaimBackfillRun(ctx, backfillID, req.WorkerID, req.GlobalMaxConcurrency)
+	if err != nil || run == nil {
+		return nil, err
+	}
+	return s.Dao.GetRunDetail(ctx, run.RunID, true)
 }
 
 func (s *FeatureRunService) RetryFailedBackfill(ctx context.Context, backfillID string) ([]model.FeatureRun, error) {
@@ -824,6 +958,231 @@ func (s *FeatureRunService) CancelBackfill(ctx context.Context, backfillID strin
 		return model.NewFeatureError(model.FeatureErrorValidation, "BACKFILL_ID_INVALID", "backfill_id must be a UUID")
 	}
 	return s.Dao.SetBackfillCancelled(ctx, backfillID)
+}
+
+func (s *FeatureRunService) PreviewPurge(
+	ctx context.Context,
+	req model.FeaturePurgePreviewRequest,
+) (*model.FeaturePurgePreviewResponse, error) {
+	req.ScopeType = strings.TrimSpace(req.ScopeType)
+	req.RunID = strings.TrimSpace(req.RunID)
+	req.FeatureCode = strings.TrimSpace(req.FeatureCode)
+	if req.ScopeType == "run" && !validUUID(req.RunID) {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "RUN_ID_INVALID", "run_id must be a UUID")
+	}
+	if req.ScopeType == "feature_version" && req.FeatureVersionID == 0 {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_VERSION_INVALID", "feature_version_id must be positive")
+	}
+	if req.ScopeType == "feature_all_versions" && req.FeatureCode == "" {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_REQUIRED", "feature_code is required")
+	}
+	criteria, impact, err := s.Dao.BuildPurgeImpact(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(impact.Targets) == 0 {
+		return nil, model.NewFeatureError(model.FeatureErrorUnprocessable, "PURGE_NOTHING_TO_DELETE", "no available materializations match this scope")
+	}
+	purgeID := newUUID()
+	token := purgeToken()
+	expiresAt := time.Now().UTC().Add(15 * time.Minute)
+	confirmationText := purgeConfirmationText(req)
+	for i := range impact.Targets {
+		impact.Targets[i].PurgeID = purgeID
+	}
+	job := model.FeatureDataPurgeJob{
+		PurgeID: purgeID, ScopeType: req.ScopeType,
+		CriteriaSnapshot:      model.NewJSONValue(criteria),
+		CriteriaChecksum:      purgeImpactChecksum(criteria, impact.Targets),
+		ConfirmationTokenHash: checksumJSON(token),
+		ConfirmationExpiresAt: expiresAt, ConfirmationText: confirmationText,
+		Status: "previewed", EstimatedRows: impact.EstimatedRows,
+		AffectedRunCount:     impact.AffectedRunCount,
+		AffectedVersionCount: impact.AffectedVersionCount,
+		AffectsLatest:        impact.AffectsLatest,
+		ObservedFrom:         impact.ObservedFrom, ObservedTo: impact.ObservedTo,
+		ErrorSummary: model.NewJSONValue(map[string]any{}),
+	}
+	if err := s.Dao.CreatePurgePreview(ctx, &job, impact.Targets); err != nil {
+		return nil, err
+	}
+	warnings := []string{"Purge permanently removes materialized values. Recovery requires a new Compute or Backfill Run."}
+	if impact.AffectsLatest {
+		warnings = append(warnings, "This scope affects a current latest materialization; latest queries will fall back to an earlier available Run when one exists.")
+	}
+	return &model.FeaturePurgePreviewResponse{
+		Job: job, Targets: impact.Targets,
+		ConfirmationToken: token, Warnings: warnings,
+	}, nil
+}
+
+func (s *FeatureRunService) SubmitPurge(
+	ctx context.Context,
+	req model.FeaturePurgeSubmitRequest,
+) (*model.FeaturePurgeDetail, error) {
+	req.PurgeID = strings.TrimSpace(req.PurgeID)
+	req.ConfirmationToken = strings.TrimSpace(req.ConfirmationToken)
+	req.ConfirmationText = strings.TrimSpace(req.ConfirmationText)
+	if !validUUID(req.PurgeID) {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "PURGE_ID_INVALID", "purge_id must be a UUID")
+	}
+	job, targets, err := s.Dao.GetPurge(ctx, req.PurgeID)
+	if err != nil {
+		return nil, err
+	}
+	if job.Status != "previewed" {
+		return nil, model.NewFeatureError(model.FeatureErrorConflict, "PURGE_STATE_CONFLICT", "purge %s is %s", req.PurgeID, job.Status)
+	}
+	if time.Now().UTC().After(job.ConfirmationExpiresAt) {
+		return nil, model.NewFeatureError(model.FeatureErrorConflict, "PURGE_CONFIRMATION_EXPIRED", "purge confirmation expired; preview again")
+	}
+	if checksumJSON(req.ConfirmationToken) != job.ConfirmationTokenHash {
+		return nil, model.NewFeatureError(model.FeatureErrorForbidden, "PURGE_CONFIRMATION_INVALID", "purge confirmation token is invalid")
+	}
+	if req.ConfirmationText != job.ConfirmationText {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "PURGE_CONFIRMATION_TEXT_INVALID", "confirmation text must exactly match %q", job.ConfirmationText)
+	}
+	criteria := map[string]any{}
+	if err := json.Unmarshal(job.CriteriaSnapshot, &criteria); err != nil {
+		return nil, err
+	}
+	currentReq, err := purgeRequestFromCriteria(criteria)
+	if err != nil {
+		return nil, err
+	}
+	currentCriteria, currentImpact, err := s.Dao.BuildPurgeImpact(ctx, currentReq)
+	if err != nil {
+		return nil, err
+	}
+	if purgeImpactChecksum(currentCriteria, currentImpact.Targets) != job.CriteriaChecksum {
+		return nil, model.NewFeatureError(model.FeatureErrorConflict, "PURGE_SCOPE_CHANGED", "materialized values changed after preview; preview again")
+	}
+	if len(targets) != len(currentImpact.Targets) {
+		return nil, model.NewFeatureError(model.FeatureErrorConflict, "PURGE_SCOPE_CHANGED", "purge targets changed after preview; preview again")
+	}
+	if err := s.Dao.QueuePurge(ctx, job); err != nil {
+		return nil, err
+	}
+	s.wakePurgeWorker()
+	return s.GetPurge(ctx, req.PurgeID)
+}
+
+func (s *FeatureRunService) ListPurges(
+	ctx context.Context,
+	f model.FeaturePurgeFilters,
+	limit, offset int,
+) ([]model.FeatureDataPurgeJob, int64, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.Dao.ListPurges(ctx, f, limit, offset)
+}
+
+func (s *FeatureRunService) GetPurge(ctx context.Context, purgeID string) (*model.FeaturePurgeDetail, error) {
+	if !validUUID(purgeID) {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "PURGE_ID_INVALID", "purge_id must be a UUID")
+	}
+	job, targets, err := s.Dao.GetPurge(ctx, purgeID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.FeaturePurgeDetail{Job: *job, Targets: targets}, nil
+}
+
+func (s *FeatureRunService) CancelPurge(ctx context.Context, purgeID string) error {
+	if !validUUID(purgeID) {
+		return model.NewFeatureError(model.FeatureErrorValidation, "PURGE_ID_INVALID", "purge_id must be a UUID")
+	}
+	return s.Dao.CancelPurge(ctx, purgeID)
+}
+
+func purgeToken() string {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		panic(fmt.Sprintf("generate purge token: %v", err))
+	}
+	return hex.EncodeToString(raw)
+}
+
+func purgeConfirmationText(req model.FeaturePurgePreviewRequest) string {
+	switch req.ScopeType {
+	case "run":
+		return "PURGE RUN " + req.RunID
+	case "feature_version":
+		return fmt.Sprintf("PURGE VERSION %d", req.FeatureVersionID)
+	default:
+		return "PURGE FEATURE " + req.FeatureCode + " ALL VERSIONS"
+	}
+}
+
+func purgeImpactChecksum(criteria map[string]any, targets []model.FeatureDataPurgeTarget) string {
+	rows := make([]map[string]any, 0, len(targets))
+	for _, target := range targets {
+		rows = append(rows, map[string]any{
+			"run_id": target.RunID, "feature_version_id": target.FeatureVersionID,
+			"estimated_rows": target.EstimatedRows,
+		})
+	}
+	return checksumJSON(map[string]any{"criteria": criteria, "targets": rows})
+}
+
+func purgeRequestFromCriteria(criteria map[string]any) (model.FeaturePurgePreviewRequest, error) {
+	req := model.FeaturePurgePreviewRequest{
+		ScopeType:   stringValue(criteria["scope_type"]),
+		RunID:       stringValue(criteria["run_id"]),
+		FeatureCode: stringValue(criteria["feature_code"]),
+		AllVersions: criteria["all_versions"] == true,
+	}
+	if value, ok := criteria["feature_version_id"].(float64); ok {
+		req.FeatureVersionID = uint64(value)
+	} else if value, ok := criteria["feature_version_id"].(uint64); ok {
+		req.FeatureVersionID = value
+	}
+	return req, nil
+}
+
+func stringValue(value any) string {
+	result, _ := value.(string)
+	return result
+}
+
+func (s *FeatureRunService) wakePurgeWorker() {
+	if s.purgeWake == nil {
+		return
+	}
+	select {
+	case s.purgeWake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *FeatureRunService) purgeLoop() {
+	defer s.purgeWG.Done()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.purgeStop:
+			return
+		case <-s.purgeWake:
+		case <-ticker.C:
+		}
+		for {
+			processed, purgeID, err := s.Dao.ProcessNextPurgeTarget(context.Background())
+			if err != nil {
+				if purgeID != "" {
+					_ = s.Dao.FailPurge(context.Background(), purgeID, err)
+				}
+				break
+			}
+			if !processed {
+				break
+			}
+		}
+	}
 }
 
 func newUUID() string {

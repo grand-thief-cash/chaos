@@ -1,7 +1,11 @@
 # VERSION
-v1.38.1
+v1.39.0
 
 # Changelog
+- v1.39.0
+    - **Feature Platform governance contract.** Added Manifest/Registry synchronization evidence, optimistic checksum-guarded publish and deprecate transitions, lifecycle history, recursive lineage snapshots, and expanded availability diagnostics without introducing service-local identity, permission, rate-limit, or trace concerns.
+    - **Scoped execution and analytics.** Added frozen explicit/all-active universes, point/range evaluation contracts, dependency-plan snapshots, numeric value statistics, quality summaries, and materialization state needed by Preview, Run, and visualization workflows.
+    - **Backfill and purge control planes.** Added persisted Backfill list/detail/atomic claim/retry/cancel APIs and asynchronous value-purge preview/confirm/list/detail/cancel processing for Run, Feature Version, and all-version scopes. Purge preserves Run metadata, adapts latest-value fallback, and uses frozen targets plus expiring exact-text confirmation.
 - v1.38.1
     - **Research-report `extra` column.** Added `extra JSONB` (object, CHECK-constrained) to `ods.research_report_download_record` for Eastmoney report-content metadata (rating, predictions, industry, etc.); the upsert refreshes it on conflict and the controller defaults missing payloads to `{}`.
 - v1.38.0

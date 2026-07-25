@@ -177,6 +177,7 @@ func (d *FeatureRunDao) BatchItems(ctx context.Context, runID string, versionIDs
 	for _, id := range versionIDs {
 		rows = append(rows, model.FeatureRunItem{
 			RunID: runID, FeatureVersionID: id, Status: "queued",
+			MaterializationState: "none",
 			QualitySummary: model.NewJSONValue(map[string]any{
 				"status": "queued", "gate_passed": false,
 			}),
@@ -411,57 +412,12 @@ func (d *FeatureRunDao) ListRunItems(ctx context.Context, runID string) ([]model
 }
 
 func (d *FeatureRunDao) QueryValues(ctx context.Context, q model.FeatureValueQuery) ([]model.FeatureNumericValue, int64, error) {
-	db := d.db.WithContext(ctx).Table("dwd.feature_value_numeric AS fv").
-		Joins("JOIN govern.feature_run r ON r.run_id = fv.run_id").
-		Where("r.status = 'succeeded'")
-
-	versionID := q.FeatureVersionID
-	if versionID == 0 && q.FeatureCode != "" {
-		versionQuery := d.db.WithContext(ctx).Table("govern.feature_version AS v").
-			Select("v.id").Joins("JOIN govern.feature_definition d ON d.id = v.feature_id").
-			Where("d.feature_code = ?", q.FeatureCode)
-		if q.VersionNumber > 0 {
-			versionQuery = versionQuery.Where("v.version_number = ?", q.VersionNumber)
-		} else {
-			versionQuery = versionQuery.Where("v.status = 'published'").
-				Joins("JOIN govern.feature_run_item i ON i.feature_version_id = v.id AND i.status = 'succeeded'").
-				Joins("JOIN govern.feature_run vr ON vr.run_id = i.run_id AND vr.status = 'succeeded'").
-				Order("v.version_number DESC")
-		}
-		if err := versionQuery.Limit(1).Scan(&versionID).Error; err != nil {
-			return nil, 0, err
-		}
-		if versionID == 0 {
-			return []model.FeatureNumericValue{}, 0, nil
-		}
+	db, err := d.scopedValues(ctx, q)
+	if err != nil {
+		return nil, 0, err
 	}
-	if versionID != 0 {
-		db = db.Where("fv.feature_version_id = ?", versionID)
-	}
-	if q.RunID != "" {
-		db = db.Where("fv.run_id = ?", q.RunID)
-	} else if q.Latest {
-		var latestRunID string
-		runQuery := d.db.WithContext(ctx).Table("govern.feature_run AS r").
-			Select("r.run_id").Joins("JOIN govern.feature_run_item i ON i.run_id = r.run_id").
-			Where("i.feature_version_id = ? AND i.status = 'succeeded' AND r.status = 'succeeded'", versionID).
-			Order("r.as_of_time DESC, r.created_at DESC").Limit(1)
-		if err := runQuery.Scan(&latestRunID).Error; err != nil {
-			return nil, 0, err
-		}
-		if latestRunID == "" {
-			return []model.FeatureNumericValue{}, 0, nil
-		}
-		db = db.Where("fv.run_id = ?", latestRunID)
-	}
-	if len(q.SecurityIDs) > 0 {
-		db = db.Where("fv.security_id IN ?", q.SecurityIDs)
-	}
-	if q.ObservedFrom != nil {
-		db = db.Where("fv.observed_at >= ?", *q.ObservedFrom)
-	}
-	if q.ObservedTo != nil {
-		db = db.Where("fv.observed_at <= ?", *q.ObservedTo)
+	if db == nil {
+		return []model.FeatureNumericValue{}, 0, nil
 	}
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
@@ -481,16 +437,297 @@ func (d *FeatureRunDao) QueryValues(ctx context.Context, q model.FeatureValueQue
 	return rows, total, nil
 }
 
-func (d *FeatureRunDao) CreateBackfill(ctx context.Context, job *model.FeatureBackfillJob, runs []model.FeatureRun) error {
+func (d *FeatureRunDao) scopedValues(ctx context.Context, q model.FeatureValueQuery) (*gorm.DB, error) {
+	db := d.db.WithContext(ctx).Table("dwd.feature_value_numeric AS fv").
+		Joins("JOIN govern.feature_run r ON r.run_id = fv.run_id").
+		Joins(`JOIN govern.feature_run_item i
+			ON i.run_id = fv.run_id AND i.feature_version_id = fv.feature_version_id`).
+		Where("i.materialization_state = 'available'").
+		Where("r.status IN ('succeeded', 'partially_succeeded')")
+
+	versionID := q.FeatureVersionID
+	if versionID == 0 && q.FeatureCode != "" {
+		versionQuery := d.db.WithContext(ctx).Table("govern.feature_version AS v").
+			Select("v.id").Joins("JOIN govern.feature_definition d ON d.id = v.feature_id").
+			Where("d.feature_code = ?", q.FeatureCode)
+		if q.VersionNumber > 0 {
+			versionQuery = versionQuery.Where("v.version_number = ?", q.VersionNumber)
+		} else {
+			versionQuery = versionQuery.Where("v.status = 'published'").
+				Joins("JOIN govern.feature_run_item vi ON vi.feature_version_id = v.id AND vi.status = 'succeeded' AND vi.materialization_state = 'available'").
+				Joins("JOIN govern.feature_run vr ON vr.run_id = vi.run_id AND vr.status = 'succeeded'").
+				Order("v.version_number DESC")
+		}
+		if err := versionQuery.Limit(1).Scan(&versionID).Error; err != nil {
+			return nil, err
+		}
+		if versionID == 0 {
+			return nil, nil
+		}
+	}
+	if versionID != 0 {
+		db = db.Where("fv.feature_version_id = ?", versionID)
+	}
+	if q.RunID != "" {
+		db = db.Where("fv.run_id = ?", q.RunID)
+	} else if q.Latest {
+		var latestRunID string
+		runQuery := d.db.WithContext(ctx).Table("govern.feature_run AS r").
+			Select("r.run_id").Joins("JOIN govern.feature_run_item i ON i.run_id = r.run_id").
+			Where("i.feature_version_id = ? AND i.status = 'succeeded' AND i.materialization_state = 'available' AND r.status = 'succeeded'", versionID).
+			Order("r.as_of_time DESC, r.created_at DESC").Limit(1)
+		if err := runQuery.Scan(&latestRunID).Error; err != nil {
+			return nil, err
+		}
+		if latestRunID == "" {
+			return nil, nil
+		}
+		db = db.Where("fv.run_id = ?", latestRunID)
+	}
+	if len(q.SecurityIDs) > 0 {
+		db = db.Where("fv.security_id IN ?", q.SecurityIDs)
+	}
+	if q.ObservedFrom != nil {
+		db = db.Where("fv.observed_at >= ?", *q.ObservedFrom)
+	}
+	if q.ObservedTo != nil {
+		db = db.Where("fv.observed_at <= ?", *q.ObservedTo)
+	}
+	return db, nil
+}
+
+func (d *FeatureRunDao) NumericValueStats(ctx context.Context, q model.FeatureValueQuery, buckets int) (*model.FeatureNumericStats, error) {
+	scoped, err := d.scopedValues(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	result := &model.FeatureNumericStats{
+		Histogram: make([]model.FeatureNumericHistogramBucket, 0),
+		Trend:     make([]model.FeatureNumericTrendPoint, 0),
+	}
+	if scoped == nil {
+		return result, nil
+	}
+	type aggregateRow struct {
+		Count        int64
+		ValidCount   int64
+		MissingCount int64
+		InvalidCount int64
+		Min          *float64
+		Max          *float64
+		Mean         *float64
+		P25          *float64
+		P50          *float64
+		P75          *float64
+		ObservedFrom *time.Time
+		ObservedTo   *time.Time
+	}
+	var aggregate aggregateRow
+	base := scoped.Select("fv.value, fv.value_status, fv.observed_at")
+	if err := d.db.WithContext(ctx).Table("(?) AS scoped", base).Select(`
+		COUNT(*) AS count,
+		COUNT(*) FILTER (WHERE value_status = 'valid') AS valid_count,
+		COUNT(*) FILTER (WHERE value_status = 'missing') AS missing_count,
+		COUNT(*) FILTER (WHERE value_status = 'invalid') AS invalid_count,
+		MIN(value) FILTER (WHERE value_status = 'valid') AS min,
+		MAX(value) FILTER (WHERE value_status = 'valid') AS max,
+		AVG(value) FILTER (WHERE value_status = 'valid') AS mean,
+		percentile_cont(0.25) WITHIN GROUP (ORDER BY value) FILTER (WHERE value_status = 'valid') AS p25,
+		percentile_cont(0.50) WITHIN GROUP (ORDER BY value) FILTER (WHERE value_status = 'valid') AS p50,
+		percentile_cont(0.75) WITHIN GROUP (ORDER BY value) FILTER (WHERE value_status = 'valid') AS p75,
+		MIN(observed_at) AS observed_from,
+		MAX(observed_at) AS observed_to`).Scan(&aggregate).Error; err != nil {
+		return nil, err
+	}
+	result.Count = aggregate.Count
+	result.ValidCount = aggregate.ValidCount
+	result.MissingCount = aggregate.MissingCount
+	result.InvalidCount = aggregate.InvalidCount
+	result.Min = aggregate.Min
+	result.Max = aggregate.Max
+	result.Mean = aggregate.Mean
+	result.P25 = aggregate.P25
+	result.P50 = aggregate.P50
+	result.P75 = aggregate.P75
+	result.ObservedFrom = aggregate.ObservedFrom
+	result.ObservedTo = aggregate.ObservedTo
+	if aggregate.ValidCount == 0 || aggregate.Min == nil || aggregate.Max == nil {
+		return result, nil
+	}
+
+	type histogramRow struct {
+		BucketIndex int
+		Count       int64
+	}
+	var histogram []histogramRow
+	if *aggregate.Min == *aggregate.Max {
+		histogram = []histogramRow{{BucketIndex: 0, Count: aggregate.ValidCount}}
+		buckets = 1
+	} else {
+		err = d.db.WithContext(ctx).Table("(?) AS scoped", base).
+			Select(`LEAST(? - 1, FLOOR(((value - ?) / (? - ?)) * ?)::int) AS bucket_index, COUNT(*) AS count`,
+				buckets, *aggregate.Min, *aggregate.Max, *aggregate.Min, buckets).
+			Where("value_status = 'valid' AND value IS NOT NULL").
+			Group("bucket_index").Order("bucket_index ASC").Scan(&histogram).Error
+		if err != nil {
+			return nil, err
+		}
+	}
+	counts := make(map[int]int64, len(histogram))
+	for _, row := range histogram {
+		counts[row.BucketIndex] = row.Count
+	}
+	width := (*aggregate.Max - *aggregate.Min) / float64(buckets)
+	for i := 0; i < buckets; i++ {
+		lower := *aggregate.Min + float64(i)*width
+		upper := lower + width
+		if buckets == 1 {
+			upper = *aggregate.Max
+		}
+		result.Histogram = append(result.Histogram, model.FeatureNumericHistogramBucket{
+			Lower: lower, Upper: upper, Count: counts[i],
+		})
+	}
+	if err := d.db.WithContext(ctx).Table("(?) AS scoped", base).
+		Select(`observed_at, COUNT(*) FILTER (WHERE value_status = 'valid') AS count,
+		        AVG(value) FILTER (WHERE value_status = 'valid') AS mean,
+		        MIN(value) FILTER (WHERE value_status = 'valid') AS min,
+		        MAX(value) FILTER (WHERE value_status = 'valid') AS max`).
+		Group("observed_at").Order("observed_at DESC").Limit(500).
+		Scan(&result.Trend).Error; err != nil {
+		return nil, err
+	}
+	sort.Slice(result.Trend, func(i, j int) bool {
+		return result.Trend[i].ObservedAt.Before(result.Trend[j].ObservedAt)
+	})
+	return result, nil
+}
+
+func (d *FeatureRunDao) CreateBackfill(
+	ctx context.Context,
+	job *model.FeatureBackfillJob,
+	runs []model.FeatureRun,
+	subjects []model.FeatureRunSubject,
+) error {
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(job).Error; err != nil {
 			return err
 		}
 		if len(runs) > 0 {
-			return tx.CreateInBatches(runs, 100).Error
+			if err := tx.CreateInBatches(runs, 100).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		if len(subjects) > 0 {
+			if err := tx.CreateInBatches(subjects, 1000).Error; err != nil {
+				return err
+			}
+		}
+		return createBackfillLifecycleEventsTx(tx, job, "backfill_create", map[string]any{
+			"run_count": job.TotalCount,
+		})
 	})
+}
+
+func (d *FeatureRunDao) ListBackfills(
+	ctx context.Context,
+	f model.FeatureBackfillFilters,
+	limit, offset int,
+) ([]model.FeatureBackfillJob, int64, error) {
+	query := d.db.WithContext(ctx).Model(&model.FeatureBackfillJob{})
+	if f.Status != "" {
+		query = query.Where("status = ?", f.Status)
+	}
+	if f.SourceProfile != "" {
+		query = query.Where("source_profile = ?", f.SourceProfile)
+	}
+	if f.Market != "" {
+		query = query.Where("market = ?", f.Market)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var jobs []model.FeatureBackfillJob
+	if err := query.Order("created_at DESC").Limit(limit).Offset(offset).Find(&jobs).Error; err != nil {
+		return nil, 0, err
+	}
+	return jobs, total, nil
+}
+
+func (d *FeatureRunDao) ClaimBackfillRun(
+	ctx context.Context,
+	backfillID, workerID string,
+	globalMaxConcurrency int,
+) (*model.FeatureRun, error) {
+	var claimed *model.FeatureRun
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('feature-backfill-global-claim', 0))").Error; err != nil {
+			return err
+		}
+		var job model.FeatureBackfillJob
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("backfill_id = ?", backfillID).First(&job).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return model.NewFeatureError(model.FeatureErrorNotFound, "BACKFILL_NOT_FOUND", "backfill %s was not found", backfillID)
+			}
+			return err
+		}
+		if job.Status == "cancelled" || job.Status == "succeeded" || job.Status == "failed" {
+			return nil
+		}
+		activeStatuses := []string{"planning", "running", "validating"}
+		var jobActive int64
+		if err := tx.Model(&model.FeatureRun{}).
+			Where("backfill_id = ? AND status IN ?", backfillID, activeStatuses).
+			Count(&jobActive).Error; err != nil {
+			return err
+		}
+		if jobActive >= int64(job.MaxConcurrency) {
+			return nil
+		}
+		if globalMaxConcurrency > 0 {
+			var globalActive int64
+			if err := tx.Model(&model.FeatureRun{}).
+				Where("trigger_type = 'backfill' AND producer_service = 'artemis' AND status IN ?", activeStatuses).
+				Count(&globalActive).Error; err != nil {
+				return err
+			}
+			if globalActive >= int64(globalMaxConcurrency) {
+				return nil
+			}
+		}
+		var run model.FeatureRun
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("backfill_id = ? AND status = 'queued'", backfillID).
+			Order("backfill_sequence ASC, backfill_attempt DESC").First(&run).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		res := tx.Model(&model.FeatureRun{}).Where("run_id = ? AND status = 'queued'", run.RunID).
+			Updates(map[string]any{
+				"status": "planning", "worker_id": workerID,
+				"heartbeat_at": now, "updated_at": now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return nil
+		}
+		run.Status = "planning"
+		run.WorkerID = workerID
+		run.HeartbeatAt = &now
+		claimed = &run
+		return tx.Model(&model.FeatureBackfillJob{}).
+			Where("backfill_id = ? AND status = 'queued'", backfillID).
+			Updates(map[string]any{"status": "running", "updated_at": now}).Error
+	})
+	return claimed, err
 }
 
 func (d *FeatureRunDao) GetBackfill(ctx context.Context, backfillID string) (*model.FeatureBackfillJob, []model.FeatureRun, error) {
@@ -509,7 +746,11 @@ func (d *FeatureRunDao) GetBackfill(ctx context.Context, backfillID string) (*mo
 	return &job, runs, nil
 }
 
-func (d *FeatureRunDao) CreateBackfillRetries(ctx context.Context, backfillID string, retries []model.FeatureRun) ([]model.FeatureRun, error) {
+func (d *FeatureRunDao) CreateBackfillRetries(
+	ctx context.Context,
+	backfillID string,
+	retries []model.FeatureRun,
+) ([]model.FeatureRun, error) {
 	if len(retries) == 0 {
 		return []model.FeatureRun{}, nil
 	}
@@ -534,13 +775,26 @@ func (d *FeatureRunDao) CreateBackfillRetries(ctx context.Context, backfillID st
 			}
 			inserted = append(inserted, retry)
 		}
-		return nil
+		var job model.FeatureBackfillJob
+		if err := tx.Where("backfill_id = ?", backfillID).First(&job).Error; err != nil {
+			return err
+		}
+		return createBackfillLifecycleEventsTx(tx, &job, "backfill_retry", map[string]any{
+			"retry_count": len(inserted),
+		})
 	})
 	return inserted, err
 }
 
 func (d *FeatureRunDao) SetBackfillCancelled(ctx context.Context, backfillID string) error {
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var job model.FeatureBackfillJob
+		if err := tx.Where("backfill_id = ?", backfillID).First(&job).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return model.NewFeatureError(model.FeatureErrorNotFound, "BACKFILL_NOT_FOUND", "backfill %s was not found", backfillID)
+			}
+			return err
+		}
 		res := tx.Model(&model.FeatureBackfillJob{}).Where("backfill_id = ? AND status NOT IN ?", backfillID,
 			[]string{"succeeded", "failed", "cancelled"}).Updates(map[string]any{"status": "cancelled", "updated_at": gorm.Expr("NOW()")})
 		if res.Error != nil {
@@ -549,10 +803,35 @@ func (d *FeatureRunDao) SetBackfillCancelled(ctx context.Context, backfillID str
 		if res.RowsAffected == 0 {
 			return model.NewFeatureError(model.FeatureErrorConflict, "BACKFILL_STATE_CONFLICT", "backfill %s cannot be cancelled", backfillID)
 		}
-		return tx.Model(&model.FeatureRun{}).
+		if err := tx.Model(&model.FeatureRun{}).
 			Where("backfill_id = ? AND status = 'queued'", backfillID).
-			Updates(map[string]any{"status": "cancelled", "finished_at": gorm.Expr("NOW()"), "updated_at": gorm.Expr("NOW()")}).Error
+			Updates(map[string]any{"status": "cancelled", "finished_at": gorm.Expr("NOW()"), "updated_at": gorm.Expr("NOW()")}).Error; err != nil {
+			return err
+		}
+		return createBackfillLifecycleEventsTx(tx, &job, "backfill_cancel", nil)
 	})
+}
+
+func createBackfillLifecycleEventsTx(
+	tx *gorm.DB,
+	job *model.FeatureBackfillJob,
+	action string,
+	details map[string]any,
+) error {
+	if details == nil {
+		details = map[string]any{}
+	}
+	details["backfill_id"] = job.BackfillID
+	return tx.Exec(`
+		INSERT INTO govern.feature_lifecycle_event
+		    (feature_id, feature_version_id, action,
+		     before_status, after_status, manifest_checksum, details)
+		SELECT version.feature_id, version.id, ?, '', '',
+		       version.manifest_checksum, ?::jsonb
+		FROM govern.feature_version AS version
+		WHERE version.id = ANY(?)`,
+		action, string(model.NewJSONValue(details)),
+		job.RootFeatureVersionIDs).Error
 }
 
 func (d *FeatureRunDao) RefreshBackfillCounts(ctx context.Context, backfillID string) error {

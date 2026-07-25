@@ -12,6 +12,7 @@ import (
 const (
 	FeatureErrorValidation    = "validation"
 	FeatureErrorNotFound      = "not_found"
+	FeatureErrorForbidden     = "forbidden"
 	FeatureErrorConflict      = "conflict"
 	FeatureErrorUnprocessable = "unprocessable"
 )
@@ -169,6 +170,20 @@ type FeatureVersion struct {
 
 func (FeatureVersion) TableName() string { return "govern.feature_version" }
 
+type FeatureLifecycleEvent struct {
+	ID               uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	FeatureID        uint64    `gorm:"column:feature_id;not null;index" json:"feature_id"`
+	FeatureVersionID uint64    `gorm:"column:feature_version_id;not null;index" json:"feature_version_id"`
+	Action           string    `gorm:"type:varchar(32);not null" json:"action"`
+	BeforeStatus     string    `gorm:"column:before_status;type:varchar(32);not null" json:"before_status"`
+	AfterStatus      string    `gorm:"column:after_status;type:varchar(32);not null" json:"after_status"`
+	ManifestChecksum string    `gorm:"column:manifest_checksum;type:char(64);not null" json:"manifest_checksum"`
+	Details          JSONValue `gorm:"type:jsonb;not null" json:"details"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+func (FeatureLifecycleEvent) TableName() string { return "govern.feature_lifecycle_event" }
+
 type FeatureImplementation struct {
 	ID                     uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	FeatureVersionID       uint64    `gorm:"column:feature_version_id;not null;index" json:"feature_version_id"`
@@ -254,20 +269,24 @@ type FeatureRun struct {
 func (FeatureRun) TableName() string { return "govern.feature_run" }
 
 type FeatureRunItem struct {
-	RunID            string     `gorm:"column:run_id;type:uuid;primaryKey" json:"run_id"`
-	FeatureVersionID uint64     `gorm:"column:feature_version_id;primaryKey" json:"feature_version_id"`
-	Status           string     `gorm:"type:varchar(32);not null" json:"status"`
-	InputCount       int64      `gorm:"column:input_count;not null" json:"input_count"`
-	OutputCount      int64      `gorm:"column:output_count;not null" json:"output_count"`
-	ValidCount       int64      `gorm:"column:valid_count;not null" json:"valid_count"`
-	MissingCount     int64      `gorm:"column:missing_count;not null" json:"missing_count"`
-	InvalidCount     int64      `gorm:"column:invalid_count;not null" json:"invalid_count"`
-	QualitySummary   JSONValue  `gorm:"column:quality_summary;type:jsonb;not null" json:"quality_summary"`
-	DurationMS       int64      `gorm:"column:duration_ms;not null" json:"duration_ms"`
-	ErrorCode        string     `gorm:"column:error_code;type:varchar(64);not null" json:"error_code"`
-	ErrorMessage     string     `gorm:"column:error_message;type:text;not null" json:"error_message"`
-	StartedAt        *time.Time `gorm:"column:started_at" json:"started_at,omitempty"`
-	FinishedAt       *time.Time `gorm:"column:finished_at" json:"finished_at,omitempty"`
+	RunID                string     `gorm:"column:run_id;type:uuid;primaryKey" json:"run_id"`
+	FeatureVersionID     uint64     `gorm:"column:feature_version_id;primaryKey" json:"feature_version_id"`
+	Status               string     `gorm:"type:varchar(32);not null" json:"status"`
+	InputCount           int64      `gorm:"column:input_count;not null" json:"input_count"`
+	OutputCount          int64      `gorm:"column:output_count;not null" json:"output_count"`
+	ValidCount           int64      `gorm:"column:valid_count;not null" json:"valid_count"`
+	MissingCount         int64      `gorm:"column:missing_count;not null" json:"missing_count"`
+	InvalidCount         int64      `gorm:"column:invalid_count;not null" json:"invalid_count"`
+	QualitySummary       JSONValue  `gorm:"column:quality_summary;type:jsonb;not null" json:"quality_summary"`
+	DurationMS           int64      `gorm:"column:duration_ms;not null" json:"duration_ms"`
+	ErrorCode            string     `gorm:"column:error_code;type:varchar(64);not null" json:"error_code"`
+	ErrorMessage         string     `gorm:"column:error_message;type:text;not null" json:"error_message"`
+	MaterializationState string     `gorm:"column:materialization_state;type:varchar(16);not null" json:"materialization_state"`
+	MaterializedRowCount int64      `gorm:"column:materialized_row_count;not null" json:"materialized_row_count"`
+	PurgedAt             *time.Time `gorm:"column:purged_at" json:"purged_at,omitempty"`
+	LastPurgeID          *string    `gorm:"column:last_purge_id;type:uuid" json:"last_purge_id,omitempty"`
+	StartedAt            *time.Time `gorm:"column:started_at" json:"started_at,omitempty"`
+	FinishedAt           *time.Time `gorm:"column:finished_at" json:"finished_at,omitempty"`
 }
 
 func (FeatureRunItem) TableName() string { return "govern.feature_run_item" }
@@ -296,6 +315,45 @@ type FeatureNumericValue struct {
 }
 
 func (FeatureNumericValue) TableName() string { return "dwd.feature_value_numeric" }
+
+type FeatureDataPurgeJob struct {
+	PurgeID               string     `gorm:"column:purge_id;type:uuid;primaryKey" json:"purge_id"`
+	ScopeType             string     `gorm:"column:scope_type;type:varchar(32);not null" json:"scope_type"`
+	CriteriaSnapshot      JSONValue  `gorm:"column:criteria_snapshot;type:jsonb;not null" json:"criteria_snapshot"`
+	CriteriaChecksum      string     `gorm:"column:criteria_checksum;type:char(64);not null" json:"criteria_checksum"`
+	ConfirmationTokenHash string     `gorm:"column:confirmation_token_hash;type:char(64);not null" json:"-"`
+	ConfirmationExpiresAt time.Time  `gorm:"column:confirmation_expires_at;not null" json:"confirmation_expires_at"`
+	ConfirmationText      string     `gorm:"column:confirmation_text;type:varchar(256);not null" json:"confirmation_text"`
+	Status                string     `gorm:"type:varchar(32);not null" json:"status"`
+	EstimatedRows         int64      `gorm:"column:estimated_rows;not null" json:"estimated_rows"`
+	DeletedRows           int64      `gorm:"column:deleted_rows;not null" json:"deleted_rows"`
+	AffectedRunCount      int        `gorm:"column:affected_run_count;not null" json:"affected_run_count"`
+	AffectedVersionCount  int        `gorm:"column:affected_version_count;not null" json:"affected_version_count"`
+	AffectsLatest         bool       `gorm:"column:affects_latest;not null" json:"affects_latest"`
+	ObservedFrom          *time.Time `gorm:"column:observed_from" json:"observed_from,omitempty"`
+	ObservedTo            *time.Time `gorm:"column:observed_to" json:"observed_to,omitempty"`
+	StartedAt             *time.Time `gorm:"column:started_at" json:"started_at,omitempty"`
+	FinishedAt            *time.Time `gorm:"column:finished_at" json:"finished_at,omitempty"`
+	ErrorSummary          JSONValue  `gorm:"column:error_summary;type:jsonb;not null" json:"error_summary"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+}
+
+func (FeatureDataPurgeJob) TableName() string { return "govern.feature_data_purge_job" }
+
+type FeatureDataPurgeTarget struct {
+	PurgeID          string     `gorm:"column:purge_id;type:uuid;primaryKey" json:"purge_id"`
+	RunID            string     `gorm:"column:run_id;type:uuid;primaryKey" json:"run_id"`
+	FeatureVersionID uint64     `gorm:"column:feature_version_id;primaryKey" json:"feature_version_id"`
+	Status           string     `gorm:"type:varchar(16);not null" json:"status"`
+	EstimatedRows    int64      `gorm:"column:estimated_rows;not null" json:"estimated_rows"`
+	DeletedRows      int64      `gorm:"column:deleted_rows;not null" json:"deleted_rows"`
+	StartedAt        *time.Time `gorm:"column:started_at" json:"started_at,omitempty"`
+	FinishedAt       *time.Time `gorm:"column:finished_at" json:"finished_at,omitempty"`
+	ErrorMessage     string     `gorm:"column:error_message;type:text;not null" json:"error_message"`
+}
+
+func (FeatureDataPurgeTarget) TableName() string { return "govern.feature_data_purge_target" }
 
 // Registry API contracts.
 type FeatureDefinitionSpec struct {
@@ -353,6 +411,11 @@ type FeatureRegistrySyncRequest struct {
 	Manifests []FeatureManifest `json:"manifests"`
 }
 
+type FeatureLifecycleTransitionRequest struct {
+	ExpectedStatus           string `json:"expected_status"`
+	ExpectedManifestChecksum string `json:"expected_manifest_checksum"`
+}
+
 type FeatureSyncRejection struct {
 	Feature string `json:"feature"`
 	Code    string `json:"code"`
@@ -368,8 +431,9 @@ type FeatureRegistrySyncResponse struct {
 }
 
 type FeatureDefinitionDetail struct {
-	Definition FeatureDefinition       `json:"definition"`
-	Versions   []FeatureVersionSummary `json:"versions"`
+	Definition  FeatureDefinition       `json:"definition"`
+	Versions    []FeatureVersionSummary `json:"versions"`
+	LatestPurge *FeatureDataPurgeJob    `json:"latest_purge,omitempty"`
 }
 
 type FeatureVersionSummary struct {
@@ -391,6 +455,27 @@ type FeatureLineageVersion struct {
 	UpstreamFeatures   []FeatureLineageReference `json:"upstream_features"`
 	DownstreamFeatures []FeatureLineageReference `json:"downstream_features"`
 	UpstreamDataFields []FeatureLineageDataField `json:"upstream_data_fields"`
+	Nodes              []FeatureGraphNode        `json:"nodes"`
+	Edges              []FeatureGraphEdge        `json:"edges"`
+}
+
+type FeatureGraphNode struct {
+	ID                    string  `json:"id"`
+	NodeType              string  `json:"node_type"`
+	Label                 string  `json:"label"`
+	FeatureVersionID      *uint64 `json:"feature_version_id,omitempty"`
+	DataFieldDictionaryID *uint64 `json:"data_field_dictionary_id,omitempty"`
+	FeatureCode           string  `json:"feature_code,omitempty"`
+	VersionNumber         int     `json:"version_number,omitempty"`
+	Status                string  `json:"status,omitempty"`
+	Root                  bool    `json:"root"`
+}
+
+type FeatureGraphEdge struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Kind   string `json:"kind"`
 }
 
 type FeatureLineageReference struct {
@@ -450,6 +535,7 @@ type FeatureRunCreateRequest struct {
 	CodeRevision           string         `json:"code_revision"`
 	RootFeatureVersionIDs  []uint64       `json:"root_feature_version_ids"`
 	DependencyPlanChecksum string         `json:"dependency_plan_checksum,omitempty"`
+	DependencyPlanSnapshot map[string]any `json:"dependency_plan_snapshot,omitempty"`
 	Parameters             map[string]any `json:"parameters,omitempty"`
 	RetryOfRunID           *string        `json:"retry_of_run_id,omitempty"`
 	Force                  bool           `json:"force,omitempty"`
@@ -546,6 +632,80 @@ type FeatureValueQuery struct {
 	Offset           int
 }
 
+type FeatureNumericStatsRequest struct {
+	FeatureCode      string     `json:"feature_code,omitempty"`
+	VersionNumber    int        `json:"version,omitempty"`
+	FeatureVersionID uint64     `json:"feature_version_id,omitempty"`
+	SecurityIDs      []uint64   `json:"security_ids,omitempty"`
+	ObservedFrom     *time.Time `json:"observed_from,omitempty"`
+	ObservedTo       *time.Time `json:"observed_to,omitempty"`
+	RunID            string     `json:"run_id,omitempty"`
+	Latest           bool       `json:"latest,omitempty"`
+	HistogramBuckets int        `json:"histogram_buckets,omitempty"`
+}
+
+type FeatureNumericHistogramBucket struct {
+	Lower float64 `json:"lower"`
+	Upper float64 `json:"upper"`
+	Count int64   `json:"count"`
+}
+
+type FeatureNumericTrendPoint struct {
+	ObservedAt time.Time `json:"observed_at"`
+	Count      int64     `json:"count"`
+	Mean       *float64  `json:"mean"`
+	Min        *float64  `json:"min"`
+	Max        *float64  `json:"max"`
+}
+
+type FeatureNumericStats struct {
+	Count        int64                           `json:"count"`
+	ValidCount   int64                           `json:"valid_count"`
+	MissingCount int64                           `json:"missing_count"`
+	InvalidCount int64                           `json:"invalid_count"`
+	Min          *float64                        `json:"min"`
+	Max          *float64                        `json:"max"`
+	Mean         *float64                        `json:"mean"`
+	P25          *float64                        `json:"p25"`
+	P50          *float64                        `json:"p50"`
+	P75          *float64                        `json:"p75"`
+	ObservedFrom *time.Time                      `json:"observed_from,omitempty"`
+	ObservedTo   *time.Time                      `json:"observed_to,omitempty"`
+	Histogram    []FeatureNumericHistogramBucket `json:"histogram"`
+	Trend        []FeatureNumericTrendPoint      `json:"trend"`
+}
+
+type FeaturePurgePreviewRequest struct {
+	ScopeType        string `json:"scope_type"`
+	RunID            string `json:"run_id,omitempty"`
+	FeatureVersionID uint64 `json:"feature_version_id,omitempty"`
+	FeatureCode      string `json:"feature_code,omitempty"`
+	AllVersions      bool   `json:"all_versions,omitempty"`
+}
+
+type FeaturePurgeSubmitRequest struct {
+	PurgeID           string `json:"purge_id"`
+	ConfirmationToken string `json:"confirmation_token"`
+	ConfirmationText  string `json:"confirmation_text"`
+}
+
+type FeaturePurgeFilters struct {
+	Status    string
+	ScopeType string
+}
+
+type FeaturePurgePreviewResponse struct {
+	Job               FeatureDataPurgeJob      `json:"job"`
+	Targets           []FeatureDataPurgeTarget `json:"targets"`
+	ConfirmationToken string                   `json:"confirmation_token"`
+	Warnings          []string                 `json:"warnings"`
+}
+
+type FeaturePurgeDetail struct {
+	Job     FeatureDataPurgeJob      `json:"job"`
+	Targets []FeatureDataPurgeTarget `json:"targets"`
+}
+
 type FeatureBackfillCreateRequest struct {
 	RootFeatureVersionIDs  []uint64       `json:"root_feature_version_ids"`
 	StartAsOf              time.Time      `json:"start_as_of"`
@@ -562,4 +722,17 @@ type FeatureBackfillCreateRequest struct {
 	ProducerService        string         `json:"producer_service"`
 	CodeRevision           string         `json:"code_revision"`
 	DependencyPlanChecksum string         `json:"dependency_plan_checksum,omitempty"`
+	DependencyPlanSnapshot map[string]any `json:"dependency_plan_snapshot,omitempty"`
+	SecurityIDs            []uint64       `json:"security_ids"`
+}
+
+type FeatureBackfillFilters struct {
+	Status        string
+	SourceProfile string
+	Market        string
+}
+
+type FeatureBackfillClaimRequest struct {
+	WorkerID             string `json:"worker_id"`
+	GlobalMaxConcurrency int    `json:"global_max_concurrency"`
 }

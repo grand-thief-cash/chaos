@@ -288,18 +288,74 @@ func findSensitiveConfigKey(value any, path string) string {
 	return ""
 }
 
-func (s *FeatureRegistryService) Publish(ctx context.Context, featureCode string, version int) error {
-	if !featureCodePattern.MatchString(featureCode) || version <= 0 {
-		return model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_INVALID", "feature code and positive version are required")
+func normalizeLifecycleTransition(req *model.FeatureLifecycleTransitionRequest, action string) error {
+	req.ExpectedStatus = strings.TrimSpace(req.ExpectedStatus)
+	req.ExpectedManifestChecksum = strings.TrimSpace(req.ExpectedManifestChecksum)
+	expectedStatus := "draft"
+	if action == "deprecate" {
+		expectedStatus = "published"
 	}
-	return s.Dao.Publish(ctx, featureCode, version)
+	if req.ExpectedStatus != expectedStatus {
+		return model.NewFeatureError(
+			model.FeatureErrorValidation,
+			"LIFECYCLE_EXPECTED_STATUS_INVALID",
+			"%s requires expected_status %q",
+			action,
+			expectedStatus,
+		)
+	}
+	if !isSHA256(req.ExpectedManifestChecksum) {
+		return model.NewFeatureError(
+			model.FeatureErrorValidation,
+			"LIFECYCLE_CHECKSUM_INVALID",
+			"expected_manifest_checksum must be a lowercase SHA-256 hex string",
+		)
+	}
+	return nil
 }
 
-func (s *FeatureRegistryService) Deprecate(ctx context.Context, featureCode string, version int) error {
+func (s *FeatureRegistryService) Publish(
+	ctx context.Context,
+	featureCode string,
+	version int,
+	req model.FeatureLifecycleTransitionRequest,
+) (*model.FeatureLifecycleEvent, error) {
 	if !featureCodePattern.MatchString(featureCode) || version <= 0 {
-		return model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_INVALID", "feature code and positive version are required")
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_INVALID", "feature code and positive version are required")
 	}
-	return s.Dao.Deprecate(ctx, featureCode, version)
+	if err := normalizeLifecycleTransition(&req, "publish"); err != nil {
+		return nil, err
+	}
+	return s.Dao.Publish(ctx, featureCode, version, req)
+}
+
+func (s *FeatureRegistryService) Deprecate(
+	ctx context.Context,
+	featureCode string,
+	version int,
+	req model.FeatureLifecycleTransitionRequest,
+) (*model.FeatureLifecycleEvent, error) {
+	if !featureCodePattern.MatchString(featureCode) || version <= 0 {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_INVALID", "feature code and positive version are required")
+	}
+	if err := normalizeLifecycleTransition(&req, "deprecate"); err != nil {
+		return nil, err
+	}
+	return s.Dao.Deprecate(ctx, featureCode, version, req)
+}
+
+func (s *FeatureRegistryService) ListLifecycleEvents(
+	ctx context.Context,
+	featureCode string,
+	limit int,
+) ([]model.FeatureLifecycleEvent, error) {
+	if !featureCodePattern.MatchString(featureCode) {
+		return nil, model.NewFeatureError(model.FeatureErrorValidation, "FEATURE_REFERENCE_INVALID", "a valid feature code is required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	return s.Dao.ListLifecycleEvents(ctx, featureCode, limit)
 }
 
 func (s *FeatureRegistryService) List(ctx context.Context, status, category, owner string, limit, offset int) ([]model.FeatureDefinition, int64, error) {

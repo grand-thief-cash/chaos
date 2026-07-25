@@ -178,6 +178,7 @@ func init() {
 			r.Post("/registry/sync", featureCtrl.SyncRegistry)
 			r.Get("/definitions", featureCtrl.ListDefinitions)
 			r.Get("/definitions/{feature_code}", featureCtrl.GetDefinition)
+			r.Get("/definitions/{feature_code}/lifecycle-events", featureCtrl.ListLifecycleEvents)
 			r.Get("/versions/{version_id}", featureCtrl.GetVersion)
 			r.Post("/definitions/{feature_code}/versions/{version}:publish", featureCtrl.PublishVersion)
 			r.Post("/definitions/{feature_code}/versions/{version}:deprecate", featureCtrl.DeprecateVersion)
@@ -200,11 +201,20 @@ func init() {
 			r.Get("/values/numeric", featureCtrl.QueryNumericValues)
 			r.Get("/values/numeric/latest", featureCtrl.QueryLatestNumericValues)
 			r.Get("/values/numeric/cross-section", featureCtrl.QueryNumericCrossSection)
+			r.Post("/values/numeric:stats", featureCtrl.NumericValueStats)
 
 			r.Post("/backfills", featureCtrl.CreateBackfill)
+			r.Get("/backfills", featureCtrl.ListBackfills)
 			r.Get("/backfills/{backfill_id}", featureCtrl.GetBackfill)
+			r.Post("/backfills/{backfill_id}/runs:claim", featureCtrl.ClaimBackfillRun)
 			r.Post("/backfills/{backfill_id}:retry-failed", featureCtrl.RetryFailedBackfill)
 			r.Post("/backfills/{backfill_id}:cancel", featureCtrl.CancelBackfill)
+
+			r.Post("/purges:preview", featureCtrl.PreviewPurge)
+			r.Post("/purges", featureCtrl.SubmitPurge)
+			r.Get("/purges", featureCtrl.ListPurges)
+			r.Get("/purges/{purge_id}", featureCtrl.GetPurge)
+			r.Post("/purges/{purge_id}:cancel", featureCtrl.CancelPurge)
 		})
 
 		// ====== Schema Discovery ======

@@ -542,6 +542,22 @@ paths:
               schema: { $ref: '#/components/schemas/FeatureDefinitionDetail' }
         '404': { $ref: '#/components/responses/FeatureError' }
 
+  /api/v2/features/definitions/{feature_code}/lifecycle-events:
+    parameters:
+      - $ref: '#/components/parameters/FeatureCode'
+    get:
+      tags: [Feature Platform]
+      summary: List audited lifecycle events for a feature
+      parameters:
+        - $ref: '#/components/parameters/FeatureLimit'
+      responses:
+        '200':
+          description: Most recent lifecycle events.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureLifecycleEventPage' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+
   /api/v2/features/versions/{version_id}:
     parameters:
       - $ref: '#/components/parameters/FeatureVersionID'
@@ -563,6 +579,11 @@ paths:
     post:
       tags: [Feature Platform]
       summary: Publish an immutable feature version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureLifecycleTransitionRequest' }
       responses:
         '200':
           description: Version published.
@@ -570,6 +591,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/FeatureLifecycleResponse' }
         '404': { $ref: '#/components/responses/FeatureError' }
+        '400': { $ref: '#/components/responses/FeatureError' }
         '409': { $ref: '#/components/responses/FeatureError' }
         '422': { $ref: '#/components/responses/FeatureError' }
 
@@ -580,6 +602,11 @@ paths:
     post:
       tags: [Feature Platform]
       summary: Deprecate a published feature version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureLifecycleTransitionRequest' }
       responses:
         '200':
           description: Version deprecated.
@@ -587,6 +614,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/FeatureLifecycleResponse' }
         '404': { $ref: '#/components/responses/FeatureError' }
+        '400': { $ref: '#/components/responses/FeatureError' }
         '409': { $ref: '#/components/responses/FeatureError' }
 
   /api/v2/features/lineage/{feature_code}:
@@ -879,7 +907,143 @@ paths:
         '200': { $ref: '#/components/responses/FeatureValuePage' }
         '400': { $ref: '#/components/responses/FeatureError' }
 
+  /api/v2/features/values/numeric:stats:
+    post:
+      tags: [Feature Platform]
+      summary: Aggregate numeric feature values for bounded visualization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureNumericStatsRequest' }
+      responses:
+        '200':
+          description: Numeric distribution, quality, and observed-time statistics.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureNumericStats' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/purges:preview:
+    post:
+      tags: [Feature Platform]
+      summary: Preview the immutable value rows affected by a purge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeaturePurgePreviewRequest' }
+      responses:
+        '200':
+          description: Frozen impact, short-lived confirmation token, and exact confirmation text.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeaturePurgePreviewResponse' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+        '422': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/purges:
+    get:
+      tags: [Feature Platform]
+      summary: List value purge jobs
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: scope_type
+          schema: { type: string, enum: [run, feature_version, feature_all_versions] }
+        - $ref: '#/components/parameters/FeatureLimit'
+        - $ref: '#/components/parameters/FeatureOffset'
+      responses:
+        '200':
+          description: Purge job page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, limit, offset]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/FeatureDataPurgeJob' } }
+                  total: { type: integer, minimum: 0 }
+                  limit: { type: integer }
+                  offset: { type: integer }
+    post:
+      tags: [Feature Platform]
+      summary: Confirm and queue a previously previewed purge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeaturePurgeSubmitRequest' }
+      responses:
+        '202':
+          description: Queued purge and its frozen targets.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeaturePurgeDetail' }
+        '400': { $ref: '#/components/responses/FeatureError' }
+        '403': { $ref: '#/components/responses/FeatureError' }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/purges/{purge_id}:
+    parameters:
+      - $ref: '#/components/parameters/FeaturePurgeID'
+    get:
+      tags: [Feature Platform]
+      summary: Get a purge job and per-RunItem progress
+      responses:
+        '200':
+          description: Purge detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeaturePurgeDetail' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/purges/{purge_id}:cancel:
+    parameters:
+      - $ref: '#/components/parameters/FeaturePurgeID'
+    post:
+      tags: [Feature Platform]
+      summary: Cancel a purge before execution starts
+      responses:
+        '200':
+          description: Purge cancelled.
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string, example: cancelled } } }
+        '409': { $ref: '#/components/responses/FeatureError' }
+
   /api/v2/features/backfills:
+    get:
+      tags: [Feature Platform]
+      summary: List persisted feature backfill jobs
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: source_profile
+          schema: { type: string }
+        - in: query
+          name: market
+          schema: { type: string }
+        - $ref: '#/components/parameters/FeatureLimit'
+        - $ref: '#/components/parameters/FeatureOffset'
+      responses:
+        '200':
+          description: Backfill job page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, total, limit, offset]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/FeatureBackfillJob' } }
+                  total: { type: integer, minimum: 0 }
+                  limit: { type: integer }
+                  offset: { type: integer }
     post:
       tags: [Feature Platform]
       summary: Create a calendar-expanded feature backfill
@@ -909,6 +1073,32 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/FeatureBackfillDetail' }
+        '404': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v2/features/backfills/{backfill_id}/runs:claim:
+    parameters:
+      - $ref: '#/components/parameters/FeatureBackfillID'
+    post:
+      tags: [Feature Platform]
+      summary: Atomically claim the next queued Backfill Run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [worker_id]
+              properties:
+                worker_id: { type: string }
+                global_max_concurrency: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Claimed Run with immutable subjects.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeatureRunDetail' }
+        '204':
+          description: No Run is currently claimable.
         '404': { $ref: '#/components/responses/FeatureError' }
 
   /api/v2/features/backfills/{backfill_id}:retry-failed:
@@ -964,6 +1154,11 @@ components:
     FeatureBackfillID:
       in: path
       name: backfill_id
+      required: true
+      schema: { type: string, format: uuid }
+    FeaturePurgeID:
+      in: path
+      name: purge_id
       required: true
       schema: { type: string, format: uuid }
     SourceProfile:
@@ -1156,6 +1351,7 @@ components:
       properties:
         definition: { $ref: '#/components/schemas/FeatureDefinition' }
         versions: { type: array, items: { $ref: '#/components/schemas/FeatureVersionSummary' } }
+        latest_purge: { $ref: '#/components/schemas/FeatureDataPurgeJob' }
 
     FeaturePage:
       type: object
@@ -1168,10 +1364,53 @@ components:
 
     FeatureLifecycleResponse:
       type: object
-      required: [status, version]
+      required: [status, version, event]
       properties:
         status: { type: string, enum: [published, deprecated] }
         version: { type: integer, minimum: 1 }
+        event: { $ref: '#/components/schemas/FeatureLifecycleEvent' }
+
+    FeatureLifecycleTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_status, expected_manifest_checksum]
+      properties:
+        expected_status: { type: string, enum: [draft, published] }
+        expected_manifest_checksum:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+
+    FeatureLifecycleEvent:
+      type: object
+      required:
+        - id
+        - feature_id
+        - feature_version_id
+        - action
+        - before_status
+        - after_status
+        - manifest_checksum
+        - details
+        - created_at
+      properties:
+        id: { type: integer, minimum: 1 }
+        feature_id: { type: integer, minimum: 1 }
+        feature_version_id: { type: integer, minimum: 1 }
+        action: { type: string, enum: [registry_sync, publish, deprecate, backfill_create, backfill_cancel, backfill_retry, purge_create, purge_complete, purge_fail, purge_cancel] }
+        before_status: { type: string }
+        after_status: { type: string }
+        manifest_checksum: { type: string, pattern: '^[0-9a-f]{64}$' }
+        details: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+
+    FeatureLifecycleEventPage:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/FeatureLifecycleEvent' }
+        total: { type: integer, minimum: 0 }
 
     FeatureLineage:
       type: object
@@ -1182,8 +1421,42 @@ components:
           type: array
           items:
             type: object
-            required: [feature_version_id, version_number, upstream, downstream]
+            required: [feature_version_id, version_number, upstream, downstream, nodes, edges]
+            properties:
+              feature_version_id: { type: integer, minimum: 1 }
+              version_number: { type: integer, minimum: 1 }
+              upstream: { type: array, items: { type: object, additionalProperties: true } }
+              downstream: { type: array, items: { type: object, additionalProperties: true } }
+              nodes: { type: array, items: { $ref: '#/components/schemas/FeatureGraphNode' } }
+              edges: { type: array, items: { $ref: '#/components/schemas/FeatureGraphEdge' } }
             additionalProperties: true
+
+    FeatureGraphNode:
+      type: object
+      required: [id, node_type, label, root]
+      properties:
+        id: { type: string, example: 'fv:42' }
+        node_type: { type: string, enum: [feature_version, data_field] }
+        label: { type: string }
+        feature_version_id: { type: integer, minimum: 1 }
+        data_field_dictionary_id: { type: integer, minimum: 1 }
+        feature_code: { type: string }
+        version_number: { type: integer, minimum: 1 }
+        status: { type: string }
+        root: { type: boolean }
+        execution_order: { type: integer, minimum: 0 }
+        manifest_checksum: { type: string }
+        implementation_checksum: { type: string }
+        dependency_checksum: { type: string }
+
+    FeatureGraphEdge:
+      type: object
+      required: [id, source, target, kind]
+      properties:
+        id: { type: string }
+        source: { type: string }
+        target: { type: string }
+        kind: { type: string, enum: [feature, data_field] }
 
     FeatureAvailability:
       type: object
@@ -1231,6 +1504,9 @@ components:
         code_revision: { type: string }
         root_feature_version_ids: { type: array, minItems: 1, items: { type: integer, minimum: 1 } }
         dependency_plan_checksum: { type: string }
+        dependency_plan_snapshot:
+          type: object
+          additionalProperties: true
         parameters: { type: object, additionalProperties: true }
         retry_of_run_id: { type: string, format: uuid }
         force: { type: boolean, default: false }
@@ -1272,7 +1548,7 @@ components:
 
     FeatureRunItem:
       type: object
-      required: [run_id, feature_version_id, status, input_count, output_count, valid_count, missing_count, invalid_count]
+      required: [run_id, feature_version_id, status, input_count, output_count, valid_count, missing_count, invalid_count, materialization_state, materialized_row_count]
       properties:
         run_id: { type: string, format: uuid }
         feature_version_id: { type: integer, minimum: 1 }
@@ -1286,6 +1562,10 @@ components:
         duration_ms: { type: integer }
         error_code: { type: string }
         error_message: { type: string }
+        materialization_state: { type: string, enum: [none, available, purging, purged] }
+        materialized_row_count: { type: integer, minimum: 0 }
+        purged_at: { type: string, format: date-time }
+        last_purge_id: { type: string, format: uuid }
         started_at: { type: string, format: date-time }
         finished_at: { type: string, format: date-time }
 
@@ -1396,6 +1676,128 @@ components:
         limit: { type: integer }
         offset: { type: integer }
 
+    FeatureNumericStatsRequest:
+      type: object
+      properties:
+        feature_code: { type: string }
+        version: { type: integer, minimum: 1 }
+        feature_version_id: { type: integer, minimum: 1 }
+        security_ids: { type: array, items: { type: integer, minimum: 1 } }
+        observed_from: { type: string, format: date-time }
+        observed_to: { type: string, format: date-time }
+        run_id: { type: string, format: uuid }
+        latest: { type: boolean, default: false }
+        histogram_buckets: { type: integer, minimum: 1, maximum: 100, default: 12 }
+
+    FeatureNumericStats:
+      type: object
+      required: [count, valid_count, missing_count, invalid_count, histogram, trend]
+      properties:
+        count: { type: integer, minimum: 0 }
+        valid_count: { type: integer, minimum: 0 }
+        missing_count: { type: integer, minimum: 0 }
+        invalid_count: { type: integer, minimum: 0 }
+        min: { type: number, nullable: true }
+        max: { type: number, nullable: true }
+        mean: { type: number, nullable: true }
+        p25: { type: number, nullable: true }
+        p50: { type: number, nullable: true }
+        p75: { type: number, nullable: true }
+        observed_from: { type: string, format: date-time }
+        observed_to: { type: string, format: date-time }
+        histogram:
+          type: array
+          items:
+            type: object
+            required: [lower, upper, count]
+            properties:
+              lower: { type: number }
+              upper: { type: number }
+              count: { type: integer, minimum: 0 }
+        trend:
+          type: array
+          items:
+            type: object
+            required: [observed_at, count]
+            properties:
+              observed_at: { type: string, format: date-time }
+              count: { type: integer, minimum: 0 }
+              mean: { type: number, nullable: true }
+              min: { type: number, nullable: true }
+              max: { type: number, nullable: true }
+
+    FeaturePurgePreviewRequest:
+      type: object
+      required: [scope_type]
+      properties:
+        scope_type: { type: string, enum: [run, feature_version, feature_all_versions] }
+        run_id: { type: string, format: uuid }
+        feature_version_id: { type: integer, minimum: 1 }
+        feature_code: { type: string }
+        all_versions: { type: boolean, default: false }
+
+    FeaturePurgeSubmitRequest:
+      type: object
+      required: [purge_id, confirmation_token, confirmation_text]
+      properties:
+        purge_id: { type: string, format: uuid }
+        confirmation_token: { type: string }
+        confirmation_text: { type: string }
+
+    FeatureDataPurgeJob:
+      type: object
+      required: [purge_id, scope_type, criteria_snapshot, criteria_checksum, confirmation_expires_at, confirmation_text, status, estimated_rows, deleted_rows, affected_run_count, affected_version_count, affects_latest]
+      properties:
+        purge_id: { type: string, format: uuid }
+        scope_type: { type: string, enum: [run, feature_version, feature_all_versions] }
+        criteria_snapshot: { type: object, additionalProperties: true }
+        criteria_checksum: { type: string }
+        confirmation_expires_at: { type: string, format: date-time }
+        confirmation_text: { type: string }
+        status: { type: string, enum: [previewed, queued, running, succeeded, failed, cancelled] }
+        estimated_rows: { type: integer, minimum: 0 }
+        deleted_rows: { type: integer, minimum: 0 }
+        affected_run_count: { type: integer, minimum: 0 }
+        affected_version_count: { type: integer, minimum: 0 }
+        affects_latest: { type: boolean }
+        observed_from: { type: string, format: date-time }
+        observed_to: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        error_summary: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    FeatureDataPurgeTarget:
+      type: object
+      required: [purge_id, run_id, feature_version_id, status, estimated_rows, deleted_rows]
+      properties:
+        purge_id: { type: string, format: uuid }
+        run_id: { type: string, format: uuid }
+        feature_version_id: { type: integer, minimum: 1 }
+        status: { type: string, enum: [pending, running, succeeded, failed, cancelled] }
+        estimated_rows: { type: integer, minimum: 0 }
+        deleted_rows: { type: integer, minimum: 0 }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        error_message: { type: string }
+
+    FeaturePurgePreviewResponse:
+      type: object
+      required: [job, targets, confirmation_token, warnings]
+      properties:
+        job: { $ref: '#/components/schemas/FeatureDataPurgeJob' }
+        targets: { type: array, items: { $ref: '#/components/schemas/FeatureDataPurgeTarget' } }
+        confirmation_token: { type: string }
+        warnings: { type: array, items: { type: string } }
+
+    FeaturePurgeDetail:
+      type: object
+      required: [job, targets]
+      properties:
+        job: { $ref: '#/components/schemas/FeatureDataPurgeJob' }
+        targets: { type: array, items: { $ref: '#/components/schemas/FeatureDataPurgeTarget' } }
+
     FeatureBatchResult:
       type: object
       required: [status, inserted]
@@ -1412,7 +1814,7 @@ components:
 
     FeatureBackfillCreateRequest:
       type: object
-      required: [root_feature_version_ids, start_as_of, end_as_of, step, source_profile, market, universe_request]
+      required: [root_feature_version_ids, start_as_of, end_as_of, step, source_profile, market, universe_request, universe_hash, security_ids]
       properties:
         root_feature_version_ids: { type: array, minItems: 1, items: { type: integer, minimum: 1 } }
         start_as_of: { type: string, format: date-time }
@@ -1423,13 +1825,41 @@ components:
         source_profile: { type: string }
         market: { type: string }
         universe_request: { type: object, additionalProperties: true }
+        universe_hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        security_ids: { type: array, minItems: 1, items: { type: integer, minimum: 1 } }
+        producer_service: { type: string }
+        code_revision: { type: string }
+        dependency_plan_checksum: { type: string }
+        dependency_plan_snapshot: { type: object, additionalProperties: true }
         max_concurrency: { type: integer, minimum: 1 }
+
+    FeatureBackfillJob:
+      type: object
+      required: [backfill_id, status, total_count, succeeded_count, failed_count]
+      properties:
+        backfill_id: { type: string, format: uuid }
+        root_feature_version_ids: { type: array, items: { type: integer, minimum: 1 } }
+        start_as_of: { type: string, format: date-time }
+        end_as_of: { type: string, format: date-time }
+        step: { type: string }
+        expanded_as_of_times: { type: array, items: { type: string, format: date-time } }
+        data_cutoff_policy: { type: object, additionalProperties: true }
+        source_profile: { type: string }
+        market: { type: string }
+        universe_request: { type: object, additionalProperties: true }
+        max_concurrency: { type: integer, minimum: 1 }
+        status: { type: string }
+        total_count: { type: integer, minimum: 0 }
+        succeeded_count: { type: integer, minimum: 0 }
+        failed_count: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     FeatureBackfillDetail:
       type: object
       required: [job, runs]
       properties:
-        job: { type: object, additionalProperties: true }
+        job: { $ref: '#/components/schemas/FeatureBackfillJob' }
         runs: { type: array, items: { $ref: '#/components/schemas/FeatureRun' } }
 
     ApiError:

@@ -26,6 +26,7 @@ func TestFeaturePlatformMigrationContract(t *testing.T) {
 	for _, fragment := range []string{
 		"CREATE TABLE IF NOT EXISTS govern.feature_definition",
 		"CREATE TABLE IF NOT EXISTS govern.feature_version",
+		"CREATE TABLE IF NOT EXISTS govern.feature_lifecycle_event",
 		"CREATE TABLE IF NOT EXISTS govern.feature_implementation",
 		"CREATE TABLE IF NOT EXISTS govern.feature_dependency",
 		"CREATE TABLE IF NOT EXISTS govern.feature_backfill_job",
@@ -306,6 +307,8 @@ func TestFeaturePlatformMigrationPostgres(t *testing.T) {
 		t.Fatalf("running Run leaked through latest query: rows=%d total=%d err=%v", len(rows), total, err)
 	}
 	staleRunID := featureTestUUID(t)
+	staleAsOf := asOf.Add(-24 * time.Hour)
+	staleCutoff := staleAsOf.Add(-time.Hour)
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO govern.feature_run
 		    (run_id, request_fingerprint, producer_service, trigger_type, as_of_time,
@@ -313,7 +316,7 @@ func TestFeaturePlatformMigrationPostgres(t *testing.T) {
 		     code_revision, status, heartbeat_at)
 		VALUES ($1, $2, 'artemis', 'api', $3, $4, 'test', 'zh_a', $5,
 		        '{"root_feature_version_ids":[]}'::jsonb, 'fixture', 'running', NOW() - INTERVAL '10 minutes')`,
-		staleRunID, strings.Repeat("f", 64), asOf, cutoff, strings.Repeat("1", 64)); err != nil {
+		staleRunID, strings.Repeat("f", 64), staleAsOf, staleCutoff, strings.Repeat("1", 64)); err != nil {
 		t.Fatalf("insert stale run: %v", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -343,7 +346,10 @@ func TestFeaturePlatformMigrationPostgres(t *testing.T) {
 	if err != nil || availability.MaterializationStatus != "running" || availability.LatestSucceededRun != nil {
 		t.Fatalf("active materialization availability after stale reconciliation = %#v, %v", availability, err)
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE govern.feature_run_item SET status = 'succeeded' WHERE run_id = $1", runID); err != nil {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE govern.feature_run_item
+		SET status = 'succeeded', materialization_state = 'available', materialized_row_count = 1
+		WHERE run_id = $1`, runID); err != nil {
 		t.Fatalf("complete run item: %v", err)
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE govern.feature_run SET status = 'succeeded', finished_at = NOW() WHERE run_id = $1", runID); err != nil {
@@ -357,8 +363,19 @@ func TestFeaturePlatformMigrationPostgres(t *testing.T) {
 	if err != nil || total != 1 || len(rows) != 1 || rows[0].RunID != runID {
 		t.Fatalf("succeeded latest query: rows=%#v total=%d err=%v", rows, total, err)
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE govern.feature_version SET status = 'deprecated', deprecated_at = NOW() WHERE id = $1", versionID); err != nil {
+	event, err := registryDao.Deprecate(ctx, featureCode, 1, model.FeatureLifecycleTransitionRequest{
+		ExpectedStatus:           "published",
+		ExpectedManifestChecksum: strings.Repeat("a", 64),
+	})
+	if err != nil {
 		t.Fatalf("deprecate feature version: %v", err)
+	}
+	if event.Action != "deprecate" || event.BeforeStatus != "published" || event.AfterStatus != "deprecated" {
+		t.Fatalf("unexpected lifecycle event: %#v", event)
+	}
+	events, err := registryDao.ListLifecycleEvents(ctx, featureCode, 10)
+	if err != nil || len(events) != 1 || events[0].ID != event.ID {
+		t.Fatalf("lifecycle event history = %#v, %v", events, err)
 	}
 	rows, total, err = runDao.QueryValues(ctx, latestQuery)
 	if err != nil || total != 0 || len(rows) != 0 {

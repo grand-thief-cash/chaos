@@ -88,6 +88,30 @@ func TestNormalizeAndValidateManifestRequiresExactDependencies(t *testing.T) {
 	assertFeatureErrorCode(t, err, "DATA_FIELD_DEPENDENCY_INVALID")
 }
 
+func TestNormalizeLifecycleTransitionRequiresOptimisticState(t *testing.T) {
+	valid := model.FeatureLifecycleTransitionRequest{
+		ExpectedStatus:           "draft",
+		ExpectedManifestChecksum: strings.Repeat("a", 64),
+	}
+	if err := normalizeLifecycleTransition(&valid, "publish"); err != nil {
+		t.Fatalf("valid lifecycle transition: %v", err)
+	}
+
+	wrongState := valid
+	wrongState.ExpectedStatus = "published"
+	assertFeatureErrorCode(t, normalizeLifecycleTransition(&wrongState, "publish"), "LIFECYCLE_EXPECTED_STATUS_INVALID")
+
+	badChecksum := valid
+	badChecksum.ExpectedManifestChecksum = "ABC"
+	assertFeatureErrorCode(t, normalizeLifecycleTransition(&badChecksum, "publish"), "LIFECYCLE_CHECKSUM_INVALID")
+
+	deprecate := valid
+	deprecate.ExpectedStatus = "published"
+	if err := normalizeLifecycleTransition(&deprecate, "deprecate"); err != nil {
+		t.Fatalf("valid deprecate transition: %v", err)
+	}
+}
+
 func assertFeatureErrorCode(t *testing.T, err error, want string) {
 	t.Helper()
 	if err == nil {
