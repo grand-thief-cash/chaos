@@ -1,7 +1,9 @@
 # VERSION
-v1.39.0
+v1.39.1
 
 # Changelog
+- v1.39.1
+    - **Eastmoney report feed isolation.** Extended the shared research-report download tracker with industry, macro, new-stock, strategy, and broker-report types, and added optional type filters to cursor and pending-download queries.
 - v1.39.0
     - **Feature Platform governance contract.** Added Manifest/Registry synchronization evidence, optimistic checksum-guarded publish and deprecate transitions, lifecycle history, recursive lineage snapshots, and expanded availability diagnostics without introducing service-local identity, permission, rate-limit, or trace concerns.
     - **Scoped execution and analytics.** Added frozen explicit/all-active universes, point/range evaluation contracts, dependency-plan snapshots, numeric value statistics, quality summaries, and materialization state needed by Preview, Run, and visualization workflows.

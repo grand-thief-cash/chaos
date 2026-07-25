@@ -99,14 +99,17 @@ func (d *ResearchReportDao) GetLastUpdate(ctx context.Context, source string) (s
 	return last, nil
 }
 
-// GetMaxPublishDate returns the MAX(publish_date) across ALL rows for the
-// source (any status), or "" when none exist. artemis uses this as the list
-// high-water mark so each run lists only new reports.
-func (d *ResearchReportDao) GetMaxPublishDate(ctx context.Context, source string) (string, error) {
+// GetMaxPublishDate returns the MAX(publish_date) for the source and optional
+// report type (any status), or "" when none exist.
+func (d *ResearchReportDao) GetMaxPublishDate(ctx context.Context, source, reportType string) (string, error) {
 	var last string
-	err := d.db.WithContext(ctx).
+	q := d.db.WithContext(ctx).
 		Model(&model.ResearchReport{}).
-		Where("source = ?", source).
+		Where("source = ?", source)
+	if reportType != "" {
+		q = q.Where("report_type = ?", reportType)
+	}
+	err := q.
 		Select("COALESCE(MAX(publish_date), '')").
 		Row().Scan(&last)
 	if err != nil {
@@ -116,11 +119,12 @@ func (d *ResearchReportDao) GetMaxPublishDate(ctx context.Context, source string
 }
 
 // QueryPending returns rows still awaiting download (status in
-// pending/detail_error/pdf_error) within the [startDate, endDate] publish-date
-// window, ordered for stable processing. limit<=0 yields no rows (safety: a
+// pending/detail_error/pdf_error) for an optional report type within the
+// [startDate, endDate] publish-date window, ordered for stable processing.
+// limit<=0 yields no rows (safety: a
 // missing/zero/negative limit must NOT return the entire pending set, which
 // would risk a runaway full-download under eastmoney anti-bot pacing).
-func (d *ResearchReportDao) QueryPending(ctx context.Context, source, startDate, endDate string, limit int) ([]*model.ResearchReport, error) {
+func (d *ResearchReportDao) QueryPending(ctx context.Context, source, reportType, startDate, endDate string, limit int) ([]*model.ResearchReport, error) {
 	if limit <= 0 {
 		return []*model.ResearchReport{}, nil
 	}
@@ -129,6 +133,9 @@ func (d *ResearchReportDao) QueryPending(ctx context.Context, source, startDate,
 		Model(&model.ResearchReport{}).
 		Where("source = ?", source).
 		Where("status IN ?", []string{"pending", "detail_error", "pdf_error"})
+	if reportType != "" {
+		q = q.Where("report_type = ?", reportType)
+	}
 	if startDate != "" {
 		q = q.Where("publish_date >= ?", startDate)
 	}

@@ -17,7 +17,8 @@ import (
 //
 // Table: ods.research_report_download_record
 // resource_id is the source-defined report id (eastmoney infoCode).
-// report_type: stock | industry | other (CHECK-constrained).
+// report_type: stock | industry | macro | new_stock | strategy |
+// broker_report | other (CHECK-constrained).
 // The subject is held in TWO columns:
 //   - SubjectSourceCode: raw subject code from the source (stock→symbol,
 //     industry→industry code). Non-empty for stock/industry (CHECK-constrained). Used for the MinIO path and
@@ -31,10 +32,10 @@ type ResearchReport struct {
 	ID                uint64          `gorm:"primaryKey;autoIncrement" json:"id,omitempty"`
 	Source            string          `gorm:"type:varchar(32);not null;uniqueIndex:uk_research_report_download_record" json:"source"`
 	ResourceID        string          `gorm:"column:resource_id;type:varchar(64);not null;uniqueIndex:uk_research_report_download_record" json:"resource_id"` // source-defined report id (eastmoney infoCode)
-	ReportType        string          `gorm:"column:report_type;type:varchar(16);not null;default:'stock'" json:"report_type"`                                // stock | industry | other
-	SubjectID         *uint64         `gorm:"column:subject_id;index:idx_rrdlrec_subject_id" json:"subject_id,omitempty"`                                     // nullable — namespace per report_type (stock→security_id, industry→category_id)
-	SubjectSourceCode string          `gorm:"column:subject_source_code;type:varchar(32);not null;default:''" json:"subject_source_code"`                     // raw subject code from source (always populated)
-	PublishDate       string          `gorm:"type:varchar(10);not null;default:''" json:"publish_date"`                                                       // YYYY-MM-DD
+	ReportType        string          `gorm:"column:report_type;type:varchar(16);not null;default:'stock'" json:"report_type"`
+	SubjectID         *uint64         `gorm:"column:subject_id;index:idx_rrdlrec_subject_id" json:"subject_id,omitempty"`                 // nullable — namespace per report_type (stock→security_id, industry→category_id)
+	SubjectSourceCode string          `gorm:"column:subject_source_code;type:varchar(32);not null;default:''" json:"subject_source_code"` // raw subject code from source (always populated)
+	PublishDate       string          `gorm:"type:varchar(10);not null;default:''" json:"publish_date"`                                   // YYYY-MM-DD
 	Title             string          `gorm:"type:varchar(512);not null;default:''" json:"title"`
 	OrgName           string          `gorm:"type:varchar(128);not null;default:''" json:"org_name"` // which brokerage produced it
 	DetailURL         string          `gorm:"column:detail_url;type:varchar(512);not null;default:''" json:"detail_url"`

@@ -41,7 +41,7 @@ func (s *ResearchReportService) Stop(ctx context.Context) error { return s.BaseC
 // BatchUpsertPending upserts research-report metadata. When ResolveCache is
 // available, stock reports (report_type=stock) have their subject_id validated
 // against security_registry (orphan defense, refactor §6 R9 / §10.c) — for
-// stock, subject_id IS the security_id. Industry/other report types skip
+// stock/new_stock, subject_id IS the security_id. Other report types skip
 // security-registry validation (their subject_id lives in a different table).
 func (s *ResearchReportService) BatchUpsertPending(ctx context.Context, list []*model.ResearchReport) error {
 	if len(list) == 0 {
@@ -50,7 +50,7 @@ func (s *ResearchReportService) BatchUpsertPending(ctx context.Context, list []*
 	if s.Resolve != nil {
 		ids := make([]uint64, 0, len(list))
 		for _, item := range list {
-			if item.ReportType == "stock" && item.SubjectID != nil && *item.SubjectID != 0 {
+			if (item.ReportType == "stock" || item.ReportType == "new_stock") && item.SubjectID != nil && *item.SubjectID != 0 {
 				ids = append(ids, *item.SubjectID)
 			}
 		}
@@ -75,16 +75,15 @@ func (s *ResearchReportService) GetLastUpdate(ctx context.Context, source string
 	return s.Dao.GetLastUpdate(ctx, source)
 }
 
-// GetMaxPublishDate returns the MAX(publish_date) across ALL rows for a source
-// (any status), or "" when none exist. artemis uses this as the list
-// high-water mark so each run lists only new reports.
-func (s *ResearchReportService) GetMaxPublishDate(ctx context.Context, source string) (string, error) {
-	return s.Dao.GetMaxPublishDate(ctx, source)
+// GetMaxPublishDate returns the MAX(publish_date) for a source and optional
+// report type (any status), or "" when none exist.
+func (s *ResearchReportService) GetMaxPublishDate(ctx context.Context, source, reportType string) (string, error) {
+	return s.Dao.GetMaxPublishDate(ctx, source, reportType)
 }
 
 // QueryPending returns rows still awaiting download within the publish-date window.
-func (s *ResearchReportService) QueryPending(ctx context.Context, source, startDate, endDate string, limit int) ([]*model.ResearchReport, error) {
-	return s.Dao.QueryPending(ctx, source, startDate, endDate, limit)
+func (s *ResearchReportService) QueryPending(ctx context.Context, source, reportType, startDate, endDate string, limit int) ([]*model.ResearchReport, error) {
+	return s.Dao.QueryPending(ctx, source, reportType, startDate, endDate, limit)
 }
 
 // Query returns research reports matching the given filters with pagination.

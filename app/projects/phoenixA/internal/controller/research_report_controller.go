@@ -16,8 +16,14 @@ import (
 
 // Enum sets (defense in depth alongside the DB CHECK constraints).
 var (
-	validReportTypes = map[string]bool{"stock": true, "industry": true, "other": true}
-	validStatuses    = map[string]bool{"pending": true, "downloaded": true, "no_pdf": true, "detail_error": true, "pdf_error": true}
+	validReportTypes = map[string]bool{
+		"stock": true, "industry": true, "macro": true, "new_stock": true,
+		"strategy": true, "broker_report": true, "other": true,
+	}
+	subjectRequiredReportTypes = map[string]bool{
+		"stock": true, "industry": true, "new_stock": true,
+	}
+	validStatuses = map[string]bool{"pending": true, "downloaded": true, "no_pdf": true, "detail_error": true, "pdf_error": true}
 )
 
 // ResearchReportController handles HTTP endpoints for the research-report
@@ -40,8 +46,9 @@ func (c *ResearchReportController) Stop(ctx context.Context) error { return c.Ba
 // POST /api/v2/research-report/{source}/upsert
 //
 // Request body: JSON array of research-report download records. Each row MUST
-// carry source + resource_id (the natural key). security_id is the subject for
-// report_type=stock (NULL for industry/other). On conflict, only metadata
+// carry source + resource_id (the natural key). subject_id is the security for
+// stock/new_stock, optional for industry, and empty for subjectless feeds.
+// On conflict, only metadata
 // columns are refreshed; the download lifecycle (status/pdf_object_key/...)
 // is left untouched.
 func (c *ResearchReportController) BatchUpsert(w http.ResponseWriter, r *http.Request) {
@@ -67,10 +74,10 @@ func (c *ResearchReportController) BatchUpsert(w http.ResponseWriter, r *http.Re
 			item.Extra = json.RawMessage("{}")
 		}
 		if !validReportTypes[item.ReportType] {
-			writeJSON(w, http.StatusBadRequest, apiError{Error: fmt.Sprintf("invalid report_type: %q (want stock|industry|other)", item.ReportType)})
+			writeJSON(w, http.StatusBadRequest, apiError{Error: fmt.Sprintf("invalid report_type: %q", item.ReportType)})
 			return
 		}
-		if (item.ReportType == "stock" || item.ReportType == "industry") && item.SubjectSourceCode == "" {
+		if subjectRequiredReportTypes[item.ReportType] && item.SubjectSourceCode == "" {
 			writeJSON(w, http.StatusBadRequest, apiError{Error: fmt.Sprintf("subject_source_code required for report_type %q", item.ReportType)})
 			return
 		}
@@ -151,7 +158,12 @@ func (c *ResearchReportController) GetMaxPublishDate(w http.ResponseWriter, r *h
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "source is required"})
 		return
 	}
-	last, err := c.Svc.GetMaxPublishDate(r.Context(), source)
+	reportType := r.URL.Query().Get("report_type")
+	if reportType != "" && !validReportTypes[reportType] {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: fmt.Sprintf("invalid report_type: %q", reportType)})
+		return
+	}
+	last, err := c.Svc.GetMaxPublishDate(r.Context(), source, reportType)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
@@ -161,7 +173,7 @@ func (c *ResearchReportController) GetMaxPublishDate(w http.ResponseWriter, r *h
 
 // GET /api/v2/research-report/{source}/pending
 //
-// Query params: start_date, end_date, limit. Returns rows still awaiting
+// Query params: report_type, start_date, end_date, limit. Returns rows still awaiting
 // download (status in pending/detail_error/pdf_error) within the publish-date
 // window, ordered for stable processing. limit defaults to 50; limit<=0 is
 // treated as 50 (never returns the full pending set — anti-bot safety).
@@ -172,13 +184,18 @@ func (c *ResearchReportController) QueryPending(w http.ResponseWriter, r *http.R
 		return
 	}
 	q := r.URL.Query()
+	reportType := q.Get("report_type")
+	if reportType != "" && !validReportTypes[reportType] {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: fmt.Sprintf("invalid report_type: %q", reportType)})
+		return
+	}
 	startDate := normalizeDateYYYYMMDD(q.Get("start_date"))
 	endDate := normalizeDateYYYYMMDD(q.Get("end_date"))
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	if limit <= 0 {
 		limit = 50
 	}
-	list, err := c.Svc.QueryPending(r.Context(), source, startDate, endDate, limit)
+	list, err := c.Svc.QueryPending(r.Context(), source, reportType, startDate, endDate, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiError{Error: err.Error()})
 		return
