@@ -23,7 +23,10 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_profit_express import St
 from artemis.engines.task_engine.download.zh.stock_zh_a_profit_notice import StockZHAProfitNotice
 from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHADividend
 from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
-from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import StockZhAEastmoneyReport
+from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import (
+    EastmoneyResearchReport,
+    StockZhAEastmoneyReport,
+)
 from artemis.feature_platform.tasks.feature_compute_task import FeatureComputeTask
 
 __all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
@@ -182,4 +185,10 @@ registry.register(
     TaskCode.STOCK_ZH_A_EASTMONEY_REPORT,
     module=StockZhAEastmoneyReport.__module__,
     class_name=StockZhAEastmoneyReport.__name__,
+)
+
+registry.register(
+    TaskCode.EASTMONEY_RESEARCH_REPORT,
+    module=EastmoneyResearchReport.__module__,
+    class_name=EastmoneyResearchReport.__name__,
 )

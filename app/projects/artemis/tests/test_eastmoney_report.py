@@ -17,8 +17,10 @@ from artemis.consts import DeptServices
 from artemis.core import TaskContext
 from artemis.core.clients.minio_client import NoopMinioClient
 from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import (
+    EastmoneyResearchReport,
     StockZhAEastmoneyReport,
     build_object_key,
+    normalize_report,
 )
 
 
@@ -42,7 +44,7 @@ class _FakePhoenix:
         self.status_updates = []    # list of dict
         self.pending_called = False
 
-    def get_research_report_max_publish_date(self, *, source="eastmoney"):
+    def get_research_report_max_publish_date(self, *, source="eastmoney", report_type=""):
         return self._max_pub
 
     def get_securities(self, *, asset_type="stock", market="zh_a",
@@ -57,9 +59,13 @@ class _FakePhoenix:
         self.upserted.append((list(reports), source))
         return True
 
-    def query_research_report_pending(self, *, source="eastmoney", start_date="", end_date="", limit=50):
+    def query_research_report_pending(self, *, source="eastmoney", report_type="",
+                                      start_date="", end_date="", limit=50):
         self.pending_called = True
-        return list(self._pending)
+        return [
+            row for row in self._pending
+            if not report_type or row.get("report_type") == report_type
+        ]
 
     def update_research_report_status(self, *, source, resource_id, status,
                                       pdf_object_key="", pdf_url="", last_error="", run_id=None):
@@ -140,9 +146,9 @@ def _make_task_with_http_mocked():
     task = StockZhAEastmoneyReport()
     task._security_id_cache = {}
     task._session = None  # not used (HTTP methods are monkeypatched below)
-    task._fetch_list_page = lambda ctx, begin, end, page_size, page_no: LIST_PAYLOAD
-    task._fetch_detail_html = lambda ctx, url: DETAIL_HTML
-    task._download_pdf = lambda ctx, url: PDF_BYTES
+    task._fetch_list_page = lambda ctx, begin, end, page_size, page_no, report_type="stock": LIST_PAYLOAD
+    task._fetch_detail_html = lambda ctx, url, referer="": DETAIL_HTML
+    task._download_pdf = lambda ctx, url, referer="": PDF_BYTES
     task._sleep = lambda ctx, secs, reason: None  # no real sleeps in tests
     return task
 
@@ -280,3 +286,75 @@ class TestBuildObjectKey:
         report = {"report_type": "industry", "publish_date": "2026-07-07", "title": "某产业研报"}
         minio = _FakeMinioReal()
         assert build_object_key(report, minio, subject="801010") == "industry/801010/2026-07-07_某产业研报.pdf"
+
+    def test_subjectless_report_uses_own_folder_and_resource_id(self):
+        report = {
+            "resource_id": "273000000874407070",
+            "report_type": "broker_report",
+            "publish_date": "2026-07-24",
+            "title": "东兴晨报",
+        }
+        minio = _FakeMinioReal()
+        assert build_object_key(report, minio) == (
+            "broker_report/2026-07-24_273000000874407070_东兴晨报.pdf"
+        )
+
+
+class TestAdditionalReportTypes:
+    def test_each_feed_gets_its_own_cursor(self):
+        class _ByTypePhoenix(_FakePhoenix):
+            def get_research_report_max_publish_date(self, *, source="eastmoney", report_type=""):
+                return {
+                    "industry": "2026-07-01",
+                    "macro": "2026-07-02",
+                    "new_stock": "2026-07-03",
+                    "strategy": "2026-07-04",
+                    "broker_report": "2026-07-05",
+                }[report_type]
+
+        task = EastmoneyResearchReport()
+        ctx = _FakeCtx(
+            params={"earliest_date": "2024-07-01"},
+            dept_http={DeptServices.PHOENIXA: _ByTypePhoenix()},
+        )
+        task.load_dynamic_parameters(_as_task_context(ctx))
+        assert ctx.params["list_begin_by_type"] == {
+            "industry": "2026-07-01",
+            "macro": "2026-07-02",
+            "new_stock": "2026-07-03",
+            "strategy": "2026-07-04",
+            "broker_report": "2026-07-05",
+        }
+
+    def test_encoded_report_normalization(self):
+        raw = {
+            "id": 273000000875313469,
+            "encodeUrl": "38Fju+fEI8Sa1a6gUrSWPCpfs9Xp/CR1P5yoLymPpyI=",
+            "publishDate": "2026-07-24 00:00:00.000",
+            "title": "全球经济周报",
+            "orgName": "格林期货",
+        }
+        report = normalize_report(raw, {}, 2026, report_type="macro")
+        assert report["resource_id"] == "273000000875313469"
+        assert report["report_type"] == "macro"
+        assert report["subject_source_code"] == ""
+        assert report["detail_url"] == (
+            "https://data.eastmoney.com/report/zw_macresearch.jshtml"
+            "?encodeUrl=38Fju%2BfEI8Sa1a6gUrSWPCpfs9Xp%2FCR1P5yoLymPpyI%3D"
+        )
+
+    def test_new_stock_reuses_security_identity(self):
+        raw = {
+            "infoCode": "AP202607221827239653",
+            "stockCode": "920258",
+            "publishDate": "2026-07-22 00:00:00.000",
+            "title": "新股申购报告",
+        }
+        report = normalize_report(raw, {"920258": 42}, 2026, report_type="new_stock")
+        assert report["subject_id"] == 42
+        assert report["subject_source_code"] == "920258"
+
+    def test_task_covers_exactly_the_five_new_feeds(self):
+        assert EastmoneyResearchReport.REPORT_TYPES == (
+            "industry", "macro", "new_stock", "strategy", "broker_report",
+        )

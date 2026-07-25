@@ -1,7 +1,7 @@
-"""Eastmoney stock research-report download task.
+"""Eastmoney research-report download tasks.
 
-Downloads stock research-report PDFs from Eastmoney's rolling two-year report
-table, sinks PDFs to MinIO, and records a download-state row to phoenixA
+Downloads research-report PDFs from Eastmoney's rolling two-year report tables,
+sinks PDFs to MinIO, and records a download-state row to phoenixA
 (table ods.research_report_download_record). Crawl state (pending / downloaded
 / no_pdf / detail_error / pdf_error per resource_id) lives in phoenixA — there
 is no local sqlite. Each run processes a bounded batch (`download_limit`) and
@@ -15,7 +15,7 @@ PDF validation) is adapted from
 `app/tools/py/crawler/eastmoney/report/stock/main.py`.
 
 Flow per run:
-  1. Resolve the list cursor = MAX(publish_date) across all download records
+  1. Resolve one list cursor per report type = MAX(publish_date) for that type
      (any status) from phoenixA, or a configured baseline on first run.
   2. LIST phase: walk eastmoney list pages oldest-first (pages backward, rows
      backward) over [cursor, today], up to `list_page_limit` pages. For each
@@ -38,9 +38,11 @@ Flow per run:
      (curl_cffi Chrome TLS impersonation) → put to MinIO (path uses
      subject_source_code) → update the phoenixA row to status='downloaded'.
 
-Object key convention (subject_source_code is the raw symbol; no resource_id):
-    "{stock_prefix}/{subject_source_code}/{publish_date}_{title}.pdf"
-report_type=stock uses stock_prefix; industry (future) would use industry_prefix.
+Object key conventions:
+  - stock / industry / new_stock:
+      "{type_folder}/{subject_source_code}/{publish_date}_{title}.pdf"
+  - macro / strategy / broker_report:
+      "{type_folder}/{publish_date}_{resource_id}_{title}.pdf"
 """
 import html
 import random
@@ -48,6 +50,7 @@ import re
 import time
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 import requests
 
@@ -62,6 +65,7 @@ from artemis.engines.task_engine.worker_unit import WorkerUnit
 # ─────────────────────────────────────────────────────────────────────────────
 
 LIST_API_URL = "https://reportapi.eastmoney.com/report/list2"
+REPORT_API_BASE = "https://reportapi.eastmoney.com"
 LIST_REFERER = "https://data.eastmoney.com/report/stock.jshtml"
 DETAIL_URL_TEMPLATE = "https://data.eastmoney.com/report/info/{info_code}.html"
 PDF_URL_RE = re.compile(
@@ -93,6 +97,63 @@ DEFAULT_RETRY_SLEEP = (45.0, 120.0)
 REQUEST_TIMEOUT_SECONDS = (10, 60)
 MAX_REQUEST_RETRIES = 3
 
+REPORT_TYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "stock": {
+        "referer": LIST_REFERER,
+        "endpoint": "/report/list2",
+        "q_type": 0,
+        "subject_field": "stockCode",
+        "detail_kind": "info",
+    },
+    "industry": {
+        "referer": "https://data.eastmoney.com/report/industry.jshtml",
+        "endpoint": "/report/list",
+        "q_type": 1,
+        "subject_field": "industryCode",
+        "detail_kind": "info",
+    },
+    "macro": {
+        "referer": "https://data.eastmoney.com/report/macresearch.jshtml",
+        "endpoint": "/report/jg",
+        "q_type": 3,
+        "subject_field": "",
+        "detail_kind": "encoded",
+        "detail_path": "zw_macresearch.jshtml",
+    },
+    "new_stock": {
+        "referer": "https://data.eastmoney.com/report/newstock.jshtml",
+        "endpoint": "/report/newStockList",
+        "q_type": 4,
+        "subject_field": "stockCode",
+        "detail_kind": "info",
+    },
+    "strategy": {
+        "referer": "https://data.eastmoney.com/report/strategyreport.jshtml",
+        "endpoint": "/report/jg",
+        "q_type": 2,
+        "subject_field": "",
+        "detail_kind": "encoded",
+        "detail_path": "zw_strategy.jshtml",
+    },
+    "broker_report": {
+        "referer": "https://data.eastmoney.com/report/brokerreport.jshtml",
+        "endpoint": "/report/jg",
+        "q_type": 4,
+        "subject_field": "",
+        "detail_kind": "encoded",
+        "detail_path": "zw_brokerreport.jshtml",
+    },
+}
+
+REPORT_FOLDERS = {
+    "macro": "macro",
+    "new_stock": "new_stock",
+    "strategy": "strategy",
+    "broker_report": "broker_report",
+}
+SUBJECT_REQUIRED_REPORT_TYPES = {"stock", "industry", "new_stock"}
+SECURITY_REPORT_TYPES = {"stock", "new_stock"}
+
 # Per-run bounds.
 DEFAULT_DOWNLOAD_LIMIT = 20        # max reports to fully process (detail+pdf) per run
 DEFAULT_LIST_PAGE_LIMIT = 10       # max list pages to walk per run (bounds first-run backfill)
@@ -115,6 +176,8 @@ class StockZhAEastmoneyReport(WorkerUnit):
       - page_size: int          — eastmoney page size (keep 50)
       - sleep ranges: list_page_sleep, detail_page_sleep, pdf_download_sleep, retry_sleep
     """
+
+    REPORT_TYPES = ("stock",)
 
     # ── lifecycle hooks ──────────────────────────────────────────────────────
 
@@ -140,26 +203,36 @@ class StockZhAEastmoneyReport(WorkerUnit):
         phoenix_client = ctx.dept_http.get(DeptServices.PHOENIXA)
 
         explicit_start = ctx.params.get("start_date")
-        if explicit_start:
-            list_begin = str(explicit_start)
-        else:
-            list_begin = ""
-            if phoenix_client is not None:
+        list_begin_by_type: Dict[str, str] = {}
+        for report_type in self.REPORT_TYPES:
+            list_begin = str(explicit_start) if explicit_start else ""
+            if not list_begin and phoenix_client is not None:
                 try:
-                    list_begin = phoenix_client.get_research_report_max_publish_date(source=source)
+                    list_begin = phoenix_client.get_research_report_max_publish_date(
+                        source=source,
+                        report_type=report_type,
+                    )
                 except Exception as e:
-                    ctx.logger.warning({"event": "max_publish_date_query_failed", "error": str(e), "run_id": ctx.run_id})
+                    ctx.logger.warning({
+                        "event": "max_publish_date_query_failed",
+                        "report_type": report_type,
+                        "error": str(e),
+                        "run_id": ctx.run_id,
+                    })
             if not list_begin:
-                list_begin = ctx.params.get("earliest_date", DEFAULT_BASELINE_DATE)
+                list_begin = str(ctx.params.get("earliest_date") or DEFAULT_BASELINE_DATE)
+            list_begin_by_type[report_type] = list_begin
 
         end_date = ctx.params.get("end_date") or date.today().isoformat()
 
         ctx.params["source"] = source
-        ctx.params["list_begin"] = list_begin
+        ctx.params["list_begin_by_type"] = list_begin_by_type
+        if len(self.REPORT_TYPES) == 1:
+            ctx.params["list_begin"] = list_begin_by_type[self.REPORT_TYPES[0]]
         ctx.params["end_date"] = str(end_date)
         ctx.logger.info({
             "event": "eastmoney_report_resolved_range",
-            "list_begin": list_begin,
+            "list_begin_by_type": list_begin_by_type,
             "end_date": end_date,
             "run_id": ctx.run_id,
         })
@@ -181,7 +254,9 @@ class StockZhAEastmoneyReport(WorkerUnit):
     def execute(self, ctx: TaskContext):
         params = ctx.params
         source = params["source"]
-        list_begin = params["list_begin"]
+        list_begin_by_type = params.get("list_begin_by_type") or {
+            self.REPORT_TYPES[0]: params["list_begin"],
+        }
         end_date = params["end_date"]
         download_limit = int(params.get("download_limit", DEFAULT_DOWNLOAD_LIMIT))
         list_page_limit = int(params.get("list_page_limit", DEFAULT_LIST_PAGE_LIMIT))
@@ -193,10 +268,12 @@ class StockZhAEastmoneyReport(WorkerUnit):
         # ── LIST phase: walk pages oldest-first, upsert metadata ──
         listed = 0
         try:
-            listed = self._list_and_upsert(
-                ctx, phoenix_client, source, list_begin, end_date,
-                page_size, list_page_limit,
-            )
+            for report_type in self.REPORT_TYPES:
+                listed += self._list_and_upsert(
+                    ctx, phoenix_client, source, report_type,
+                    str(list_begin_by_type[report_type]), end_date,
+                    page_size, list_page_limit,
+                )
         except CrawlStopped as e:
             ctx.fail(f"eastmoney block during list: {e}", phase="execute")
             return {"listed": listed, "processed": 0, "pending_count": 0}
@@ -218,9 +295,21 @@ class StockZhAEastmoneyReport(WorkerUnit):
             ctx.stats["skipped_no_storage"] = True
             return {"listed": listed, "processed": 0, "pending_count": 0, "skipped_no_storage": True}
 
-        pending = phoenix_client.query_research_report_pending(
-            source=source, start_date="", end_date="", limit=download_limit,
-        )
+        pending: List[Dict[str, Any]] = []
+        for report_type in self.REPORT_TYPES:
+            pending.extend(phoenix_client.query_research_report_pending(
+                source=source,
+                report_type=report_type,
+                start_date="",
+                end_date="",
+                limit=download_limit,
+            ))
+        pending.sort(key=lambda row: (
+            str(row.get("publish_date") or ""),
+            int(row.get("id") or 0),
+            str(row.get("report_type") or ""),
+        ))
+        pending = pending[:download_limit]
         total = len(pending)
         ctx.logger.info({"event": "eastmoney_report_process_start", "pending": total, "run_id": ctx.run_id})
         self._report_progress(ctx, 0, total, "start processing")
@@ -262,18 +351,27 @@ class StockZhAEastmoneyReport(WorkerUnit):
 
     def _list_and_upsert(
         self, ctx: TaskContext, phoenix_client, source: str,
+        report_type: str,
         list_begin: str, end_date: str, page_size: int, list_page_limit: int,
     ) -> int:
         listed = 0
-        first_page = self._fetch_list_page(ctx, list_begin, end_date, page_size, page_no=1)
+        first_page = self._fetch_list_page(
+            ctx, list_begin, end_date, page_size, page_no=1,
+            report_type=report_type,
+        )
         total_pages = int(first_page.get("TotalPage") or 0)
         if total_pages <= 0:
-            ctx.logger.info({"event": "eastmoney_report_list_empty", "run_id": ctx.run_id})
+            ctx.logger.info({
+                "event": "eastmoney_report_list_empty",
+                "report_type": report_type,
+                "run_id": ctx.run_id,
+            })
             return 0
 
         pages_to_walk = min(total_pages, list_page_limit)
         ctx.logger.info({
             "event": "eastmoney_report_list_start",
+            "report_type": report_type,
             "total_pages": total_pages, "pages_to_walk": pages_to_walk, "run_id": ctx.run_id,
         })
 
@@ -293,7 +391,10 @@ class StockZhAEastmoneyReport(WorkerUnit):
             else:
                 self._sleep(ctx, self._param_sleep(ctx, "list_page_sleep", DEFAULT_LIST_PAGE_SLEEP),
                             f"before list page {page_no}")
-                payload = self._fetch_list_page(ctx, list_begin, end_date, page_size, page_no=page_no)
+                payload = self._fetch_list_page(
+                    ctx, list_begin, end_date, page_size, page_no=page_no,
+                    report_type=report_type,
+                )
 
             rows = list(payload.get("data") or [])
             if not rows:
@@ -304,16 +405,21 @@ class StockZhAEastmoneyReport(WorkerUnit):
             # even across a year boundary mid-walk.
             current_year = to_int_or_none(payload.get("currentYear"))
 
-            # Resolve subject_id for all stock_codes on this page (batched, cached).
-            stock_codes = [str(r.get("stockCode") or "").strip() for r in rows]
-            self._resolve_security_ids(ctx, phoenix_client, stock_codes)
+            if report_type in SECURITY_REPORT_TYPES:
+                stock_codes = [str(r.get("stockCode") or "").strip() for r in rows]
+                self._resolve_security_ids(ctx, phoenix_client, stock_codes)
 
             reports: List[Dict[str, Any]] = []
             unresolved = 0
             skipped_empty_subject = 0
             for raw in rows:
                 try:
-                    rep = normalize_report(raw, self._security_id_cache, current_year)
+                    rep = normalize_report(
+                        raw,
+                        self._security_id_cache,
+                        current_year,
+                        report_type=report_type,
+                    )
                 except Exception as e:
                     ctx.logger.warning({"event": "normalize_report_failed", "error": str(e), "run_id": ctx.run_id})
                     continue
@@ -322,21 +428,23 @@ class StockZhAEastmoneyReport(WorkerUnit):
                 # (can't be pathed/stored) — skip it. (Unregistered-but-valid
                 # reports — subject_id NULL, subject_source_code present — are
                 # NOT skipped; see docstring.)
-                if not rep["subject_source_code"]:
+                if report_type in SUBJECT_REQUIRED_REPORT_TYPES and not rep["subject_source_code"]:
                     skipped_empty_subject += 1
                     continue
-                if rep["subject_id"] is None:
+                if report_type in SECURITY_REPORT_TYPES and rep["subject_id"] is None:
                     unresolved += 1
                 reports.append(rep)
 
             if skipped_empty_subject:
                 ctx.logger.warning({
                     "event": "eastmoney_report_skipped_empty_subject",
+                    "report_type": report_type,
                     "page_no": page_no, "count": skipped_empty_subject, "run_id": ctx.run_id,
                 })
             if unresolved:
                 ctx.logger.info({
                     "event": "eastmoney_report_unresolved_subject",
+                    "report_type": report_type,
                     "page_no": page_no, "count": unresolved, "run_id": ctx.run_id,
                 })
 
@@ -349,13 +457,56 @@ class StockZhAEastmoneyReport(WorkerUnit):
 
             ctx.logger.info({
                 "event": "eastmoney_report_list_page_done",
+                "report_type": report_type,
                 "page_no": page_no, "rows": len(rows), "upserted": len(reports),
                 "unresolved": unresolved, "run_id": ctx.run_id,
             })
 
         return listed
 
-    def _fetch_list_page(self, ctx: TaskContext, begin: str, end: str, page_size: int, page_no: int) -> Dict[str, Any]:
+    def _fetch_list_page(
+        self,
+        ctx: TaskContext,
+        begin: str,
+        end: str,
+        page_size: int,
+        page_no: int,
+        report_type: str = "stock",
+    ) -> Dict[str, Any]:
+        if report_type != "stock":
+            config = REPORT_TYPE_CONFIGS[report_type]
+            params: Dict[str, Any] = {
+                "pageSize": page_size,
+                "beginTime": begin,
+                "endTime": end,
+                "pageNo": page_no,
+                "fields": "",
+                "qType": config["q_type"],
+            }
+            if report_type == "industry":
+                params.update({
+                    "industryCode": "*",
+                    "industry": "*",
+                    "rating": "*",
+                    "ratingChange": "*",
+                })
+            response = self._request(
+                ctx,
+                "GET",
+                f"{REPORT_API_BASE}{config['endpoint']}",
+                headers={
+                    "Accept": "application/json, text/javascript, */*; q=0.01",
+                    "Referer": config["referer"],
+                },
+                params=params,
+            )
+            payload = response.json()
+            if "data" not in payload:
+                raise RuntimeError(
+                    f"unexpected {report_type} list response keys: {sorted(payload.keys())}"
+                )
+            return payload
+
         body: Dict[str, Any] = {
             "beginTime": begin,
             "endTime": end,
@@ -399,7 +550,9 @@ class StockZhAEastmoneyReport(WorkerUnit):
 
         self._sleep(ctx, self._param_sleep(ctx, "detail_page_sleep", DEFAULT_DETAIL_PAGE_SLEEP),
                      f"before detail page {resource_id}")
-        detail_html = self._fetch_detail_html(ctx, detail_url)
+        report_type = str(report.get("report_type") or "stock")
+        referer = str(REPORT_TYPE_CONFIGS.get(report_type, {}).get("referer") or LIST_REFERER)
+        detail_html = self._fetch_detail_html(ctx, detail_url, referer)
         pdf_url = extract_pdf_url(detail_html)
         if not pdf_url:
             phoenix_client.update_research_report_status(
@@ -410,12 +563,11 @@ class StockZhAEastmoneyReport(WorkerUnit):
 
         self._sleep(ctx, self._param_sleep(ctx, "pdf_download_sleep", DEFAULT_PDF_DOWNLOAD_SLEEP),
                      f"before pdf download {resource_id}")
-        pdf_bytes = self._download_pdf(ctx, pdf_url)
+        pdf_bytes = self._download_pdf(ctx, pdf_url, detail_url)
 
-        # Object path uses subject_source_code (the raw symbol) — always
-        # present, even for stocks not yet in the registry (subject_id may be
-        # NULL). No runtime symbol resolution needed.
-        subject = str(report.get("subject_source_code") or "unknown")
+        # Subject-bearing feeds use their raw source code as a subfolder;
+        # subjectless feeds use resource_id in the filename.
+        subject = str(report.get("subject_source_code") or "")
         object_key = build_object_key(report, minio_client, subject)
         minio_client.put_pdf(object_key, pdf_bytes)
 
@@ -426,10 +578,15 @@ class StockZhAEastmoneyReport(WorkerUnit):
         ctx.logger.info({"event": "eastmoney_report_downloaded", "resource_id": resource_id,
                          "object_key": object_key, "size": len(pdf_bytes), "run_id": ctx.run_id})
 
-    def _fetch_detail_html(self, ctx: TaskContext, detail_url: str) -> str:
+    def _fetch_detail_html(
+        self,
+        ctx: TaskContext,
+        detail_url: str,
+        referer: str = LIST_REFERER,
+    ) -> str:
         response = self._request(ctx, "GET", detail_url, headers={
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Referer": LIST_REFERER,
+            "Referer": referer,
         })
         response.encoding = response.apparent_encoding or "utf-8"
         text = response.text
@@ -437,7 +594,12 @@ class StockZhAEastmoneyReport(WorkerUnit):
             raise CrawlStopped("detail page looked like a block or captcha page")
         return text
 
-    def _download_pdf(self, ctx: TaskContext, pdf_url: str) -> bytes:
+    def _download_pdf(
+        self,
+        ctx: TaskContext,
+        pdf_url: str,
+        referer: str = LIST_REFERER,
+    ) -> bytes:
         # curl-cffi with Chrome TLS fingerprint impersonation to bypass anti-bot.
         # Imported lazily so the module loads even when curl_cffi isn't installed
         # (tests monkeypatch this method and don't need the real client).
@@ -447,7 +609,7 @@ class StockZhAEastmoneyReport(WorkerUnit):
         try:
             response = session.get(
                 pdf_url,
-                headers={"Accept": "application/pdf,*/*;q=0.8", "Referer": LIST_REFERER},
+                headers={"Accept": "application/pdf,*/*;q=0.8", "Referer": referer},
                 timeout=REQUEST_TIMEOUT_SECONDS,
                 stream=False,
             )
@@ -538,6 +700,18 @@ class StockZhAEastmoneyReport(WorkerUnit):
             ctx.logger.debug({"event": "progress_report_failed", "error": str(e), "run_id": ctx.run_id})
 
 
+class EastmoneyResearchReport(StockZhAEastmoneyReport):
+    """Download Eastmoney industry, macro, new-stock, strategy and broker PDFs."""
+
+    REPORT_TYPES = (
+        "industry",
+        "macro",
+        "new_stock",
+        "strategy",
+        "broker_report",
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Pure helpers (adapted from the original crawler)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -546,6 +720,7 @@ def normalize_report(
     raw_report: Dict[str, Any],
     security_id_cache: Dict[str, Optional[int]],
     current_year: Optional[int] = None,
+    report_type: str = "stock",
 ) -> Dict[str, Any]:
     """Normalize a raw eastmoney list row into a phoenixA download-record row.
 
@@ -561,20 +736,40 @@ def normalize_report(
     list cursor advances past it. subject_id is NOT auto-back-filled (the list
     cursor won't re-scan older records); back-filling needs a separate job.
     """
-    info_code = str(raw_report.get("infoCode") or "").strip()
-    if not info_code:
-        raise ValueError(f"missing infoCode in report: {raw_report}")
+    config = REPORT_TYPE_CONFIGS[report_type]
+    if config["detail_kind"] == "info":
+        resource_id = str(raw_report.get("infoCode") or "").strip()
+        if not resource_id:
+            raise ValueError(f"missing infoCode in {report_type} report: {raw_report}")
+        detail_url = DETAIL_URL_TEMPLATE.format(info_code=resource_id)
+    else:
+        resource_id = str(raw_report.get("id") or "").strip()
+        encode_url = str(raw_report.get("encodeUrl") or "").strip()
+        if not resource_id or not encode_url:
+            raise ValueError(f"missing id/encodeUrl in {report_type} report: {raw_report}")
+        detail_url = (
+            f"https://data.eastmoney.com/report/{config['detail_path']}"
+            f"?encodeUrl={quote(encode_url, safe='')}"
+        )
 
-    stock_code = str(raw_report.get("stockCode") or "").strip()
+    subject_field = str(config.get("subject_field") or "")
+    subject_source_code = (
+        str(raw_report.get(subject_field) or "").strip()
+        if subject_field else ""
+    )
+    subject_id = (
+        security_id_cache.get(subject_source_code)
+        if report_type in SECURITY_REPORT_TYPES else None
+    )
     return {
-        "resource_id": info_code,                 # source-defined id (eastmoney infoCode)
-        "report_type": "stock",
-        "subject_id": security_id_cache.get(stock_code),  # security_id for stock; None if unresolvable
-        "subject_source_code": stock_code,        # always populated; path + later subject_id backfill
+        "resource_id": resource_id,
+        "report_type": report_type,
+        "subject_id": subject_id,
+        "subject_source_code": subject_source_code,
         "publish_date": normalize_publish_date(str(raw_report.get("publishDate") or "")),
         "title": text_or_empty(raw_report.get("title")),
         "org_name": text_or_empty(raw_report.get("orgName")),
-        "detail_url": DETAIL_URL_TEMPLATE.format(info_code=info_code),
+        "detail_url": detail_url,
         "extra": build_extra(raw_report, current_year),
     }
 
@@ -641,23 +836,23 @@ def extract_pdf_url(detail_html: str) -> str:
 def build_object_key(report: Dict[str, Any], minio_client, subject: str = "") -> str:
     """Build the MinIO object key.
 
-    "{prefix}/{subject}/{publish_date}_{title}.pdf"
-
-    prefix: stock_prefix for report_type=stock, industry_prefix for industry.
-    subject: subject_source_code (raw symbol for stock, industry code for
-    future industry reports) — always present, so no runtime resolution needed.
-    No resource_id segment — the user-required filename is {date}_{title}.pdf.
-    Same-subject/same-date/same-title collisions are accepted (deemed rare).
+    Subject-bearing reports use one subject subfolder. Subjectless report feeds
+    include resource_id in the filename so same-day generic titles cannot
+    overwrite each other.
     """
     report_type = str(report.get("report_type") or "stock")
     if report_type == "industry":
         prefix = getattr(minio_client, "industry_prefix", "industry") or "industry"
-    else:
+    elif report_type == "stock":
         prefix = getattr(minio_client, "stock_prefix", "stock") or "stock"
-    subject_safe = safe_filename_part(subject or "unknown")
+    else:
+        prefix = REPORT_FOLDERS.get(report_type, safe_filename_part(report_type))
     publish_date = str(report.get("publish_date") or "unknown-date")
     title = safe_filename_part(str(report.get("title") or "untitled"), max_len=120)
-    return f"{prefix}/{subject_safe}/{publish_date}_{title}.pdf"
+    if subject:
+        return f"{prefix}/{safe_filename_part(subject)}/{publish_date}_{title}.pdf"
+    resource_id = safe_filename_part(str(report.get("resource_id") or "unknown"), max_len=64)
+    return f"{prefix}/{publish_date}_{resource_id}_{title}.pdf"
 
 
 def is_valid_pdf_bytes(data: bytes) -> bool:

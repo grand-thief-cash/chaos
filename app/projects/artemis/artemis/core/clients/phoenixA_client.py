@@ -1325,15 +1325,21 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             return ""
 
-    def get_research_report_max_publish_date(self, *, source: str = "eastmoney") -> str:
+    def get_research_report_max_publish_date(
+        self,
+        *,
+        source: str = "eastmoney",
+        report_type: str = "",
+    ) -> str:
         """Return MAX(publish_date) across ALL research-report rows (any status).
 
         Used as the list high-water mark: the artemis task lists eastmoney reports
         from this date forward so it only fetches new reports each run.
         """
         path = f"/api/v2/research-report/{source}/max-publish-date"
+        params = {"report_type": report_type} if report_type else {}
         try:
-            resp = self.get(path, {})
+            resp = self.get(path, params)
             if 200 <= resp.status_code < 300:
                 data = resp.json()
                 if isinstance(data, dict):
@@ -1347,6 +1353,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 self.logger.error({
                     'event': 'phoenixA_get_research_report_max_publish_date_failed',
                     'source': source,
+                    'report_type': report_type,
                     'error': str(e),
                 })
             return ""
@@ -1355,6 +1362,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
         self,
         *,
         source: str = "eastmoney",
+        report_type: str = "",
         start_date: str = "",
         end_date: str = "",
         limit: int = 50,
@@ -1362,6 +1370,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
         """Query pending/error research reports for downloading (oldest first)."""
         path = f"/api/v2/research-report/{source}/pending"
         params: Dict[str, Any] = {'limit': str(limit)}
+        if report_type:
+            params['report_type'] = report_type
         if start_date:
             params['start_date'] = start_date
         if end_date:
@@ -1379,6 +1389,7 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 self.logger.error({
                     'event': 'phoenixA_query_research_report_pending_failed',
                     'source': source,
+                    'report_type': report_type,
                     'error': str(e),
                 })
             return []

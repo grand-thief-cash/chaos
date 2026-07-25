@@ -21,6 +21,7 @@ class MinioClient(BaseDeptServiceClient):
     Object key convention (research reports):
         stock:    "{stock_prefix}/{symbol}/{publish_date}_{title}.pdf"
         industry: "{industry_prefix}/{industry_code}/{publish_date}_{title}.pdf"
+        other Eastmoney feeds: "{report_type}/{publish_date}_{resource_id}_{title}.pdf"
 
     The caller builds the object key; this client only puts bytes and returns
     the same object key (the path within the bucket). The bucket name is held

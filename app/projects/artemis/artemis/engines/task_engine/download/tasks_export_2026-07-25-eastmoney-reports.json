@@ -1,0 +1,27 @@
+{
+  "exported_at": "2026-07-25T12:00:00Z",
+  "version": "1.0",
+  "description": "Eastmoney industry, macro, new-stock, strategy and broker research-report PDF downloads",
+  "tasks": [
+    {
+      "name": "eastmoney_research_report",
+      "description": "下载东方财富行业、宏观、新股、策略和券商晨会研报 PDF；分类写入 MinIO，并复用 phoenixA 下载记录实现独立游标和断点续传。",
+      "cron_expr": "0 30 */2 * * *",
+      "timezone": "Asia/Shanghai",
+      "target_service": "artemis",
+      "target_path": "/tasks/run/EASTMONEY_RESEARCH_REPORT",
+      "method": "POST",
+      "body_template": "{}",
+      "headers_json": "{}",
+      "exec_type": "ASYNC",
+      "callback_method": "POST",
+      "callback_timeout_sec": 3600,
+      "concurrency_policy": "SKIP",
+      "max_concurrency": 1,
+      "overlap_action": "SKIP",
+      "failure_action": "RUN_NEW",
+      "retry_policy_json": "{\"max_attempts\": 2, \"initial_backoff\": \"120s\"}",
+      "status": "DISABLED"
+    }
+  ]
+}

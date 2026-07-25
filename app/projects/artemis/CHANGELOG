@@ -1,7 +1,9 @@
 # VERSION
-v0.48.0
+v0.48.1
 
 # Changelog
+- v0.48.1
+    - **Eastmoney report expansion.** Added one bounded task for industry, macro, new-stock, strategy, and broker-report feeds, with per-type PhoenixA cursors and pending queues plus separate MinIO folders and an importable cronjob definition.
 - v0.48.0
     - **Manifest governance facade.** Added catalog inspection, selected/all validation, deterministic Registry diff preview, checksum-guarded synchronization, and lifecycle clients while keeping Manifest files Git-owned and PhoenixA as the Registry source of truth.
     - **One execution engine for Preview and persistence.** Extracted the shared Feature execution engine, added bounded point/range Preview with frozen universes and in-memory collection, declarative parameter validation, quality summaries, and explicit compute scope parameters without writing Preview results.

@@ -159,9 +159,9 @@ class MinioCfg(BaseModel):
 class MinioBusinessCfg(BaseModel):
     """MinIO business layout for research-report storage.
 
-    Research reports are split into a stock folder and an industry folder.
-    Under the stock folder, each symbol gets its own subfolder. Object key
-    convention: "{stock_prefix}/{symbol}/{publish_date}_{title}.pdf".
+    Stock and industry folder names are configurable for compatibility.
+    The Eastmoney downloader uses fixed top-level folders for the other report
+    feeds because their report_type is already part of the storage contract.
     """
     bucket: str = "research-report"
     stock_prefix: str = "stock"
