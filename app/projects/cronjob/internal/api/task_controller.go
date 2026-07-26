@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -138,6 +139,10 @@ func (tmc *TaskMgmtController) listTasks(w http.ResponseWriter, r *http.Request)
 			offset = i
 		}
 	}
+	// sort_by is allowlisted in the DAO (id|name|created_at|updated_at);
+	// sort_order is asc|desc. Unknown values are ignored -> default id ASC.
+	filters.SortBy = strings.TrimSpace(q.Get("sort_by"))
+	filters.SortOrder = strings.TrimSpace(q.Get("sort_order"))
 	list, err := tmc.TaskSvc.ListFiltered(r.Context(), filters, limit, offset)
 	if err != nil {
 		writeErr(w, 500, err.Error())
@@ -212,6 +217,9 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	if req.CronExpr != "" {
 		t.CronExpr = model.NormalizeCron(req.CronExpr)
 	}
+	if req.Timezone != "" {
+		t.Timezone = strings.TrimSpace(req.Timezone)
+	}
 	if req.MaxConcurrency >= 0 {
 		t.MaxConcurrency = req.MaxConcurrency
 	}
@@ -229,6 +237,9 @@ func (tmc *TaskMgmtController) updateTask(w http.ResponseWriter, r *http.Request
 	}
 	if req.HeadersJSON != "" {
 		t.HeadersJSON = req.HeadersJSON
+	}
+	if req.RetryPolicyJSON != "" {
+		t.RetryPolicyJSON = req.RetryPolicyJSON
 	}
 	if req.CallbackMethod != "" {
 		t.CallbackMethod = req.CallbackMethod
@@ -293,6 +304,54 @@ func (tmc *TaskMgmtController) triggerTask(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, map[string]any{"run_id": run.ID})
 }
 
+// POST /api/v1/tasks/batch/enable
+//
+// Body: {"ids": [1,2,3]}. Enables the listed tasks. If ids is empty/missing,
+// enables ALL non-deleted tasks (the "全部启用" UI action ignores selection).
+// Idempotent - enabling an already-ENABLED task counts as success. Returns
+// success count and per-id failures so the UI can report partial failures.
+func (tmc *TaskMgmtController) batchEnable(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	ids := req.IDs
+	if len(ids) == 0 {
+		// 全部启用: resolve every non-deleted task ID.
+		all, err := tmc.TaskSvc.ListFiltered(ctx, &model.TaskListFilters{}, 10000, 0)
+		if err != nil {
+			logging.Error(ctx, fmt.Sprintf("batchEnable list-all failed: %v", err))
+			writeErr(w, 500, err.Error())
+			return
+		}
+		ids = make([]int64, 0, len(all))
+		for _, t := range all {
+			ids = append(ids, t.ID)
+		}
+	}
+	success := 0
+	failed := make([]map[string]any, 0)
+	for _, id := range ids {
+		if err := tmc.TaskSvc.UpdateStatus(ctx, id, bizConsts.ENABLED); err != nil {
+			failed = append(failed, map[string]any{"id": id, "error": err.Error()})
+		} else {
+			success++
+		}
+	}
+	logging.Info(ctx, fmt.Sprintf("batchEnable: success=%d failed=%d total=%d", success, len(failed), len(ids)))
+	writeJSON(w, map[string]any{
+		"action":       "enable",
+		"total":        len(ids),
+		"success":      success,
+		"failed":       len(failed),
+		"failed_items": failed,
+	})
+}
+
 func (tmc *TaskMgmtController) listRuns(w http.ResponseWriter, r *http.Request, taskID int64) {
 	list, _ := tmc.RunSvc.ListByTask(r.Context(), taskID, 50)
 	writeJSON(w, list)
@@ -345,11 +404,34 @@ func (tmc *TaskMgmtController) previewCron(w http.ResponseWriter, r *http.Reques
 // ExportTasks 导出任务配置，支持导出单个或所有任务
 func (tmc *TaskMgmtController) ExportTasks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	idsParam := strings.TrimSpace(r.URL.Query().Get("ids"))
 	taskID := strings.TrimSpace(r.URL.Query().Get("id"))
 	var tasks []*model.Task
-	var err error
 
-	if taskID != "" {
+	switch {
+	case idsParam != "":
+		// batch export by comma-separated IDs (selection-based export). Unknown
+		// / not-found IDs are silently skipped (best-effort); zero valid IDs is a 400.
+		for _, part := range strings.Split(idsParam, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			id, perr := strconv.ParseInt(part, 10, 64)
+			if perr != nil {
+				continue
+			}
+			t, gerr := tmc.TaskSvc.Get(ctx, id)
+			if gerr != nil {
+				continue
+			}
+			tasks = append(tasks, t)
+		}
+		if len(tasks) == 0 {
+			writeErr(w, 400, "no valid task ids in 'ids' param")
+			return
+		}
+	case taskID != "":
 		id, _ := strconv.ParseInt(taskID, 10, 64)
 		t, err := tmc.TaskSvc.Get(ctx, id)
 		if err != nil {
@@ -358,7 +440,8 @@ func (tmc *TaskMgmtController) ExportTasks(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		tasks = []*model.Task{t}
-	} else {
+	default:
+		var err error
 		tasks, err = tmc.TaskSvc.ListFiltered(ctx, &model.TaskListFilters{}, 10000, 0)
 		if err != nil {
 			logging.Error(ctx, fmt.Sprintf("Export tasks failed: %v", err))

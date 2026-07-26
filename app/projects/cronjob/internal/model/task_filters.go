@@ -18,4 +18,8 @@ type TaskListFilters struct {
 	CreatedTo       *time.Time
 	UpdatedFrom     *time.Time
 	UpdatedTo       *time.Time
+	// SortBy is allowlisted in the DAO (id | name | created_at | updated_at);
+	// unknown/empty values fall back to id. SortOrder is asc|desc, default asc.
+	SortBy    string
+	SortOrder string
 }

@@ -94,6 +94,8 @@ func init() {
 		// export/import ops
 		r.Get("/api/v1/tasks/export", taskCtrl.ExportTasks)
 		r.Post("/api/v1/tasks/import", taskCtrl.ImportTasks)
+		// batch ops
+		r.Post("/api/v1/tasks/batch/enable", func(w http.ResponseWriter, req *http.Request) { taskCtrl.batchEnable(w, req) })
 		return nil
 	})
 }

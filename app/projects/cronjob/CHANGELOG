@@ -1,7 +1,13 @@
 # VERSION
-v0.15.4
+v0.15.5
 
 # Changelog
+- v0.15.5
+    - **Batch task operations.** Added `POST /api/v1/tasks/batch/enable` `{"ids":[...]}` - enables the listed tasks, or ALL non-deleted tasks when `ids` is empty (the UI "全部启用" action ignores selection); returns success/failed counts with per-id failures. Extended `GET /api/v1/tasks/export` with an `ids` query param (comma-separated) for selection-based export (precedence: ids > id > all; unknown/not-found IDs are skipped).
+    - **Task list server-side sort.** `GET /api/v1/tasks` accepts `sort_by` (id|name|created_at|updated_at, allowlisted in the DAO) and `sort_order` (asc|desc), defaulting to `id ASC` (was hard-coded `id DESC`). The column comes from an allowlist map and the direction is a fixed ASC/DESC literal, so neither is raw user input - `resolveTaskOrder` is extracted as a pure function with a regression test covering the injection-neutralization fallback.
+    - Fixed task edits silently dropping the `name` field: `TaskDao.UpdateCronAndMeta` built the UPDATE map without a `name` column, so renaming a task in the UI set the in-memory struct but never wrote it to the DB (the detail page re-read the old name). Added `name` to the map and extracted `buildTaskUpdateMap` as a pure function with a regression test asserting every controller-mutable field is persisted.
+    - Fixed task edits silently dropping `timezone` and `retry_policy_json`: `updateTask` decoded both from the request body but never assigned them to the task struct, so the DAO wrote the old values back. They are now applied (mirroring `createTask`).
+    - Known issue (not fixed): the edit form exposes a `status` select, but `updateTask` does not apply it (status is owned by the dedicated `/enable` and `/disable` endpoints, which also handle scheduler cache add/remove). Toggling status in the edit form has no effect - use the enable/disable buttons.
 - v0.15.4
     - Fixed cron tasks silently skipping fires every few hours (e.g. 20:00/22:00 Beijing missed after 12/14/16/18 succeeded). `task_runs` time columns were `TIMESTAMP WITHOUT TIME ZONE` while the container runs TZ=Asia/Shanghai and the postgres session is UTC, so Beijing wall-clock values read back shifted +8h; the scheduler dedup `existing[ft.Unix()]` then collided a 20:00 Beijing fire with a 12:00 Beijing run and returned without firing. Migration `0002_timestamptz.sql` converts all time columns to `TIMESTAMPTZ`, reinterpreting existing values as Asia/Shanghai (with a CASE for `scheduled_time` rows written as UTC via manual `time.Now().UTC()`).
     - Fixed manually-triggered runs showing an 8h gap between scheduled_time and start_time: `triggerTask` now uses `time.Now()` instead of `time.Now().UTC()`.

@@ -100,31 +100,7 @@ func (d *TaskDaoImpl) ListEnabled(ctx context.Context) ([]*model.Task, error) {
 }
 
 func (d *TaskDaoImpl) UpdateCronAndMeta(ctx context.Context, t *model.Task) error {
-	if strings.TrimSpace(t.HeadersJSON) == "" {
-		t.HeadersJSON = bizConsts.DEFAULT_JSON_STR
-	}
-	if strings.TrimSpace(t.RetryPolicyJSON) == "" {
-		t.RetryPolicyJSON = bizConsts.DEFAULT_JSON_STR
-	}
-	updates := map[string]interface{}{
-		"description":          t.Description,
-		"cron_expr":            t.CronExpr,
-		"timezone":             t.Timezone,
-		"exec_type":            t.ExecType,
-		"http_method":          t.HTTPMethod,
-		"target_service":       t.TargetService, // 修正：补充 target_service
-		"target_path":          t.TargetPath,    // 修正：补充 target_path
-		"headers_json":         t.HeadersJSON,
-		"body_template":        t.BodyTemplate,
-		"retry_policy_json":    t.RetryPolicyJSON,
-		"max_concurrency":      t.MaxConcurrency,
-		"concurrency_policy":   t.ConcurrencyPolicy,
-		"callback_method":      t.CallbackMethod,
-		"callback_timeout_sec": t.CallbackTimeoutSec,
-		"overlap_action":       t.OverlapAction,
-		"failure_action":       t.FailureAction,
-		"version":              gorm.Expr("version + 1"),
-	}
+	updates := buildTaskUpdateMap(t)
 	// optimistic lock with version
 	res := d.db.WithContext(ctx).Model(&model.Task{}).
 		Where("id=? AND version=? AND deleted=0", t.ID, t.Version).
@@ -141,6 +117,43 @@ func (d *TaskDaoImpl) UpdateCronAndMeta(ctx context.Context, t *model.Task) erro
 	return nil
 }
 
+// buildTaskUpdateMap returns the column->value map persisted by UpdateCronAndMeta.
+//
+// Extracted to a pure function so it can be unit-tested without a DB: this is
+// the exact spot where a field can be silently dropped from the UPDATE. The
+// `name` column was once missing here, so editing a task's name in the UI had
+// no effect (the controller set t.Name, but the UPDATE never wrote it). The
+// test in task_dao_test.go guards against that class of regression - if you
+// add a field to model.Task that the controller can mutate, add it here too.
+func buildTaskUpdateMap(t *model.Task) map[string]interface{} {
+	if strings.TrimSpace(t.HeadersJSON) == "" {
+		t.HeadersJSON = bizConsts.DEFAULT_JSON_STR
+	}
+	if strings.TrimSpace(t.RetryPolicyJSON) == "" {
+		t.RetryPolicyJSON = bizConsts.DEFAULT_JSON_STR
+	}
+	return map[string]interface{}{
+		"name":                 t.Name,
+		"description":          t.Description,
+		"cron_expr":            t.CronExpr,
+		"timezone":             t.Timezone,
+		"exec_type":            t.ExecType,
+		"http_method":          t.HTTPMethod,
+		"target_service":       t.TargetService,
+		"target_path":          t.TargetPath,
+		"headers_json":         t.HeadersJSON,
+		"body_template":        t.BodyTemplate,
+		"retry_policy_json":    t.RetryPolicyJSON,
+		"max_concurrency":      t.MaxConcurrency,
+		"concurrency_policy":   t.ConcurrencyPolicy,
+		"callback_method":      t.CallbackMethod,
+		"callback_timeout_sec": t.CallbackTimeoutSec,
+		"overlap_action":       t.OverlapAction,
+		"failure_action":       t.FailureAction,
+		"version":              gorm.Expr("version + 1"),
+	}
+}
+
 func (d *TaskDaoImpl) UpdateStatus(ctx context.Context, id int64, status bizConsts.TaskStatus) error {
 	res := d.db.WithContext(ctx).Model(&model.Task{}).Where("id=? AND deleted=0", id).Updates(map[string]any{"status": status, "version": gorm.Expr("version+1")})
 	return res.Error
@@ -148,6 +161,16 @@ func (d *TaskDaoImpl) UpdateStatus(ctx context.Context, id int64, status bizCons
 
 func (d *TaskDaoImpl) SoftDelete(ctx context.Context, id int64) error {
 	return d.db.WithContext(ctx).Model(&model.Task{}).Where("id=?", id).Update("deleted", 1).Error
+}
+
+// taskSortColumns maps API sort_by keys to real column names. Allowlist-based
+// to prevent SQL injection via ORDER BY - the column always comes from this
+// map, never from raw user input; the direction is a fixed ASC/DESC literal.
+var taskSortColumns = map[string]string{
+	"id":         "id",
+	"name":       "name",
+	"created_at": "created_at",
+	"updated_at": "updated_at",
 }
 
 func (d *TaskDaoImpl) ListFiltered(ctx context.Context, f *model.TaskListFilters, limit, offset int) ([]*model.Task, error) {
@@ -184,10 +207,31 @@ func (d *TaskDaoImpl) ListFiltered(ctx context.Context, f *model.TaskListFilters
 	if offset > 0 {
 		db = db.Offset(offset)
 	}
-	if err := db.Order("id DESC").Find(&list).Error; err != nil {
+	// ORDER BY via allowlist (default id ASC, the previous hard-coded order was
+	// id DESC - the UI now defaults to ascending and lets the user toggle).
+	if err := db.Order(resolveTaskOrder(f)).Find(&list).Error; err != nil {
 		return nil, err
 	}
 	return list, nil
+}
+
+// resolveTaskOrder turns the filter's SortBy/SortOrder into a safe "col DIR"
+// ORDER BY fragment. The column always comes from the taskSortColumns
+// allowlist (never raw user input) and the direction is a fixed ASC/DESC
+// literal, so the result is safe to interpolate. Unknown SortBy falls back to
+// id; SortOrder defaults to ASC and only "desc" (case-insensitive) yields DESC.
+func resolveTaskOrder(f *model.TaskListFilters) string {
+	orderCol := "id"
+	if f != nil {
+		if col, ok := taskSortColumns[f.SortBy]; ok {
+			orderCol = col
+		}
+	}
+	orderDir := "ASC"
+	if f != nil && strings.EqualFold(f.SortOrder, "desc") {
+		orderDir = "DESC"
+	}
+	return orderCol + " " + orderDir
 }
 
 func (d *TaskDaoImpl) CountFiltered(ctx context.Context, f *model.TaskListFilters) (int64, error) {
