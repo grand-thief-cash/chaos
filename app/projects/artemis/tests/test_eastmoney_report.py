@@ -445,7 +445,20 @@ class TestAdditionalReportTypes:
         assert report["subject_id"] == 42
         assert report["subject_source_code"] == "920258"
 
-    def test_task_supports_exactly_the_five_feeds(self):
+    def test_task_supports_all_six_feeds_including_stock(self):
+        # stock is now served by this task too (the legacy STOCK_ZH_A_EASTMONEY_REPORT
+        # task was removed); all six feeds route through EASTMONEY_RESEARCH_REPORT.
         assert EastmoneyResearchReport.SUPPORTED_REPORT_TYPES == (
-            "industry", "macro", "new_stock", "strategy", "morning_report",
+            "stock", "industry", "macro", "new_stock", "strategy", "morning_report",
         )
+
+    def test_parameter_check_accepts_stock(self):
+        task = EastmoneyResearchReport()
+        ctx = _FakeCtx(
+            params={},
+            incoming_params={"type": "stock"},
+            dept_http={DeptServices.PHOENIXA: _FakePhoenix()},
+        )
+        task.parameter_check(_as_task_context(ctx))
+        assert not ctx.has_failed()
+        assert task.REPORT_TYPES == ("stock",)

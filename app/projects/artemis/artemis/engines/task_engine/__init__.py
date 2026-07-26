@@ -25,7 +25,6 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHA
 from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
 from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import (
     EastmoneyResearchReport,
-    StockZhAEastmoneyReport,
 )
 from artemis.feature_platform.tasks.feature_compute_task import FeatureComputeTask
 
@@ -179,12 +178,6 @@ registry.register(
     TaskCode.STOCK_ZH_A_BS_ADJUST_FACTOR_CHILD,
     module=StockZhABsAdjustFactorChild.__module__,
     class_name=StockZhABsAdjustFactorChild.__name__,
-)
-
-registry.register(
-    TaskCode.STOCK_ZH_A_EASTMONEY_REPORT,
-    module=StockZhAEastmoneyReport.__module__,
-    class_name=StockZhAEastmoneyReport.__name__,
 )
 
 registry.register(

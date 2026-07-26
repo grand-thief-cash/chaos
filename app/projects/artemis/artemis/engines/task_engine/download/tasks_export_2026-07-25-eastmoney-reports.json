@@ -1,8 +1,28 @@
 {
   "exported_at": "2026-07-25T12:00:00Z",
   "version": "1.0",
-  "description": "Eastmoney industry, macro, new-stock, strategy and morning research-report PDF downloads. One cronjob per feed; the body selects the feed via `type`, which the EASTMONEY_RESEARCH_REPORT task.yaml variants match on. Schedules are staggered ~12min apart within each 2h window so the five feeds don't hammer eastmoney anti-bot in parallel.",
+  "description": "Eastmoney research-report PDF downloads (stock/industry/macro/new_stock/strategy/morning). One cronjob per feed; the body selects the feed via `type`, and ALL target the single EASTMONEY_RESEARCH_REPORT task (the legacy STOCK_ZH_A_EASTMONEY_REPORT task is removed). Schedules stagger ~12min apart within each 2h window.",
   "tasks": [
+    {
+      "name": "eastmoney_research_report_stock",
+      "description": "下载东方财富个股研报 PDF；按股票代码分类写入 MinIO，并复用 phoenixA 下载记录实现独立游标和断点续传。",
+      "cron_expr": "0 0 */2 * * *",
+      "timezone": "Asia/Shanghai",
+      "target_service": "artemis",
+      "target_path": "/tasks/run/EASTMONEY_RESEARCH_REPORT",
+      "method": "POST",
+      "body_template": "{\"type\":\"stock\"}",
+      "headers_json": "{}",
+      "exec_type": "ASYNC",
+      "callback_method": "POST",
+      "callback_timeout_sec": 3600,
+      "concurrency_policy": "SKIP",
+      "max_concurrency": 1,
+      "overlap_action": "SKIP",
+      "failure_action": "RUN_NEW",
+      "retry_policy_json": "{\"max_attempts\": 2, \"initial_backoff\": \"120s\"}",
+      "status": "DISABLED"
+    },
     {
       "name": "eastmoney_research_report_industry",
       "description": "下载东方财富行业研报 PDF；分类写入 MinIO，并复用 phoenixA 下载记录实现独立游标和断点续传。",

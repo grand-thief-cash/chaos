@@ -246,35 +246,30 @@ tasks:
           analyzer_profile: "default_hist_v1"
           persist_artifacts: ["analyzers", "trades", "equity_curve", "plot_manifest", "plot_series"]
 
-  # Eastmoney stock research-report PDF download
+  # Eastmoney research-report PDF download - ONE task for all feeds.
   # 单次运行：LIST 阶段按 [list_cursor, today] 从旧到新翻页 upsert 元数据（pending），
-  # PROCESS 阶段取最早 N 份 pending 研报：详情页→PDF→MinIO→phoenixA 标记 downloaded。
+  # PROCESS 阶段取最早 N 份 pending 研报：详情页->PDF->MinIO->phoenixA 标记 downloaded。
   # 断点续传：pending/error 研报下次运行继续。受东财反爬限速，单次耗时取决于 download_limit。
   # 全量回补在多次运行中完成（list_cursor 单调推进，不会卡在旧页）。
-  STOCK_ZH_A_EASTMONEY_REPORT:
+  #
+  # One variant per feed, selected by the `type` incoming param (cronjob body
+  # carries {"type": "stock"} etc.). There is no longer a separate
+  # STOCK_ZH_A_EASTMONEY_REPORT task - stock runs through this task with
+  # type=stock (same code path, same MinIO layout). Two task codes for the one
+  # shared download engine was what let cronjobs get misrouted to the wrong
+  # endpoint, so they're consolidated here.
+  EASTMONEY_RESEARCH_REPORT:
     variants:
-      - match: {}
+      - match: { type: "stock" }
         config:
-          earliest_date: "2024-07-01"   # 东财滚动 ~2 年窗口；首次运行（phoenixA 无数据时）从此开始
-          end_date: "2024-07-20" # null=今天，或 "YYYY-MM-DD"
-          download_limit: 20            # 单次最多完整处理（详情+PDF）的研报数
-          list_page_limit: 10           # 单次最多翻的列表页数（限制首次回补耗时）
-          page_size: 50                 # 东财页大小，保持 50
-          # 保守限速（东财反爬强制），可按需调整
+          earliest_date: "2024-07-01"
+          download_limit: 20
+          list_page_limit: 10
+          page_size: 50
           list_page_sleep: [3.0, 6.0]
           detail_page_sleep: [7.0, 15.0]
           pdf_download_sleep: [9.0, 18.0]
           retry_sleep: [45.0, 120.0]
-
-  # Eastmoney industry / macro / new-stock / strategy / morning-report PDFs.
-  # One variant per feed, selected by the `type` incoming param (the cronjob
-  # body carries {"type": "industry"} etc.). Each feed thus gets its own
-  # phoenixA cursor, pending queue, MinIO top-level folder, and full pacing
-  # budget per tick - instead of all five sharing one run (which starved each
-  # to list_page_limit=2). Configs start identical; tune per feed as needed
-  # (e.g. morning_report is daily and high-volume, macro is weekly-ish).
-  EASTMONEY_RESEARCH_REPORT:
-    variants:
       - match: { type: "industry" }
         config:
           earliest_date: "2024-07-01"

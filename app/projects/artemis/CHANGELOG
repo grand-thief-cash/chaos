@@ -1,7 +1,9 @@
 # VERSION
-v0.48.2
+v0.48.3
 
 # Changelog
+- v0.48.3
+    - **Consolidated to one eastmoney research-report task.** Removed the legacy `STOCK_ZH_A_EASTMONEY_REPORT` task code entirely; `stock` now runs through `EASTMONEY_RESEARCH_REPORT` with `{"type":"stock"}` (added `stock` to `EastmoneyResearchReport.SUPPORTED_REPORT_TYPES`). The two task codes shared one download engine (`EastmoneyResearchReport` extends `StockZhAEastmoneyReport`), and having two endpoints was the root cause of production cronjobs being misrouted to `/tasks/run/STOCK_ZH_A_EASTMONEY_REPORT` (the industry cronjob ran the stock task, writing 401 erroneous stock records + 9 stock PDFs). Updated `task.yaml`/`task-prod.yaml` (6 variants under `EASTMONEY_RESEARCH_REPORT`), removed the `STOCK_ZH_A_EASTMONEY_REPORT` registration, and added a `stock` cronjob entry to the importable JSON (all 6 entries now target the one endpoint).
 - v0.48.2
     - **Eastmoney research-report per-feed variants.** Replaced the single catch-all `EASTMONEY_RESEARCH_REPORT` variant with one `match: { type: ... }` variant per feed (industry / macro / new_stock / strategy / morning_report), so each feed gets its own full pacing budget per tick and can be scheduled independently instead of all five sharing one run (which starved each to `list_page_limit=2`). The worker now pins exactly one feed per run from the `type` incoming param and rejects unknown/missing types. The importable cronjob definition was split into five staggered per-feed entries that select the feed via the request body.
     - **Renamed `broker_report` to `morning_report`.** Eastmoney's feed is 券商晨报 (broker morning report); `broker_report` was a misnomer for a morning digest. Updated the download task, migration `0010_research_report_types.sql` (not yet deployed, no historical data), tests, and cronjob definition. Eastmoney's `brokerreport.jshtml` endpoint/referer are unchanged - only our internal `report_type` and MinIO folder moved.

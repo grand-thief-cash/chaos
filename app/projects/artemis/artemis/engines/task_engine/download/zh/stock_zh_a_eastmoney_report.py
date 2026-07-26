@@ -709,12 +709,16 @@ class EastmoneyResearchReport(StockZhAEastmoneyReport):
     """Download ONE Eastmoney research-report feed per run.
 
     The feed is selected by the `type` incoming param, which the task.yaml
-    variants match on (industry / macro / new_stock / strategy /
+    variants match on (stock / industry / macro / new_stock / strategy /
     morning_report). Each variant carries its own phoenixA cursor, pending
     queue, MinIO top-level folder, and pacing budget, so every feed can be
-    scheduled and tuned independently - one bounded run per feed per tick,
-    not all five crammed into one (which is why the old single-variant form
-    had to starve each feed with list_page_limit=2).
+    scheduled and tuned independently - one bounded run per feed per tick.
+
+    This is the ONLY eastmoney research-report task. The legacy
+    `STOCK_ZH_A_EASTMONEY_REPORT` task code was removed - stock downloads now
+    run through this class with `type=stock` (same code path, same MinIO
+    layout). Having two task codes for the one shared download engine was the
+    root cause of cronjobs being misrouted to the wrong endpoint.
 
     `morning_report` is Eastmoney's 券商晨报 feed (served from
     brokerreport.jshtml); only our internal report_type and MinIO folder are
@@ -726,6 +730,7 @@ class EastmoneyResearchReport(StockZhAEastmoneyReport):
     # ctx.incoming_params['type'] in parameter_check (which runs before
     # merge_parameters, so it reads incoming_params, not ctx.params).
     SUPPORTED_REPORT_TYPES = (
+        "stock",
         "industry",
         "macro",
         "new_stock",
