@@ -13,6 +13,8 @@ export interface TaskListQuery {
   created_to?: string;
   updated_from?: string;
   updated_to?: string;
+  sort_by?: string;       // id | name | created_at | updated_at (allowlisted server-side)
+  sort_order?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }
@@ -123,13 +125,19 @@ export class CronjobsApiService {
     return this._http.get<{ expr: string; next: string[] }>(`${this.API_BASE}/tasks/cron-preview`, { params });
   }
 
-  // 导出任务配置
-  exportTasks(taskId?: number): Observable<Blob> {
+  // 导出任务配置。taskId 导出单个；ids 导出勾选的多个；都不传则导出全部。
+  exportTasks(taskId?: number, ids?: number[]): Observable<Blob> {
     let url = `${this.API_BASE}/tasks/export`;
-    if (taskId !== undefined) {
-      url += `?id=${taskId}`;
-    }
+    const params: string[] = [];
+    if (taskId !== undefined) params.push(`id=${taskId}`);
+    if (ids && ids.length) params.push(`ids=${ids.join(',')}`);
+    if (params.length) url += '?' + params.join('&');
     return this._http.get(url, { responseType: 'blob' });
+  }
+
+  // 批量启用。ids 为空表示全部启用（忽略勾选）。返回成功/失败计数。
+  batchEnable(ids: number[]): Observable<{ action: string; total: number; success: number; failed: number; failed_items: any[] }> {
+    return this._http.post<any>(`${this.API_BASE}/tasks/batch/enable`, { ids: ids || [] });
   }
 
   // 导入任务配置

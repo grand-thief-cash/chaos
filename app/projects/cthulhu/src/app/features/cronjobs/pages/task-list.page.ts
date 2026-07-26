@@ -1,4 +1,4 @@
-import {Component, OnInit, ViewChild, ElementRef} from '@angular/core';
+import {Component, OnInit, ViewChild, ElementRef, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {CronjobsStore} from '../state/cronjobs.store';
 import {Router, RouterLink} from '@angular/router';
@@ -12,12 +12,14 @@ import {NzSelectModule} from 'ng-zorro-antd/select';
 import {FormsModule} from '@angular/forms';
 import {NzMessageModule, NzMessageService} from 'ng-zorro-antd/message';
 import {NzDropDownModule} from 'ng-zorro-antd/dropdown';
+import {NzModalModule, NzModalService} from 'ng-zorro-antd/modal';
+import {forkJoin} from 'rxjs';
 import {CronjobsApiService} from '../services/cronjobs-api.service';
 
 @Component({
   selector: 'cron-task-list-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, NzTableModule, NzButtonModule, NzBadgeModule, NzPopconfirmModule, NzPaginationModule, NzInputModule, NzSelectModule, NzMessageModule, NzDropDownModule],
+  imports: [CommonModule, FormsModule, RouterLink, NzTableModule, NzButtonModule, NzBadgeModule, NzPopconfirmModule, NzPaginationModule, NzInputModule, NzSelectModule, NzMessageModule, NzDropDownModule, NzModalModule],
   template: `
   <div *ngIf="store.loadingTasks(); else listTpl" class="loading">加载中...</div>
   <ng-template #listTpl>
@@ -27,13 +29,18 @@ import {CronjobsApiService} from '../services/cronjobs-api.service';
         <button nz-button nzType="default" (click)="reload()">刷新</button>
         <button nz-button nzType="default" (click)="toggleFilters()">{{showFilters? '收起筛选':'展开筛选'}}</button>
         <button nz-button nzType="default" (click)="refreshCache()">刷新缓存</button>
-        <button nz-dropdown [nzDropdownMenu]="exportMenu" nz-icon nzType="export">导出</button>
-        <nz-dropdown-menu #exportMenu="nzDropdownMenu">
-          <ul nz-menu nzSelectable>
-            <li nz-menu-item (click)="exportAll()">导出全部任务</li>
+        <button nz-button nzType="default" nz-dropdown [nzDropdownMenu]="opsMenu">操作<span class="sel-count" *ngIf="selectedCount()"> ({{selectedCount()}})</span></button>
+        <nz-dropdown-menu #opsMenu="nzDropdownMenu">
+          <ul nz-menu>
+            <li nz-menu-item (click)="onImport()">导入</li>
+            <li nz-menu-item (click)="onExportSelected()">导出 (勾选 {{selectedCount()}})</li>
+            <li nz-menu-item (click)="onEnableSelected()">启用 (勾选 {{selectedCount()}})</li>
+            <li nz-menu-item (click)="onTriggerSelected()">触发 (勾选 {{selectedCount()}})</li>
+            <li nz-menu-divider></li>
+            <li nz-menu-item (click)="onExportAll()">全部导出</li>
+            <li nz-menu-item (click)="onEnableAll()">全部启用</li>
           </ul>
         </nz-dropdown-menu>
-        <button nz-button nzType="default" (click)="triggerFileInput()">导入</button>
         <input #fileInput type="file" (change)="onFileSelect($event)" style="display: none" accept=".json">
         <button nz-button nzType="primary" [routerLink]="['/cronjobs/tasks','new']">新建任务</button>
       </div>
@@ -81,18 +88,20 @@ import {CronjobsApiService} from '../services/cronjobs-api.service';
     <nz-table [nzData]="store.pagedTasks()" nzBordered *ngIf="store.pagedTasks().length; else emptyTpl">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>名称</th>
+          <th class="chk"><input type="checkbox" [checked]="allOnPageChecked()" [indeterminate]="someOnPageChecked()" (change)="toggleAllOnPage($event)"></th>
+          <th [nzShowSort]="true" [nzSortOrder]="sortOrder('id')" (nzSortOrderChange)="onSort('id',$event)">ID</th>
+          <th [nzShowSort]="true" [nzSortOrder]="sortOrder('name')" (nzSortOrderChange)="onSort('name',$event)">名称</th>
           <th>Cron</th>
           <th>状态</th>
           <th>并发</th>
-          <th>创建时间</th>
-          <th>更新时间</th>
+          <th [nzShowSort]="true" [nzSortOrder]="sortOrder('created_at')" (nzSortOrderChange)="onSort('created_at',$event)">创建时间</th>
+          <th [nzShowSort]="true" [nzSortOrder]="sortOrder('updated_at')" (nzSortOrderChange)="onSort('updated_at',$event)">更新时间</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let t of store.pagedTasks()">
+          <td class="chk"><input type="checkbox" [checked]="isSelected(t.id)" (change)="toggleRow(t.id, $event)"></td>
           <td>{{t.id}}</td>
           <td><a [routerLink]="['/cronjobs/tasks', t.id]">{{t.name}}</a><div class="desc" *ngIf="t.description">{{t.description}}</div></td>
           <td>{{t.cron_expr}}</td>
@@ -115,7 +124,7 @@ import {CronjobsApiService} from '../services/cronjobs-api.service';
     <ng-template #emptyTpl><div class="empty">暂无任务</div></ng-template>
     <div class="pager" *ngIf="store.taskTotal() > 0">
       <nz-pagination [nzTotal]="store.taskTotal()" [nzPageIndex]="store.taskPageIndex()" [nzPageSize]="store.taskPageSize()"
-        (nzPageIndexChange)="onPage($event)" (nzPageSizeChange)="onPageSize($event)" [nzShowSizeChanger]="true"></nz-pagination>
+        (nzPageIndexChange)="onPage($event)" (nzPageSizeChange)="onPageSize($event)" [nzShowSizeChanger]="true" [nzPageSizeOptions]="[50,100,150,200]"></nz-pagination>
     </div>
   </ng-template>
   `,
@@ -123,6 +132,8 @@ import {CronjobsApiService} from '../services/cronjobs-api.service';
     .header { display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px; }
     .actions { display:flex; gap:8px; flex-wrap:wrap; }
     .ops { display:flex; gap:4px; flex-wrap:wrap; }
+    .chk { width: 32px; text-align: center; }
+    .sel-count { color: #888; font-weight: normal; font-size: 12px; }
     .empty { padding: 32px; text-align:center; color:#888; }
     .pager { margin-top: 16px; display:flex; justify-content:center; }
     .filters { border:1px solid #eee; padding:12px; border-radius:6px; margin-bottom: 12px; display:flex; flex-direction:column; gap:12px; }
@@ -146,8 +157,9 @@ export class TaskListPageComponent implements OnInit {
   updatedFrom = '';
   updatedTo = '';
   showFilters = true;
+  selected = signal<number[]>([]);
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
-  constructor(public store: CronjobsStore, private msg: NzMessageService, private router: Router, private api: CronjobsApiService) {}
+  constructor(public store: CronjobsStore, private msg: NzMessageService, private modal: NzModalService, private router: Router, private api: CronjobsApiService) {}
   ngOnInit(){ this.store.loadTasks(); }
   toggleFilters(){ this.showFilters = !this.showFilters; }
   reload(){ this.store.loadTasks(true); }
@@ -161,6 +173,17 @@ export class TaskListPageComponent implements OnInit {
     this.store.loadTasks(true); }, error: ()=> this.msg.error('删除失败'), }); }
   onPage(i: number){ this.store.setTaskPage(i); }
   onPageSize(size: number){ this.store.setTaskPageSize(size); }
+  // Sort is server-side (paging is backend-driven, so the current page alone
+  // can't be sorted). ng-zorro cycles ascend->descend->null; collapse null to
+  // asc for a clean 2-state toggle with no "unsorted" state. Default: id asc.
+  sortOrder(by: string): 'ascend'|'descend'|null {
+    if(this.store.taskSortBy() !== by) return null;
+    return this.store.taskSortOrder() === 'asc' ? 'ascend' : 'descend';
+  }
+  onSort(by: string, order: 'ascend'|'descend'|string|null){
+    const mapped: 'asc'|'desc' = order === 'descend' ? 'desc' : 'asc';
+    this.store.setTaskSort(by, mapped);
+  }
   apply(){
     this.store.applyFilters({
       name: this.search,
@@ -200,8 +223,33 @@ export class TaskListPageComponent implements OnInit {
     // 导航状态传递模板
     this.router.navigate(['/cronjobs/tasks','new'], { state: { template } });
   }
-  triggerFileInput() {
-    this.fileInput.nativeElement.click();
+  onImport() { this.fileInput.nativeElement.click(); }
+
+  // ── selection ── persisted across pages (a Set-like array held in a signal
+  // so template bindings update on change).
+  isSelected(id: number){ return this.selected().includes(id); }
+  selectedCount(){ return this.selected().length; }
+  private pageIds(): number[] { return (this.store.pagedTasks() || []).map((t:any)=> t.id); }
+  allOnPageChecked(): boolean {
+    const ids = this.pageIds();
+    const sel = this.selected();
+    return ids.length > 0 && ids.every(id => sel.includes(id));
+  }
+  someOnPageChecked(): boolean {
+    const ids = this.pageIds();
+    const sel = this.selected();
+    return ids.some(id => sel.includes(id)) && !this.allOnPageChecked();
+  }
+  toggleRow(id: number, ev: Event){
+    const checked = (ev.target as HTMLInputElement).checked;
+    const cur = this.selected();
+    this.selected.set(checked ? [...cur, id] : cur.filter(x => x !== id));
+  }
+  toggleAllOnPage(ev: Event){
+    const checked = (ev.target as HTMLInputElement).checked;
+    const pageIds = this.pageIds();
+    const rest = this.selected().filter(id => !pageIds.includes(id));
+    this.selected.set(checked ? [...rest, ...pageIds] : rest);
   }
   onFileSelect(event: Event) {
     const input = event.target as HTMLInputElement;
@@ -239,9 +287,46 @@ export class TaskListPageComponent implements OnInit {
     // 重置 input 以便再次选择同一文件
     input.value = '';
   }
-  exportAll() {
-    this.api.exportTasks().subscribe({
-      next: (blob) => {
+  // ── 操作 menu handlers ── 导出/启用/触发 operate on the selection; 全部**
+  // ignore it. Trigger has no "全部" variant (triggering every task at once
+  // would be destructive), so it loops the single-task endpoint for the
+  // selected set only.
+  onExportSelected(){
+    const ids = this.selected();
+    if(!ids.length){ this.msg.warning('请先勾选要导出的任务'); return; }
+    this.downloadExport(undefined, ids);
+  }
+  onExportAll(){ this.downloadExport(); }
+  onEnableSelected(){
+    const ids = this.selected();
+    if(!ids.length){ this.msg.warning('请先勾选要启用的任务'); return; }
+    this.runBatchEnable(ids);
+  }
+  onEnableAll(){
+    this.modal.confirm({
+      nzTitle: '全部启用',
+      nzContent: '确认启用所有任务？将启用全部定时任务（忽略勾选）。',
+      nzOkText: '全部启用',
+      nzOkType: 'primary',
+      nzCancelText: '取消',
+      nzOnOk: () => this.runBatchEnable([])
+    });
+  }
+  onTriggerSelected(){
+    const ids = this.selected();
+    if(!ids.length){ this.msg.warning('请先勾选要触发的任务'); return; }
+    this.modal.confirm({
+      nzTitle: '触发任务',
+      nzContent: `确认触发选中的 ${ids.length} 个任务？将立即为每个任务创建一次运行。`,
+      nzOkText: '触发',
+      nzOkType: 'primary',
+      nzCancelText: '取消',
+      nzOnOk: () => this.runBatchTrigger(ids)
+    });
+  }
+  private downloadExport(taskId?: number, ids?: number[]){
+    this.api.exportTasks(taskId, ids).subscribe({
+      next: blob => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -252,9 +337,25 @@ export class TaskListPageComponent implements OnInit {
         window.URL.revokeObjectURL(url);
         this.msg.success('导出成功');
       },
-      error: (err) => {
-        this.msg.error('导出失败: ' + err.message);
-      }
+      error: err => this.msg.error('导出失败: ' + (err.message||''))
+    });
+  }
+  private runBatchEnable(ids: number[]){
+    this.api.batchEnable(ids).subscribe({
+      next: res => {
+        const m = res.failed ? `启用 ${res.success} 个，失败 ${res.failed} 个` : `启用 ${res.success} 个`;
+        res.failed ? this.msg.warning(m) : this.msg.success(m);
+        this.store.loadTasks(true);
+      },
+      error: () => this.msg.error('批量启用失败')
+    });
+  }
+  private runBatchTrigger(ids: number[]){
+    // Frontend loop reuses the single-task trigger endpoint so snapshot fill,
+    // concurrency policy, and trace propagation all stay server-side.
+    forkJoin(ids.map(id => this.api.triggerTask(id))).subscribe({
+      next: () => { this.msg.success(`已触发 ${ids.length} 个任务`); this.store.loadTasks(true); },
+      error: err => { this.msg.error('部分触发失败: ' + (err.message||'')); this.store.loadTasks(true); }
     });
   }
   private toRFC3339(local: string): string | undefined {

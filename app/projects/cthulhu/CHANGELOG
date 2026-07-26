@@ -1,7 +1,10 @@
 # VERSION
-v0.22.1
+v0.22.2
 
 # Changelog
+- v0.22.2
+    - **Task list batch operations.** Replaced the separate import/export buttons with a single operation dropdown: import, import/export/trigger (operate on checked rows), export_all/enable_all (ignore selection). Added row checkboxes (select-all-on-page header with indeterminate state; selection persists across pages). Enable_all and trigger_all confirm via modal; Enable selected and Enable_all hit the new `POST /tasks/batch/enable` endpoint (empty ids = all); 触发 loops the single-task trigger endpoint; Export selected uses the new `ids` export param.
+    - **Task list page size + sortable columns.** Default page size raised from 10 to 50, with size options 50/100/150/200. ID / name / createTime / updateTime columns are now sortable via the header carets (server-side sort, since paging is backend-driven); the list defaults to ID ascending (was descending). Sort state lives in the store and is passed as `sort_by`/`sort_order` to the cronjob API.
 - v0.22.1
     - **Visible Lineage entry.** Added Lineage to the Feature Platform navigation with a direct Feature Code lookup page; the existing interactive ECharts DAG and definition deep links remain unchanged.
 - v0.22.0

@@ -6,7 +6,9 @@ import {Task, TaskRun} from '../models/cronjob.model';
 export class CronjobsStore {
   private readonly _tasks = signal<Task[]>([]);
   private readonly _taskPageIndex = signal(1);
-  private readonly _taskPageSize = signal(10);
+  private readonly _taskPageSize = signal(50);
+  private readonly _taskSortBy = signal<string>('id');
+  private readonly _taskSortOrder = signal<'asc' | 'desc'>('asc');
   private readonly _runs = signal<Record<number, TaskRun[]>>({});
   private readonly _loadingTasks = signal(false);
   private readonly _loadingRuns = signal<Record<number, boolean>>({});
@@ -24,6 +26,8 @@ export class CronjobsStore {
   readonly taskPageIndex = computed(()=> this._taskPageIndex());
   readonly taskPageSize = computed(()=> this._taskPageSize());
   readonly taskTotal = computed(()=> this._taskTotal());
+  readonly taskSortBy = computed(()=> this._taskSortBy());
+  readonly taskSortOrder = computed(()=> this._taskSortOrder());
   loadingTasks(){ return this._loadingTasks(); }
 
   // Filtering + paging (paging currently delegated to backend via limit/offset; keep placeholder)
@@ -35,6 +39,8 @@ export class CronjobsStore {
   loadTasks(force = true){
     this._loadingTasks.set(true);
     const q: TaskListQuery = { limit: this._taskPageSize(), offset: (this._taskPageIndex()-1)*this._taskPageSize() };
+    q.sort_by = this._taskSortBy();
+    q.sort_order = this._taskSortOrder();
     const name = this._taskSearch().trim(); if(name) q.name = name;
     const status = this._taskStatusFilter(); if(status!== 'ALL') q.status = status;
     const desc = this._taskDescriptionSearch().trim(); if(desc) q.description = desc;
@@ -61,6 +67,15 @@ export class CronjobsStore {
   // Pagination setters
   setTaskPage(i: number){ this._taskPageIndex.set(i); this.loadTasks(true); }
   setTaskPageSize(size: number){ this._taskPageSize.set(size); this._taskPageIndex.set(1); this.loadTasks(true); }
+
+  // Sort setter: server-side ORDER BY (paging is backend-driven, so sort must
+  // be too - sorting only the current page would be wrong). Defaults to id asc.
+  setTaskSort(by: string, order: 'asc' | 'desc'){
+    this._taskSortBy.set(by);
+    this._taskSortOrder.set(order);
+    this._taskPageIndex.set(1);
+    this.loadTasks(true);
+  }
 
   // Filter setters
   setTaskSearch(v: string){ this._taskSearch.set(v); this._taskPageIndex.set(1); this.loadTasks(true); }
