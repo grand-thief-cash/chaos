@@ -19,6 +19,7 @@ from artemis.core.clients.minio_client import NoopMinioClient
 from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import (
     EastmoneyResearchReport,
     StockZhAEastmoneyReport,
+    _extra_industry_name,
     build_object_key,
     normalize_report,
 )
@@ -97,8 +98,9 @@ class _FakeCronjob:
 
 
 class _FakeCtx:
-    def __init__(self, params, dept_http):
+    def __init__(self, params, dept_http, incoming_params=None):
         self.params = params
+        self.incoming_params = incoming_params or {}
         self.dept_http = dept_http
         self.logger = _FakeLogger()
         self.run_id = "test-run-eastmoney"
@@ -109,6 +111,9 @@ class _FakeCtx:
     def fail(self, msg, phase=None):
         self.error = str(msg)
         self.failed_phase = phase
+
+    def has_failed(self):
+        return self.error is not None
 
 
 def _as_task_context(ctx: _FakeCtx) -> TaskContext:
@@ -282,26 +287,116 @@ class TestBuildObjectKey:
         minio = _FakeMinioReal()
         assert build_object_key(report, minio, subject="000001") == "stock/000001/2026-07-07_某研报.pdf"
 
-    def test_industry_uses_industry_prefix(self):
-        report = {"report_type": "industry", "publish_date": "2026-07-07", "title": "某产业研报"}
+    def test_new_stock_shares_stock_folder_with_stock(self):
+        # new_stock is a stock report (IPO); it files under the stock folder by
+        # symbol, same layout as stock - NOT a separate new_stock folder.
+        report = {"report_type": "new_stock", "subject_source_code": "920258",
+                  "publish_date": "2026-07-22", "title": "新股申购报告"}
         minio = _FakeMinioReal()
-        assert build_object_key(report, minio, subject="801010") == "industry/801010/2026-07-07_某产业研报.pdf"
+        assert build_object_key(report, minio, subject="920258") == (
+            "stock/920258/2026-07-22_新股申购报告.pdf"
+        )
 
-    def test_subjectless_report_uses_own_folder_and_resource_id(self):
+    def test_industry_uses_source_and_industry_name(self):
+        # industry/{source}/{industry}/{date}_{title}.pdf - source separates
+        # classification systems; industry is the human-readable name from extra.
         report = {
-            "resource_id": "273000000874407070",
-            "report_type": "broker_report",
+            "report_type": "industry",
+            "subject_source_code": "801010",
+            "publish_date": "2026-07-07",
+            "title": "某产业研报",
+            "extra": {"industry_name": "银行"},
+        }
+        minio = _FakeMinioReal()
+        assert build_object_key(report, minio, subject="801010", source="eastmoney") == (
+            "industry/eastmoney/银行/2026-07-07_某产业研报.pdf"
+        )
+
+    def test_industry_falls_back_to_code_when_name_missing(self):
+        report = {
+            "report_type": "industry",
+            "subject_source_code": "801010",
+            "publish_date": "2026-07-07",
+            "title": "某产业研报",
+        }
+        minio = _FakeMinioReal()
+        assert build_object_key(report, minio, subject="801010", source="eastmoney") == (
+            "industry/eastmoney/801010/2026-07-07_某产业研报.pdf"
+        )
+
+    def test_macro_uses_date_folder_and_title_org(self):
+        # macro/strategy/morning_report share the subjectless date-folder layout.
+        report = {
+            "report_type": "macro",
             "publish_date": "2026-07-24",
-            "title": "东兴晨报",
+            "title": "全球经济周报",
+            "org_name": "格林期货",
         }
         minio = _FakeMinioReal()
         assert build_object_key(report, minio) == (
-            "broker_report/2026-07-24_273000000874407070_东兴晨报.pdf"
+            "macro/2026-07-24/全球经济周报_格林期货.pdf"
         )
+
+    def test_strategy_uses_date_folder_and_title_org(self):
+        report = {
+            "report_type": "strategy",
+            "publish_date": "2026-07-24",
+            "title": "A股策略周报",
+            "org_name": "中信证券",
+        }
+        minio = _FakeMinioReal()
+        assert build_object_key(report, minio) == (
+            "strategy/2026-07-24/A股策略周报_中信证券.pdf"
+        )
+
+    def test_subjectless_without_org_omits_trailing_underscore(self):
+        report = {
+            "report_type": "morning_report",
+            "publish_date": "2026-07-24",
+            "title": "晨报",
+        }
+        minio = _FakeMinioReal()
+        assert build_object_key(report, minio) == "morning_report/2026-07-24/晨报.pdf"
+
+    def test_extra_industry_name_handles_json_string(self):
+        # extra may arrive as a JSON string (defensive); industry_name still resolves.
+        report = {"extra": '{"industry_name": "电子"}'}
+        assert _extra_industry_name(report) == "电子"
 
 
 class TestAdditionalReportTypes:
-    def test_each_feed_gets_its_own_cursor(self):
+    def test_parameter_check_pins_run_to_one_type(self):
+        task = EastmoneyResearchReport()
+        ctx = _FakeCtx(
+            params={},
+            incoming_params={"type": "macro"},
+            dept_http={DeptServices.PHOENIXA: _FakePhoenix()},
+        )
+        task.parameter_check(_as_task_context(ctx))
+        assert not ctx.has_failed()
+        assert task.REPORT_TYPES == ("macro",)
+
+    def test_parameter_check_rejects_unknown_type(self):
+        task = EastmoneyResearchReport()
+        ctx = _FakeCtx(
+            params={},
+            incoming_params={"type": "bogus"},
+            dept_http={DeptServices.PHOENIXA: _FakePhoenix()},
+        )
+        task.parameter_check(_as_task_context(ctx))
+        assert ctx.has_failed()
+
+    def test_parameter_check_rejects_missing_type(self):
+        task = EastmoneyResearchReport()
+        ctx = _FakeCtx(
+            params={},
+            incoming_params={},  # no `type` -> no variant would match either
+            dept_http={DeptServices.PHOENIXA: _FakePhoenix()},
+        )
+        task.parameter_check(_as_task_context(ctx))
+        assert ctx.has_failed()
+
+    def test_run_queries_only_its_pinned_type_cursor(self):
         class _ByTypePhoenix(_FakePhoenix):
             def get_research_report_max_publish_date(self, *, source="eastmoney", report_type=""):
                 return {
@@ -309,22 +404,18 @@ class TestAdditionalReportTypes:
                     "macro": "2026-07-02",
                     "new_stock": "2026-07-03",
                     "strategy": "2026-07-04",
-                    "broker_report": "2026-07-05",
+                    "morning_report": "2026-07-05",
                 }[report_type]
 
         task = EastmoneyResearchReport()
+        task.REPORT_TYPES = ("macro",)  # as parameter_check would have pinned
         ctx = _FakeCtx(
             params={"earliest_date": "2024-07-01"},
             dept_http={DeptServices.PHOENIXA: _ByTypePhoenix()},
         )
         task.load_dynamic_parameters(_as_task_context(ctx))
-        assert ctx.params["list_begin_by_type"] == {
-            "industry": "2026-07-01",
-            "macro": "2026-07-02",
-            "new_stock": "2026-07-03",
-            "strategy": "2026-07-04",
-            "broker_report": "2026-07-05",
-        }
+        # Only the macro cursor is resolved this run; other feeds are untouched.
+        assert ctx.params["list_begin_by_type"] == {"macro": "2026-07-02"}
 
     def test_encoded_report_normalization(self):
         raw = {
@@ -354,7 +445,7 @@ class TestAdditionalReportTypes:
         assert report["subject_id"] == 42
         assert report["subject_source_code"] == "920258"
 
-    def test_task_covers_exactly_the_five_new_feeds(self):
-        assert EastmoneyResearchReport.REPORT_TYPES == (
-            "industry", "macro", "new_stock", "strategy", "broker_report",
+    def test_task_supports_exactly_the_five_feeds(self):
+        assert EastmoneyResearchReport.SUPPORTED_REPORT_TYPES == (
+            "industry", "macro", "new_stock", "strategy", "morning_report",
         )

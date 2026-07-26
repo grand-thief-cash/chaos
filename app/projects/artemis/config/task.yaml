@@ -266,14 +266,59 @@ tasks:
           pdf_download_sleep: [9.0, 18.0]
           retry_sleep: [45.0, 120.0]
 
-  # Eastmoney industry / macro / new-stock / strategy / broker-report PDFs.
-  # Each feed has an independent phoenixA cursor and MinIO top-level folder.
+  # Eastmoney industry / macro / new-stock / strategy / morning-report PDFs.
+  # One variant per feed, selected by the `type` incoming param (the cronjob
+  # body carries {"type": "industry"} etc.). Each feed thus gets its own
+  # phoenixA cursor, pending queue, MinIO top-level folder, and full pacing
+  # budget per tick - instead of all five sharing one run (which starved each
+  # to list_page_limit=2). Configs start identical; tune per feed as needed
+  # (e.g. morning_report is daily and high-volume, macro is weekly-ish).
   EASTMONEY_RESEARCH_REPORT:
     variants:
-      - match: {}
+      - match: { type: "industry" }
         config:
           earliest_date: "2024-07-01"
-          download_limit: 20
+          download_limit: 10
+          list_page_limit: 1
+          page_size: 50
+          list_page_sleep: [3.0, 6.0]
+          detail_page_sleep: [7.0, 15.0]
+          pdf_download_sleep: [9.0, 18.0]
+          retry_sleep: [45.0, 120.0]
+      - match: { type: "macro" }
+        config:
+          earliest_date: "2024-07-01"
+          download_limit: 10
+          list_page_limit: 1
+          page_size: 50
+          list_page_sleep: [3.0, 6.0]
+          detail_page_sleep: [7.0, 15.0]
+          pdf_download_sleep: [9.0, 18.0]
+          retry_sleep: [45.0, 120.0]
+      - match: { type: "new_stock" }
+        config:
+          earliest_date: "2024-07-01"
+          download_limit: 10
+          list_page_limit: 1
+          page_size: 50
+          list_page_sleep: [3.0, 6.0]
+          detail_page_sleep: [7.0, 15.0]
+          pdf_download_sleep: [9.0, 18.0]
+          retry_sleep: [45.0, 120.0]
+      - match: { type: "strategy" }
+        config:
+          earliest_date: "2024-07-01"
+          download_limit: 10
+          list_page_limit: 1
+          page_size: 50
+          list_page_sleep: [3.0, 6.0]
+          detail_page_sleep: [7.0, 15.0]
+          pdf_download_sleep: [9.0, 18.0]
+          retry_sleep: [45.0, 120.0]
+      - match: { type: "morning_report" }
+        config:
+          earliest_date: "2024-07-01"
+          download_limit: 10
           list_page_limit: 2
           page_size: 50
           list_page_sleep: [3.0, 6.0]

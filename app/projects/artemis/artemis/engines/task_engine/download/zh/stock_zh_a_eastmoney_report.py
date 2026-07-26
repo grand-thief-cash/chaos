@@ -39,12 +39,15 @@ Flow per run:
      subject_source_code) → update the phoenixA row to status='downloaded'.
 
 Object key conventions:
-  - stock / industry / new_stock:
-      "{type_folder}/{subject_source_code}/{publish_date}_{title}.pdf"
-  - macro / strategy / broker_report:
-      "{type_folder}/{publish_date}_{resource_id}_{title}.pdf"
+  - stock / new_stock (both filed under the stock folder by symbol):
+      "{stock_prefix}/{subject_source_code}/{publish_date}_{title}.pdf"
+  - industry (by source + industry classification - eastmoney now, others later):
+      "{industry_prefix}/{source}/{industry_name}/{publish_date}_{title}.pdf"
+  - macro / strategy / morning_report (subjectless, one folder per day):
+      "{type_folder}/{publish_date}/{title}_{org_name}.pdf"
 """
 import html
+import json
 import random
 import re
 import time
@@ -135,7 +138,10 @@ REPORT_TYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
         "detail_kind": "encoded",
         "detail_path": "zw_strategy.jshtml",
     },
-    "broker_report": {
+    # Eastmoney calls this feed 券商晨报 (broker morning report) and serves it
+    # from brokerreport.jshtml; we store it as `morning_report` (MinIO folder
+    # + report_type) since "broker_report" is a misnomer for a morning digest.
+    "morning_report": {
         "referer": "https://data.eastmoney.com/report/brokerreport.jshtml",
         "endpoint": "/report/jg",
         "q_type": 4,
@@ -147,9 +153,8 @@ REPORT_TYPE_CONFIGS: Dict[str, Dict[str, Any]] = {
 
 REPORT_FOLDERS = {
     "macro": "macro",
-    "new_stock": "new_stock",
     "strategy": "strategy",
-    "broker_report": "broker_report",
+    "morning_report": "morning_report",
 }
 SUBJECT_REQUIRED_REPORT_TYPES = {"stock", "industry", "new_stock"}
 SECURITY_REPORT_TYPES = {"stock", "new_stock"}
@@ -568,7 +573,7 @@ class StockZhAEastmoneyReport(WorkerUnit):
         # Subject-bearing feeds use their raw source code as a subfolder;
         # subjectless feeds use resource_id in the filename.
         subject = str(report.get("subject_source_code") or "")
-        object_key = build_object_key(report, minio_client, subject)
+        object_key = build_object_key(report, minio_client, subject, source=source)
         minio_client.put_pdf(object_key, pdf_bytes)
 
         phoenix_client.update_research_report_status(
@@ -701,15 +706,51 @@ class StockZhAEastmoneyReport(WorkerUnit):
 
 
 class EastmoneyResearchReport(StockZhAEastmoneyReport):
-    """Download Eastmoney industry, macro, new-stock, strategy and broker PDFs."""
+    """Download ONE Eastmoney research-report feed per run.
 
-    REPORT_TYPES = (
+    The feed is selected by the `type` incoming param, which the task.yaml
+    variants match on (industry / macro / new_stock / strategy /
+    morning_report). Each variant carries its own phoenixA cursor, pending
+    queue, MinIO top-level folder, and pacing budget, so every feed can be
+    scheduled and tuned independently - one bounded run per feed per tick,
+    not all five crammed into one (which is why the old single-variant form
+    had to starve each feed with list_page_limit=2).
+
+    `morning_report` is Eastmoney's 券商晨报 feed (served from
+    brokerreport.jshtml); only our internal report_type and MinIO folder are
+    named `morning_report` - "broker_report" was a misnomer for a morning
+    digest.
+    """
+
+    # Every feed this task can serve. The per-run type is pinned from
+    # ctx.incoming_params['type'] in parameter_check (which runs before
+    # merge_parameters, so it reads incoming_params, not ctx.params).
+    SUPPORTED_REPORT_TYPES = (
         "industry",
         "macro",
         "new_stock",
         "strategy",
-        "broker_report",
+        "morning_report",
     )
+
+    # Default empty so a misconfigured run (no/invalid `type`) is a safe no-op
+    # rather than accidentally crawling every feed. parameter_check pins this
+    # to a single-element tuple for the matched type.
+    REPORT_TYPES = ()
+
+    def parameter_check(self, ctx: TaskContext):
+        super().parameter_check(ctx)
+        if ctx.has_failed():
+            return
+        report_type = str(ctx.incoming_params.get("type") or "").strip()
+        if report_type not in self.SUPPORTED_REPORT_TYPES:
+            ctx.fail(
+                f"invalid or missing type={report_type!r}, expected one of "
+                f"{list(self.SUPPORTED_REPORT_TYPES)}",
+                phase="parameter_check",
+            )
+            return
+        self.REPORT_TYPES = (report_type,)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -833,26 +874,68 @@ def extract_pdf_url(detail_html: str) -> str:
     return matches[0].replace("&amp;", "&")
 
 
-def build_object_key(report: Dict[str, Any], minio_client, subject: str = "") -> str:
+def build_object_key(report: Dict[str, Any], minio_client, subject: str = "", source: str = "") -> str:
     """Build the MinIO object key.
 
-    Subject-bearing reports use one subject subfolder. Subjectless report feeds
-    include resource_id in the filename so same-day generic titles cannot
-    overwrite each other.
+    Layout per feed:
+      - stock / new_stock (both filed under the stock folder by symbol):
+          "{stock_prefix}/{subject_source_code}/{publish_date}_{title}.pdf"
+      - industry (separated by source + industry classification - eastmoney now,
+        other classifications may come later):
+          "{industry_prefix}/{source}/{industry}/{publish_date}_{title}.pdf"
+        where {industry} is the human-readable industry name from extra, falling
+        back to the raw industry code (subject_source_code).
+      - macro / strategy / morning_report (subjectless, one folder per day):
+          "{type_folder}/{publish_date}/{title}_{org_name}.pdf"
+        A missing org degrades to {title}.pdf (no trailing underscore).
     """
     report_type = str(report.get("report_type") or "stock")
-    if report_type == "industry":
-        prefix = getattr(minio_client, "industry_prefix", "industry") or "industry"
-    elif report_type == "stock":
-        prefix = getattr(minio_client, "stock_prefix", "stock") or "stock"
-    else:
-        prefix = REPORT_FOLDERS.get(report_type, safe_filename_part(report_type))
     publish_date = str(report.get("publish_date") or "unknown-date")
     title = safe_filename_part(str(report.get("title") or "untitled"), max_len=120)
-    if subject:
-        return f"{prefix}/{safe_filename_part(subject)}/{publish_date}_{title}.pdf"
-    resource_id = safe_filename_part(str(report.get("resource_id") or "unknown"), max_len=64)
-    return f"{prefix}/{publish_date}_{resource_id}_{title}.pdf"
+
+    # stock and new_stock share the stock folder, filed under the raw symbol.
+    if report_type in ("stock", "new_stock"):
+        prefix = getattr(minio_client, "stock_prefix", "stock") or "stock"
+        sym = safe_filename_part(subject or str(report.get("subject_source_code") or "unknown"))
+        return f"{prefix}/{sym}/{publish_date}_{title}.pdf"
+
+    # industry: by source + industry classification. The {source} segment keeps
+    # different classification systems apart (eastmoney industry now; another
+    # source's classification later lands under its own source folder).
+    if report_type == "industry":
+        prefix = getattr(minio_client, "industry_prefix", "industry") or "industry"
+        src = safe_filename_part(source or "unknown-source", max_len=32)
+        industry = safe_filename_part(
+            _extra_industry_name(report) or str(report.get("subject_source_code") or "unknown-industry"),
+            max_len=80,
+        )
+        return f"{prefix}/{src}/{industry}/{publish_date}_{title}.pdf"
+
+    # macro / strategy / morning_report: subjectless, one folder per day.
+    prefix = REPORT_FOLDERS.get(report_type, safe_filename_part(report_type))
+    raw_org = str(report.get("org_name") or "").strip()
+    if raw_org:
+        org = safe_filename_part(raw_org, max_len=80)
+        return f"{prefix}/{publish_date}/{title}_{org}.pdf"
+    return f"{prefix}/{publish_date}/{title}.pdf"
+
+
+def _extra_industry_name(report: Dict[str, Any]) -> str:
+    """Extract industry_name from the report's extra JSONB.
+
+    extra arrives from phoenixA's pending query as a dict (json.RawMessage
+    marshals as a JSON object); defensively handle a JSON string or missing
+    payload. Empty string when absent so the caller can fall back to the code.
+    """
+    extra = report.get("extra")
+    if isinstance(extra, str):
+        try:
+            extra = json.loads(extra)
+        except (ValueError, TypeError):
+            return ""
+    if isinstance(extra, dict):
+        return str(extra.get("industry_name") or "").strip()
+    return ""
 
 
 def is_valid_pdf_bytes(data: bytes) -> bool:
