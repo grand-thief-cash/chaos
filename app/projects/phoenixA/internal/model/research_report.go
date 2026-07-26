@@ -18,7 +18,7 @@ import (
 // Table: ods.research_report_download_record
 // resource_id is the source-defined report id (eastmoney infoCode).
 // report_type: stock | industry | macro | new_stock | strategy |
-// broker_report | other (CHECK-constrained).
+// morning_report | other (CHECK-constrained).
 // The subject is held in TWO columns:
 //   - SubjectSourceCode: raw subject code from the source (stock→symbol,
 //     industry→industry code). Non-empty for stock/industry (CHECK-constrained). Used for the MinIO path and

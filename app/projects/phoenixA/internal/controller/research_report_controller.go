@@ -15,10 +15,14 @@ import (
 )
 
 // Enum sets (defense in depth alongside the DB CHECK constraints).
+// Keep in sync with migration 0010_research_report_types.sql and artemis
+// EastmoneyResearchReport.SUPPORTED_REPORT_TYPES. `morning_report` is
+// Eastmoney's 券商晨报 feed (served from brokerreport.jshtml); it was renamed
+// from `broker_report` since the feed is a morning digest, not a broker report.
 var (
 	validReportTypes = map[string]bool{
 		"stock": true, "industry": true, "macro": true, "new_stock": true,
-		"strategy": true, "broker_report": true, "other": true,
+		"strategy": true, "morning_report": true, "other": true,
 	}
 	subjectRequiredReportTypes = map[string]bool{
 		"stock": true, "industry": true, "new_stock": true,
