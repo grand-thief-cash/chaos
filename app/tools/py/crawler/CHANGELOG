@@ -1,7 +1,10 @@
 # VERSION
-vv0.3.0
+vv0.4.0
 
 # Changelog
+- v0.4.0
+    - Added crawler for downloading baostock docs.
+    - Added 2026-07-28 RISK_INTELLIGENCE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md
 - v0.3.0
     - Added crawler for downloading akshare docs.
 - v0.2.1
