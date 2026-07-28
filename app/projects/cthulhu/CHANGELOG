@@ -1,7 +1,14 @@
 # VERSION
-v0.22.2
+v0.23.0
 
 # Changelog
+- v0.23.0
+    - Replaced the removed Atlas event/impact/document-management UI with Phase 1 knowledge production pages.
+    - Added sample discovery controls, per-report production selection, predicate/concept review, and immutable semantic YAML publication.
+    - Added SW2021/EastMoney-to-Atlas crosswalk generation, validation summaries, final review, and crosswalk semantic publication.
+    - Added governed production-batch launch controls and detailed extraction-run monitoring, provisional/ambiguous entity review, alias-aware entity search, governed graph/query tools, and an evidence-bound company industry review page.
+    - Added typed Atlas/PhoenixA API methods and HTTP unit tests that keep review and publication as separate writes.
+    - Verified all 37 Angular unit tests and the production bundle build.
 - v0.22.2
     - **Task list batch operations.** Replaced the separate import/export buttons with a single operation dropdown: import, import/export/trigger (operate on checked rows), export_all/enable_all (ignore selection). Added row checkboxes (select-all-on-page header with indeterminate state; selection persists across pages). Enable_all and trigger_all confirm via modal; Enable selected and Enable_all hit the new `POST /tasks/batch/enable` endpoint (empty ids = all); 触发 loops the single-task trigger endpoint; Export selected uses the new `ids` export param.
     - **Task list page size + sortable columns.** Default page size raised from 10 to 50, with size options 50/100/150/200. ID / name / createTime / updateTime columns are now sortable via the header carets (server-side sort, since paging is backend-driven); the list defaults to ID ascending (was descending). Sort state lives in the store and is passed as `sort_by`/`sort_order` to the cronjob API.

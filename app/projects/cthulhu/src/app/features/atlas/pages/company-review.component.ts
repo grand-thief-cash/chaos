@@ -1,119 +1,63 @@
-import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { NzCardModule } from 'ng-zorro-antd/card';
-import { NzInputModule } from 'ng-zorro-antd/input';
-import { NzButtonModule } from 'ng-zorro-antd/button';
-import { NzSpinModule } from 'ng-zorro-antd/spin';
-import { NzEmptyModule } from 'ng-zorro-antd/empty';
-import { NzIconModule } from 'ng-zorro-antd/icon';
-import { NzTagModule } from 'ng-zorro-antd/tag';
-import { NzDividerModule } from 'ng-zorro-antd/divider';
-import { NzMessageService } from 'ng-zorro-antd/message';
-import { AtlasApiService } from '../services/atlas-api.service';
+import {CommonModule} from '@angular/common';
+import {Component, inject} from '@angular/core';
+import {FormsModule} from '@angular/forms';
+import {AtlasApiService} from '../services/atlas-api.service';
 
 @Component({
-  selector: 'app-company-review',
+  selector: 'app-atlas-company-review',
   standalone: true,
-  imports: [
-    CommonModule, FormsModule, NzCardModule, NzInputModule, NzButtonModule,
-    NzSpinModule, NzEmptyModule, NzIconModule, NzTagModule, NzDividerModule,
-  ],
+  imports: [CommonModule, FormsModule],
   template: `
-    <div style="display: flex; flex-direction: column; gap: 12px;">
-      <!-- Search -->
-      <nz-card nzSize="small" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
-        <div style="display: flex; gap: 12px; align-items: center;">
-          <input nz-input [(ngModel)]="companyName" nzSize="small" placeholder="Enter company name (normalized)..."
-            style="max-width: 300px;" (keyup.enter)="search()" />
-          <button nz-button nzType="primary" nzSize="small" [nzLoading]="loading" (click)="search()">
-            <span nz-icon nzType="file-search"></span> Generate Review
-          </button>
-        </div>
-      </nz-card>
-
-      @if (loading) {
-        <nz-card nzSize="small" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
-          <nz-spin nzTip="Generating review with LLM..." nzSimple
-            style="display: flex; justify-content: center; padding: 80px;"></nz-spin>
-        </nz-card>
-      } @else if (review) {
-        <!-- Graph data summary -->
-        <nz-card nzSize="small" nzTitle="Graph Data Summary" [nzBordered]="false"
-          style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
-          <div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px;">
-            @if (review.graph_data?.relationships_count) {
-              <div>
-                <span style="color: #999;">Relationships:</span>
-                <span style="font-weight: 500; margin-left: 4px;">{{ review.graph_data.relationships_count }}</span>
-              </div>
-            }
-            @if (review.graph_data?.competitors_count) {
-              <div>
-                <span style="color: #999;">Competitors:</span>
-                <span style="font-weight: 500; margin-left: 4px;">{{ review.graph_data.competitors_count }}</span>
-              </div>
-            }
-            @if (review.graph_data?.events_count) {
-              <div>
-                <span style="color: #999;">Events:</span>
-                <span style="font-weight: 500; margin-left: 4px;">{{ review.graph_data.events_count }}</span>
-              </div>
-            }
-          </div>
-
-          @if (review.graph_data?.risk_exposure?.resources?.length) {
-            <nz-divider nzText="Resource Dependencies" nzOrientation="left" style="margin: 12px 0 8px;"></nz-divider>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-              @for (r of review.graph_data.risk_exposure.resources; track r.resource) {
-                <nz-tag>
-                  {{ r.resource }}
-                  @if (r.price_trend && r.price_trend !== 'unknown') {
-                    <span [style.color]="r.price_trend === 'up' ? '#cf1322' : r.price_trend === 'down' ? '#389e0d' : '#999'">
-                      {{ r.price_trend === 'up' ? '↑' : r.price_trend === 'down' ? '↓' : '→' }}
-                    </span>
-                  }
-                </nz-tag>
-              }
-            </div>
-          }
-        </nz-card>
-
-        <!-- Review text -->
-        <nz-card nzSize="small" [nzTitle]="'Investment Review: ' + review.company" [nzBordered]="false"
-          style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
-          <div style="font-size: 13px; line-height: 1.8; white-space: pre-wrap; color: #333;">{{ review.review }}</div>
-        </nz-card>
-      } @else if (searched) {
-        <nz-card nzSize="small" [nzBordered]="false" style="box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
-          <nz-empty nzNotFoundContent="Company not found or no data available"></nz-empty>
-        </nz-card>
-      }
-    </div>
+    <section class="page">
+      <h1>Company industry review</h1>
+      <p>
+        The review separates observed facts and disclosures from analyst views,
+        forecasts, and management plans. It uses only governed Atlas query tools.
+      </p>
+      <div>
+        <input [(ngModel)]="companyName" placeholder="Company name or alias">
+        <button (click)="run()" [disabled]="!companyName.trim() || loading">
+          {{loading ? 'Generating…' : 'Generate review'}}
+        </button>
+      </div>
+      <p class="error" *ngIf="error">{{error}}</p>
+      <article *ngIf="result">
+        <div class="answer">{{result.answer}}</div>
+        <h2>Evidence references</h2>
+        <pre>{{result.citations | json}}</pre>
+        <details>
+          <summary>Tool trace</summary>
+          <pre>{{result.tool_trace | json}}</pre>
+        </details>
+      </article>
+    </section>
   `,
+  styles: [`
+    .page{padding:24px}input{width:min(520px,70%);padding:8px}
+    button{margin-left:8px;padding:8px 14px}.answer{white-space:pre-wrap;line-height:1.65}
+    article{margin-top:18px;border:1px solid #ddd;border-radius:6px;padding:16px}
+    pre{background:#fafafa;padding:12px;overflow:auto}.error{color:#c62828}
+  `],
 })
 export class CompanyReviewComponent {
   private api = inject(AtlasApiService);
-  private msg = inject(NzMessageService);
-
   companyName = '';
   loading = false;
-  searched = false;
-  review: any = null;
+  error = '';
+  result: any;
 
-  search(): void {
-    if (!this.companyName.trim()) {
-      this.msg.warning('Please enter a company name');
-      return;
-    }
+  run(): void {
     this.loading = true;
-    this.searched = true;
-    this.review = null;
-    this.api.getCompanyReview(this.companyName.trim()).subscribe({
-      next: (r) => { this.review = r; this.loading = false; },
-      error: () => { this.msg.error('Failed to generate review'); this.loading = false; },
+    this.error = '';
+    this.api.companyReview(this.companyName.trim()).subscribe({
+      next: result => {
+        this.result = result;
+        this.loading = false;
+      },
+      error: error => {
+        this.error = error.message;
+        this.loading = false;
+      },
     });
   }
 }
-
-
