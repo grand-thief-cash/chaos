@@ -73,13 +73,13 @@ func init() {
 	})
 
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
-		return true, service.NewKgService(), nil
+		return true, service.NewAtlasKGService(), nil
 	})
 
 	registry.RegisterAuto(func(cfg *config.AppConfig, c *core.Container) (bool, core.Component, error) {
 		if cfg.Neo4j == nil || !cfg.Neo4j.Enabled {
 			return false, nil, nil
 		}
-		return true, service.NewGraphService(), nil
+		return true, service.NewAtlasGraphService(), nil
 	})
 }

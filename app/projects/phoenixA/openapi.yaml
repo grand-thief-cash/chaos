@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: PhoenixA Data and Feature Platform API
-  version: v1.38.0
+  version: v1.40.0
   description: |
     PhoenixA data middle-platform API for AmazingData datasets and governed,
     versioned Feature Platform materializations.
@@ -1128,6 +1128,261 @@ paths:
             application/json:
               schema: { type: object, properties: { status: { type: string, example: cancelled } } }
         '409': { $ref: '#/components/responses/FeatureError' }
+
+  /api/v1/atlas-kg/extraction-runs:
+    get:
+      tags: [Atlas Knowledge]
+      summary: List Atlas extraction runs
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 1000 } }
+      responses:
+        '200':
+          description: Extraction run list.
+    post:
+      tags: [Atlas Knowledge]
+      summary: Create an Atlas extraction run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: Extraction run created.
+
+  /api/v1/atlas-kg/extraction-runs:completed:
+    get:
+      tags: [Atlas Knowledge]
+      summary: Find a completed run for idempotent report consumption
+      parameters:
+        - { in: query, name: source_document_id, required: true, schema: { type: string } }
+        - { in: query, name: semantic_version, required: true, schema: { type: string } }
+        - { in: query, name: pipeline_version, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Matching completed run.
+        '404':
+          description: No completed run matched.
+
+  /api/v1/atlas-kg/extraction-runs:reusable:
+    get:
+      tags: [Atlas Knowledge]
+      summary: Find a validated extraction result reusable after downstream failure
+      parameters:
+        - { in: query, name: source_document_id, required: true, schema: { type: string } }
+        - { in: query, name: semantic_version, required: true, schema: { type: string } }
+        - { in: query, name: pipeline_version, required: true, schema: { type: string } }
+        - { in: query, name: prompt_signature, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Matching run including its validated result.
+        '404':
+          description: No reusable result matched.
+
+  /api/v1/atlas-kg/extraction-runs/{run_id}:
+    parameters:
+      - { in: path, name: run_id, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Atlas Knowledge]
+      summary: Get one Atlas extraction run
+      responses:
+        '200':
+          description: Extraction run.
+        '404':
+          description: Run not found.
+    put:
+      tags: [Atlas Knowledge]
+      summary: Update the controlled state of an Atlas extraction run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Extraction run updated.
+
+  /api/v1/atlas-kg/extraction-runs/{run_id}/result:
+    post:
+      tags: [Atlas Knowledge]
+      summary: Save a schema-validated extraction result
+      parameters:
+        - { in: path, name: run_id, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Result saved.
+
+  /api/v1/atlas-kg/governance/{kind}:
+    parameters:
+      - { in: path, name: kind, required: true, schema: { type: string, enum: [discovery, semantic-version, crosswalk] } }
+    get:
+      tags: [Atlas Knowledge]
+      summary: List Atlas governance records
+      responses:
+        '200':
+          description: Governance record list.
+    post:
+      tags: [Atlas Knowledge]
+      summary: Save a discovery, semantic-version, or crosswalk record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '201':
+          description: Governance record saved.
+
+  /api/v1/atlas-kg/entities:
+    get:
+      tags: [Atlas Knowledge]
+      summary: Search knowledge entities by canonical name or alias
+      parameters:
+        - { in: query, name: q, schema: { type: string } }
+        - { in: query, name: entity_type, schema: { type: string } }
+        - { in: query, name: match, schema: { type: string, enum: [exact] } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 1000 } }
+      responses:
+        '200':
+          description: Knowledge entity list.
+
+  /api/v1/atlas-kg/entities:batch:
+    post:
+      tags: [Atlas Knowledge]
+      summary: Upsert validated knowledge entities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 2000
+              items: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Entities saved.
+
+  /api/v1/atlas-kg/entity-aliases:batch:
+    post:
+      tags: [Atlas Knowledge]
+      summary: Upsert normalized entity aliases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 2000
+              items: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Aliases saved.
+
+  /api/v1/atlas-kg/security-entity-links:batch:
+    post:
+      tags: [Atlas Knowledge]
+      summary: Upsert controlled security registry links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 2000
+              items: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Security links saved.
+
+  /api/v1/atlas-kg/claims:
+    get:
+      tags: [Atlas Knowledge]
+      summary: Query governed claims
+      parameters:
+        - { in: query, name: entity_id, schema: { type: string, format: uuid } }
+        - { in: query, name: predicate, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 1000 } }
+      responses:
+        '200':
+          description: Claim list.
+
+  /api/v1/atlas-kg/claims:batch:
+    post:
+      tags: [Atlas Knowledge]
+      summary: Upsert Relation, Quantified, and Analyst View claims
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 2000
+              items: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Claims saved.
+
+  /api/v1/atlas-graph/projection:batch:
+    post:
+      tags: [Atlas Graph]
+      summary: Project accepted affirmative fact claims through fixed Cypher
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entities, claims]
+              properties:
+                entities:
+                  type: array
+                  maxItems: 5000
+                  items: { type: object, additionalProperties: true }
+                claims:
+                  type: array
+                  maxItems: 10000
+                  items: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Projection completed.
+        '400':
+          description: Projection failed the fact-only safety gate.
+
+  /api/v1/atlas-graph/search:
+    get:
+      tags: [Atlas Graph]
+      summary: Search projected Atlas entities
+      parameters:
+        - { in: query, name: q, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 1000 } }
+      responses:
+        '200':
+          description: Projected entity list.
+
+  /api/v1/atlas-graph/stats:
+    get:
+      tags: [Atlas Graph]
+      summary: Get Atlas graph statistics
+      responses:
+        '200':
+          description: Atlas graph statistics.
+
+  /api/v1/atlas-graph/entities/{entity_id}/neighborhood:
+    get:
+      tags: [Atlas Graph]
+      summary: Get a bounded projected entity neighborhood
+      parameters:
+        - { in: path, name: entity_id, required: true, schema: { type: string, format: uuid } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 1000 } }
+      responses:
+        '200':
+          description: Entity neighborhood.
 
 components:
   parameters:

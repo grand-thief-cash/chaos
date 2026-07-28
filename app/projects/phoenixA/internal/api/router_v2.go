@@ -279,91 +279,41 @@ func init() {
 			})
 		})
 
-		// ====== Knowledge Graph (KG) ======
-		kgCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_KG)
+		// ====== Atlas governed knowledge persistence ======
+		kgCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_ATLAS_KG)
 		if err != nil {
 			return err
 		}
-		kgCtrl := kgCtrlComp.(*controller.KgController)
+		kgCtrl := kgCtrlComp.(*controller.AtlasKGController)
 
-		r.Route("/api/v1/kg", func(r chi.Router) {
-			// Documents
-			r.Post("/documents", kgCtrl.CreateDocument)
-			r.Get("/documents", kgCtrl.ListDocuments)
-			r.Get("/documents/{doc_id}", func(w http.ResponseWriter, req *http.Request) {
-				kgCtrl.GetDocument(w, req, chi.URLParam(req, "doc_id"))
-			})
-			r.Put("/documents/{doc_id}", func(w http.ResponseWriter, req *http.Request) {
-				kgCtrl.UpdateDocument(w, req, chi.URLParam(req, "doc_id"))
-			})
-
-			// Extractions
-			r.Post("/extractions", kgCtrl.CreateExtraction)
-			r.Get("/extractions", kgCtrl.ListExtractions)
-			r.Get("/extractions/{id}", func(w http.ResponseWriter, req *http.Request) {
-				kgCtrl.GetExtraction(w, req, chi.URLParam(req, "id"))
-			})
-
-			// Events
-			r.Post("/events", kgCtrl.CreateEvent)
-			r.Get("/events", kgCtrl.ListEvents)
-			r.Get("/events/recent", kgCtrl.ListRecentEvents)
-			r.Get("/events/{id}", func(w http.ResponseWriter, req *http.Request) {
-				kgCtrl.GetEvent(w, req, chi.URLParam(req, "id"))
-			})
-			r.Put("/events/{id}", func(w http.ResponseWriter, req *http.Request) {
-				kgCtrl.UpdateEvent(w, req, chi.URLParam(req, "id"))
-			})
-
-			// Graph Ingestions
-			r.Post("/graph-ingestions", kgCtrl.CreateGraphIngestion)
-
-			// Daily Runs
-			r.Post("/daily-runs", kgCtrl.CreateDailyRun)
-			r.Get("/daily-runs", kgCtrl.ListDailyRuns)
-
-			// Impact Logs
-			r.Post("/impact-logs", kgCtrl.CreateImpactLog)
-			r.Get("/impact-logs", kgCtrl.ListImpactLogs)
+		r.Route("/api/v1/atlas-kg", func(r chi.Router) {
+			r.Post("/extraction-runs", kgCtrl.CreateExtractionRun)
+			r.Get("/extraction-runs", kgCtrl.ListExtractionRuns)
+			r.Get("/extraction-runs:completed", kgCtrl.FindCompletedExtractionRun)
+			r.Get("/extraction-runs:reusable", kgCtrl.FindReusableExtraction)
+			r.Get("/extraction-runs/{run_id}", kgCtrl.GetExtractionRun)
+			r.Put("/extraction-runs/{run_id}", kgCtrl.UpdateExtractionRun)
+			r.Post("/extraction-runs/{run_id}/result", kgCtrl.SaveExtractionResult)
+			r.Post("/governance/{kind}", kgCtrl.SaveGovernanceRecord)
+			r.Get("/governance/{kind}", kgCtrl.ListGovernanceRecords)
+			r.Post("/entities:batch", kgCtrl.UpsertEntities)
+			r.Get("/entities", kgCtrl.ListEntities)
+			r.Post("/entity-aliases:batch", kgCtrl.UpsertEntityAliases)
+			r.Post("/security-entity-links:batch", kgCtrl.UpsertSecurityEntityLinks)
+			r.Post("/claims:batch", kgCtrl.UpsertClaims)
+			r.Get("/claims", kgCtrl.ListClaims)
 		})
 
-		// ====== Graph (Neo4j) ======
-		graphCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_GRAPH)
+		// ====== Atlas controlled Neo4j projection/query (no arbitrary Cypher) ======
+		graphCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_ATLAS_GRAPH)
 		if err == nil {
-			graphCtrl := graphCtrlComp.(*controller.GraphController)
+			graphCtrl := graphCtrlComp.(*controller.AtlasGraphController)
 
-			r.Route("/api/v1/graph", func(r chi.Router) {
-				// Cypher execution
-				r.Post("/cypher", graphCtrl.RunCypher)
-				r.Post("/cypher/write", graphCtrl.RunCypherWrite)
-
-				// Node/Edge merge
-				r.Post("/nodes/merge", graphCtrl.MergeNode)
-				r.Post("/nodes/merge-batch", graphCtrl.MergeNodeBatch)
-				r.Post("/edges/merge", graphCtrl.MergeEdge)
-				r.Post("/edges/merge-batch", graphCtrl.MergeEdgeBatch)
-
-				// Read queries
+			r.Route("/api/v1/atlas-graph", func(r chi.Router) {
+				r.Post("/projection:batch", graphCtrl.ProjectBatch)
 				r.Get("/search", graphCtrl.SearchNodes)
 				r.Get("/stats", graphCtrl.GetGraphStats)
-				r.Get("/company/{name}", func(w http.ResponseWriter, req *http.Request) {
-					graphCtrl.GetCompanyFull(w, req, chi.URLParam(req, "name"))
-				})
-				r.Get("/company/{name}/chain", func(w http.ResponseWriter, req *http.Request) {
-					graphCtrl.GetCompanyChain(w, req, chi.URLParam(req, "name"))
-				})
-				r.Get("/company/{name}/timeline", func(w http.ResponseWriter, req *http.Request) {
-					graphCtrl.GetCompanyTimeline(w, req, chi.URLParam(req, "name"))
-				})
-				r.Get("/company/{name}/competitors", func(w http.ResponseWriter, req *http.Request) {
-					graphCtrl.GetCompanyCompetitors(w, req, chi.URLParam(req, "name"))
-				})
-				r.Get("/event/{name}/impacts", func(w http.ResponseWriter, req *http.Request) {
-					graphCtrl.GetEventImpacts(w, req, chi.URLParam(req, "name"))
-				})
-
-				// Schema management
-				r.Post("/schema/ensure", graphCtrl.EnsureSchema)
+				r.Get("/entities/{entity_id}/neighborhood", graphCtrl.GetNeighborhood)
 			})
 		}
 

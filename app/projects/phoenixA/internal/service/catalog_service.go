@@ -159,52 +159,30 @@ var tableMetaRegistry = map[string]tableMeta{
 			APIEndpoint:     "POST /api/v2/long-hu-bang/{source}/upsert",
 		},
 	},
-	// KG
-	"documents": {
-		Domain:      "kg",
-		Description: "知识图谱文档元数据",
-		Lineage: &model.DataLineage{
-			SourceSystem:    "atlas",
-			IngestionMethod: "REST API",
-			RefreshSchedule: "每日增量",
-		},
+	// Atlas governed knowledge
+	"extraction_run": {
+		Domain: "atlas_kg", Description: "Atlas Whole-PDF 抽取运行及已校验结果",
+		Lineage: &model.DataLineage{SourceSystem: "atlas", IngestionMethod: "REST API"},
 	},
-	"extractions": {
-		Domain:      "kg",
-		Description: "LLM 抽取结果（JSONB）",
-		Lineage: &model.DataLineage{
-			SourceSystem: "atlas",
-		},
+	"governance_record": {
+		Domain: "atlas_kg", Description: "语义发现、版本发布与行业 Crosswalk 记录",
+		Lineage: &model.DataLineage{SourceSystem: "atlas"},
 	},
-	"events": {
-		Domain:      "kg",
-		Description: "规范化事件（去重后）",
-		TimeColumn:  "first_seen_at",
-		Lineage: &model.DataLineage{
-			SourceSystem: "atlas",
-		},
+	"knowledge_entity": {
+		Domain: "atlas_kg", Description: "全球上市与非上市知识实体",
+		Lineage: &model.DataLineage{SourceSystem: "atlas"},
 	},
-	"impact_logs": {
-		Domain:      "kg",
-		Description: "事件影响日志",
-		Lineage: &model.DataLineage{
-			SourceSystem: "atlas",
-		},
+	"entity_alias": {
+		Domain: "atlas_kg", Description: "知识实体多语言别名",
+		Lineage: &model.DataLineage{SourceSystem: "atlas"},
 	},
-	"daily_runs": {
-		Domain:      "kg",
-		Description: "每日 KG 流水线运行记录",
-		TimeColumn:  "run_date",
-		Lineage: &model.DataLineage{
-			SourceSystem: "atlas",
-		},
+	"security_entity_link": {
+		Domain: "atlas_kg", Description: "知识实体到 security_registry 的受控链接",
+		Lineage: &model.DataLineage{SourceSystem: "atlas"},
 	},
-	"graph_ingestions": {
-		Domain:      "kg",
-		Description: "图谱写入记录",
-		Lineage: &model.DataLineage{
-			SourceSystem: "atlas",
-		},
+	"claim": {
+		Domain: "atlas_kg", Description: "关系、量化主张与分析师观点",
+		Lineage: &model.DataLineage{SourceSystem: "atlas"},
 	},
 	// Research
 	"research_report_download_record": {
@@ -308,7 +286,7 @@ var domainDescriptions = map[string]string{
 	"taxonomy":        "分类/行业数据",
 	"financial":       "财务/公司行为数据",
 	"market_activity": "市场交易活动数据",
-	"kg":              "知识图谱数据",
+	"atlas_kg":        "Atlas 知识生产与图谱数据",
 	"research":        "研究报告数据",
 	"feature":         "Feature 注册、运行与物化数据",
 	"other":           "其他",
@@ -658,10 +636,10 @@ var domainApiRegistry = map[string]struct {
 			{ToTable: "security_registry", JoinKey: "security_id", Description: "证券基础信息（Phase 3 surrogate-key 重构后经 security_id 关联）"},
 		},
 	},
-	"kg": {
-		Description: "知识图谱数据，文档/抽取/事件/影响日志/图谱写入",
+	"atlas_kg": {
+		Description: "Atlas 抽取运行、语义治理、实体与 Claim",
 		ExampleCalls: []model.ExampleCall{
-			{Title: "查询事件", URL: "GET /api/v1/kg/events?event_type=risk"},
+			{Title: "查询 Claims", URL: "GET /api/v1/atlas-kg/claims?entity_id={uuid}"},
 		},
 	},
 	"market_activity": {
@@ -862,7 +840,7 @@ type CatalogService struct {
 	*core.BaseComponent
 	Dao          *dao.CatalogDao         `infra:"dep:dao_catalog"`
 	SchemaDao    *dao.SchemaDao          `infra:"dep:dao_schema"`
-	GraphDao     *dao.GraphDao           `infra:"dep_optional:dao_graph"`
+	GraphDao     *dao.AtlasGraphDao      `infra:"dep_optional:dao_atlas_graph"`
 	FieldDictDao *dao.FieldDictionaryDao `infra:"dep:dao_field_dictionary"`
 
 	cacheMu      sync.RWMutex
@@ -1122,9 +1100,9 @@ func (s *CatalogService) getTables(ctx context.Context, refresh bool) ([]model.T
 
 	// Rebuild cache (ANALYZE first on refresh to get accurate pg statistics)
 	if refresh {
-		s.Dao.AnalyzeSchemas(ctx, []string{"public", "kg", "ods", "dwd", "govern"})
+		s.Dao.AnalyzeSchemas(ctx, []string{"public", "atlas_kg", "ods", "dwd", "govern"})
 	}
-	rows, err := s.Dao.ListTables(ctx, []string{"public", "kg", "ods", "dwd", "govern"})
+	rows, err := s.Dao.ListTables(ctx, []string{"public", "atlas_kg", "ods", "dwd", "govern"})
 	if err != nil {
 		return nil, false, err
 	}
@@ -1181,8 +1159,8 @@ func (s *CatalogService) getTables(ctx context.Context, refresh bool) ([]model.T
 func (s *CatalogService) findMeta(schema, table string) tableMeta {
 	// Exact match first
 	key := table
-	if schema == "kg" {
-		key = table // kg tables are stored by their table name only
+	if schema == "atlas_kg" {
+		key = table
 	}
 	if m, ok := tableMetaRegistry[key]; ok {
 		return m
@@ -1209,9 +1187,9 @@ func (s *CatalogService) findMeta(schema, table string) tableMeta {
 		return m
 	}
 
-	// Default for kg schema
-	if schema == "kg" {
-		return tableMeta{Domain: "kg", Description: table}
+	// Default for Atlas schema
+	if schema == "atlas_kg" {
+		return tableMeta{Domain: "atlas_kg", Description: table}
 	}
 
 	return tableMeta{Domain: "other", Description: table}
@@ -1534,7 +1512,7 @@ func (s *CatalogService) GetBusinessOverview(ctx context.Context, refresh bool) 
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "feature", "kg", "research", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "feature", "atlas_kg", "research", "other"}
 	seen := map[string]bool{}
 	var domains []model.BusinessDomain
 
@@ -1663,7 +1641,7 @@ func (s *CatalogService) GetCapabilities(ctx context.Context, refresh bool) (*mo
 		domainTables[t.Domain] = append(domainTables[t.Domain], t)
 	}
 
-	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "feature", "kg", "research", "other"}
+	domainOrder := []string{"bars", "security", "taxonomy", "financial", "market_activity", "feature", "atlas_kg", "research", "other"}
 	var capabilities []model.DomainCapability
 
 	for _, d := range domainOrder {

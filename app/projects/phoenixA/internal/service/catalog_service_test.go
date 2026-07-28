@@ -23,12 +23,12 @@ func TestFindMeta_ExactMatch(t *testing.T) {
 		{"public", "taxonomy_category_derived_flags", "taxonomy", "分类语义派生标记（PhoenixA 维护）"},
 		{"public", "industry_weight", "taxonomy", "行业成分权重（日度）"},
 		{"public", "industry_daily", "taxonomy", "行业日行情"},
-		{"kg", "documents", "kg", "知识图谱文档元数据"},
-		{"kg", "extractions", "kg", "LLM 抽取结果（JSONB）"},
-		{"kg", "events", "kg", "规范化事件（去重后）"},
-		{"kg", "impact_logs", "kg", "事件影响日志"},
-		{"kg", "daily_runs", "kg", "每日 KG 流水线运行记录"},
-		{"kg", "graph_ingestions", "kg", "图谱写入记录"},
+		{"atlas_kg", "extraction_run", "atlas_kg", "Atlas Whole-PDF 抽取运行及已校验结果"},
+		{"atlas_kg", "governance_record", "atlas_kg", "语义发现、版本发布与行业 Crosswalk 记录"},
+		{"atlas_kg", "knowledge_entity", "atlas_kg", "全球上市与非上市知识实体"},
+		{"atlas_kg", "entity_alias", "atlas_kg", "知识实体多语言别名"},
+		{"atlas_kg", "security_entity_link", "atlas_kg", "知识实体到 security_registry 的受控链接"},
+		{"atlas_kg", "claim", "atlas_kg", "关系、量化主张与分析师观点"},
 		{"govern", "feature_definition", "feature", "Feature 稳定业务定义"},
 		{"govern", "feature_run", "feature", "Feature 冻结运行上下文"},
 		{"dwd", "feature_value_numeric", "feature", "不可变数值 Feature 物化"},
@@ -105,12 +105,12 @@ func TestFindMeta_UnknownTable(t *testing.T) {
 	}
 }
 
-func TestFindMeta_KGSchemaFallback(t *testing.T) {
+func TestFindMeta_AtlasKGSchemaFallback(t *testing.T) {
 	svc := &CatalogService{}
 
-	meta := svc.findMeta("kg", "some_future_kg_table")
-	if meta.Domain != "kg" {
-		t.Errorf("unknown kg table domain: got %q, want 'kg'", meta.Domain)
+	meta := svc.findMeta("atlas_kg", "some_future_atlas_table")
+	if meta.Domain != "atlas_kg" {
+		t.Errorf("unknown atlas_kg table domain: got %q, want 'atlas_kg'", meta.Domain)
 	}
 }
 
@@ -148,8 +148,8 @@ func TestFindMeta_HasLineage(t *testing.T) {
 		{"public", "security_registry", "artemis"},
 		{"public", "financial_statement", "artemis"},
 		{"public", "bars_stock_zh_a_daily_nf", "artemis"},
-		{"kg", "documents", "atlas"},
-		{"kg", "events", "atlas"},
+		{"atlas_kg", "extraction_run", "atlas"},
+		{"atlas_kg", "knowledge_entity", "atlas"},
 	}
 
 	for _, c := range tablesWithLineage {
@@ -177,8 +177,6 @@ func TestFindMeta_HasTimeColumn(t *testing.T) {
 		{"public", "corporate_action", "ann_date"},
 		{"public", "long_hu_bang", "trade_date"},
 		{"public", "industry_weight", "trade_date"},
-		{"kg", "events", "first_seen_at"},
-		{"kg", "daily_runs", "run_date"},
 		// No time column
 		{"public", "security_registry", ""},
 		{"public", "taxonomy_category", ""},

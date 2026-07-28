@@ -1,7 +1,13 @@
 # VERSION
-v1.39.2
+v1.40.0
 
 # Changelog
+- v1.40.0
+    - Added the `atlas_kg` PostgreSQL schema for extraction runs, governance records, knowledge entities, aliases, A-share security links, and governed Relation/Quantified/Analyst View claims.
+    - Added bounded Atlas persistence APIs with strict entity, alias, security-link, and Claim validation; added completed/reusable extraction lookups, exact/fuzzy alias-aware entity search, and catalog registration.
+    - Added fixed, parameterized Neo4j projection/search/neighborhood/statistics operations behind PhoenixA infrastructure; removed the previous generic KG endpoints and arbitrary Cypher execution path.
+    - Enforced fact-only graph projection at the PhoenixA boundary: claims must be accepted, affirmative `OBSERVED_FACT` or `COMPANY_DISCLOSURE` records with valid UUIDs and in-batch entities.
+    - Added unit coverage for graph projection safety and Atlas entity, alias, and security-link validation; all `internal/...` unit tests pass.
 - v1.39.2
     - Fixed `morning_report` upserts rejected with HTTP 400 `invalid report_type`: the controller's `validReportTypes` allowlist still held the pre-rename `broker_report`, so artemis (renamed to `morning_report`) had its batch upserts rejected before reaching the DB, failing the download task with a generic "failed to upsert N reports to phoenixA". Renamed the allowlist entry to `morning_report` and added a regression test asserting every artemis feed type is accepted and the old name is rejected.
 - v1.39.1
