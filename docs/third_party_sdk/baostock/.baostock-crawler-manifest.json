@@ -1,0 +1,39 @@
+{
+  "chunks": [
+    {
+      "document_count": 10,
+      "filename": "baostock-001.md",
+      "first_document_number": 1,
+      "last_document_number": 10
+    },
+    {
+      "document_count": 10,
+      "filename": "baostock-002.md",
+      "first_document_number": 11,
+      "last_document_number": 20
+    },
+    {
+      "document_count": 10,
+      "filename": "baostock-003.md",
+      "first_document_number": 21,
+      "last_document_number": 30
+    },
+    {
+      "document_count": 1,
+      "filename": "baostock-004.md",
+      "first_document_number": 31,
+      "last_document_number": 31
+    }
+  ],
+  "document_count": 31,
+  "documents_per_file": 10,
+  "files": [
+    "baostock-001.md",
+    "baostock-002.md",
+    "baostock-003.md",
+    "baostock-004.md",
+    "index.md"
+  ],
+  "format_version": 1,
+  "menu_api_url": "https://baostock.com/helpdocs/api/menu"
+}

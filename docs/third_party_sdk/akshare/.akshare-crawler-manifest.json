@@ -1,0 +1,232 @@
+{
+  "files": [
+    "article/article-001.md",
+    "article/index.md",
+    "bank/bank-001.md",
+    "bank/index.md",
+    "bond/bond-001.md",
+    "bond/bond-002.md",
+    "bond/index.md",
+    "currency/currency-001.md",
+    "currency/index.md",
+    "dc/dc-001.md",
+    "dc/index.md",
+    "energy/energy-001.md",
+    "energy/index.md",
+    "event/event-001.md",
+    "event/index.md",
+    "fund/fund_private-001.md",
+    "fund/fund_public-001.md",
+    "fund/fund_public-002.md",
+    "fund/fund_public-003.md",
+    "fund/fund_public-004.md",
+    "fund/index.md",
+    "futures/futures-001.md",
+    "futures/futures-002.md",
+    "futures/index.md",
+    "fx/fx-001.md",
+    "fx/fx-002.md",
+    "fx/index.md",
+    "hf/hf-001.md",
+    "hf/index.md",
+    "index.md",
+    "index/index-001.md",
+    "index/index-002.md",
+    "index/index-003.md",
+    "index/index.md",
+    "interest_rate/index.md",
+    "interest_rate/interest_rate-001.md",
+    "macro/index.md",
+    "macro/macro-001.md",
+    "macro/macro-002.md",
+    "nlp/index.md",
+    "nlp/nlp-001.md",
+    "option/index.md",
+    "option/option-001.md",
+    "option/option-002.md",
+    "others/index.md",
+    "others/others-001.md",
+    "others/others-002.md",
+    "qdii/index.md",
+    "qdii/qdii-001.md",
+    "qhkc/index-001.md",
+    "qhkc/index.md",
+    "spot/index.md",
+    "spot/spot-001.md",
+    "stock/index.md",
+    "stock/stock-001.md",
+    "stock/stock-002.md",
+    "stock/stock-003.md",
+    "stock/stock-004.md",
+    "stock/stock-005.md",
+    "stock/stock-006.md",
+    "tool/index.md",
+    "tool/tool-001.md"
+  ],
+  "format_version": 1,
+  "sections_per_file": 10,
+  "source_index_url": "https://akshare.akfamily.xyz/_sources/data/index.rst.txt",
+  "sources": [
+    {
+      "category": "stock",
+      "chunks": 6,
+      "route": "stock/stock",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/stock/stock.md.txt",
+      "title": "AKShare 股票数据"
+    },
+    {
+      "category": "futures",
+      "chunks": 2,
+      "route": "futures/futures",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/futures/futures.md.txt",
+      "title": "AKShare 期货数据"
+    },
+    {
+      "category": "bond",
+      "chunks": 2,
+      "route": "bond/bond",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/bond/bond.md.txt",
+      "title": "AKShare 债券数据"
+    },
+    {
+      "category": "option",
+      "chunks": 2,
+      "route": "option/option",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/option/option.md.txt",
+      "title": "AKShare 期权数据"
+    },
+    {
+      "category": "fx",
+      "chunks": 2,
+      "route": "fx/fx",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/fx/fx.md.txt",
+      "title": "AKShare 外汇数据"
+    },
+    {
+      "category": "currency",
+      "chunks": 1,
+      "route": "currency/currency",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/currency/currency.md.txt",
+      "title": "AKShare 货币数据"
+    },
+    {
+      "category": "spot",
+      "chunks": 1,
+      "route": "spot/spot",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/spot/spot.md.txt",
+      "title": "AKShare 现货数据"
+    },
+    {
+      "category": "interest_rate",
+      "chunks": 1,
+      "route": "interest_rate/interest_rate",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/interest_rate/interest_rate.md.txt",
+      "title": "AKShare 利率数据"
+    },
+    {
+      "category": "fund",
+      "chunks": 1,
+      "route": "fund/fund_private",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/fund/fund_private.md.txt",
+      "title": "AKShare 私募基金数据"
+    },
+    {
+      "category": "fund",
+      "chunks": 4,
+      "route": "fund/fund_public",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/fund/fund_public.md.txt",
+      "title": "AKShare 公募基金数据"
+    },
+    {
+      "category": "index",
+      "chunks": 3,
+      "route": "index/index",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/index/index.md.txt",
+      "title": "AKShare 指数数据"
+    },
+    {
+      "category": "macro",
+      "chunks": 2,
+      "route": "macro/macro",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/macro/macro.md.txt",
+      "title": "AKShare 宏观数据"
+    },
+    {
+      "category": "dc",
+      "chunks": 1,
+      "route": "dc/dc",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/dc/dc.md.txt",
+      "title": "AKShare 加密货币数据"
+    },
+    {
+      "category": "bank",
+      "chunks": 1,
+      "route": "bank/bank",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/bank/bank.md.txt",
+      "title": "AKShare 银行数据"
+    },
+    {
+      "category": "article",
+      "chunks": 1,
+      "route": "article/article",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/article/article.md.txt",
+      "title": "AKShare 波动率数据"
+    },
+    {
+      "category": "energy",
+      "chunks": 1,
+      "route": "energy/energy",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/energy/energy.md.txt",
+      "title": "AKShare 能源数据"
+    },
+    {
+      "category": "event",
+      "chunks": 1,
+      "route": "event/event",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/event/event.md.txt",
+      "title": "AKShare 迁徙数据"
+    },
+    {
+      "category": "hf",
+      "chunks": 1,
+      "route": "hf/hf",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/hf/hf.md.txt",
+      "title": "AKShare 高频数据"
+    },
+    {
+      "category": "nlp",
+      "chunks": 1,
+      "route": "nlp/nlp",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/nlp/nlp.md.txt",
+      "title": "AKShare 自然语言处理"
+    },
+    {
+      "category": "qdii",
+      "chunks": 1,
+      "route": "qdii/qdii",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/qdii/qdii.md.txt",
+      "title": "AKShare QDII 数据"
+    },
+    {
+      "category": "others",
+      "chunks": 2,
+      "route": "others/others",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/others/others.md.txt",
+      "title": "AKShare 另类数据"
+    },
+    {
+      "category": "qhkc",
+      "chunks": 1,
+      "route": "qhkc/index",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/qhkc/index.rst.txt",
+      "title": "qhkc/index"
+    },
+    {
+      "category": "tool",
+      "chunks": 1,
+      "route": "tool/tool",
+      "source_url": "https://akshare.akfamily.xyz/_sources/data/tool/tool.md.txt",
+      "title": "AKShare 工具箱"
+    }
+  ]
+}

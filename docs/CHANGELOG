@@ -1,7 +1,11 @@
 # VERSION
-v0.4.4
+v0.5.0
 
 # Changelog
+- v0.5.0
+    - Generated docs for akshare.
+    - Generated docs for baostock.
+    - Added RISK_INTELLIGENCE_PLATFORM_ARCHITECTURE_AND_ITERATION_PLAN.md
 - v0.4.4
     - Added docs for hands-on feature platform.
 - v0.4.3
