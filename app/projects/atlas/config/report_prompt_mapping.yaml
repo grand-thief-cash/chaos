@@ -1,0 +1,72 @@
+prompt_profiles:
+  company-research-v1:
+    prompt_version: whole-pdf-extraction-v2
+    description: Listed-company research focused on products, inputs, suppliers, customers, capacity, plans, risks, and analyst views.
+    focus:
+      - company-to-product and company-to-company relationships
+      - production capacity, utilization, orders, projects, and market share
+      - management plans separated from observed facts
+      - analyst estimates, catalysts, risks, and time horizons
+    exclude:
+      - duplicated historical financial statement values and computable ratios
+    extract_relations: true
+    extract_quantified_claims: true
+    extract_analyst_views: true
+  industry-research-v1:
+    prompt_version: whole-pdf-extraction-v2
+    description: Industry research focused on value-chain structure, materials, technologies, products, participants, and bottlenecks.
+    focus:
+      - upstream and downstream value-chain relationships
+      - products, materials, technologies, capacity, prices, and supply constraints
+      - participating listed and non-listed companies
+      - broker industry terms that require semantic discovery
+    exclude:
+      - generic market commentary without reusable entities or claims
+    extract_relations: true
+    extract_quantified_claims: true
+    extract_analyst_views: true
+  macro-research-v1:
+    prompt_version: whole-pdf-extraction-v2
+    description: Macro research retained only when it contains reusable market, commodity, policy-to-industry, or analyst-view knowledge.
+    focus:
+      - commodities, rates, currencies, policies, industries, and explicit transmission channels
+      - observed versus forecast values and explicit time horizons
+    exclude:
+      - isolated time-series observations without a reusable relationship
+    extract_relations: true
+    extract_quantified_claims: true
+    extract_analyst_views: true
+  new-stock-research-v1:
+    prompt_version: whole-pdf-extraction-v2
+    description: New-listing research focused on company identity, products, suppliers, customers, capacity, technology, and disclosed risks.
+    focus:
+      - issuer identity and aliases
+      - products, inputs, customers, suppliers, projects, and capacity
+      - prospectus facts separated from broker forecasts
+    exclude:
+      - standard historical financial values available from PhoenixA
+    extract_relations: true
+    extract_quantified_claims: true
+    extract_analyst_views: true
+  strategy-research-v1:
+    prompt_version: whole-pdf-extraction-v2
+    description: Strategy research retained for explicit cross-industry relationships, allocations, risks, catalysts, and forecasts.
+    focus:
+      - industries, themes, assets, catalysts, risks, and time horizons
+      - analyst recommendations and scenario assumptions
+    exclude:
+      - unsupported company relationships inferred only from general knowledge
+    extract_relations: true
+    extract_quantified_claims: true
+    extract_analyst_views: true
+  morning-report-v1:
+    prompt_version: whole-pdf-extraction-v2
+    description: Broker morning digest; extract only evidence-complete reusable claims and views.
+    focus:
+      - explicitly named companies, products, industries, facts, and broker views
+      - short evidence quotes and precise page references
+    exclude:
+      - headline-only mentions without enough context
+    extract_relations: true
+    extract_quantified_claims: true
+    extract_analyst_views: true

@@ -1,27 +1,26 @@
-"""Atlas — Industry Chain Knowledge Graph Engine entry point."""
 import argparse
+
 import uvicorn
-from atlas.api.routes import app
-from atlas.core.config import load_config
+
+from atlas.api.http_gateway.routes import create_app
+from atlas.application.runtime import build_runtime
+from atlas.core import cfg_mgr
 
 
-def build_arg_parser():
-    parser = argparse.ArgumentParser(
-        description="Start Atlas Knowledge Graph Engine."
-    )
-    parser.add_argument("-c", "--config", dest="config",
-                        help="Path to atlas.yaml", default="config/atlas.yaml")
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Start Atlas knowledge engine HTTP gateway.")
+    parser.add_argument("-c", "--config", dest="config", default=None)
+    parser.add_argument("-e", "--env", dest="env", default=None)
     return parser
 
 
 if __name__ == "__main__":
-    parser = build_arg_parser()
-    args = parser.parse_args()
-    cfg = load_config(args.config)
+    args = build_arg_parser().parse_args()
+    config = cfg_mgr.init_config(path=args.config, env=args.env)
+    app = create_app(build_runtime(config))
     uvicorn.run(
         app,
-        host=cfg["server"]["host"],
-        port=cfg["server"]["port"],
-        access_log=False,
+        host=config.server.host,
+        port=config.server.port,
+        access_log=config.server.access_log,
     )
-

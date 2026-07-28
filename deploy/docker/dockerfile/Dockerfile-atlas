@@ -1,14 +1,8 @@
-FROM python:3.12-slim
+ARG BASE_TAG=latest
+FROM atlas-base:${BASE_TAG}
 
-WORKDIR /app
-
-COPY app/projects/atlas/pyproject.toml app/projects/atlas/README.md ./
-RUN pip install --no-cache-dir -e .
-
-COPY app/projects/atlas/ ./
-COPY app/tools/py/skills/ /app/skills/
+COPY atlas /app/atlas
 
 EXPOSE 18400
 
-CMD ["python", "-m", "atlas.main", "-c", "/app/config/atlas.yaml"]
-
+CMD ["python", "-m", "atlas.main", "-c", "./config/config.yaml", "-e", "production"]

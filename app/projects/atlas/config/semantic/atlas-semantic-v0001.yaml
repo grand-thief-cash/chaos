@@ -1,0 +1,63 @@
+version: atlas-semantic-v0001
+extraction_schema_version: atlas-extraction-v2
+report_types:
+  - report_type: stock
+    sampled_document_count: 0
+    readable_document_count: 0
+    useful_document_count: 0
+    useful_ratio: 0.0
+    enabled_for_production: false
+    prompt_profile_key: company-research-v1
+    rationale: Bootstrap profile; must be replaced by a reviewed discovery version.
+  - report_type: industry
+    sampled_document_count: 0
+    readable_document_count: 0
+    useful_document_count: 0
+    useful_ratio: 0.0
+    enabled_for_production: false
+    prompt_profile_key: industry-research-v1
+    rationale: Bootstrap profile; must be replaced by a reviewed discovery version.
+  - report_type: macro
+    sampled_document_count: 0
+    readable_document_count: 0
+    useful_document_count: 0
+    useful_ratio: 0.0
+    enabled_for_production: false
+    prompt_profile_key: null
+    rationale: Awaiting sample assessment.
+  - report_type: new_stock
+    sampled_document_count: 0
+    readable_document_count: 0
+    useful_document_count: 0
+    useful_ratio: 0.0
+    enabled_for_production: false
+    prompt_profile_key: null
+    rationale: Awaiting sample assessment.
+  - report_type: strategy
+    sampled_document_count: 0
+    readable_document_count: 0
+    useful_document_count: 0
+    useful_ratio: 0.0
+    enabled_for_production: false
+    prompt_profile_key: null
+    rationale: Awaiting sample assessment.
+  - report_type: morning_report
+    sampled_document_count: 0
+    readable_document_count: 0
+    useful_document_count: 0
+    useful_ratio: 0.0
+    enabled_for_production: false
+    prompt_profile_key: null
+    rationale: Awaiting sample assessment.
+predicates: []
+concepts: []
+assertion_types:
+  - OBSERVED_FACT
+  - COMPANY_DISCLOSURE
+  - MANAGEMENT_PLAN
+  - ANALYST_ESTIMATE
+  - ANALYST_OPINION
+  - FORECAST
+  - SCENARIO_ASSUMPTION
+metadata:
+  bootstrap: true

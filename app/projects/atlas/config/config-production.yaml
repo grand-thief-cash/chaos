@@ -1,0 +1,72 @@
+env: production
+
+server:
+  host: 0.0.0.0
+  port: 18400
+  access_log: false
+
+http_client:
+  timeout_seconds: 30
+  verify_ssl: true
+  headers: {}
+
+dept_services:
+  phoenixA:
+    host: 192.168.31.72
+    port: 8085
+    scheme: http
+
+minio:
+  endpoint: 192.168.31.72:9000
+  access_key: ""
+  secret_key: ""
+  secure: false
+  bucket: research-report
+
+llm:
+  extraction:
+    provider: openai_compatible_pdf
+    base_url: http://192.168.31.72:11435/v1
+    model: qwen3-14b-q4_k_m
+    api_key: ""
+    api_key_env: PDF_MODEL_API_KEY
+    timeout_seconds: 900
+    temperature: 0
+    maximum_output_tokens: 16384
+    structured_output_mode: json_object
+  agent:
+    provider: ollama
+    base_url: http://192.168.31.72:11434/v1
+    model: qwen3-14b-q4_k_m
+    api_key: ""
+    api_key_env: OLLAMA_API_KEY
+    timeout_seconds: 300
+    temperature: 0
+    maximum_output_tokens: 8192
+    structured_output_mode: json_schema
+
+taxonomy:
+  canonical_seed_scheme: SW2021
+  schemes:
+    SW2021:
+      source: amazing_data
+      taxonomy: swhy
+      market: zh_a
+    EastMoneyIndustry:
+      source: eastmoney
+      taxonomy: industry
+      market: zh_a
+    EastMoneyConcept:
+      source: eastmoney
+      taxonomy: concept
+      market: zh_a
+
+engine:
+  knowledge_engine:
+    pipeline_version: atlas-kg-v1
+    research_report_source: eastmoney
+    poll_batch_size: 20
+    llm_concurrency: 1
+    maximum_total_attempts: 3
+    semantic_config_path: config/semantic/atlas-semantic-v0001.yaml
+    prompt_mapping_path: config/report_prompt_mapping.yaml
