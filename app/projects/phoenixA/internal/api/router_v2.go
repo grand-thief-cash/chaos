@@ -127,6 +127,72 @@ func init() {
 			r.Get("/", adjustFactorCtrl.Query)
 		})
 
+		// ====== Capital-flow ODS datasets ======
+		capitalFlowComp, err := c.Resolve(bizConsts.COMP_CTRL_CAPITAL_FLOW)
+		if err != nil {
+			return err
+		}
+		capitalFlowCtrl := capitalFlowComp.(*controller.CapitalFlowController)
+		r.Route("/api/v2/capital-flows", func(r chi.Router) {
+			r.Get("/margin-summary", capitalFlowCtrl.QueryMarginSummary)
+			r.Get(
+				"/margin-summary/last-update",
+				capitalFlowCtrl.LastMarginSummaryDate,
+			)
+			r.Post("/margin-summary/upsert", capitalFlowCtrl.UpsertMarginSummary)
+			r.Get("/hsgt", capitalFlowCtrl.QueryHSGT)
+			r.Get("/hsgt/last-update", capitalFlowCtrl.LastHSGTDates)
+			r.Post("/hsgt/upsert", capitalFlowCtrl.UpsertHSGT)
+		})
+
+		// ====== Option-market ODS datasets ======
+		optionMarketDataComp, err := c.Resolve(
+			bizConsts.COMP_CTRL_OPTION_MARKET_DATA,
+		)
+		if err != nil {
+			return err
+		}
+		optionMarketDataCtrl := optionMarketDataComp.(*controller.OptionMarketDataController)
+		r.Route("/api/v2/option-market-data", func(r chi.Router) {
+			r.Get("/qvix", optionMarketDataCtrl.QueryOptionQVIX)
+			r.Get("/qvix/last-update", optionMarketDataCtrl.LastOptionQVIXDates)
+			r.Post("/qvix/upsert", optionMarketDataCtrl.UpsertOptionQVIX)
+			r.Get("/daily-stats", optionMarketDataCtrl.QueryOptionDailyStats)
+			r.Get(
+				"/daily-stats/last-update",
+				optionMarketDataCtrl.LastOptionDailyStatsDates,
+			)
+			r.Post(
+				"/daily-stats/upsert",
+				optionMarketDataCtrl.UpsertOptionDailyStats,
+			)
+		})
+
+		// ====== Scalar market observations ======
+		marketObservationComp, err := c.Resolve(
+			bizConsts.COMP_CTRL_MARKET_OBSERVATION,
+		)
+		if err != nil {
+			return err
+		}
+		marketObservationCtrl := marketObservationComp.(*controller.MarketObservationController)
+		r.Route("/api/v2/market-observations/{source}", func(r chi.Router) {
+			r.Get("/", marketObservationCtrl.Query)
+			r.Get("/last-update", marketObservationCtrl.LastDates)
+			r.Post("/upsert", marketObservationCtrl.Upsert)
+		})
+
+		securityEventComp, err := c.Resolve(bizConsts.COMP_CTRL_SECURITY_EVENT)
+		if err != nil {
+			return err
+		}
+		securityEventCtrl := securityEventComp.(*controller.SecurityEventController)
+		r.Route("/api/v2/security-events/{source}/{event_type}", func(r chi.Router) {
+			r.Post("/upsert", securityEventCtrl.BatchUpsert)
+			r.Get("/last-update", securityEventCtrl.LastDatesBySecurityIDs)
+			r.Get("/", securityEventCtrl.Query)
+		})
+
 		// ====== Long Hu Bang ======
 		longHuBangCtrlComp, err := c.Resolve(bizConsts.COMP_CTRL_LONG_HU_BANG)
 		if err != nil {

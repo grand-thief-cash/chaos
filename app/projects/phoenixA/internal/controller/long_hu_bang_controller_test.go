@@ -31,10 +31,10 @@ func TestLongHuBangJSONDeserialization(t *testing.T) {
 	if rec.FlowMark != 1 {
 		t.Fatalf("expected flow_mark=1, got %d", rec.FlowMark)
 	}
-	if rec.ChangeRange != 9.98 {
+	if rec.ChangeRange == nil || *rec.ChangeRange != 9.98 {
 		t.Errorf("expected change_range=9.98, got %v", rec.ChangeRange)
 	}
-	if rec.BuyAmount != 123456789.12 {
+	if rec.BuyAmount == nil || *rec.BuyAmount != 123456789.12 {
 		t.Errorf("expected buy_amount=123456789.12, got %v", rec.BuyAmount)
 	}
 }
@@ -60,7 +60,7 @@ func TestLongHuBangSecurityIDAndDateNormalization(t *testing.T) {
 	if list[0].FlowMark != 2 {
 		t.Fatalf("expected flow_mark=2, got %d", list[0].FlowMark)
 	}
-	if list[0].TotalAmount != 300.0 {
+	if list[0].TotalAmount == nil || *list[0].TotalAmount != 300.0 {
 		t.Fatalf("expected total_amount=300.0, got %v", list[0].TotalAmount)
 	}
 }

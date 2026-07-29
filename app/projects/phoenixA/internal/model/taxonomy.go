@@ -106,13 +106,13 @@ type IndustryDaily struct {
 	High       float64   `gorm:"type:decimal(20,4)" json:"high"`
 	Close      float64   `gorm:"type:decimal(20,4)" json:"close"`
 	Low        float64   `gorm:"type:decimal(20,4)" json:"low"`
-	PreClose   float64   `gorm:"type:decimal(20,4)" json:"pre_close"`
-	Amount     float64   `gorm:"type:decimal(20,4)" json:"amount"`
-	Volume     float64   `gorm:"type:decimal(20,4)" json:"volume"`
-	PB         float64   `gorm:"type:decimal(20,4)" json:"pb"`
-	PE         float64   `gorm:"type:decimal(20,4)" json:"pe"`
-	TotalCap   float64   `gorm:"type:decimal(20,4)" json:"total_cap"`
-	AFloatCap  float64   `gorm:"type:decimal(20,4)" json:"a_float_cap"`
+	PreClose   *float64  `gorm:"type:decimal(20,4)" json:"pre_close"`
+	Amount     *float64  `gorm:"type:decimal(20,4)" json:"amount"`
+	Volume     *float64  `gorm:"type:decimal(20,4)" json:"volume"`
+	PB         *float64  `gorm:"type:decimal(20,4)" json:"pb"`
+	PE         *float64  `gorm:"type:decimal(20,4)" json:"pe"`
+	TotalCap   *float64  `gorm:"type:decimal(20,4)" json:"total_cap"`
+	AFloatCap  *float64  `gorm:"type:decimal(20,4)" json:"a_float_cap"`
 	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 

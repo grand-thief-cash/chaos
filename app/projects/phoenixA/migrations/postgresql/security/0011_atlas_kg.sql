@@ -53,7 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_atlas_alias_normalized ON atlas_kg.entity_alias(n
 
 CREATE TABLE IF NOT EXISTS atlas_kg.security_entity_link (
     entity_id UUID PRIMARY KEY REFERENCES atlas_kg.knowledge_entity(id) ON DELETE CASCADE,
-    security_id BIGINT NOT NULL REFERENCES dwd.security_registry(id),
+    security_id BIGINT NOT NULL REFERENCES ods.security_registry(id),
     confidence NUMERIC(5,4) NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
     resolution_method VARCHAR(40) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

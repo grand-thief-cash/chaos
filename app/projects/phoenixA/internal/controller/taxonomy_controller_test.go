@@ -101,8 +101,8 @@ func TestIndustryDailyJSONDeserialization(t *testing.T) {
 	if d.Open != 3200.5 {
 		t.Errorf("expected open=3200.5, got %f", d.Open)
 	}
-	if d.PE != 15.6 {
-		t.Errorf("expected pe=15.6, got %f", d.PE)
+	if d.PE == nil || *d.PE != 15.6 {
+		t.Errorf("expected pe=15.6, got %v", d.PE)
 	}
 }
 

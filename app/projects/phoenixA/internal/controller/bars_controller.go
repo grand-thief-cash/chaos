@@ -44,27 +44,29 @@ func (c *BarsController) Stop(ctx context.Context) error  { return c.BaseCompone
 // distinct from model.StandardBar, which is the physical row (symbol-keyed, no
 // security_id column, §3.2).
 type barInputRow struct {
-	SecurityID uint64  `json:"security_id"`
-	TradeDate  string  `json:"trade_date"`
-	Open       float64 `json:"open"`
-	High       float64 `json:"high"`
-	Low        float64 `json:"low"`
-	Close      float64 `json:"close"`
-	Volume     int64   `json:"volume"`
-	Amount     int64   `json:"amount"`
-	Preclose   float64 `json:"preclose,omitempty"`
-	PctChg     float64 `json:"pct_chg,omitempty"`
+	SecurityID uint64   `json:"security_id"`
+	TradeDate  string   `json:"trade_date"`
+	Open       float64  `json:"open"`
+	High       float64  `json:"high"`
+	Low        float64  `json:"low"`
+	Close      float64  `json:"close"`
+	Volume     *int64   `json:"volume"`
+	Amount     *int64   `json:"amount"`
+	Preclose   *float64 `json:"preclose,omitempty"`
+	PctChg     *float64 `json:"pct_chg,omitempty"`
 }
 
 // barExtInputRow is the API input shape for a bars extension row.
 type barExtInputRow struct {
-	SecurityID uint64  `json:"security_id"`
-	TradeDate  string  `json:"trade_date"`
-	Turn       float64 `json:"turn,omitempty"`
-	PeTTM      float64 `json:"pe_ttm,omitempty"`
-	PsTTM      float64 `json:"ps_ttm,omitempty"`
-	PbMRQ      float64 `json:"pb_mrq,omitempty"`
-	PcfNcfTTM  float64 `json:"pcf_ncf_ttm,omitempty"`
+	SecurityID  uint64   `json:"security_id"`
+	TradeDate   string   `json:"trade_date"`
+	Turn        *float64 `json:"turn,omitempty"`
+	PeTTM       *float64 `json:"pe_ttm,omitempty"`
+	PsTTM       *float64 `json:"ps_ttm,omitempty"`
+	PbMRQ       *float64 `json:"pb_mrq,omitempty"`
+	PcfNcfTTM   *float64 `json:"pcf_ncf_ttm,omitempty"`
+	TradeStatus *int16   `json:"trade_status,omitempty"`
+	IsST        *bool    `json:"is_st,omitempty"`
 }
 
 // POST /api/v2/bars/{asset_type}/{market}/upsert
@@ -151,13 +153,15 @@ func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 	ext := make([]*model.BarsExtBaostock, 0, len(inputExt))
 	for _, ie := range inputExt {
 		ext = append(ext, &model.BarsExtBaostock{
-			Symbol:    symbolByID[ie.SecurityID],
-			TradeDate: ie.TradeDate,
-			Turn:      ie.Turn,
-			PeTTM:     ie.PeTTM,
-			PsTTM:     ie.PsTTM,
-			PbMRQ:     ie.PbMRQ,
-			PcfNcfTTM: ie.PcfNcfTTM,
+			Symbol:      symbolByID[ie.SecurityID],
+			TradeDate:   ie.TradeDate,
+			Turn:        ie.Turn,
+			PeTTM:       ie.PeTTM,
+			PsTTM:       ie.PsTTM,
+			PbMRQ:       ie.PbMRQ,
+			PcfNcfTTM:   ie.PcfNcfTTM,
+			TradeStatus: ie.TradeStatus,
+			IsST:        ie.IsST,
 		})
 	}
 

@@ -41,7 +41,7 @@ func TestBarsUpsertPayloadDeserialization(t *testing.T) {
 	if len(bars) != 1 || bars[0].SecurityID != 1 {
 		t.Fatalf("expected 1 bar with security_id=1, got %+v", bars)
 	}
-	if bars[0].Open != 10.0 || bars[0].PctChg != 1.92 {
+	if bars[0].Open != 10.0 || bars[0].PctChg == nil || *bars[0].PctChg != 1.92 {
 		t.Errorf("bar fields misparsed: %+v", bars[0])
 	}
 
@@ -52,8 +52,52 @@ func TestBarsUpsertPayloadDeserialization(t *testing.T) {
 	if len(ext) != 1 || ext[0].SecurityID != 1 {
 		t.Fatalf("expected 1 ext row with security_id=1, got %+v", ext)
 	}
-	if ext[0].PeTTM != 15.0 || ext[0].PbMRQ != 1.5 {
+	if ext[0].PeTTM == nil || *ext[0].PeTTM != 15.0 ||
+		ext[0].PbMRQ == nil || *ext[0].PbMRQ != 1.5 {
 		t.Errorf("ext fields misparsed: %+v", ext[0])
+	}
+}
+
+func TestBarsUpsertPayloadPreservesOptionalNullsAndRealZero(t *testing.T) {
+	payload := `{
+		"meta": {"period": "daily", "adjust": "nf", "source": "baostock"},
+		"bars": [{
+			"security_id": 1, "trade_date": "2026-01-05",
+			"open": 10, "high": 10, "low": 10, "close": 10,
+			"volume": 0, "amount": null, "preclose": null, "pct_chg": 0
+		}],
+		"ext": [{
+			"security_id": 1, "trade_date": "2026-01-05",
+			"turn": null, "pe_ttm": 0, "trade_status": 1, "is_st": false
+		}]
+	}`
+	var req model.BarsUpsertRequest
+	if err := json.Unmarshal([]byte(payload), &req); err != nil {
+		t.Fatalf("unmarshal request: %v", err)
+	}
+	var bars []barInputRow
+	var ext []barExtInputRow
+	if err := json.Unmarshal(req.Bars, &bars); err != nil {
+		t.Fatalf("unmarshal bars: %v", err)
+	}
+	if err := json.Unmarshal(req.Ext, &ext); err != nil {
+		t.Fatalf("unmarshal ext: %v", err)
+	}
+	if bars[0].Volume == nil || *bars[0].Volume != 0 {
+		t.Fatalf("real volume zero was not preserved: %+v", bars[0].Volume)
+	}
+	if bars[0].Amount != nil || bars[0].Preclose != nil {
+		t.Fatalf("optional null became a value: %+v", bars[0])
+	}
+	if bars[0].PctChg == nil || *bars[0].PctChg != 0 {
+		t.Fatalf("real pct_chg zero was not preserved: %+v", bars[0].PctChg)
+	}
+	if ext[0].Turn != nil || ext[0].PeTTM == nil || *ext[0].PeTTM != 0 {
+		t.Fatalf("extension null/zero semantics lost: %+v", ext[0])
+	}
+	if ext[0].TradeStatus == nil || *ext[0].TradeStatus != 1 ||
+		ext[0].IsST == nil || *ext[0].IsST {
+		t.Fatalf("trade status fields misparsed: %+v", ext[0])
 	}
 }
 

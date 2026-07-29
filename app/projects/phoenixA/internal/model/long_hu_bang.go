@@ -16,11 +16,11 @@ type LongHuBang struct {
 	ReasonTypeName string    `gorm:"type:varchar(256);not null;default:''" json:"reason_type_name"`
 	TraderName     string    `gorm:"type:varchar(256);not null;uniqueIndex:uk_long_hu_bang" json:"trader_name"`
 	FlowMark       int       `gorm:"type:smallint;not null;default:0;uniqueIndex:uk_long_hu_bang;index:idx_lhb_reason_date" json:"flow_mark"`
-	ChangeRange    float64   `gorm:"type:numeric(20,6);not null;default:0" json:"change_range"`
-	BuyAmount      float64   `gorm:"type:numeric(24,4);not null;default:0" json:"buy_amount"`
-	SellAmount     float64   `gorm:"type:numeric(24,4);not null;default:0" json:"sell_amount"`
-	TotalAmount    float64   `gorm:"type:numeric(24,4);not null;default:0" json:"total_amount"`
-	TotalVolume    float64   `gorm:"type:numeric(24,4);not null;default:0" json:"total_volume"`
+	ChangeRange    *float64  `gorm:"type:numeric(20,6)" json:"change_range"`
+	BuyAmount      *float64  `gorm:"type:numeric(24,4)" json:"buy_amount"`
+	SellAmount     *float64  `gorm:"type:numeric(24,4)" json:"sell_amount"`
+	TotalAmount    *float64  `gorm:"type:numeric(24,4)" json:"total_amount"`
+	TotalVolume    *float64  `gorm:"type:numeric(24,4)" json:"total_volume"`
 	CreatedAt      time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt      time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }

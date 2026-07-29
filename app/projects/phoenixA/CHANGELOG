@@ -1,7 +1,12 @@
 # VERSION
-v1.40.0
+v1.41.0
 
 # Changelog
+- v1.41.0
+    - **ODS domain boundaries.** Replaced the misleading aggregate `RiskData` model/DAO/service/controller with separate capital-flow, option-market-data and market-observation components. Raw source datasets now live under `/api/v2/capital-flows`, `/api/v2/option-market-data` and `/api/v2/market-observations`; the Risk domain is reserved for later derived risk models and signals.
+    - **Extensible global market storage.** Replaced the fixed-column `global_rate_daily`, `global_fx_daily` and `global_commodity_daily` draft tables. Tradable global futures, FX and indexes now use standard Bars tables keyed through `security_registry`; scalar yields, spreads and GDP series use `market_observation_daily` with `security_id`, `observation_type`, `value`, `unit` and `source`.
+    - **Generic observation API.** Added `/api/v2/market-observations/{source}` query/upsert/last-update endpoints and per-security watermarks; removed the three draft wide-table endpoints.
+    - **Phase 0 schema correction.** Updated the undeployed/development `0012_ods_market_data_foundation.sql` directly, including `bars_fx_global_daily_nf` and `bars_futures_global_daily_nf`, so adding an instrument or observation type no longer requires a new column.
 - v1.40.0
     - Added the `atlas_kg` PostgreSQL schema for extraction runs, governance records, knowledge entities, aliases, A-share security links, and governed Relation/Quantified/Analyst View claims.
     - Added bounded Atlas persistence APIs with strict entity, alias, security-link, and Claim validation; added completed/reusable extraction lookups, exact/fuzzy alias-aware entity search, and catalog registration.

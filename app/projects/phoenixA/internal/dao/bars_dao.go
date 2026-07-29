@@ -112,7 +112,7 @@ func (d *BarsDao) BatchUpsertExt(ctx context.Context, source string, q *model.Ba
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "symbol"}, {Name: "trade_date"}},
 			DoUpdates: clause.AssignmentColumns(
-				[]string{"turn", "pe_ttm", "ps_ttm", "pb_mrq", "pcf_ncf_ttm"},
+				[]string{"turn", "pe_ttm", "ps_ttm", "pb_mrq", "pcf_ncf_ttm", "trade_status", "is_st"},
 			),
 		}).CreateInBatches(data, 1000).Error
 }
