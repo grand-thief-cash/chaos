@@ -2,7 +2,7 @@
 
 > 日期：2026-07-28
 > 用途：Phase 0 唯一数据执行清单
-> 说明：当前机器无法访问生产，`CODE_EXISTS` 仅表示代码存在，不表示生产已经下载或调度
+> 说明：当前机器无法访问生产，`CODE_EXISTS` 仅表示代码存在，不表示生产已经下载或调度；开发机已完成的极小样本验证单独标为 `CANARY`
 
 状态：
 
@@ -22,14 +22,14 @@
 
 | ID | 数据集 | Artemis 任务 | 主来源候选 | 写入 | 历史目标 | 调度 | 当前状态 | 当前动作 |
 |---|---|---|---|---|---|---|---|---|
-| C01 | A 股证券列表 | `STOCK_ZH_A_LIST` | AmazingData | PhoenixA `security_registry` | 当前全量 | 每交易日 | `CODE_EXISTS` | 切换真实全市场配置并验证生产 |
+| C01 | 国内证券身份（股票、指数、ETF、可转债） | `STOCK_ZH_A_LIST` | AmazingData 代码信息接口 | PhoenixA `security_registry` | 当前快照；仅写新增或变化身份 | 每交易日 | `CODE_EXISTS` | 核心四类默认开启；港股通、逆回购、期货、期权按需开启 |
 | C02 | A 股不复权日线 | `STOCK_ZH_A_HIST_PARENT/CHILD` | BaoStock | PhoenixA 股票日线 | 2015/2016 至今 | 每交易日盘后 | `CODE_EXISTS` | 修复填零后全量回填 |
 | C03 | 成交量/额/换手率 | 同 C02 | BaoStock | PhoenixA bars/ext | 同 C02 | 每交易日盘后 | `CODE_EXISTS` | 缺失改 NULL，保留真实零 |
 | C04 | PE/PB/PS/PCF | 同 C02 | BaoStock | PhoenixA bars ext | 同 C02 | 每交易日盘后 | `CODE_EXISTS` | 取消无标记填零 |
-| C05 | `tradestatus/isST` | 扩展 C02 | BaoStock | bars ext 或最小状态表 | 来源可提供范围 | 每交易日盘后 | `TODO` | 加回字段并实现写入 |
+| C05 | `tradestatus/isST` | 扩展 C02 | BaoStock | PhoenixA bars ext | 来源可提供范围 | 每交易日盘后 | `CODE_EXISTS` | 小范围回填后核对停牌与 ST 样本 |
 | C06 | 复权因子 | `STOCK_ZH_A_BS_ADJUST_FACTOR_PARENT/CHILD` | BaoStock | PhoenixA `adjust_factor` | 2015 至今 | 每交易日/公司行为后 | `CODE_EXISTS` | 全量运行并确认 BJ 范围 |
-| C07 | 核心指数身份 | `INDEX_ZH_A_DAILY` 的注册步骤 | 固定白名单/AKShare | PhoenixA `security_registry` | 当前白名单 | 低频 | `TODO` | 注册首批核心指数 |
-| C08 | 核心指数日线 | `INDEX_ZH_A_DAILY` | AKShare `index_zh_a_hist` | PhoenixA 指数日线 | 2015 至今 | 每交易日盘后 | `TODO` | 新增统一任务和回填 |
+| C07 | 核心指数身份 | `STOCK_ZH_A_LIST` | AmazingData `get_code_info(EXTRA_INDEX_A)` | PhoenixA `security_registry` | 当前有效指数 | 每交易日 | `CODE_EXISTS` | 与其他证券身份统一增量维护 |
+| C08 | 核心指数日线 | `INDEX_ZH_A_DAILY` | AmazingData `query_kline` | PhoenixA 既有 Bars | 2015 至今 | 每交易日盘后 | `CODE_EXISTS` | 仅下载配置白名单，并按各 `security_id` 数据库水位增量 |
 
 ---
 
@@ -43,19 +43,19 @@ R01–R06、R10–R17 必须达到 `DAILY` 或 `BACKFILLING + DAILY`。R07–R09
 | R02 | 申万行业成分 | `STOCK_ZH_A_INDUSTRY_CONSTITUENT_SWHY` | AmazingData | PhoenixA constituent | 可回填范围 + 当前起快照 | 每日/每周 | `CODE_EXISTS` | 全行业运行并保存快照日期 |
 | R03 | 申万行业权重 | 已有 Parent/Child | AmazingData | PhoenixA industry weight | 2015 至今优先 | 每交易日 | `CODE_EXISTS` | 修复缺失填零并扩围 |
 | R04 | 申万行业日行情/估值 | 已有 Parent/Child | AmazingData | PhoenixA industry daily | 2015 至今优先 | 每交易日 | `CODE_EXISTS` | 修复 OHLC/估值填零并扩围 |
-| R05 | 科技行业白名单 | 配置数据 | 申万分类 | PhoenixA taxonomy/version | 当前版本 | 分类变化时 | `TODO` | 固定一级和首批二级代码 |
-| R06 | 融资融券市场汇总 | `CN_MARKET_STRESS_DAILY` | AKShare 沪深交易所接口 | PhoenixA 日频序列 | 2015 至今优先 | 每交易日 | `TODO` | 新增任务、Canary 和写入 |
-| R07 | 沪深港通/北向指标 | `CN_MARKET_STRESS_DAILY` | AKShare `stock_hsgt_hist_em` | PhoenixA 日频序列 | 来源稳定范围 | 每交易日 | `TODO` | 先验证披露和历史字段 |
-| R08 | 50ETF/300ETF QVIX | `CN_MARKET_STRESS_DAILY` | AKShare QVIX 接口 | PhoenixA 日频序列 | 来源稳定范围 | 每交易日 | `TODO` | Canary；失败时允许阻塞 |
-| R09 | 期权认沽/认购代理 | `CN_MARKET_STRESS_DAILY` | AKShare 期权日频接口 | PhoenixA 日频序列 | 来源稳定范围 | 每交易日 | `TODO` | 只做 50ETF/300ETF 聚合 |
-| R10 | 全球宽基/成长指数 | `GLOBAL_INDEX_DAILY` | AKShare `index_global_hist_em` | PhoenixA 全球日线 | 2015 至今 | 各市场收盘后 | `TODO` | SPX/NDX/HSI/HSTECH/KOSPI/KOSDAQ/TWII/N225/TOPIX |
-| R11 | 费城半导体 SOX | `GLOBAL_INDEX_DAILY` | AKShare `macro_global_sox_index` | PhoenixA 全球日线 | 2015 至今 | 美国收盘后 | `TODO` | 新增白名单序列 |
-| R12 | VIX/VXN | `GLOBAL_INDEX_DAILY` | AKShare 全球指数接口 | PhoenixA 全球日线 | 2015 至今 | 美国收盘后 | `TODO` | VIX 必做，VXN 可用后增加 |
-| R13 | 美国国债收益率 | `GLOBAL_RATE_DAILY` | AKShare `bond_zh_us_rate` | PhoenixA 日频序列 | 2015 至今 | 每日 | `TODO` | 2Y/10Y/30Y，3M 可选 |
-| R14 | DXY 与主要汇率 | `GLOBAL_FX_DAILY` | AKShare 全球指数/外汇历史 | PhoenixA 日频序列 | 2015 至今 | 每日 | `TODO` | DXY/USD-CNY/USD-CNH/USD-JPY/USD-KRW |
-| R15 | 铜/黄金/原油 | `GLOBAL_COMMODITY_DAILY` | AKShare `futures_global_hist_em` | PhoenixA 日频序列 | 2015 至今 | 每日 | `TODO` | 固定少量连续代理 |
-| R16 | 美股科技/半导体白名单 | `GLOBAL_SECURITY_DAILY` | AKShare `stock_us_hist` | PhoenixA 全球日线 | 2015 至今 | 美国收盘后 | `TODO` | NVDA/AMD/AVGO/INTC/QCOM/MU |
-| R17 | 港股科技/半导体白名单 | `GLOBAL_SECURITY_DAILY` | AKShare `stock_hk_hist` | PhoenixA 全球日线 | 2015 至今 | 港股收盘后 | `TODO` | 腾讯/阿里/中芯国际 |
+| R05 | 科技行业白名单 | 配置数据 | 申万分类 | 配置文件 + PhoenixA taxonomy | 当前版本 | 分类变化时 | `CODE_EXISTS` | 与完整申万分类核对后冻结首版 |
+| R06 | 融资融券市场汇总 | `STOCK_ZH_A_MARGIN_SUMMARY` | AmazingData `get_margin_summary` | `ods.margin_summary_daily` | 2015 至今优先 | 每交易日 | `CODE_EXISTS` | 从数据库水位 +1 日增量；小范围 Canary |
+| R07 | 沪深港通/北向指标 | `STOCK_ZH_A_HSGT_HIST` | AKShare `stock_hsgt_hist_em` | `ods.hsgt_daily` | 来源稳定范围 | 每交易日 | `CODE_EXISTS` | `symbols` 配置，逐 symbol 水位过滤；首期北向资金 |
+| R08 | 各标的 QVIX | `INDEX_ZH_A_OPTION_QVIX` | AKShare 9 个 QVIX 日频接口 | `ods.option_qvix_daily` | 来源稳定范围 | 每交易日 | `CODE_EXISTS` | 逐 symbol 水位过滤；逐接口 Canary |
+| R09 | 期权每日统计 | `OPTION_ZH_A_DAILY_STATS` | AKShare `option_daily_stats_sse/szse` | `ods.option_daily_stats` | 来源稳定范围 | 每交易日 | `CODE_EXISTS` | 按交易所顺序补齐缺失工作日 |
+| R10 | 全球宽基/成长指数 | `GLOBAL_SECURITY_LIST` + `GLOBAL_INDEX_DAILY` | AKShare `index_global_spot_em`、`index_global_hist_em`、`stock_hk_index_daily_sina` | `security_registry` + 标准 Bars | 2015 至今 | 身份每日；行情各市场收盘后 | `CODE_EXISTS` | 身份任务维护完整可用指数；行情任务只消费 SPX/NDX/HSI/HSTECH/KS11/TWII/N225 白名单 |
+| R11 | 费城半导体 SOX | 待确定 | AKShare `macro_global_sox_index` 仅有收盘值 | 待确定 | 2015 至今 | 美国收盘后 | `BLOCKED` | 不能伪造 OHLC；先寻找真实 OHLC 源 |
+| R12 | VIX/VXN | 待确定 | 当前 SDK 文档未确认可用 OHLC 源 | 待确定 | 2015 至今 | 美国收盘后 | `BLOCKED` | 先确认 VIX 真实历史源；VXN 延后 |
+| R13 | 中美国债收益率、期限利差、GDP 年增率 | `GLOBAL_SECURITY_LIST` + `GLOBAL_RATE_DAILY` | AKShare `bond_zh_us_rate` | `security_registry` + `ods.market_observation_daily` 纵向事实 | 2015 至今 | 每日 | `CODE_EXISTS` | 接口全部 12 个值字段按 `observation_type` 保存，逐 security_id 水位增量 |
+| R14 | DXY 与主要汇率 | `GLOBAL_SECURITY_LIST` + `GLOBAL_FX_DAILY` | AKShare 全球指数/外汇实时清单与历史 | `security_registry` + 标准 Bars | 2015 至今 | 每日 | `CODE_EXISTS` | 注册所有可用身份；行情只消费 UDI、USDCNY、USDCNH、USDJPY、USDKRW 白名单 |
+| R15 | 国际商品期货 | `GLOBAL_SECURITY_LIST` + `GLOBAL_COMMODITY_DAILY` | AKShare `futures_global_spot_em`、`futures_global_hist_em` | `security_registry` + 标准 Bars | 2015 至今 | 每日 | `CODE_EXISTS` | 注册可用期货身份；行情首期只下载铜/黄金/原油并可逐步扩白名单 |
+| R16 | 美股科技/半导体白名单 | `STOCK_US_LIST` + `STOCK_US_DAILY` | AKShare `stock_us_spot_em`、`stock_us_hist` | `security_registry` + 标准 Bars | 2015 至今 | 身份每日；行情美国收盘后 | `CODE_EXISTS` | 证券身份完整注册；行情仅按 symbols/exchanges 选择并逐 security_id 增量 |
+| R17 | 港股科技/半导体白名单 | 待拆分 `STOCK_HK_LIST` / `STOCK_HK_DAILY` | AKShare 港股清单与历史 | `security_registry` + 标准 Bars | 2015 至今 | 港股收盘后 | `PENDING` | 不再混入美股任务；独立完成身份来源和 Canary 后接入 |
 
 ---
 
@@ -74,8 +74,8 @@ R01–R06、R10–R17 必须达到 `DAILY` 或 `BACKFILLING + DAILY`。R07–R09
 | M07 | 配股 | `STOCK_ZH_A_RIGHT_ISSUE` | AmazingData | PhoenixA corporate action | 2015 至今 | 每日/每周 | `CODE_EXISTS` | 去掉样例证券限制 |
 | M08 | 龙虎榜 | `STOCK_ZH_A_LONG_HU_BANG` | AmazingData | PhoenixA long hu bang | 2015 至今优先 | 每交易日 | `CODE_EXISTS` | 修复填零并扩大范围 |
 | M09 | 研报 | `EASTMONEY_RESEARCH_REPORT` | 东方财富 | PhoenixA 元数据 + MinIO PDF | 2024 至今并持续 | 每日 | `BACKFILLING` | 继续运行和失败重试 |
-| M10 | A 股公告 | `STOCK_ZH_A_NOTICE` | CNInfo/交易所优先 | PhoenixA 元数据 + MinIO 原文 | 来源可回填范围 | 每日 | `TODO` | 新增最小目录和原文任务 |
-| M11 | 财报披露计划 | `STOCK_ZH_A_DISCLOSURE_SCHEDULE` | CNInfo/AKShare | PhoenixA 日程/元数据 | 来源可回填范围 | 每日/每周 | `TODO` | Canary 并保留披露日期 |
+| M10 | A 股公告 | `STOCK_ZH_A_NOTICE` | CNInfo/交易所优先 | PhoenixA 元数据；原文仍待 MinIO | 来源可回填范围 | 每日 | `CODE_EXISTS` | 按证券公告最大日期 +1 增量下载；元数据 Canary 后补原文保存 |
+| M11 | 财报披露计划 | `STOCK_ZH_A_DISCLOSURE_SCHEDULE` | CNInfo/AKShare | PhoenixA 日程/元数据 | 来源近四期 | 每日/每周 | `CODE_EXISTS` | 动态生成当前报告期；来源返回当期快照后只写新增或变化事件 |
 
 ---
 

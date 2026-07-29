@@ -101,9 +101,9 @@ Phase 0 完成条件：
 
 | 数据族 | 当前代码情况 | 当前主要问题 |
 |---|---|---|
-| A 股证券列表 | 已有 `STOCK_ZH_A_LIST` | 生产覆盖未知；上市/退市状态不完整 |
+| 国内证券身份 | 已有 `STOCK_ZH_A_LIST` | 已扩展股票、指数、ETF、可转债等类型；来源为当前快照，只向注册表写入新增或变化身份 |
 | A 股日线 | 已有 `STOCK_ZH_A_HIST_PARENT/CHILD` | 缺失和解析失败被填零；未保留 `tradestatus/isST` |
-| A 股指数日线 | PhoenixA 已有指数日线表 | 未发现对应的 Artemis 下载任务 |
+| A 股指数日线 | PhoenixA 已有指数日线表；Artemis 已有 `INDEX_ZH_A_DAILY` | 下载白名单由配置控制，身份来自 `security_registry`，按各 `security_id` 水位增量 |
 | 复权因子 | 已有 BaoStock Parent/Child 任务 | 生产覆盖未知 |
 | 申万行业 | 分类、成分、权重和日行情任务已存在 | 配置日期和代码范围仍偏测试/样例 |
 | 财务三表 | 任务已存在 | 当前配置主要是少量证券样例 |
@@ -123,7 +123,7 @@ Phase 0 完成条件：
 
 | ID | 数据 | 当前任务/来源 | Phase 0 工作 | 历史目标 | 更新频率 | PhoenixA |
 |---|---|---|---|---|---|---|
-| C01 | SH/SZ/BJ A 股证券列表 | 已有 `STOCK_ZH_A_LIST`；AmazingData | 改为真实全市场配置；核对身份写入 | 当前全量 | 每交易日 | 现有 `security_registry` |
+| C01 | 国内证券统一身份 | 已有 `STOCK_ZH_A_LIST`；AmazingData | 默认更新股票、指数、ETF、可转债；支持港股通、逆回购、期货和期权；只写新增或变化身份 | 当前快照 | 每交易日 | 现有 `security_registry` |
 | C02 | A 股不复权日线 | 已有 `STOCK_ZH_A_HIST_PARENT/CHILD`；BaoStock | 修复填零；全量回填；增量更新 | 优先 2015/2016 至今 | 每交易日盘后 | 现有股票日线表 |
 | C03 | A 股成交量、成交额、换手率 | 与 C02 同任务 | 缺失写 NULL；保留真实零；换手率进入扩展表 | 与 C02 一致 | 每交易日盘后 | 现有 bars/ext |
 | C04 | A 股 PE/PB/PS/PCF | 与 C02 同任务；BaoStock | 不再填零；缺失不删除行情行 | 与 C02 一致 | 每交易日盘后 | 现有 bars ext |
@@ -141,8 +141,8 @@ Phase 0 完成条件：
 
 | ID | 数据 | 候选来源/API | Phase 0 工作 | 历史目标 | 更新频率 | PhoenixA |
 |---|---|---|---|---|---|---|
-| C07 | 核心指数身份 | 固定白名单 + AKShare 指数信息 | 新增指数注册任务或种子配置 | 当前有效指数 | 低频/按需 | 现有 `security_registry` |
-| C08 | 核心指数日线 | AKShare `index_zh_a_hist`；备选 `stock_zh_index_daily_em` | 新增统一指数日线任务 | 2015 至今优先 | 每交易日盘后 | 现有指数日线表 |
+| C07 | 核心指数身份 | AmazingData `get_code_info(EXTRA_INDEX_A)` | 由 `STOCK_ZH_A_LIST` 与其他证券类型统一写入 | 当前有效指数 | 每交易日 | 现有 `security_registry` |
+| C08 | 核心指数日线 | AmazingData `query_kline` | `INDEX_ZH_A_DAILY` 只下载配置白名单，并按各 `security_id` 最近日期 +1 增量 | 2015 至今优先 | 每交易日盘后 | 现有指数日线表 |
 
 首批指数白名单：
 
@@ -211,40 +211,42 @@ AI 算力、光模块、设备、材料等产业主题，如果没有稳定的�
 
 | ID | 数据 | 候选来源/API | Phase 0 工作 | 历史目标 | 更新频率 |
 |---|---|---|---|---|---|
-| R06 | 沪深融资融券市场汇总 | AKShare `stock_margin_sse/stock_margin_szse`；备选宏观汇总接口 | 新增统一国内压力指标任务 | 来源可提供的最长稳定范围，优先 2015 至今 | 每交易日 |
-| R07 | 沪深港通/北向历史指标 | AKShare `stock_hsgt_hist_em` 等 | Canary 验证实际字段和历史；只保留稳定日频字段 | 来源可提供范围 | 每交易日 |
-| R08 | 中国期权波动率 QVIX | AKShare `index_option_50etf_qvix`、`index_option_300etf_qvix` | 作为补充来源启动；来源失败不能阻塞核心行情 | 来源可提供范围 | 每交易日 |
-| R09 | 期权认沽/认购和持仓代理 | AKShare 期权日频接口 | 先选择 50ETF/300ETF 聚合，不下载全量高频 | 来源可提供范围 | 每交易日 |
+| R06 | 沪深融资融券市场汇总 | AmazingData `get_margin_summary` | 独立任务；查询数据库最新交易日，下载 `max(start_date, last_update+1)` 之后的数据；来源同一交易日返回多条市场记录但不提供市场标识，因此按交易日汇总可加字段后写成全市场一条记录 | 来源可提供的最长稳定范围，优先 2015 至今 | 每交易日 |
+| R07 | 沪深港通/北向历史指标 | AKShare `stock_hsgt_hist_em` | `symbols` 支持六种来源参数；接口虽返回全量，但只写各 symbol 数据库水位之后的记录 | 来源可提供范围 | 每交易日 |
+| R08 | 中国期权波动率 QVIX | AKShare 50ETF、300ETF、500ETF、创业板、科创板等 9 个 QVIX 日频接口 | 一个 QVIX 任务按 `symbols` 调用对应 API，并逐 symbol 增量写入真实 OHLC | 来源可提供范围 | 每交易日 |
+| R09 | 期权每日统计 | AKShare `option_daily_stats_sse`、`option_daily_stats_szse` | 独立表保存两个交易所全部标的；按交易所水位从最早缺失工作日顺序补齐 | 来源可提供范围 | 每交易日 |
 
-R06–R09 共用一个逻辑任务族，例如：
+R06–R09 按 API 和业务粒度拆成四个任务，不再通过一个 `dataset` 分支耦合：
 
 ```text
-CN_MARKET_STRESS_DAILY
+STOCK_ZH_A_MARGIN_SUMMARY
+STOCK_ZH_A_HSGT_HIST
+INDEX_ZH_A_OPTION_QVIX
+OPTION_ZH_A_DAILY_STATS
 ```
-
-通过 `series` 变体区分融资余额、互联互通、QVIX 和期权情绪，避免创建大量单接口任务。
 
 ### 6.3 全球市场传导
 
 | ID | 数据 | 首批对象 | 候选来源/API | 历史目标 | 更新频率 |
 |---|---|---|---|---|---|
-| R10 | 全球宽基和成长指数 | SPX、NDX、HSI、HSTECH、KOSPI、KOSDAQ、TWII、N225、TOPIX | AKShare `index_global_hist_em`；区域专用接口作备选 | 2015 至今优先 | 各市场收盘后 |
-| R11 | 全球半导体指数 | SOX | AKShare `macro_global_sox_index`；可验证的指数接口作备选 | 2015 至今优先 | 美国收盘后 |
-| R12 | 全球波动率 | VIX；可获得时增加 VXN | 全球指数历史接口 | 2015 至今优先 | 美国收盘后 |
-| R13 | 美国国债收益率 | 2Y、10Y、30Y；可增加 3M | AKShare `bond_zh_us_rate` | 2015 至今优先 | 每日 |
+| R10 | 全球宽基和成长指数 | 身份清单完整维护；行情首批 SPX、NDX、HSI、HSTECH、KS11、TWII、N225 | AKShare `index_global_spot_em` + `index_global_hist_em`；HSTECH 使用 `stock_hk_index_daily_sina` | 2015 至今优先 | 身份每日；行情各市场收盘后 |
+| R11 | 全球半导体指数 | SOX | `macro_global_sox_index` 只有收盘值，不能写入要求真实 OHLC 的 Bar；真实 OHLC 源确认前阻塞 | 2015 至今优先 | 美国收盘后 |
+| R12 | 全球波动率 | VIX；可获得时增加 VXN | 当前 SDK 文档未确认真实 OHLC 历史源，来源确认前阻塞 | 2015 至今优先 | 美国收盘后 |
+| R13 | 中美利率和宏观序列 | 中美国债 2Y/5Y/10Y/30Y、10Y-2Y 利差、中美 GDP 年增率全部字段 | AKShare `bond_zh_us_rate` | 2015 至今优先 | 每日 |
 | R14 | 汇率和美元 | DXY、USD/CNY、USD/CNH、USD/JPY、USD/KRW | `index_global_hist_em`、`forex_hist_em` 等，Canary 后定主源 | 2015 至今优先 | 每日 |
 | R15 | 全球商品代理 | 铜、黄金、原油 | AKShare `futures_global_hist_em` | 2015 至今优先 | 每日 |
 
-R10–R15 使用少量通用任务族：
+R10–R15 先由统一身份任务维护 `security_registry`，再由少量行情任务消费白名单：
 
 ```text
+GLOBAL_SECURITY_LIST
 GLOBAL_INDEX_DAILY
 GLOBAL_RATE_DAILY
 GLOBAL_FX_DAILY
 GLOBAL_COMMODITY_DAILY
 ```
 
-不为每个国家、指数和汇率复制任务代码。
+指数、外汇和国际期货的 OHLC 全部写入标准 Bars，不为品种扩列。利率、利差和 GDP 等标量序列写入纵向 `market_observation_daily`，用 `security_id + observation_type` 分类，不为每个字段扩列。
 
 ### 6.4 全球科技龙头观察池
 
@@ -258,10 +260,10 @@ GLOBAL_COMMODITY_DAILY
 
 | ID | 数据 | 候选来源/API | Phase 0 要求 |
 |---|---|---|---|
-| R16 | 美股科技/半导体龙头日线 | AKShare `stock_us_hist` | 白名单任务、2015 至今回填、每日更新 |
-| R17 | 港股科技/半导体龙头日线 | AKShare `stock_hk_hist` | 白名单任务、2015 至今回填、每日更新 |
+| R16 | 美股科技/半导体龙头日线 | AKShare `stock_us_spot_em` + `stock_us_hist` | `STOCK_US_LIST` 注册身份；`STOCK_US_DAILY` 只下载 symbols/exchanges 选择，2015 至今回填、每日更新 |
+| R17 | 港股科技/半导体龙头日线 | AKShare 港股清单与历史 | 不混入美股任务；后续独立拆成 `STOCK_HK_LIST` / `STOCK_HK_DAILY` |
 
-R16–R17 只下载白名单，不在 Phase 0 建设全量全球证券库。
+证券清单用于稳定身份和 `security_id`；历史行情仍只下载白名单或明确交易所批次，不因注册全量身份而下载全市场历史。
 
 ---
 
@@ -289,8 +291,8 @@ R16–R17 只下载白名单，不在 Phase 0 建设全量全球证券库。
 | ID | 数据 | 当前/候选来源 | Phase 0 工作 | 更新频率 |
 |---|---|---|---|---|
 | M09 | 东方财富个股/行业/策略/宏观研报 | 已有 `EASTMONEY_RESEARCH_REPORT` | 保持当前下载；完善失败重试和持续调度 | 每日 |
-| M10 | A 股公告目录与原文 | AKShare `stock_notice_report`、`stock_individual_notice_report` 或交易所来源 | 新增最小公告任务；先保存元数据和原文，不做事件抽取 | 每日 |
-| M11 | 财报披露计划 | AKShare `stock_report_disclosure`、`stock_zh_a_disclosure_report_cninfo` | Canary 后保存披露日期 | 每日或每周 |
+| M10 | A 股公告目录与原文 | AKShare `stock_zh_a_disclosure_report_cninfo` | 按证券已保存公告最大日期 +1 增量下载；先保存元数据，不做事件抽取 | 每日 |
+| M11 | 财报披露计划 | AKShare `stock_report_disclosure` | 按运行日期拼接当前有效报告期；接口返回当期全市场快照后，仅写入新增或发生变化的预约事件 | 每日或每周 |
 
 写入边界：
 
@@ -365,14 +367,19 @@ Phase 0 不要求一次接入所有备选来源。
 | 任务代码（建议） | 覆盖数据 | 变体 |
 |---|---|---|
 | `INDEX_ZH_A_DAILY` | C07–C08 国内核心指数 | `symbols` |
-| `CN_MARKET_STRESS_DAILY` | R06–R09 国内压力指标 | `series` |
-| `GLOBAL_INDEX_DAILY` | R10–R12 全球指数、SOX、VIX | `symbols` |
-| `GLOBAL_RATE_DAILY` | R13 国债收益率 | `series` |
-| `GLOBAL_FX_DAILY` | R14 汇率和美元指数 | `series` |
+| `STOCK_ZH_A_MARGIN_SUMMARY` | R06 两融市场汇总 | 无；单一 API |
+| `STOCK_ZH_A_HSGT_HIST` | R07 沪深港通历史 | `symbols` |
+| `INDEX_ZH_A_OPTION_QVIX` | R08 各标的 QVIX | `symbols` |
+| `OPTION_ZH_A_DAILY_STATS` | R09 交易所期权每日统计 | `exchanges` |
+| `GLOBAL_SECURITY_LIST` | R10、R13–R15 全球指数/外汇/期货/宏观身份 | `sources` |
+| `GLOBAL_INDEX_DAILY` | R10 已确认真实 OHLC 来源的全球指数 | `indexes` |
+| `GLOBAL_RATE_DAILY` | R13 中美国债收益率、利差和 GDP 全字段 | 无；单一 API |
+| `GLOBAL_FX_DAILY` | R14 汇率和美元指数 | `instruments` |
 | `GLOBAL_COMMODITY_DAILY` | R15 铜、黄金、原油 | `symbols` |
-| `GLOBAL_SECURITY_DAILY` | R16–R17 美股/港股白名单 | `market + symbols` |
+| `STOCK_US_LIST` | R16 美股身份 | 无；完整身份快照 |
+| `STOCK_US_DAILY` | R16 美股行情 | `symbols` 或 `exchanges` |
 | `STOCK_ZH_A_NOTICE` | M10 A 股公告 | `category/date` |
-| `STOCK_ZH_A_DISCLOSURE_SCHEDULE` | M11 财报披露计划 | `market/date` |
+| `STOCK_ZH_A_DISCLOSURE_SCHEDULE` | M11 财报披露计划 | `periods` 或 `year + report_types`；默认按运行日期动态生成 |
 
 原则：
 
@@ -404,16 +411,21 @@ Phase 0 不要求一次接入所有备选来源。
 
 为新增下载任务只补三类逻辑存储，不建设治理平台：
 
-1. 全球/港美证券和指数身份；
-2. 全球及港美日线行情；
-3. 通用日频风险序列，例如收益率、汇率、VIX、融资余额和商品价格。
+1. `security_registry` 中的全球指数、外汇、国际期货、宏观序列和美股身份；
+2. 标准 Bars 中的全球指数、外汇、国际期货和美股 OHLC；
+3. 五个边界明确的非 Bar 数据集：两融汇总、沪深港通、QVIX、期权每日统计、纵向市场观测。
 
 公告继续采用“PhoenixA 元数据 + MinIO 原文”。
 
-物理表名和 DDL 在真正实现对应任务时确定，但必须遵守：
+对应非 Bar 物理表为 `ods.margin_summary_daily`、`ods.hsgt_daily`、
+`ods.option_qvix_daily`、`ods.option_daily_stats` 和
+`ods.market_observation_daily`。全球指数、外汇、国际期货和美股行情继续走
+既有 Bar 模型/API，仅为新的 `asset_type + market` 组合补物理 Bar 表。
+
+这些存储必须遵守：
 
 - 唯一键能够保证重跑幂等；
-- 保留 `source`；
+- 来源固定在下载任务和字段契约中；只有同一业务字段确实需要多源并存时才增加 `source`；
 - 保留原市场日期；
 - 文档保留发布时间和抓取时间；
 - 不把所有来源专有字段强行塞入一个 JSON 大字段；
@@ -425,7 +437,8 @@ Phase 0 不新增质量 API，但允许新增数据写入和读取所必需的�
 
 - 批量注册 Instrument；
 - 批量 Upsert 日线；
-- 批量 Upsert 日频序列；
+- 查询两融、沪深港通、QVIX、期权每日统计的最新数据日期；
+- 批量 Upsert 四类国内风险输入及全球利率、汇率和商品日频业务行；
 - 批量 Upsert 文档元数据。
 
 这些是数据接入能力，不是数据治理平台。
@@ -546,7 +559,8 @@ PHASE_0_DATA_DOWNLOAD_CHECKLIST.md
 ### PhoenixA
 
 - 复用已有国内 ODS；
-- 补齐全球 Instrument、全球日线和通用日频序列的最小写入；
+- 全球 Instrument/日线复用既有 `security_registry + Bars` 写入；
+- 非 Bar 数据仅补 A 股市场压力、全球利率、汇率和商品四类明确业务写入；
 - 提供 Artemis 所需的批量 Upsert 和最近日期查询；
 - 继续使用 Catalog 查看实际覆盖。
 

@@ -1,7 +1,9 @@
 # VERSION
-v0.5.0
+v0.5.1
 
 # Changelog
+- v0.5.1
+    - Updated Risk intelligence platform docs
 - v0.5.0
     - Generated docs for akshare.
     - Generated docs for baostock.
