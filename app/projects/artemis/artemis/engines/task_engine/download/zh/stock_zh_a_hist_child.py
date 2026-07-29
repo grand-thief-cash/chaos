@@ -111,29 +111,67 @@ class StockZhAHistChild(WorkerUnit):
             "psTTM": "ps_ttm",
             "pbMRQ": "pb_mrq",
             "pcfNcfTTM": "pcf_ncf_ttm",
+            "tradestatus": "trade_status",
+            "isST": "is_st",
         }
 
-        float_cols = [
-            "open", "high", "low", "close", "preclose",
-            "pctChg",
+        required_price_cols = ["open", "high", "low", "close"]
+        optional_float_cols = [
+            "preclose", "pctChg",
             "turn", "peTTM", "pbMRQ", "psTTM", "pcfNcfTTM",
         ]
-        int_cols = ["volume"]
 
-        for col in float_cols:
+        # Core OHLC fields are required for a usable bar. Invalid values reject
+        # the row; they must never be silently converted to a plausible zero.
+        for col in required_price_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0).round(4)
+                df[col] = pd.to_numeric(df[col], errors="coerce").round(4)
+
+        # Optional observations preserve unknown as NULL/None. A genuine source
+        # value of zero remains zero.
+        for col in optional_float_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").round(4)
 
         if "amount" in df.columns:
-            df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).round(0).astype("int64")
+            df["amount"] = pd.to_numeric(df["amount"], errors="coerce").round(0).astype("Int64")
 
-        for col in int_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        if "volume" in df.columns:
+            df["volume"] = pd.to_numeric(df["volume"], errors="coerce").round(0).astype("Int64")
 
-        # Drop rows missing primary keys to avoid invalid payloads
-        if "trade_date" in df.columns and "symbol" in df.columns:
-            df = df[df["trade_date"].notna() & (df["trade_date"] != "") & df["symbol"].notna()]
+        if "tradestatus" in df.columns:
+            df["tradestatus"] = pd.to_numeric(df["tradestatus"], errors="coerce").astype("Int64")
+
+        if "isST" in df.columns:
+            normalized = df["isST"].astype(str).str.strip().str.lower()
+            df["isST"] = normalized.map({
+                "1": True, "true": True, "yes": True,
+                "0": False, "false": False, "no": False,
+            }).astype("boolean")
+
+        # Reject rows missing identity/date/core OHLC. Optional values remain
+        # nullable; do not drop the whole row for an unavailable valuation.
+        valid_mask = pd.Series(True, index=df.index)
+        for col in ("security_id", "trade_date", "symbol", *required_price_cols):
+            if col not in df.columns:
+                valid_mask &= False
+                continue
+            valid_mask &= df[col].notna()
+        if "trade_date" in df.columns:
+            valid_mask &= df["trade_date"] != ""
+        if "symbol" in df.columns:
+            valid_mask &= df["symbol"].astype(str).str.strip() != ""
+
+        rejected_count = int((~valid_mask).sum())
+        if rejected_count:
+            ctx.logger.warning({
+                "event": "stock_zh_a_hist_child_rows_rejected",
+                "run_id": ctx.run_id,
+                "symbol": ctx.params.get("symbol"),
+                "rejected_count": rejected_count,
+                "reason": "missing identity/date/core_ohlc",
+            })
+        df = df[valid_mask].copy()
 
         # Rename pctChg → pct_chg to match PhoenixA StandardBar JSON tag
         if "pctChg" in df.columns:
@@ -151,6 +189,12 @@ class StockZhAHistChild(WorkerUnit):
             ext_df.rename(columns=ext_rename_map, inplace=True)
         else:
             ext_df = pd.DataFrame()
+
+        # pandas nullable dtypes must become Python None before requests/json
+        # serialization; otherwise pd.NA/NaN may leak into an invalid payload.
+        bars_df = bars_df.astype(object).where(pd.notna(bars_df), None)
+        if not ext_df.empty:
+            ext_df = ext_df.astype(object).where(pd.notna(ext_df), None)
 
         return {"bars": bars_df, "ext": ext_df}
 

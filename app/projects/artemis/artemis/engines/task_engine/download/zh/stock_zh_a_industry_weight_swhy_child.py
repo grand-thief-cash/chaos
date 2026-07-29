@@ -12,15 +12,15 @@ from artemis.engines.task_engine.worker_unit import WorkerUnit
 from artemis.engines.task_engine.download.zh.utils import get_sdk_date_kwargs
 
 
-def _safe_float(val, default=0.0):
-    """Convert to float, replacing nan/inf with default (JSON-compliant)."""
+def _safe_float(val):
+    """Convert to float while preserving unavailable source values as NULL."""
     try:
         f = float(val)
         if not math.isfinite(f):
-            return default
+            return None
         return f
     except (ValueError, TypeError):
-        return default
+        return None
 
 
 class StockZHAIndustryWeightSWHYChild(WorkerUnit):
@@ -82,12 +82,15 @@ class StockZHAIndustryWeightSWHYChild(WorkerUnit):
                     trade_date = f"{raw_td[:4]}-{raw_td[4:6]}-{raw_td[6:8]}"
                 else:
                     trade_date = raw_td
+                weight = _safe_float(row.get("WEIGHT"))
+                if not con_code or not trade_date or weight is None:
+                    continue
                 processed.append({
                     "index_code": str(row.get("INDEX_CODE", code)),
                     "con_code": con_code,
                     "symbol": symbol,
                     "trade_date": trade_date,
-                    "weight": _safe_float(row.get("WEIGHT")),
+                    "weight": weight,
                 })
         ctx.logger.info({
             'event': 'swhy_weight_post_process_result',

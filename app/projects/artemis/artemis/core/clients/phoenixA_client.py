@@ -512,6 +512,284 @@ class PhoenixAClient(HTTPDeptServiceClient):
                 })
             return {}
 
+    # ──────────── Phase 0 ODS inputs (v2) ────────────
+
+    def _upsert_ods_rows(
+        self,
+        *,
+        path: str,
+        event: str,
+        rows: List[Dict[str, Any]],
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        try:
+            resp = self.post(path, rows)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.error({
+                    "event": f"{event}_failed",
+                    "run_id": run_id,
+                    "status": resp.status_code,
+                    "row_count": len(rows),
+                    "body_snippet": resp.text[:120],
+                })
+            return ok
+        except Exception as exc:
+            if self.logger:
+                self.logger.error({
+                    "event": f"{event}_exception",
+                    "run_id": run_id,
+                    "error": str(exc),
+                })
+            raise
+
+    def _get_ods_last_updates(
+        self,
+        *,
+        path: str,
+        param_name: Optional[str] = None,
+        values: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        params = {}
+        if param_name and values:
+            params[param_name] = ",".join(values)
+        try:
+            resp = self.get(path, params)
+            if 200 <= resp.status_code < 300:
+                payload = resp.json()
+                data = payload.get("data", payload)
+                if isinstance(data, dict):
+                    return {
+                        str(key): str(value)
+                        for key, value in data.items()
+                        if value
+                    }
+            return {}
+        except Exception as exc:
+            if self.logger:
+                self.logger.error({
+                    "event": "phoenixA_get_ods_last_updates_failed",
+                    "path": path,
+                    "error": str(exc),
+                })
+            raise
+
+    def get_margin_summary_last_update(self) -> str:
+        result = self._get_ods_last_updates(
+            path="/api/v2/capital-flows/margin-summary/last-update",
+        )
+        return result.get("last_update", "")
+
+    def get_hsgt_last_updates(self, symbols: List[str]) -> Dict[str, str]:
+        return self._get_ods_last_updates(
+            path="/api/v2/capital-flows/hsgt/last-update",
+            param_name="symbols",
+            values=symbols,
+        )
+
+    def get_qvix_last_updates(self, symbols: List[str]) -> Dict[str, str]:
+        return self._get_ods_last_updates(
+            path="/api/v2/option-market-data/qvix/last-update",
+            param_name="symbols",
+            values=symbols,
+        )
+
+    def get_option_daily_stats_last_updates(
+        self, exchanges: List[str],
+    ) -> Dict[str, str]:
+        return self._get_ods_last_updates(
+            path="/api/v2/option-market-data/daily-stats/last-update",
+            param_name="exchanges",
+            values=exchanges,
+        )
+
+    def upsert_margin_summary(
+        self, *, rows: List[Dict[str, Any]], run_id: Optional[int | str] = None,
+    ) -> bool:
+        return self._upsert_ods_rows(
+            path="/api/v2/capital-flows/margin-summary/upsert",
+            event="phoenixA_upsert_margin_summary",
+            rows=rows,
+            run_id=run_id,
+        )
+
+    def upsert_hsgt_daily(
+        self, *, rows: List[Dict[str, Any]], run_id: Optional[int | str] = None,
+    ) -> bool:
+        return self._upsert_ods_rows(
+            path="/api/v2/capital-flows/hsgt/upsert",
+            event="phoenixA_upsert_hsgt_daily",
+            rows=rows,
+            run_id=run_id,
+        )
+
+    def upsert_qvix_daily(
+        self, *, rows: List[Dict[str, Any]], run_id: Optional[int | str] = None,
+    ) -> bool:
+        return self._upsert_ods_rows(
+            path="/api/v2/option-market-data/qvix/upsert",
+            event="phoenixA_upsert_qvix_daily",
+            rows=rows,
+            run_id=run_id,
+        )
+
+    def upsert_option_daily_stats(
+        self, *, rows: List[Dict[str, Any]], run_id: Optional[int | str] = None,
+    ) -> bool:
+        return self._upsert_ods_rows(
+            path="/api/v2/option-market-data/daily-stats/upsert",
+            event="phoenixA_upsert_option_daily_stats",
+            rows=rows,
+            run_id=run_id,
+        )
+
+    def get_market_observation_last_updates(
+        self,
+        *,
+        source: str,
+        security_ids: List[int],
+    ) -> Dict[int, str]:
+        if not security_ids:
+            return {}
+        path = f"/api/v2/market-observations/{source}/last-update"
+        try:
+            resp = self.get(
+                path,
+                {"security_ids": ",".join(map(str, security_ids))},
+            )
+            if 200 <= resp.status_code < 300:
+                payload = resp.json()
+                data = payload.get("data", payload)
+                if isinstance(data, dict):
+                    return {
+                        int(key): str(value)
+                        for key, value in data.items()
+                        if str(key).isdigit() and value
+                    }
+            return {}
+        except Exception as exc:
+            if self.logger:
+                self.logger.error({
+                    "event": "phoenixA_market_observation_last_update_failed",
+                    "source": source,
+                    "error": str(exc),
+                })
+            raise
+
+    def upsert_market_observations(
+        self,
+        *,
+        source: str,
+        rows: List[Dict[str, Any]],
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        return self._upsert_ods_rows(
+            path=f"/api/v2/market-observations/{source}/upsert",
+            event="phoenixA_upsert_market_observations",
+            rows=rows,
+            run_id=run_id,
+        )
+
+    def upsert_security_events(
+        self,
+        *,
+        source: str,
+        event_type: str,
+        rows: List[Dict[str, Any]],
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        path = f"/api/v2/security-events/{source}/{event_type}/upsert"
+        try:
+            resp = self.post(path, rows)
+            ok = 200 <= resp.status_code < 300
+            if not ok and self.logger:
+                self.logger.error({
+                    "event": "phoenixA_upsert_security_events_failed",
+                    "run_id": run_id,
+                    "source": source,
+                    "event_type": event_type,
+                    "status": resp.status_code,
+                    "row_count": len(rows),
+                    "body_snippet": resp.text[:120],
+                })
+            return ok
+        except Exception as exc:
+            if self.logger:
+                self.logger.error({
+                    "event": "phoenixA_upsert_security_events_exception",
+                    "run_id": run_id,
+                    "source": source,
+                    "event_type": event_type,
+                    "error": str(exc),
+                })
+            raise
+
+    def get_security_event_last_updates(
+        self,
+        *,
+        source: str,
+        event_type: str,
+        security_ids: List[int],
+    ) -> Dict[int, str]:
+        ids = sorted({
+            int(value)
+            for value in security_ids
+            if int(value) > 0
+        })
+        if not ids:
+            return {}
+        path = f"/api/v2/security-events/{source}/{event_type}/last-update"
+        resp = self.get(
+            path,
+            {"security_ids": ",".join(str(value) for value in ids)},
+        )
+        if not 200 <= resp.status_code < 300:
+            raise RuntimeError(
+                f"phoenixA security event last-update failed: {resp.status_code}"
+            )
+        rows = self._coerce_hist_rows(resp.json())
+        return {
+            int(row["security_id"]): str(row.get("last_update") or "")
+            for row in rows
+            if row.get("security_id")
+        }
+
+    def get_security_events(
+        self,
+        *,
+        source: str,
+        event_type: str,
+        title: Optional[str] = None,
+        security_ids: Optional[List[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        path = f"/api/v2/security-events/{source}/{event_type}/"
+        page_size = 5000
+        offset = 0
+        result: List[Dict[str, Any]] = []
+        while True:
+            params: Dict[str, Any] = {
+                "limit": str(page_size),
+                "offset": str(offset),
+            }
+            if title:
+                params["title"] = title
+            if security_ids:
+                params["security_ids"] = ",".join(
+                    str(int(value))
+                    for value in security_ids
+                    if int(value) > 0
+                )
+            resp = self.get(path, params)
+            if not 200 <= resp.status_code < 300:
+                raise RuntimeError(
+                    f"phoenixA security event query failed: {resp.status_code}"
+                )
+            rows = self._coerce_hist_rows(resp.json())
+            result.extend(rows)
+            if len(rows) < page_size:
+                return result
+            offset += len(rows)
+
     # ──────────── Taxonomy (v2) ────────────
 
     def sync_mappings_from_constituents(

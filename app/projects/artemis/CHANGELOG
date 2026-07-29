@@ -1,7 +1,12 @@
 # VERSION
-v0.48.3
+v0.48.4
 
 # Changelog
+- v0.48.4
+    - **PhoenixA ODS endpoint alignment.** Capital-flow and option-market downloads now call `/api/v2/capital-flows/*` and `/api/v2/option-market-data/*`; client helpers no longer label raw ODS writes as Risk data.
+    - **Registry-first global and US market downloads.** Moved global index, FX, commodity and rate tasks under `download/global/`; moved US equity history under `download/us/` and split it into `STOCK_US_LIST` (`stock_us_spot_em` identity snapshot) plus whitelist-driven `STOCK_US_DAILY`. Added `GLOBAL_SECURITY_LIST` to register global indexes, FX pairs, international futures and macro/rate series before any history task runs.
+    - **No task-local default instruments.** Global index, FX, commodity and US stock history tasks now consume explicit `task.yaml` whitelists and resolve PhoenixA `security_id` values. Each task computes `max(last_update + 1d, configured_start)` per identity and skips upstream calls when no date is pending.
+    - **Extensible ODS facts instead of wide rows.** International futures and FX now persist OHLC through PhoenixA standard Bars. `bond_zh_us_rate` persists every China/US yield, spread and GDP field as typed vertical market observations rather than selecting a fixed set of columns.
 - v0.48.3
     - **Consolidated to one eastmoney research-report task.** Removed the legacy `STOCK_ZH_A_EASTMONEY_REPORT` task code entirely; `stock` now runs through `EASTMONEY_RESEARCH_REPORT` with `{"type":"stock"}` (added `stock` to `EastmoneyResearchReport.SUPPORTED_REPORT_TYPES`). The two task codes shared one download engine (`EastmoneyResearchReport` extends `StockZhAEastmoneyReport`), and having two endpoints was the root cause of production cronjobs being misrouted to `/tasks/run/STOCK_ZH_A_EASTMONEY_REPORT` (the industry cronjob ran the stock task, writing 401 erroneous stock records + 9 stock PDFs). Updated `task.yaml`/`task-prod.yaml` (6 variants under `EASTMONEY_RESEARCH_REPORT`), removed the `STOCK_ZH_A_EASTMONEY_REPORT` registration, and added a `stock` cronjob entry to the importable JSON (all 6 entries now target the one endpoint).
 - v0.48.2

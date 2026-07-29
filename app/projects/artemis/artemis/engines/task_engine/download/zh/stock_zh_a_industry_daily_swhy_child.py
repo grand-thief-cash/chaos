@@ -12,15 +12,15 @@ from artemis.engines.task_engine.worker_unit import WorkerUnit
 from artemis.engines.task_engine.download.zh.utils import get_sdk_date_kwargs
 
 
-def _safe_float(val, default=0.0):
-    """Convert to float, replacing nan/inf with default (JSON-compliant)."""
+def _safe_float(val):
+    """Convert to float while preserving unavailable source values as NULL."""
     try:
         f = float(val)
         if not math.isfinite(f):
-            return default
+            return None
         return f
     except (ValueError, TypeError):
-        return default
+        return None
 
 
 class StockZHAIndustryDailySWHYChild(WorkerUnit):
@@ -76,16 +76,21 @@ class StockZHAIndustryDailySWHYChild(WorkerUnit):
                     trade_date = ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
                 else:
                     trade_date = str(row.get("TRADE_DATE", ""))
+                required = {
+                    "open": _safe_float(row.get("OPEN")),
+                    "high": _safe_float(row.get("HIGH")),
+                    "close": _safe_float(row.get("CLOSE")),
+                    "low": _safe_float(row.get("LOW")),
+                }
+                if not index_code or not trade_date or any(v is None for v in required.values()):
+                    continue
                 key = (index_code, trade_date)
                 if key in seen:
                     dup_count += 1
                 seen[key] = {
                     "index_code": index_code,
                     "trade_date": trade_date,
-                    "open": _safe_float(row.get("OPEN")),
-                    "high": _safe_float(row.get("HIGH")),
-                    "close": _safe_float(row.get("CLOSE")),
-                    "low": _safe_float(row.get("LOW")),
+                    **required,
                     "pre_close": _safe_float(row.get("PRE_CLOSE")),
                     "amount": _safe_float(row.get("AMOUNT")),
                     "volume": _safe_float(row.get("VOLUME")),

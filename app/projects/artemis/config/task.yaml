@@ -2,21 +2,12 @@ tasks:
       # 其他 period/adjust 组合可按需扩展
   STOCK_ZH_A_LIST:
     variants:
-      - match: { exchange: "SH" }
-        config:
-          # 上交所 A 股列表
-          exchange: "SH"
-      - match: { exchange: "SZ" }
-        config:
-          # 深交所 A 股列表
-          exchange: "SZ"
-      - match: { exchange: "BJ" }
-        config:
-          exchange: "BJ" 
-      - match: { exchange: "ALL"}
+      - match: {}
         config:
           exchange: "ALL"
-
+          # 统一刷新 security_registry 的核心现货身份。港股通、逆回购、
+          # 期货和期权已由任务代码支持，需要时在调用参数中显式加入。
+          security_types: ["stock", "index", "etf", "cb"]
   # History Data
   STOCK_ZH_A_HIST_PARENT:
 #    adjustflag：复权类型，默认不复权：3；1：后复权；2：前复权
@@ -28,7 +19,7 @@ tasks:
            adjust: "nf"
            exchange: "SH,SZ,BJ"
            start_date: "2016-01-01"
-           fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
+           fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,tradestatus,isST"
 
       - match: { period: "daily", adjust: "hfq" }
         config:
@@ -36,7 +27,168 @@ tasks:
            adjust: "hfq"
            exchange: "SH,SZ"
            start_date: "2009-01-01"
-           fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM"
+           fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,tradestatus,isST"
+
+  # Core A-share index download whitelist. Identity and names come from
+  # STOCK_ZH_A_LIST/security_registry; this list only controls what is downloaded.
+  INDEX_ZH_A_DAILY:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          indexes:
+            - "000001.SH"
+            - "399001.SZ"
+            - "000300.SH"
+            - "000905.SH"
+            - "000852.SH"
+            - "399006.SZ"
+            - "000688.SH"
+            - "000016.SH"
+            - "000985.SH"
+
+  STOCK_ZH_A_MARGIN_SUMMARY:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+
+  STOCK_ZH_A_HSGT_HIST:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          symbols: ["北向资金"]
+          request_interval_seconds: 1.5
+
+  INDEX_ZH_A_OPTION_QVIX:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          symbols:
+            - "50ETF"
+            - "300ETF"
+            - "500ETF"
+            - "CYB"
+            - "KCB"
+            - "100ETF"
+            - "300INDEX"
+            - "1000INDEX"
+            - "50INDEX"
+          request_interval_seconds: 1.5
+
+  OPTION_ZH_A_DAILY_STATS:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          exchanges: ["SSE", "SZSE"]
+          max_days_per_run: 5
+          request_interval_seconds: 1.5
+
+  GLOBAL_SECURITY_LIST:
+    variants:
+      - match: {}
+        config:
+          sources: ["index", "fx", "futures", "rate"]
+          # HSTECH is not exposed by index_global_spot_em but has a verified
+          # stock_hk_index_daily_sina history source.
+          manual_securities:
+            - { symbol: "HSTECH", name: "恒生科技指数", exchange: "HK", asset_type: "index", market: "global" }
+          request_interval_seconds: 1.5
+
+  GLOBAL_INDEX_DAILY:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          indexes:
+            - { symbol: "SPX", source_api: "index_global_hist_em" }
+            - { symbol: "NDX", source_api: "index_global_hist_em" }
+            - { symbol: "HSI", source_api: "index_global_hist_em" }
+            - { symbol: "HSTECH", source_api: "stock_hk_index_daily_sina" }
+            - { symbol: "KS11", source_api: "index_global_hist_em" }
+            - { symbol: "TWII", source_api: "index_global_hist_em" }
+            - { symbol: "N225", source_api: "index_global_hist_em" }
+          request_interval_seconds: 1.5
+
+  GLOBAL_RATE_DAILY:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          request_interval_seconds: 1.5
+
+  GLOBAL_FX_DAILY:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          instruments:
+            - { symbol: "UDI", asset_type: "index", source_api: "index_global_hist_em" }
+            - { symbol: "USDCNY", asset_type: "fx", source_api: "forex_hist_em" }
+            - { symbol: "USDCNH", asset_type: "fx", source_api: "forex_hist_em" }
+            - { symbol: "USDJPY", asset_type: "fx", source_api: "forex_hist_em" }
+            - { symbol: "USDKRW", asset_type: "fx", source_api: "forex_hist_em" }
+          request_interval_seconds: 1.5
+
+  GLOBAL_COMMODITY_DAILY:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          symbols: ["HG00Y", "GC00Y", "CL00Y"]
+          request_interval_seconds: 1.5
+
+  STOCK_US_LIST:
+    variants:
+      - match: {}
+        config:
+          request_interval_seconds: 1.5
+
+  STOCK_US_DAILY:
+    variants:
+      - match: {}
+        config:
+          start_date: "2015-01-01"
+          end_date: null
+          symbols: ["NVDA", "AMD", "AVGO", "INTC", "QCOM", "MU"]
+          max_symbols_per_run: 20
+          request_interval_seconds: 1.5
+
+  STOCK_ZH_A_NOTICE:
+    variants:
+      - match: {}
+        config:
+          # Canary pool; remove symbols and advance symbol_offset in controlled
+          # batches after source and MinIO/original-link behavior is verified.
+          symbols: ["000001", "688981"]
+          start_date: "2026-01-01"
+          end_date: null
+          category: ""
+          max_symbols_per_run: 20
+          symbol_offset: 0
+          request_interval_seconds: 1.5
+
+  STOCK_ZH_A_DISCLOSURE_SCHEDULE:
+    variants:
+      - match: {}
+        config:
+          # periods 可显式覆盖；默认按运行日期动态生成当前有效报告期。
+          periods: null
+          year: null
+          report_types: null
+          request_interval_seconds: 1.5
 
   # Industry SWHY
   # 注意：行业任务的 index_codes 是 SDK 格式的行业指数代码（如 "851426.SI"），
@@ -45,7 +197,7 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2026-05-01"     # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"     # Phase 0 reservoir backfill
           end_date: null       # "YYYY-MM-DD" 或 null（不限）
           # index_codes: ["851426.SI", "801010.SI"]  # string[]，行业指数代码（SDK格式），如 ["851426.SI", "801010.SI"]
 
@@ -58,9 +210,9 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2026-01-01"     # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-05-01"       # "YYYY-MM-DD" 或 null（不限）
-          index_codes: ["851426.SI"]  # string[]，行业指数代码（SDK格式），如 ["851426.SI"]
+          start_date: "2015-01-01"
+          end_date: null
+          # index_codes omitted: parent expands the complete SWHY taxonomy
 
   STOCK_ZH_A_INDUSTRY_DAILY_SWHY_CHILD:
     variants:
@@ -84,45 +236,35 @@ tasks:
       - match: {}
         config:
           start_date: "2015-01-01"     # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-05-01"       # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000021"]
-          exchange : "SZ"
+          end_date: null
 
   STOCK_ZH_A_CASH_FLOW:
     variants:
       - match: {}
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-06-01"               # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000021"]        # 纯代码格式，缺省则全量下载
-          exchange: "SZ"             # 与 symbols 配合使用
+          end_date: null
 
   STOCK_ZH_A_INCOME:
     variants:
       - match: {}
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000021"]        # 纯代码格式，缺省则全量下载
-          exchange: "SZ"             # 与 symbols 配合使用
+          end_date: null
 
   STOCK_ZH_A_PROFIT_EXPRESS:
     variants:
       - match: {}
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
-          exchange: "SZ"             # 与 symbols 配合使用
+          end_date: null
 
   STOCK_ZH_A_PROFIT_NOTICE:
     variants:
       - match: {}
         config:
           start_date: "2015-01-01"             # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-05-01"               # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]        # 纯代码格式，缺省则全量下载
-          exchange: "SZ"             # 与 symbols 配合使用
+          end_date: null
 
   # Corporate Actions
   # SDK: AmazingData InfoData.get_dividend / get_right_issue
@@ -136,18 +278,14 @@ tasks:
       - match: {}
         config:
           start_date: "2015-01-01"              # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-06-01"
-          symbols: ["000001"]                   # 纯代码格式，缺省则全量下载
-          exchange: "SZ"                        # 与 symbols 配合使用（SH/SZ/BJ）
+          end_date: null
 
   STOCK_ZH_A_RIGHT_ISSUE:
     variants:
       - match: {}
         config:
           start_date: "2015-01-01"                     # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-05-01"                    # "YYYY-MM-DD" 或 null（不限）
-          symbols: ["000001"]                 # 纯代码格式，缺省则全量下载
-          exchange: "SZ"                      # 与 symbols 配合使用
+          end_date: null
 
   # Trading anomaly dataset
   # SDK: AmazingData InfoData.get_long_hu_bang
@@ -158,8 +296,8 @@ tasks:
     variants:
       - match: {}
         config:
-          start_date: "2026-01-01"             # "YYYY-MM-DD" 或 null（不限）
-          end_date: "2026-05-27"               # "YYYY-MM-DD" 或 null（不限）
+          start_date: "2015-01-01"
+          end_date: null
           # symbols: ["000001"]               # 纯代码格式，缺省则全量下载
           # exchange: "SZ"                    # 与 symbols 配合使用（SH/SZ/BJ）
 

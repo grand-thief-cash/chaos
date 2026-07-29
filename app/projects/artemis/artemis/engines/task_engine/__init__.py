@@ -1,3 +1,5 @@
+from importlib import import_module
+
 from artemis.engines.task_engine.worker_unit import WorkerUnit
 from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 
@@ -12,7 +14,10 @@ from artemis.engines.task_engine.download.zh import (
     StockZhABsBalanceParent, StockZhABsBalanceChild,
     StockZhABsDividendParent, StockZhABsDividendChild,
     StockZhABsAdjustFactorParent, StockZhABsAdjustFactorChild,
-    StockZHALongHuBang,
+    StockZHALongHuBang, IndexZhADaily,
+    IndexZhAOptionQVIX, OptionZhADailyStats,
+    StockZhAHsgtHist, StockZhAMarginSummary,
+    StockZhANotice, StockZhADisclosureSchedule,
 )
 from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 from artemis.engines.task_engine.download.zh.stock_zh_a_industry_constituent_swhy import StockZHAIndustryConstituentSWHY
@@ -27,6 +32,24 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import 
     EastmoneyResearchReport,
 )
 from artemis.feature_platform.tasks.feature_compute_task import FeatureComputeTask
+from artemis.engines.task_engine.download.us.stock_us_daily import StockUSDaily
+from artemis.engines.task_engine.download.us.stock_us_list import StockUSList
+
+GlobalCommodityDaily = import_module(
+    "artemis.engines.task_engine.download.global.commodity_daily",
+).GlobalCommodityDaily
+GlobalFxDaily = import_module(
+    "artemis.engines.task_engine.download.global.fx_daily",
+).GlobalFxDaily
+GlobalIndexDaily = import_module(
+    "artemis.engines.task_engine.download.global.index_daily",
+).GlobalIndexDaily
+GlobalRateDaily = import_module(
+    "artemis.engines.task_engine.download.global.rate_daily",
+).GlobalRateDaily
+GlobalSecurityList = import_module(
+    "artemis.engines.task_engine.download.global.security_list",
+).GlobalSecurityList
 
 __all__ = ['BaseTaskUnit', 'OrchestratorUnit', 'WorkerUnit']
 
@@ -52,6 +75,90 @@ registry.register(
     TaskCode.STOCK_ZH_A_HIST_CHILD,
     module=StockZhAHistChild.__module__,
     class_name=StockZhAHistChild.__name__,
+)
+
+registry.register(
+    TaskCode.INDEX_ZH_A_DAILY,
+    module=IndexZhADaily.__module__,
+    class_name=IndexZhADaily.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_MARGIN_SUMMARY,
+    module=StockZhAMarginSummary.__module__,
+    class_name=StockZhAMarginSummary.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_HSGT_HIST,
+    module=StockZhAHsgtHist.__module__,
+    class_name=StockZhAHsgtHist.__name__,
+)
+
+registry.register(
+    TaskCode.INDEX_ZH_A_OPTION_QVIX,
+    module=IndexZhAOptionQVIX.__module__,
+    class_name=IndexZhAOptionQVIX.__name__,
+)
+
+registry.register(
+    TaskCode.OPTION_ZH_A_DAILY_STATS,
+    module=OptionZhADailyStats.__module__,
+    class_name=OptionZhADailyStats.__name__,
+)
+
+registry.register(
+    TaskCode.GLOBAL_SECURITY_LIST,
+    module=GlobalSecurityList.__module__,
+    class_name=GlobalSecurityList.__name__,
+)
+
+registry.register(
+    TaskCode.GLOBAL_INDEX_DAILY,
+    module=GlobalIndexDaily.__module__,
+    class_name=GlobalIndexDaily.__name__,
+)
+
+registry.register(
+    TaskCode.GLOBAL_RATE_DAILY,
+    module=GlobalRateDaily.__module__,
+    class_name=GlobalRateDaily.__name__,
+)
+
+registry.register(
+    TaskCode.GLOBAL_FX_DAILY,
+    module=GlobalFxDaily.__module__,
+    class_name=GlobalFxDaily.__name__,
+)
+
+registry.register(
+    TaskCode.GLOBAL_COMMODITY_DAILY,
+    module=GlobalCommodityDaily.__module__,
+    class_name=GlobalCommodityDaily.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_US_LIST,
+    module=StockUSList.__module__,
+    class_name=StockUSList.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_US_DAILY,
+    module=StockUSDaily.__module__,
+    class_name=StockUSDaily.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_NOTICE,
+    module=StockZhANotice.__module__,
+    class_name=StockZhANotice.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_DISCLOSURE_SCHEDULE,
+    module=StockZhADisclosureSchedule.__module__,
+    class_name=StockZhADisclosureSchedule.__name__,
 )
 
 registry.register(

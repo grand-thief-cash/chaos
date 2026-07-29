@@ -95,13 +95,13 @@ class StockZHALongHuBang(WorkerUnit):
         return str(val).strip()
 
     @staticmethod
-    def _to_float(val: Any) -> float:
+    def _to_float(val: Any) -> float | None:
         if pd.isna(val):
-            return 0.0
+            return None
         try:
             return float(val)
         except (TypeError, ValueError):
-            return 0.0
+            return None
 
     def post_process(self, ctx: TaskContext, result) -> List[Dict[str, Any]]:
         processed: List[Dict[str, Any]] = []

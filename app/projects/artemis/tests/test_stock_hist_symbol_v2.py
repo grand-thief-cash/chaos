@@ -209,6 +209,36 @@ class TestPostProcessDataCleaning(unittest.TestCase):
         bars_df = result["bars"]
         self.assertEqual(len(bars_df), 1)
 
+    def test_optional_missing_values_remain_none_and_real_zero_is_preserved(self):
+        df = _make_baostock_df()
+        df.loc[0, "volume"] = "0"
+        df.loc[0, "amount"] = ""
+        df.loc[0, "peTTM"] = ""
+        df.loc[0, "pctChg"] = "0"
+        result = self.child.post_process(self.ctx, df)
+
+        bar = result["bars"].iloc[0].to_dict()
+        ext = result["ext"].iloc[0].to_dict()
+        self.assertEqual(bar["volume"], 0)
+        self.assertIsNone(bar["amount"])
+        self.assertEqual(bar["pct_chg"], 0.0)
+        self.assertIsNone(ext["pe_ttm"])
+
+    def test_missing_core_ohlc_rejects_row(self):
+        df = _make_baostock_df(rows=2)
+        df.loc[0, "close"] = ""
+        result = self.child.post_process(self.ctx, df)
+        self.assertEqual(len(result["bars"]), 1)
+
+    def test_trade_status_and_is_st_are_parsed_without_defaulting(self):
+        df = _make_baostock_df()
+        df["tradestatus"] = "1"
+        df["isST"] = "0"
+        result = self.child.post_process(self.ctx, df)
+        ext = result["ext"].iloc[0].to_dict()
+        self.assertEqual(ext["trade_status"], 1)
+        self.assertIs(ext["is_st"], False)
+
 
 # ── sink tests ──
 

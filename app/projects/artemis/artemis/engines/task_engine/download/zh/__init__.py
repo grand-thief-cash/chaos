@@ -15,6 +15,13 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_bs_dividend_child import
 from artemis.engines.task_engine.download.zh.stock_zh_a_bs_adjust_factor_parent import StockZhABsAdjustFactorParent
 from artemis.engines.task_engine.download.zh.stock_zh_a_bs_adjust_factor_child import StockZhABsAdjustFactorChild
 from artemis.engines.task_engine.download.zh.stock_zh_a_long_hu_bang import StockZHALongHuBang
+from artemis.engines.task_engine.download.zh.index_zh_a_daily import IndexZhADaily
+from artemis.engines.task_engine.download.zh.index_zh_a_option_qvix import IndexZhAOptionQVIX
+from artemis.engines.task_engine.download.zh.option_zh_a_daily_stats import OptionZhADailyStats
+from artemis.engines.task_engine.download.zh.stock_zh_a_hsgt_hist import StockZhAHsgtHist
+from artemis.engines.task_engine.download.zh.stock_zh_a_margin_summary import StockZhAMarginSummary
+from artemis.engines.task_engine.download.zh.stock_zh_a_notice import StockZhANotice
+from artemis.engines.task_engine.download.zh.stock_zh_a_disclosure_schedule import StockZhADisclosureSchedule
 from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import (
     EastmoneyResearchReport,
     StockZhAEastmoneyReport,
@@ -31,6 +38,10 @@ __all__ = [
     "StockZhABsDividendParent", "StockZhABsDividendChild",
     "StockZhABsAdjustFactorParent", "StockZhABsAdjustFactorChild",
     "StockZHALongHuBang",
+    "IndexZhADaily",
+    "IndexZhAOptionQVIX", "OptionZhADailyStats",
+    "StockZhAHsgtHist", "StockZhAMarginSummary",
+    "StockZhANotice", "StockZhADisclosureSchedule",
     "StockZhAEastmoneyReport",
     "EastmoneyResearchReport",
 ]

@@ -1,0 +1,24 @@
+version: "2026-07-28"
+taxonomy: "SWHY"
+market: "zh_a"
+
+# R05 is deliberately configuration, not a separate downloader. Codes are
+# validated against the taxonomy downloaded by STOCK_ZH_A_MKT_CATEGORY_SWHY.
+level_1:
+  - { code: "801080.SI", name: "电子" }
+  - { code: "801730.SI", name: "电力设备" }
+  - { code: "801740.SI", name: "国防军工" }
+  - { code: "801750.SI", name: "计算机" }
+  - { code: "801760.SI", name: "传媒" }
+  - { code: "801770.SI", name: "通信" }
+
+level_2_seed:
+  - { code: "801081.SI", name: "半导体" }
+  - { code: "801083.SI", name: "元件" }
+  - { code: "801084.SI", name: "光学光电子" }
+  - { code: "801085.SI", name: "消费电子" }
+  - { code: "801086.SI", name: "电子化学品" }
+
+validation:
+  require_all_level_1: true
+  unknown_level_2_action: "warn"
