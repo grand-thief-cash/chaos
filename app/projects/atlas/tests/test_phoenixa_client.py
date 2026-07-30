@@ -7,7 +7,7 @@ from atlas.core.clients import PhoenixAClient
 @pytest.mark.asyncio
 async def test_research_report_adapter_projects_only_its_strict_contract():
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v2/research-report/eastmoney/"
+        assert request.url.path == "/api/v2/research-report/eastmoney"
         return httpx.Response(
             200,
             json={

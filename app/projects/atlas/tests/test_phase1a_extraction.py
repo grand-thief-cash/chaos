@@ -5,9 +5,13 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from atlas.core.errors import ExtractionValidationError
+from atlas.core.errors import ExtractionValidationError, ModelRequestError
 from atlas.application import ExtractionOrchestrator
-from atlas.knowledge_production.extractor import ExtractionValidator, WholePDFExtractor
+from atlas.knowledge_production.extractor import (
+    ExtractionValidator,
+    PromptBuilder,
+    WholePDFExtractor,
+)
 from atlas.models import ExtractionRun, ResearchReport
 
 
@@ -98,6 +102,20 @@ def test_validator_rejects_markdown_and_dangling_references():
         )
 
 
+def test_prompt_lists_closed_entity_type_enum_and_no_echo_rule():
+    builder = PromptBuilder()
+    prompt = builder.build(
+        document_id="eastmoney:r1",
+        title="公司深度报告",
+        report_type="stock",
+        semantic_config={"version": "atlas-semantic-v1"},
+        report_profile={"enabled_for_production": True},
+    )
+    assert builder.version == "whole-pdf-extraction-v3"
+    assert "COMPANY、PRODUCT、MATERIAL、TECHNOLOGY" in prompt
+    assert "不得复述、复制或改写任务描述" in prompt
+
+
 class FakeLLM:
     model_id = "fake-qwen"
 
@@ -107,6 +125,22 @@ class FakeLLM:
     async def complete_pdf(self, *, prompt: str, pdf: bytes, filename: str) -> str:
         self.calls += 1
         return "not-json" if self.calls == 1 else json.dumps(valid_result(), ensure_ascii=False)
+
+
+class AlwaysInvalidLLM:
+    model_id = "invalid-model"
+    input_mode = "TEXT_EXTRACTED"
+
+    async def complete_pdf(self, *, prompt: str, pdf: bytes, filename: str) -> str:
+        return '{"task":"echoed instead of extracted"}'
+
+
+class RequestFailingLLM:
+    model_id = "failing-model"
+    input_mode = "TEXT_EXTRACTED"
+
+    async def complete_pdf(self, *, prompt: str, pdf: bytes, filename: str) -> str:
+        raise ModelRequestError("HTTP 429")
 
 
 @pytest.mark.asyncio
@@ -183,3 +217,66 @@ async def test_orchestrator_persists_only_validated_result():
     assert run.status == "SUCCEEDED"
     assert store.result is not None
     assert run.relation_claim_count == 1
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_records_all_validation_attempts_and_errors():
+    store = FakeStore()
+    orchestrator = ExtractionOrchestrator(
+        reader=FakeReader(),
+        store=store,
+        extractor=WholePDFExtractor(AlwaysInvalidLLM(), maximum_total_attempts=2),
+        unlocker=FakeUnlocker(),
+        pipeline_version="atlas-kg-v1-zhipu-text",
+    )
+    report = ResearchReport(
+        source="eastmoney",
+        resource_id="r1",
+        report_type="stock",
+        publish_date="2026-07-01",
+        title="公司深度报告",
+        org_name="某证券",
+        pdf_object_key="r1.pdf",
+        status="downloaded",
+    )
+    run = await orchestrator.run_document(
+        report,
+        semantic_config={"version": "atlas-semantic-v1"},
+        report_profile={"enabled_for_production": True},
+    )
+    assert run.status == "FAILED_RETRYABLE"
+    assert run.error_code == "MODEL_OUTPUT_INVALID"
+    assert run.input_mode == "TEXT_EXTRACTED"
+    assert run.request_attempt_count == 2
+    assert run.validation_error_codes.count("SCHEMA:schema_version:missing") == 2
+    assert "SCHEMA:task:extra_forbidden" in run.validation_error_codes
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_counts_a_failed_model_request_as_one_attempt():
+    store = FakeStore()
+    orchestrator = ExtractionOrchestrator(
+        reader=FakeReader(),
+        store=store,
+        extractor=WholePDFExtractor(RequestFailingLLM(), maximum_total_attempts=3),
+        unlocker=FakeUnlocker(),
+        pipeline_version="atlas-kg-v1-zhipu-text",
+    )
+    report = ResearchReport(
+        source="eastmoney",
+        resource_id="r1",
+        report_type="stock",
+        publish_date="2026-07-01",
+        title="公司深度报告",
+        org_name="某证券",
+        pdf_object_key="r1.pdf",
+        status="downloaded",
+    )
+    run = await orchestrator.run_document(
+        report,
+        semantic_config={"version": "atlas-semantic-v1"},
+        report_profile={"enabled_for_production": True},
+    )
+    assert run.status == "FAILED_RETRYABLE"
+    assert run.error_code == "MODEL_REQUEST_FAILED"
+    assert run.request_attempt_count == 1

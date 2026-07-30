@@ -44,17 +44,25 @@ class MinioCfg(StrictConfigModel):
     secret_key: str = ""
     secure: bool = False
     bucket: str = "research-report"
+    sample_bucket: str = ""
+    sample_output_prefix: str = "sample_output"
 
 
 class ModelProvider(StrEnum):
     OLLAMA = "ollama"
     OPENAI_COMPATIBLE = "openai_compatible"
     OPENAI_COMPATIBLE_PDF = "openai_compatible_pdf"
+    ZHIPU_TEXT = "zhipu_text"
 
 
 class StructuredOutputMode(StrEnum):
     JSON_SCHEMA = "json_schema"
     JSON_OBJECT = "json_object"
+
+
+class ThinkingMode(StrEnum):
+    ENABLED = "enabled"
+    DISABLED = "disabled"
 
 
 class ModelEndpointCfg(StrictConfigModel):
@@ -67,10 +75,13 @@ class ModelEndpointCfg(StrictConfigModel):
     temperature: float = Field(default=0, ge=0, le=2)
     maximum_output_tokens: int = Field(default=16384, ge=256)
     structured_output_mode: StructuredOutputMode = StructuredOutputMode.JSON_SCHEMA
+    thinking_mode: ThinkingMode | None = None
 
     @property
     def resolved_api_key(self) -> str:
-        return os.getenv(self.api_key_env, "") if self.api_key_env else self.api_key
+        if self.api_key_env:
+            return os.getenv(self.api_key_env, self.api_key)
+        return self.api_key
 
 
 class LLMCfg(StrictConfigModel):
@@ -86,11 +97,17 @@ class LLMCfg(StrictConfigModel):
 
     @model_validator(mode="after")
     def validate_capability_boundaries(self) -> "LLMCfg":
-        if self.extraction.provider != ModelProvider.OPENAI_COMPATIBLE_PDF:
+        if self.extraction.provider not in {
+            ModelProvider.OPENAI_COMPATIBLE_PDF,
+            ModelProvider.ZHIPU_TEXT,
+        }:
             raise ValueError(
-                "llm.extraction must use a PDF-capable provider"
+                "llm.extraction must use a PDF-capable or text-extracting provider"
             )
-        if self.agent.provider == ModelProvider.OPENAI_COMPATIBLE_PDF:
+        if self.agent.provider in {
+            ModelProvider.OPENAI_COMPATIBLE_PDF,
+            ModelProvider.ZHIPU_TEXT,
+        }:
             raise ValueError(
                 "llm.agent must use ollama or openai_compatible"
             )

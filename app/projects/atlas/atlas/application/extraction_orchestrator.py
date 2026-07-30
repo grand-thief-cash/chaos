@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from dataclasses import dataclass
 
 from atlas.core.clients import ExtractionRunStore, PDFObjectReader
-from atlas.core.errors import AtlasError
+from atlas.core.errors import AtlasError, ExtractionValidationError
 from atlas.knowledge_production.extractor import WholePDFExtractor
 from atlas.knowledge_production.pdf_preprocessor import PikePDFUnlocker
 from atlas.models import ExtractionResult, ExtractionRun, ExtractionRunStatus, ResearchReport
@@ -86,6 +86,7 @@ class ExtractionOrchestrator:
             prompt_signature=prompt_signature,
             extraction_schema_version="atlas-extraction-v2",
             semantic_version=semantic_config["version"],
+            input_mode=getattr(self.extractor.llm, "input_mode", "PDF_DIRECT"),
         )
         await self.store.create_extraction_run(run)
         run.status = ExtractionRunStatus.PROCESSING
@@ -123,8 +124,21 @@ class ExtractionOrchestrator:
                 if finalize_status
                 else ExtractionRunStatus.PROCESSING
             )
+        except ExtractionValidationError as exc:
+            run.status = ExtractionRunStatus.FAILED_RETRYABLE
+            run.request_attempt_count = self.extractor.maximum_total_attempts
+            run.validation_error_codes = exc.errors
+            run.error_code = exc.code
+            run.error_summary = str(exc)[:2000]
         except AtlasError as exc:
             run.status = ExtractionRunStatus.FAILED_RETRYABLE
+            if exc.code in {
+                "MODEL_PDF_UNREADABLE",
+                "MODEL_TIMEOUT",
+                "MODEL_REQUEST_FAILED",
+                "PDF_TEXT_EXTRACTION_FAILED",
+            }:
+                run.request_attempt_count = max(1, run.request_attempt_count)
             run.error_code = exc.code
             run.error_summary = str(exc)[:2000]
         except Exception as exc:

@@ -22,6 +22,8 @@ minio:
   secret_key: ""
   secure: false
   bucket: research-report
+  sample_bucket: ""
+  sample_output_prefix: sample_output
 
 llm:
   # Whole-PDF 输入必须由真正支持 PDF file content 的 endpoint 承接。

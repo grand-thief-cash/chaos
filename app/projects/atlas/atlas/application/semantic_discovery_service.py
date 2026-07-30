@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
+from uuid import uuid4
 
 from atlas.application.extraction_orchestrator import ExtractionOrchestrator
+from atlas.core.clients import SampleResultStore
 from atlas.knowledge_production.ontology_discovery import (
     DiscoveryAggregator,
     SemanticRegistry,
@@ -38,6 +41,8 @@ class SemanticDiscoveryService:
         semantic_registry: SemanticRegistry,
         *,
         semantic_directory: str | Path,
+        sample_store: SampleResultStore | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.repository = repository
         self.extraction = extraction
@@ -45,8 +50,12 @@ class SemanticDiscoveryService:
         self.aggregator = DiscoveryAggregator()
         self.version_builder = SemanticVersionBuilder()
         self.publisher = SemanticYamlPublisher(semantic_directory)
+        self.sample_store = sample_store
+        self.clock = clock or (lambda: datetime.now().astimezone())
 
     async def run(self, request: Any) -> dict:
+        discovery_run_id = uuid4()
+        sampled_at = self.clock()
         reports = await self.repository.list_research_reports(
             report_types=request.report_types,
             published_from=request.published_from,
@@ -75,26 +84,33 @@ class SemanticDiscoveryService:
                 },
             )
             if outcome.result is not None:
-                results.append(
-                    extraction_to_discovery_result(
-                        outcome.result, report.report_type, profile_key
-                    )
+                document_result = extraction_to_discovery_result(
+                    outcome.result, report.report_type, profile_key
                 )
             else:
-                results.append(
-                    DiscoveryDocumentResult(
-                        document_id=report.document_id,
-                        report_type=report.report_type,
-                        readable=False,
-                        useful_for_graph=False,
-                        usefulness_reason=(
-                            outcome.run.error_summary
-                            or outcome.run.error_code
-                            or "PDF extraction did not produce a validated result"
-                        ),
-                    )
+                document_result = DiscoveryDocumentResult(
+                    document_id=report.document_id,
+                    report_type=report.report_type,
+                    readable=False,
+                    useful_for_graph=False,
+                    usefulness_reason=(
+                        outcome.run.error_summary
+                        or outcome.run.error_code
+                        or "PDF extraction did not produce a validated result"
+                    ),
                 )
+            if self.sample_store is not None:
+                document_result.sample_output_object_key = await self.sample_store.write(
+                    discovery_run_id=str(discovery_run_id),
+                    sampled_at=sampled_at,
+                    report=report,
+                    extraction_run=outcome.run,
+                    extraction_result=outcome.result,
+                    discovery_result=document_result,
+                )
+            results.append(document_result)
         run = DiscoveryRun(
+            run_id=discovery_run_id,
             requested_sample_size=request.sample_size,
             sampled_document_ids=[item.document_id for item in sampled],
             document_results=results,

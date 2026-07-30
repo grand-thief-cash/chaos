@@ -11,6 +11,7 @@ from atlas.models.configs import (
     ServerCfg,
     ServiceEndpointCfg,
     StructuredOutputMode,
+    ThinkingMode,
     TaxonomyCfg,
     TaxonomySchemeCfg,
 )
@@ -84,6 +85,7 @@ __all__ = [
     "ServerCfg",
     "ServiceEndpointCfg",
     "StructuredOutputMode",
+    "ThinkingMode",
     "TaxonomyCfg",
     "TaxonomySchemeCfg",
     "UnknownSemanticTerm",

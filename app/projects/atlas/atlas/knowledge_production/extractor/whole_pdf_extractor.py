@@ -56,5 +56,5 @@ class WholePDFExtractor:
             except ExtractionValidationError as exc:
                 validation_errors.extend(exc.errors)
                 if attempt == self.maximum_total_attempts:
-                    raise
+                    raise ExtractionValidationError(validation_errors) from exc
         raise AssertionError("unreachable")

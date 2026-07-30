@@ -13,6 +13,7 @@ dependencies = [
   "PyYAML>=6.0.0",
   "pikepdf>=9.0.0",
   "minio>=7.2.0",
+  "pdfplumber>=0.11.0",
 ]
 
 [project.optional-dependencies]
@@ -32,4 +33,3 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["atlas*"]
 exclude = ["tests"]
-

@@ -12,6 +12,18 @@ class ModelPDFUnreadableError(AtlasError):
     code = "MODEL_PDF_UNREADABLE"
 
 
+class PDFTextExtractionError(AtlasError):
+    code = "PDF_TEXT_EXTRACTION_FAILED"
+
+
+class ModelTimeoutError(AtlasError):
+    code = "MODEL_TIMEOUT"
+
+
+class ModelRequestError(AtlasError):
+    code = "MODEL_REQUEST_FAILED"
+
+
 class ExtractionValidationError(AtlasError):
     code = "MODEL_OUTPUT_INVALID"
 
@@ -22,4 +34,3 @@ class ExtractionValidationError(AtlasError):
 
 class NoEnabledReportTypesError(AtlasError):
     code = "NO_ENABLED_REPORT_TYPES"
-

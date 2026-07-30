@@ -70,7 +70,7 @@ class PhoenixAClient:
                 "page": 1,
             }
             response = await self._client.get(
-                f"{self.base_url}/api/v2/research-report/{self.source}/",
+                f"{self.base_url}/api/v2/research-report/{self.source}",
                 params={key: value for key, value in params.items() if value not in (None, "")},
             )
             response.raise_for_status()

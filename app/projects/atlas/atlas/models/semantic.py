@@ -68,6 +68,7 @@ class DiscoveryDocumentResult(StrictModel):
     recommended_prompt_profile_key: str | None = None
     predicate_proposals: list[PredicateProposal] = Field(default_factory=list)
     concept_proposals: list[ConceptProposal] = Field(default_factory=list)
+    sample_output_object_key: str | None = None
 
 
 class DiscoveryRun(StrictModel):

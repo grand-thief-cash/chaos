@@ -10,7 +10,7 @@ import yaml
 from atlas.models import ExtractionResult
 
 
-SYSTEM_PROMPT = """你是 Atlas 研报知识抽取器。你只能依据随请求提供的 PDF。
+SYSTEM_PROMPT = """你是 Atlas 研报知识抽取器。你只能依据随请求提供的 PDF 或逐页提取文本。
 必须遵守：
 1. 只返回一个 JSON object，不得返回 Markdown、解释、前后缀或推理过程。
 2. PDF 未明确给出的内容不得根据常识补充；宁可留空，也不能猜测。
@@ -20,8 +20,10 @@ SYSTEM_PROMPT = """你是 Atlas 研报知识抽取器。你只能依据随请求
 6. 不得把计划、估计、观点或预测写成 OBSERVED_FACT。
 7. ticker、行业代码、数字、单位和日期只有在 PDF 明确出现时才能填写。
 8. subject/object 方向必须按 canonical predicate 定义；不确定时 canonical_predicate_hint=null。
-9. 若 PDF 无法读取，document_assessment.readability=UNREADABLE，并说明原因；不得用空数组伪装可读。
-10. 输出必须严格满足 atlas-extraction-v2 schema，禁止额外字段。"""
+9. 若 PDF 正文无法读取，document_assessment.readability=UNREADABLE，并说明原因；不得用空数组伪装可读。
+10. 输出必须严格满足 atlas-extraction-v2 schema，禁止额外字段。
+11. 不得复述、复制或改写任务描述、Schema、field_dictionary、semantic_config 或 report_profile。
+12. 输出顶层必须且只能包含 schema_version、semantic_version、document_id、document_assessment、entity_mentions、relation_claims、quantified_claims、analyst_views、unknown_semantic_terms。"""
 
 
 FIELD_DICTIONARY = {
@@ -35,7 +37,11 @@ FIELD_DICTIONARY = {
     "entity_mentions": {
         "mention_id": "本次输出内唯一的局部 ID，供 Claim 引用。",
         "mention": "PDF 中出现的原始实体称呼，不要先自行改成数据库名称。",
-        "suggested_entity_type": "实体语义类型；这是模型建议，后续程序会做消歧。",
+        "suggested_entity_type": (
+            "必须严格选择 COMPANY、PRODUCT、MATERIAL、TECHNOLOGY、MARKET、"
+            "INDUSTRY_CLASS、VALUE_CHAIN、ASSET、OTHER 之一；人物、机构或其他"
+            "无法准确归类的实体使用 OTHER，不得创造新枚举。"
+        ),
         "country_hint": "仅在 PDF 明确表述时填写国家/地区代码。",
         "ticker_hint": "仅在 PDF 明确出现股票代码时填写。",
         "context": "能解释该称呼含义的最短上下文。",
@@ -89,7 +95,7 @@ FIELD_DICTIONARY = {
 class PromptBuilder:
     """Build a versioned, strict extraction prompt from the published semantics."""
 
-    version = "whole-pdf-extraction-v2"
+    version = "whole-pdf-extraction-v3"
 
     def __init__(self, mapping_path: str | Path | None = None) -> None:
         self.prompt_profiles: dict[str, dict[str, Any]] = {}

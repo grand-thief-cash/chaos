@@ -1,7 +1,10 @@
 # VERSION
-v0.2.0
+v0.2.1
 
 # Changelog
+- v0.2.1
+    - Added home-development Atlas configuration for Zhipu `glm-4.7-flash`, text-extracted PDF model calls, MinIO `atlas-dev` sample JSON review output, and live smoke tooling against `chaos-dev` PDFs.
+    - Added retry/timeout handling for model HTTP calls, PhoenixA report-list compatibility with the deployed home service, sample-result persistence, and expanded tests for Zhipu adapters, runtime wiring, extraction validation, and MinIO sample storage.
 - v0.2.0
     - Rebuilt Atlas as a research-report knowledge production and read-only intelligence service; removed the previous downloader, event fingerprinting, impact scoring, direct database access, arbitrary Cypher, RSS, web-clip, and legacy pipeline implementation.
     - Added an Artemis-style project skeleton and configuration loader while keeping Atlas-specific `knowledge_production`, `knowledge_store`, and `intelligence` domain boundaries.

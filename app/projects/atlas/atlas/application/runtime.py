@@ -11,8 +11,10 @@ from atlas.application.semantic_discovery_service import SemanticDiscoveryServic
 from atlas.application.report_consumer import ReportConsumer
 from atlas.core.clients import (
     MinIOPDFReader,
+    MinIOSampleResultStore,
     OpenAICompatiblePDFClient,
     PhoenixAClient,
+    ZhipuTextPDFClient,
     build_structured_chat_client,
 )
 from atlas.intelligence import (
@@ -33,7 +35,7 @@ from atlas.knowledge_production.entity_resolver.phoenixa_candidates import (
 from atlas.knowledge_production.industry_crosswalk import StructuredCrosswalkModelAdapter
 from atlas.knowledge_production.ontology_discovery import SemanticRegistry
 from atlas.knowledge_production.pdf_preprocessor import PikePDFUnlocker
-from atlas.models import Config
+from atlas.models import Config, ModelProvider
 
 
 @dataclass(slots=True)
@@ -68,14 +70,24 @@ def build_runtime(config: Config) -> AtlasRuntime:
         secure=config.minio.secure,
     )
     extraction_model = config.llm.extraction
-    llm = OpenAICompatiblePDFClient(
-        extraction_model.base_url,
-        extraction_model.model,
-        api_key=extraction_model.resolved_api_key,
-        timeout_seconds=extraction_model.timeout_seconds,
-        temperature=extraction_model.temperature,
-        maximum_output_tokens=extraction_model.maximum_output_tokens,
-    )
+    if extraction_model.provider == ModelProvider.ZHIPU_TEXT:
+        llm = ZhipuTextPDFClient(
+            extraction_model.base_url,
+            extraction_model.model,
+            api_key=extraction_model.resolved_api_key,
+            timeout_seconds=extraction_model.timeout_seconds,
+            temperature=extraction_model.temperature,
+            maximum_output_tokens=extraction_model.maximum_output_tokens,
+        )
+    else:
+        llm = OpenAICompatiblePDFClient(
+            extraction_model.base_url,
+            extraction_model.model,
+            api_key=extraction_model.resolved_api_key,
+            timeout_seconds=extraction_model.timeout_seconds,
+            temperature=extraction_model.temperature,
+            maximum_output_tokens=extraction_model.maximum_output_tokens,
+        )
     extractor = WholePDFExtractor(
         llm,
         prompt_builder=PromptBuilder(knowledge.prompt_mapping_path),
@@ -102,11 +114,24 @@ def build_runtime(config: Config) -> AtlasRuntime:
         semantic_registry,
         semantic_directory=Path(knowledge.semantic_config_path).parent,
     )
+    sample_store = (
+        MinIOSampleResultStore(
+            config.minio.endpoint,
+            config.minio.access_key,
+            config.minio.secret_key,
+            config.minio.sample_bucket,
+            prefix=config.minio.sample_output_prefix,
+            secure=config.minio.secure,
+        )
+        if config.minio.sample_bucket
+        else None
+    )
     discovery_service = SemanticDiscoveryService(
         phoenixa,
         orchestrator,
         semantic_registry,
         semantic_directory=Path(knowledge.semantic_config_path).parent,
+        sample_store=sample_store,
     )
     knowledge_production = KnowledgeProductionOrchestrator(
         orchestrator,

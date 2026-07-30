@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -149,11 +150,22 @@ async def test_failed_sample_is_counted_as_unreadable(tmp_path: Path):
         def get(self):
             return Semantic()
 
+    class SampleStore:
+        writes = []
+
+        async def write(self, **kwargs):
+            self.writes.append(kwargs)
+            return "sample_output/20260720/stock/failed-1.json"
+
+    sample_store = SampleStore()
+
     service = SemanticDiscoveryService(
         Repository(),
         Extraction(),
         Registry(),
         semantic_directory=tmp_path,
+        sample_store=sample_store,
+        clock=lambda: datetime(2026, 7, 20, tzinfo=timezone.utc),
     )
     result = await service.run(
         SimpleNamespace(
@@ -166,3 +178,9 @@ async def test_failed_sample_is_counted_as_unreadable(tmp_path: Path):
     assert result["document_results"][0]["readable"] is False
     assert result["report_type_assessments"][0]["sampled_document_count"] == 1
     assert result["report_type_assessments"][0]["useful_ratio"] == 0
+    assert result["document_results"][0]["sample_output_object_key"] == (
+        "sample_output/20260720/stock/failed-1.json"
+    )
+    assert len(sample_store.writes) == 1
+    assert sample_store.writes[0]["extraction_result"] is None
+    assert sample_store.writes[0]["sampled_at"].strftime("%Y%m%d") == "20260720"

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import json
 from typing import TypeVar
 
 import httpx
 from pydantic import BaseModel
 
+from atlas.core.clients.http_retry import post_json_with_retry
 from atlas.models import ModelEndpointCfg, StructuredOutputMode
 
 T = TypeVar("T", bound=BaseModel)
@@ -21,10 +21,14 @@ class StructuredChatClient:
         *,
         client: httpx.AsyncClient | None = None,
         maximum_attempts: int = 3,
+        request_maximum_attempts: int = 4,
+        retry_base_seconds: float = 1,
     ) -> None:
         self.config = config
         self.maximum_attempts = maximum_attempts
-        api_key = os.getenv(config.api_key_env, "") if config.api_key_env else config.api_key
+        self.request_maximum_attempts = request_maximum_attempts
+        self.retry_base_seconds = retry_base_seconds
+        api_key = config.resolved_api_key
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
         self._client = client or httpx.AsyncClient(
             timeout=config.timeout_seconds,
@@ -64,19 +68,27 @@ class StructuredChatClient:
                     "object; do not patch the old output. Errors: "
                     + json.dumps(rejected_errors[-1:], ensure_ascii=False)
                 )
-            response = await self._client.post(
+            request_payload = {
+                "model": self.config.model,
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.maximum_output_tokens,
+                "stream": False,
+                "response_format": response_format,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": attempt_prompt},
+                ],
+            }
+            if self.config.thinking_mode is not None:
+                request_payload["thinking"] = {
+                    "type": self.config.thinking_mode.value
+                }
+            response = await post_json_with_retry(
+                self._client,
                 f"{self.config.base_url.rstrip('/')}/chat/completions",
-                json={
-                    "model": self.config.model,
-                    "temperature": self.config.temperature,
-                    "max_tokens": self.config.maximum_output_tokens,
-                    "stream": False,
-                    "response_format": response_format,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": attempt_prompt},
-                    ],
-                },
+                request_payload,
+                maximum_attempts=self.request_maximum_attempts,
+                retry_base_seconds=self.retry_base_seconds,
             )
             response.raise_for_status()
             try:
