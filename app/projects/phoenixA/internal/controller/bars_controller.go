@@ -90,6 +90,12 @@ func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "meta.period and meta.adjust are required"})
 		return
 	}
+	period, ok := bizConsts.NormalizePeriod(req.Meta.Period)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "unsupported meta.period"})
+		return
+	}
+	req.Meta.Period = period
 	if len(req.Bars) == 0 {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "bars data is empty"})
 		return
@@ -287,9 +293,15 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 	adjust := strings.TrimSpace(qp.Get("adjust"))
 	limit, offset := parseLimitOffset(r)
 	fields := parseFieldsParam(qp.Get("fields"))
+	storageFields := stripVirtualBarFields(fields)
 
 	if startDate == "" || endDate == "" || period == "" || adjust == "" {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "security_id, start_date, end_date, period, adjust are required"})
+		return
+	}
+	period, ok := bizConsts.NormalizePeriod(period)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "unsupported period"})
 		return
 	}
 	if startDate > endDate {
@@ -320,7 +332,7 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 		Symbol:    symbolByID[securityID],
 		StartDate: startDate,
 		EndDate:   endDate,
-		Fields:    fields,
+		Fields:    storageFields,
 		Limit:     limit,
 		Offset:    offset,
 	}
@@ -332,13 +344,17 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize trade_date and stamp security_id onto each row for the response
+	// Normalize date-only bars and stamp security_id onto each row for the
+	// response. Intraday timestamps are deliberately preserved: truncating them
+	// would collapse all bars from a trading day onto one chart/storage key.
 	// (physical table has no security_id column; it's a decoration, §10.b).
 	for _, b := range bars {
 		if b == nil {
 			continue
 		}
-		b.TradeDate = normalizeDateYYYYMMDD(b.TradeDate)
+		if !bizConsts.IsIntradayPeriod(period) {
+			b.TradeDate = normalizeDateYYYYMMDD(b.TradeDate)
+		}
 		b.SecurityID = securityID
 	}
 
@@ -347,6 +363,22 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: bars})
+}
+
+// security_id is resolved at the controller boundary and stamped onto the
+// response; it is deliberately absent from physical bars_* tables. Never push
+// this virtual field into the DAO SELECT list.
+func stripVirtualBarFields(fields []string) []string {
+	if len(fields) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field != "security_id" {
+			result = append(result, field)
+		}
+	}
+	return result
 }
 
 // GET /api/v2/bars/{asset_type}/{market}/last_update
@@ -367,6 +399,11 @@ func (c *BarsController) GetLastUpdate(w http.ResponseWriter, r *http.Request) {
 	adjust := strings.TrimSpace(qp.Get("adjust"))
 	if period == "" || adjust == "" {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "period and adjust are required"})
+		return
+	}
+	period, ok := bizConsts.NormalizePeriod(period)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "unsupported period"})
 		return
 	}
 

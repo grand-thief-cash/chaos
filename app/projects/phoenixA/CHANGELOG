@@ -1,7 +1,13 @@
 # VERSION
-v1.41.0
+v1.42.0
 
 # Changelog
+- v1.42.0
+    - **Intraday standard Bars.** Added canonical `min1/min5/min15/min30/min60` period normalization and alias handling at controller/table-resolution boundaries. Intraday queries and last-update watermarks preserve full timestamps instead of truncating them to a trading date.
+    - **A-share five-minute storage.** Added the Timescale-ready `ods.bars_stock_zh_a_min5_nf` migration with `TIMESTAMPTZ` identity, OHLC/volume constraints, lookup indexes, and monthly chunks. Daily Bars behavior remains unchanged.
+    - **Virtual-field projection fix.** `security_id` remains a controller response decoration and is now stripped before DAO field projection, preventing Workbench `fields=security_id,...` queries from selecting a non-existent physical column.
+    - **Regression coverage.** Added period normalization and minute table-resolution tests; targeted Go controller/DAO/const tests pass.
+    - **Regression coverage.** Added period normalization and minute table-resolution tests; targeted Go controller/DAO/const tests pass.
 - v1.41.0
     - **ODS domain boundaries.** Replaced the misleading aggregate `RiskData` model/DAO/service/controller with separate capital-flow, option-market-data and market-observation components. Raw source datasets now live under `/api/v2/capital-flows`, `/api/v2/option-market-data` and `/api/v2/market-observations`; the Risk domain is reserved for later derived risk models and signals.
     - **Extensible global market storage.** Replaced the fixed-column `global_rate_daily`, `global_fx_daily` and `global_commodity_daily` draft tables. Tradable global futures, FX and indexes now use standard Bars tables keyed through `security_registry`; scalar yields, spreads and GDP series use `market_observation_daily` with `security_id`, `observation_type`, `value`, `unit` and `source`.

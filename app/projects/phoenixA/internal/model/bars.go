@@ -10,10 +10,14 @@ import "encoding/json"
 // exception), so the controller resolves security_id → symbol at the API
 // boundary and stamps security_id back onto the rows for display. It is not a
 // DB column and gorm ignores it on read/write.
+//
+// TradeDate is a legacy cross-period JSON/column name. Daily tables store DATE;
+// intraday tables store TIMESTAMPTZ and the string carries the complete RFC3339
+// bar timestamp. Do not truncate it without checking BarsQuery.Period.
 type StandardBar struct {
 	SecurityID uint64   `gorm:"-" json:"security_id,omitempty"`
 	Symbol     string   `gorm:"primaryKey;column:symbol;type:varchar(32)" json:"symbol"`
-	TradeDate  string   `gorm:"primaryKey;column:trade_date;type:date" json:"trade_date"`
+	TradeDate  string   `gorm:"primaryKey;column:trade_date" json:"trade_date"`
 	Open       float64  `gorm:"column:open;type:decimal(20,4)" json:"open"`
 	High       float64  `gorm:"column:high;type:decimal(20,4)" json:"high"`
 	Low        float64  `gorm:"column:low;type:decimal(20,4)" json:"low"`
@@ -31,7 +35,7 @@ type StandardBar struct {
 type BarsQuery struct {
 	AssetType string   `json:"asset_type"`
 	Market    string   `json:"market"`
-	Period    string   `json:"period"` // daily, weekly, min5, ...
+	Period    string   `json:"period"` // canonical: daily, weekly, min1, min5, ...
 	Adjust    string   `json:"adjust"` // nf, qfq, hfq
 	Symbol    string   `json:"symbol,omitempty"`
 	Symbols   []string `json:"symbols,omitempty"`

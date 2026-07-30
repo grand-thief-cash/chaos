@@ -76,7 +76,11 @@ func (d *BarsDao) GetLatestUpdateBySymbols(ctx context.Context, q *model.BarsQue
 		if err = rows.Scan(&symbol, &date); err != nil {
 			continue
 		}
-		result[symbol] = utils.NormalizedToYYYYMMDD(date)
+		if bizConsts.IsIntradayPeriod(q.Period) {
+			result[symbol] = date
+		} else {
+			result[symbol] = utils.NormalizedToYYYYMMDD(date)
+		}
 	}
 	return result, nil
 }
