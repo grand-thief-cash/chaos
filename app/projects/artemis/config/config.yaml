@@ -75,10 +75,11 @@ data_options:
   periods:
     - { value: "daily", label: "日线" }
     - { value: "weekly", label: "周线" }
-    - { value: "5min", label: "5分钟" }
-    - { value: "15min", label: "15分钟" }
-    - { value: "30min", label: "30分钟" }
-    - { value: "60min", label: "60分钟" }
+    - { value: "min1", label: "1分钟" }
+    - { value: "min5", label: "5分钟" }
+    - { value: "min15", label: "15分钟" }
+    - { value: "min30", label: "30分钟" }
+    - { value: "min60", label: "60分钟" }
   adjust_rules:
     - asset_type: "stock"
       options:
@@ -134,23 +135,23 @@ engine:
         granularity: "yearly"
       - match:
           asset_type: "stock"
-          period: "1min"
+          period: "min1"
         granularity: "monthly"
       - match:
           asset_type: "stock"
-          period: "5min"
+          period: "min5"
         granularity: "monthly"
       - match:
           asset_type: "stock"
-          period: "15min"
+          period: "min15"
         granularity: "monthly"
       - match:
           asset_type: "stock"
-          period: "30min"
+          period: "min30"
         granularity: "monthly"
       - match:
           asset_type: "stock"
-          period: "60min"
+          period: "min60"
         granularity: "monthly"
       - match:
           asset_type: "index"

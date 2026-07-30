@@ -10,6 +10,10 @@ logger = get_logger("workbench.routes")
 
 router = APIRouter(prefix="/workbench", tags=["workbench"])
 
+from artemis.api.http_gateway.t_trading_routes import router as t_trading_router  # noqa: E402
+
+router.include_router(t_trading_router)
+
 
 @router.get("/sources")
 async def get_sources():

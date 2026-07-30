@@ -1,5 +1,7 @@
 from artemis.engines.task_engine.download.zh.stock_zh_a_hist_child import StockZhAHistChild
 from artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent import StockZhAHistParent
+from artemis.engines.task_engine.download.zh.stock_zh_a_minute_child import StockZhAMinuteChild
+from artemis.engines.task_engine.download.zh.stock_zh_a_minute_parent import StockZhAMinuteParent
 from artemis.engines.task_engine.download.zh.stock_zh_a_list import StockZHAList
 from artemis.engines.task_engine.download.zh.stock_zh_a_mkt_category_mairui import StockZHAMktCategoryMairui
 from artemis.engines.task_engine.download.zh.stock_zh_a_market_category_swhy import StockZHAMarketCategorySWHY
@@ -30,6 +32,7 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import 
 
 __all__ = [
     'StockZHAList', 'StockZhAHistParent', 'StockZhAHistChild',
+    'StockZhAMinuteParent', 'StockZhAMinuteChild',
     "StockZHAMktCategoryMairui", "StockZHAMarketCategorySWHY",
     "StockZHAIndustryConstituentSWHY",
     "StockZHAIndustryWeightSWHY", "StockZHAIndustryWeightSWHYChild",

@@ -29,6 +29,19 @@ tasks:
            start_date: "2009-01-01"
            fields: "date,open,high,low,close,preclose,volume,amount,turn,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,tradestatus,isST"
 
+  # Intraday execution/replay input. Minute fields intentionally differ from
+  # daily fields and raw prices are mandatory for simulated fills.
+  STOCK_ZH_A_MINUTE_PARENT:
+    variants:
+      - match: { period: "min5", adjust: "nf" }
+        config:
+          period: "min5"
+          adjust: "nf"
+          exchange: "SH,SZ,BJ"
+          start_date: "2021-01-01"
+          end_date: null
+          fields: "date,time,open,high,low,close,volume,amount,adjustflag"
+
   # Core A-share index download whitelist. Identity and names come from
   # STOCK_ZH_A_LIST/security_registry; this list only controls what is downloaded.
   INDEX_ZH_A_DAILY:

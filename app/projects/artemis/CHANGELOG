@@ -1,7 +1,12 @@
 # VERSION
-v0.48.4
+v0.49.0
 
 # Changelog
+- v0.49.0
+    - **T-trading Workbench replay plane.** Added causal minute-bar features and alternating buy/sell signal generation, with decisions fixed at the current bar close and fills simulated at the next bar open. Round trips include A-share commission, minimum commission, stamp duty, transfer fee, slippage, MFE/MAE, win rate, and net PnL.
+    - **Ephemeral by contract.** Added single-day and bounded batch replay APIs under `/workbench/t-trading`; `persistence_mode=ephemeral` is the only accepted mode, and parameters, signals, fills, and reports have no repository or database sink. Only downloaded minute bars are durable.
+    - **Minute download tasks.** Added BaoStock parent/child tasks for canonical `min5/min15/min30/min60` raw (`nf`) bars, including 17-digit timestamp parsing, OHLC validation, deterministic deduplication, per-security watermarks, and PhoenixA generic-bars upserts.
+    - **Design and verification.** Added the seven-part T-trading Workbench design package plus engine, causality, cost, HTTP contract, persistence-mode, and minute-normalization tests. A live one-security/one-day acceptance run downloaded 48 five-minute bars and completed PhoenixA -> Artemis replay -> signal -> next-bar fill -> report without persisting replay results.
 - v0.48.4
     - **PhoenixA ODS endpoint alignment.** Capital-flow and option-market downloads now call `/api/v2/capital-flows/*` and `/api/v2/option-market-data/*`; client helpers no longer label raw ODS writes as Risk data.
     - **Registry-first global and US market downloads.** Moved global index, FX, commodity and rate tasks under `download/global/`; moved US equity history under `download/us/` and split it into `STOCK_US_LIST` (`stock_us_spot_em` identity snapshot) plus whitelist-driven `STOCK_US_DAILY`. Added `GLOBAL_SECURITY_LIST` to register global indexes, FX pairs, international futures and macro/rate series before any history task runs.

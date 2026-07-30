@@ -11,10 +11,10 @@ def convert_to_baostock_params(param_name, param_val):
             "daily": "d",
             "weekly": "w",
             "monthly": "m",
-            "5min": "5",
-            "15min": "15",
-            "30min": "30",
-            "60min": "60",
+            "min5": "5", "5min": "5",
+            "min15": "15", "15min": "15",
+            "min30": "30", "30min": "30",
+            "min60": "60", "60min": "60",
         }
         return mapping.get(param_val)
     elif param_name == "adjustflag":
