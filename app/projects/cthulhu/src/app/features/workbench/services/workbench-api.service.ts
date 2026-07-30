@@ -8,6 +8,10 @@ import {
   IndicatorsCalcRequest,
   IndicatorsCalcResponse,
   DataOptionsResponse,
+  TBatchReplayRequest,
+  TBatchReplayResponse,
+  TReplayRequest,
+  TReplayResponse,
 } from '../models/workbench.model';
 import { environment } from '../../../../environments/environment';
 
@@ -55,5 +59,13 @@ export class WorkbenchApiService {
 
   calculateIndicators(req: IndicatorsCalcRequest): Observable<IndicatorsCalcResponse> {
     return this.http.post<IndicatorsCalcResponse>(`${this.API_BASE}/workbench/indicators`, req);
+  }
+
+  replayTTrading(req: TReplayRequest): Observable<TReplayResponse> {
+    return this.http.post<TReplayResponse>(`${this.API_BASE}/workbench/t-trading/replay`, req);
+  }
+
+  batchReplayTTrading(req: TBatchReplayRequest): Observable<TBatchReplayResponse> {
+    return this.http.post<TBatchReplayResponse>(`${this.API_BASE}/workbench/t-trading/batch`, req);
   }
 }

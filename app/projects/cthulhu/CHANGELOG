@@ -1,7 +1,11 @@
 # VERSION
-v0.23.0
+v0.24.0
 
 # Changelog
+- v0.24.0
+    - **做 T Review Workbench.** Added a routed Workbench page for single-day minute replay with previous/next-day navigation, strategy and cost controls, and an explicit `ephemeral · 不落库` state.
+    - **Auditable chart and statistics.** Added an ECharts minute candlestick/volume view that distinguishes close-time BUY/SELL decisions from next-bar-open simulated fills, plus signal-factor audit rows, data-quality counts, costs, win rate, and net PnL.
+    - **Batch temporary reports.** Added bounded security/date-range replay controls and per-security summary tables; returned reports remain browser memory only. Production Angular build passes.
 - v0.23.0
     - Replaced the removed Atlas event/impact/document-management UI with Phase 1 knowledge production pages.
     - Added sample discovery controls, per-report production selection, predicate/concept review, and immutable semantic YAML publication.
