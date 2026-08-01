@@ -1,5 +1,12 @@
 # security_registry 代理主键化与 ODS 表外键引用改造 — 调研报告
 
+> **Bars identity update（2026-07-30）**
+>
+> 本文中“bars 物理表永久保留 symbol”的结论已失效。当前 bars API 与物理表统一使用
+> `security_id`；symbol 只用于 registry 展示和上游供应商调用。日线 bars 的最终结构
+> 已折叠进 `migrations/postgresql/security/0001_ods.sql`，不再保留 `0015`
+> 补丁迁移；后文相关内容不得作为当前实现依据。
+
 > **Identity policy update（2026-07-14）**
 >
 > 本文中允许删除/重建 `security_registry` 并重新分配 `security_id` 的内容已失效。当前 Accepted 决策见 `docs/system_design/2026-07-14 ADR_FEATURE_PLATFORM_FOUNDATION.md`：`security_id` 永久、不可回收，全量刷新只能按自然键 upsert 并更新生命周期字段。

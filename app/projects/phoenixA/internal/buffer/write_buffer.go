@@ -36,10 +36,10 @@ type FlushFunc func(ctx context.Context, key string, entries []genericEntry) (in
 // ──────────────────────────────────────────────────────────────
 
 type barsEntry struct {
-	Bars    []*model.StandardBar
-	ExtJSON json.RawMessage
-	Source  string
-	Query   *model.BarsQuery // captured for ext flush
+	Bars          []*model.StandardBar
+	ExtJSON       json.RawMessage
+	ExtensionKind string
+	Query         *model.BarsQuery // captured for ext flush
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -272,15 +272,15 @@ func (m *WriteBufferManager) DirectFlushThreshold() int {
 
 // ──────────── Bars submit (backward compatible) ────────────
 
-func (m *WriteBufferManager) Submit(q *model.BarsQuery, bars []*model.StandardBar, extJSON json.RawMessage, source string) error {
+func (m *WriteBufferManager) Submit(q *model.BarsQuery, bars []*model.StandardBar, extJSON json.RawMessage, extensionKind string) error {
 	key := "bars_" + dao.BarsTableName(q.AssetType, q.Market, q.Period, q.Adjust)
 	buf := m.getOrCreate(key, "bars", m.barsFlushFunc())
 	return buf.submit(genericEntry{
 		Data: barsEntry{
-			Bars:    bars,
-			ExtJSON: extJSON,
-			Source:  source,
-			Query:   q,
+			Bars:          bars,
+			ExtJSON:       extJSON,
+			ExtensionKind: extensionKind,
+			Query:         q,
 		},
 		Count: len(bars),
 	})
@@ -318,25 +318,25 @@ func (m *WriteBufferManager) barsFlushFunc() FlushFunc {
 
 func (m *WriteBufferManager) flushBarsExt(ctx context.Context, entries []genericEntry, q *model.BarsQuery) {
 	type extGroup struct {
-		source string
-		data   []*model.BarsExtBaostock
+		extensionKind string
+		data          []*model.BarsExtBaostock
 	}
 	groups := map[string]*extGroup{}
 
 	for _, e := range entries {
 		be, ok := e.Data.(barsEntry)
-		if !ok || len(be.ExtJSON) == 0 || be.Source == "" {
+		if !ok || len(be.ExtJSON) == 0 || be.ExtensionKind == "" {
 			continue
 		}
 		var ext []*model.BarsExtBaostock
 		if err := json.Unmarshal(be.ExtJSON, &ext); err != nil {
-			logging.Errorf(ctx, "WriteBuffer ext unmarshal failed source=%s err=%v", be.Source, err)
+			logging.Errorf(ctx, "WriteBuffer ext unmarshal failed kind=%s err=%v", be.ExtensionKind, err)
 			continue
 		}
-		g, ok := groups[be.Source]
+		g, ok := groups[be.ExtensionKind]
 		if !ok {
-			g = &extGroup{source: be.Source}
-			groups[be.Source] = g
+			g = &extGroup{extensionKind: be.ExtensionKind}
+			groups[be.ExtensionKind] = g
 		}
 		g.data = append(g.data, ext...)
 	}
@@ -348,9 +348,9 @@ func (m *WriteBufferManager) flushBarsExt(ctx context.Context, entries []generic
 		if len(g.data) == 0 {
 			continue
 		}
-		if err := m.BarsDao.BatchUpsertExt(ctx, g.source, q, g.data); err != nil {
-			logging.Errorf(ctx, "WriteBuffer flush ext failed source=%s count=%d err=%v",
-				g.source, len(g.data), err)
+		if err := m.BarsDao.BatchUpsertExt(ctx, g.extensionKind, q, g.data); err != nil {
+			logging.Errorf(ctx, "WriteBuffer flush ext failed kind=%s count=%d err=%v",
+				g.extensionKind, len(g.data), err)
 		}
 	}
 }

@@ -45,16 +45,27 @@ CREATE TABLE IF NOT EXISTS ods.research_report_download_record (
     last_error           TEXT           NOT NULL DEFAULT '',
     created_at           TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at           TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    extra                JSONB          NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT uk_research_report_download_record UNIQUE (source, resource_id),
-    CONSTRAINT chk_rrdlrec_report_type CHECK (report_type IN ('stock','industry','other')),
+    CONSTRAINT chk_rrdlrec_report_type CHECK (
+        report_type IN (
+            'stock',
+            'industry',
+            'macro',
+            'new_stock',
+            'strategy',
+            'morning_report',
+            'other'
+        )
+    ),
     CONSTRAINT chk_rrdlrec_status CHECK (status IN ('pending','downloaded','no_pdf','detail_error','pdf_error')),
-    CONSTRAINT chk_rrdlrec_subject_source_code CHECK (report_type NOT IN ('stock','industry') OR subject_source_code <> '')
+    CONSTRAINT chk_rrdlrec_subject_source_code CHECK (report_type NOT IN ('stock','industry','new_stock') OR subject_source_code <> ''),
+    CONSTRAINT chk_rrdlrec_extra CHECK (jsonb_typeof(extra) = 'object')
 ) TABLESPACE warm_storage;
 
--- subject_id is a logical FK whose target depends on report_type:
---   stock → ods.security_registry.id ; industry → ods.taxonomy_category.id
--- (no real FK constraint, per refactor §6 R9). NULL until resolved from
--- subject_source_code.
+-- subject_id is intentionally polymorphic and therefore cannot have one SQL
+-- foreign key: stock/new_stock → security_registry.id; industry →
+-- taxonomy_category.id; other report types leave it NULL.
 CREATE INDEX IF NOT EXISTS idx_rrdlrec_status
     ON ods.research_report_download_record (status) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_rrdlrec_publish_date
@@ -68,8 +79,8 @@ COMMENT ON TABLE ods.research_report_download_record IS '研报下载任务状�
 COMMENT ON COLUMN ods.research_report_download_record.id IS '自增主键。';
 COMMENT ON COLUMN ods.research_report_download_record.source IS '数据源标识，eastmoney。';
 COMMENT ON COLUMN ods.research_report_download_record.resource_id IS '源定义的研报 ID（东方财富 infoCode）；自然键组成部分。';
-COMMENT ON COLUMN ods.research_report_download_record.report_type IS '研报类型：stock（个股）/ industry（产业）/ other。决定 subject_id 的命名空间。';
-COMMENT ON COLUMN ods.research_report_download_record.subject_id IS '研报主体 ID；命名空间由 report_type 决定：stock→ods.security_registry.id（security_id），industry→ods.taxonomy_category.id（category_id）。无真实 FK 约束（refactor §6 R9）。由 artemis 从 subject_source_code resolve；未注册时为 NULL。不会自动补齐，需单独 backfill 任务。';
+COMMENT ON COLUMN ods.research_report_download_record.report_type IS '研报类型：stock / industry / macro / new_stock / strategy / morning_report / other。';
+COMMENT ON COLUMN ods.research_report_download_record.subject_id IS '多态主体 ID：stock/new_stock→ods.security_registry.id，industry→ods.taxonomy_category.id，其他类型为 NULL。由应用按 report_type 校验。';
 COMMENT ON COLUMN ods.research_report_download_record.subject_source_code IS '源原始主体代码（stock/industry 非空，CHECK 约束）：stock→股票代码（东方财富 stockCode），industry→产业代码。用于 MinIO 对象路径与 subject_id backfill 的 key。';
 COMMENT ON COLUMN ods.research_report_download_record.publish_date IS '研报发布日期（YYYY-MM-DD）；用于文件名、列表游标（MAX）与排序。';
 COMMENT ON COLUMN ods.research_report_download_record.title IS '研报标题；用于 MinIO 文件名（{date}_{title}.pdf）。';
@@ -81,3 +92,4 @@ COMMENT ON COLUMN ods.research_report_download_record.status IS '下载状态：
 COMMENT ON COLUMN ods.research_report_download_record.last_error IS '最近一次失败原因（status 为 *_error 时填充）。';
 COMMENT ON COLUMN ods.research_report_download_record.created_at IS '记录创建时间。';
 COMMENT ON COLUMN ods.research_report_download_record.updated_at IS '记录更新时间。';
+COMMENT ON COLUMN ods.research_report_download_record.extra IS '研报业务元数据 JSONB object；由 artemis LIST 阶段写入。';

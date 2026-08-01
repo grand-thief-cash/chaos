@@ -4,18 +4,36 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/grand-thief-cash/chaos/app/projects/phoenixA/internal/model"
 )
 
-// TestBarsUpsertPayloadDeserialization verifies the Phase 4 artemis upsert
-// payload (security_id-native, no symbol) deserializes into the input rows.
-// bars_* physical tables keep symbol (§3.2), so the input row carries
-// security_id which the controller resolves to symbol before the DAO.
+func TestBarsUpsertRequiresExtensionKindForExtRows(t *testing.T) {
+	body := `{
+		"meta": {"period": "daily", "adjust": "nf"},
+		"bars": [{"security_id": 1, "trade_date": "2026-01-05"}],
+		"ext": [{"security_id": 1, "trade_date": "2026-01-05"}]
+	}`
+	c := &BarsController{}
+	req := httptest.NewRequest(http.MethodPost, "/api/v2/bars/stock/zh_a/upsert", strings.NewReader(body))
+	w := httptest.NewRecorder()
+
+	c.Upsert(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "meta.extension_kind is required") {
+		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+}
+
+// TestBarsUpsertPayloadDeserialization verifies the security_id-native payload.
 func TestBarsUpsertPayloadDeserialization(t *testing.T) {
 	payload := `{
-		"meta": {"period": "daily", "adjust": "nf", "source": "baostock"},
+		"meta": {"period": "daily", "adjust": "nf", "extension_kind": "baostock"},
 		"bars": [{
 			"security_id": 1,
 			"trade_date": "2026-01-05",
@@ -60,7 +78,7 @@ func TestBarsUpsertPayloadDeserialization(t *testing.T) {
 
 func TestBarsUpsertPayloadPreservesOptionalNullsAndRealZero(t *testing.T) {
 	payload := `{
-		"meta": {"period": "daily", "adjust": "nf", "source": "baostock"},
+		"meta": {"period": "daily", "adjust": "nf", "extension_kind": "baostock"},
 		"bars": [{
 			"security_id": 1, "trade_date": "2026-01-05",
 			"open": 10, "high": 10, "low": 10, "close": 10,
@@ -101,10 +119,9 @@ func TestBarsUpsertPayloadPreservesOptionalNullsAndRealZero(t *testing.T) {
 	}
 }
 
-// TestStandardBarSecurityIDDecoration verifies SecurityID is a response-only
-// decoration: it has gorm:"-" (not a physical column, §3.2) and serializes as
-// "security_id", omitted when zero.
-func TestStandardBarSecurityIDDecoration(t *testing.T) {
+// TestStandardBarSecurityIDIdentity verifies the physical identity and optional
+// symbol display decoration serialize independently.
+func TestStandardBarSecurityIDIdentity(t *testing.T) {
 	b := &model.StandardBar{SecurityID: 7, Symbol: "000001", TradeDate: "2026-01-05", Close: 10.5}
 	data, _ := json.Marshal(b)
 	var m map[string]any
@@ -118,14 +135,15 @@ func TestStandardBarSecurityIDDecoration(t *testing.T) {
 		t.Errorf("symbol: got %v, want 000001", m["symbol"])
 	}
 
-	// Zero security_id is omitted (omitempty), matching the physical-row shape
-	// used on the write path where security_id is not yet stamped.
-	bZero := &model.StandardBar{Symbol: "000001", TradeDate: "2026-01-05"}
+	bZero := &model.StandardBar{TradeDate: "2026-01-05"}
 	dataZero, _ := json.Marshal(bZero)
 	var mZero map[string]any
 	json.Unmarshal(dataZero, &mZero)
-	if _, ok := mZero["security_id"]; ok {
-		t.Errorf("zero security_id should be omitted, got %v", mZero["security_id"])
+	if mZero["security_id"] != float64(0) {
+		t.Errorf("zero security_id should remain explicit, got %v", mZero["security_id"])
+	}
+	if _, ok := mZero["symbol"]; ok {
+		t.Errorf("empty display symbol should be omitted, got %v", mZero["symbol"])
 	}
 }
 
@@ -200,7 +218,7 @@ func TestBarsGetLastUpdateMissingPeriodAdjust(t *testing.T) {
 }
 
 // TestTrimBarFieldsSelectsSecurityID verifies fields=security_id,symbol,close
-// returns exactly those fields, with security_id read from the stamped decoration.
+// returns exactly those fields, with symbol read from the response decoration.
 func TestTrimBarFieldsSelectsSecurityID(t *testing.T) {
 	bars := []*model.StandardBar{
 		{SecurityID: 7, Symbol: "000001", TradeDate: "2026-01-05", Close: 10.5, Open: 10.0},

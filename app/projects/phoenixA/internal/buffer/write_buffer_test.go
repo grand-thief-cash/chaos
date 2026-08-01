@@ -135,8 +135,8 @@ func TestWriteBufferManager_ExtDataBundled(t *testing.T) {
 	q := &model.BarsQuery{AssetType: "stock", Market: "zh_a", Period: "daily", Adjust: "nf"}
 	bars := makeBars(3)
 	ext := []*model.BarsExtBaostock{
-		{Symbol: "000001", TradeDate: "2026-05-07", Turn: float64Ptr(1.23)},
-		{Symbol: "000002", TradeDate: "2026-05-07", Turn: float64Ptr(2.34)},
+		{SecurityID: 1, TradeDate: "2026-05-07", Turn: float64Ptr(1.23)},
+		{SecurityID: 2, TradeDate: "2026-05-07", Turn: float64Ptr(2.34)},
 	}
 	extJSON, _ := json.Marshal(ext)
 
@@ -281,13 +281,13 @@ func makeBars(n int) []*model.StandardBar {
 	bars := make([]*model.StandardBar, n)
 	for i := 0; i < n; i++ {
 		bars[i] = &model.StandardBar{
-			Symbol:    "000001",
-			TradeDate: "2026-05-07",
-			Open:      10.0,
-			High:      11.0,
-			Low:       9.0,
-			Close:     10.5,
-			Volume:    int64Ptr(10000),
+			SecurityID: uint64(i + 1),
+			TradeDate:  "2026-05-07",
+			Open:       10.0,
+			High:       11.0,
+			Low:        9.0,
+			Close:      10.5,
+			Volume:     int64Ptr(10000),
 		}
 	}
 	return bars

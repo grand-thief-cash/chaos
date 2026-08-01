@@ -26,7 +26,46 @@
 CREATE SCHEMA IF NOT EXISTS ods;
 
 -- ──────────────────────────────────────────────────────────
--- 1. taxonomy_category
+-- 1. security_registry  (permanent security identity master)
+-- ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ods.security_registry (
+    id           BIGSERIAL      PRIMARY KEY,
+    exchange     VARCHAR(8)     NOT NULL,
+    asset_type   VARCHAR(16)    NOT NULL,
+    symbol       VARCHAR(32)    NOT NULL,
+    market       VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
+    name         VARCHAR(128)   NOT NULL DEFAULT '',
+    full_name    VARCHAR(256),
+    status       VARCHAR(16)    NOT NULL DEFAULT 'active',
+    list_date    DATE,
+    delist_date  DATE,
+    created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_sr_exchange_asset_symbol
+        UNIQUE (exchange, asset_type, symbol)
+) TABLESPACE pg_default;
+
+CREATE INDEX IF NOT EXISTS idx_sr_asset_market
+    ON ods.security_registry (asset_type, market);
+CREATE INDEX IF NOT EXISTS idx_sr_status
+    ON ods.security_registry (status)
+    WHERE status != 'active';
+
+COMMENT ON TABLE ods.security_registry IS
+    '统一证券注册表。security_id 永久稳定；证券生命周期通过 status/list_date/delist_date 更新。';
+COMMENT ON COLUMN ods.security_registry.id IS
+    '永久、不可回收的证券内部身份；首次注册时分配，后续按自然键 upsert。';
+COMMENT ON COLUMN ods.security_registry.exchange IS
+    '交易所（SH/SZ/BJ 等大写代码），是自然唯一键的一部分。';
+COMMENT ON COLUMN ods.security_registry.asset_type IS
+    '资产类型，是自然唯一键的一部分。';
+COMMENT ON COLUMN ods.security_registry.symbol IS
+    '供应商/交易所证券代码；只在 registry 维护，不在证券事实表重复保存。';
+COMMENT ON COLUMN ods.security_registry.market IS
+    '规范化市场标识。';
+
+-- ──────────────────────────────────────────────────────────
+-- 2. taxonomy_category
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.taxonomy_category (
     id           BIGSERIAL      PRIMARY KEY,
@@ -68,15 +107,15 @@ COMMENT ON COLUMN ods.taxonomy_category.updated_at IS '记录更新时间。';
 -- 2. taxonomy_security_map  (Phase 2: pure (security_id, category_id) join table)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.taxonomy_security_map (
-    security_id   BIGINT         NOT NULL,
-    category_id   BIGINT         NOT NULL,
+    security_id   BIGINT         NOT NULL REFERENCES ods.security_registry(id),
+    category_id   BIGINT         NOT NULL REFERENCES ods.taxonomy_category(id),
     created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     PRIMARY KEY (security_id, category_id)
 ) TABLESPACE pg_default;
 CREATE INDEX IF NOT EXISTS idx_tsm_category ON ods.taxonomy_security_map (category_id);
 
-COMMENT ON TABLE ods.taxonomy_security_map IS '证券↔行业分类节点映射表（纯中间表）。Phase 2 surrogate-key 重构后仅保留 (security_id, category_id) 两列；由 PhoenixA 从 industry_constituent 单表 SELECT DISTINCT 派生（taxonomy_dao.go SyncMappingsFromConstituents，无 JOIN）。security_id → ods.security_registry.id；category_id → ods.taxonomy_category.id（逻辑外键，不建真实 FK 约束，refactor §6 R9）。';
+COMMENT ON TABLE ods.taxonomy_security_map IS '证券↔行业分类节点映射表（纯中间表）。security_id 与 category_id 均由数据库外键保证引用有效。';
 COMMENT ON COLUMN ods.taxonomy_security_map.security_id IS '证券代理主键；→ ods.security_registry.id。';
 COMMENT ON COLUMN ods.taxonomy_security_map.category_id IS '行业分类节点代理主键；→ ods.taxonomy_category.id。';
 COMMENT ON COLUMN ods.taxonomy_security_map.created_at IS '记录创建时间。';
@@ -87,8 +126,8 @@ COMMENT ON COLUMN ods.taxonomy_security_map.updated_at IS '记录更新时间。
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.industry_constituent (
     id            BIGSERIAL      PRIMARY KEY,
-    category_id   BIGINT         NOT NULL,
-    security_id   BIGINT         NOT NULL,
+    category_id   BIGINT         NOT NULL REFERENCES ods.taxonomy_category(id),
+    security_id   BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     in_date       VARCHAR(10),
     out_date      VARCHAR(10),
     created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
@@ -111,8 +150,8 @@ COMMENT ON COLUMN ods.industry_constituent.updated_at IS '记录更新时间。'
 -- 4. industry_weight  (Phase 2: compressed to category_id + security_id; trade_date is DATE — folded from former 0003)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.industry_weight (
-    category_id   BIGINT         NOT NULL,
-    security_id   BIGINT         NOT NULL,
+    category_id   BIGINT         NOT NULL REFERENCES ods.taxonomy_category(id),
+    security_id   BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     trade_date    DATE           NOT NULL,
     weight        NUMERIC(10,6),
     created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
@@ -127,7 +166,7 @@ SELECT create_hypertable('ods.industry_weight', 'trade_date',
                          if_not_exists => TRUE,
                          chunk_time_interval => INTERVAL '1 year');
 
-COMMENT ON TABLE ods.industry_weight IS '行业指数成分股日权重。ODS 落地表，由 artemis 从 AmazingData get_industry_weight（SWHY 申万，指南 3.5.13.3）下载后 POST 落地。Phase 2 surrogate-key 重构后压缩为 (category_id, security_id, trade_date, weight)：INDEX_CODE→category_id、CON_CODE→security_id 由 phoenixA 写入时缓存解析（refactor §2.3/§10.c）；hypertable 无真实 FK 约束（§6 R9）。';
+COMMENT ON TABLE ods.industry_weight IS '行业指数成分股日权重。INDEX_CODE→category_id、CON_CODE→security_id 在写入边界解析，数据库外键保证引用有效。';
 COMMENT ON COLUMN ods.industry_weight.category_id IS '行业分类节点代理主键；由 INDEX_CODE 经 taxonomy_category 缓存解析。→ ods.taxonomy_category.id。';
 COMMENT ON COLUMN ods.industry_weight.security_id IS '证券代理主键；由 CON_CODE 经 security_registry 缓存解析。→ ods.security_registry.id。';
 COMMENT ON COLUMN ods.industry_weight.trade_date IS '交易日期；SDK TRADE_DATE。';
@@ -139,7 +178,7 @@ COMMENT ON COLUMN ods.industry_weight.updated_at IS '记录更新时间。';
 -- 5. industry_daily  (Phase 2: compressed to category_id; trade_date is DATE — folded from former 0003)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.industry_daily (
-    category_id   BIGINT         NOT NULL,
+    category_id   BIGINT         NOT NULL REFERENCES ods.taxonomy_category(id),
     trade_date    DATE           NOT NULL,
     open          NUMERIC(20,4),
     high          NUMERIC(20,4),
@@ -185,7 +224,7 @@ COMMENT ON COLUMN ods.industry_daily.updated_at IS '记录更新时间。';
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.financial_statement (
     id               BIGSERIAL      PRIMARY KEY,
-    security_id      BIGINT         NOT NULL,
+    security_id      BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     source           VARCHAR(32)    NOT NULL,
     statement_type   VARCHAR(32)    NOT NULL,
     reporting_period VARCHAR(10)    NOT NULL,
@@ -202,7 +241,6 @@ CREATE TABLE IF NOT EXISTS ods.financial_statement (
     CONSTRAINT chk_financial_statement_data_json_object CHECK (jsonb_typeof(data_json) = 'object')
 ) TABLESPACE warm_storage;
 
--- security_id is a logical FK to ods.security_registry.id (no real FK constraint, per refactor §6 R9).
 CREATE INDEX IF NOT EXISTS idx_fs_security_type
     ON ods.financial_statement (security_id, statement_type) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_fs_report_period
@@ -218,7 +256,7 @@ CREATE INDEX IF NOT EXISTS idx_fs_data_gin
 
 COMMENT ON TABLE ods.financial_statement IS '上市公司财务报表（资产负债表/利润表/现金流量表/业绩快报/业绩预告/偿债能力）。多源：AmazingData get_balance_sheet/get_income/get_cash_flow/get_profit_express/get_profit_notice（指南 3.5.2~3.5.5）及 baostock query_balance_data（偿债能力，statement_type=bs_balance）。报表明细字段存 data_json，字段契约见 govern.data_field_dictionary。';
 COMMENT ON COLUMN ods.financial_statement.id IS '自增主键。';
-COMMENT ON COLUMN ods.financial_statement.security_id IS '逻辑外键 → ods.security_registry.id（无真实 FK 约束，refactor §6 R9）。替代原 symbol/market 列，由 artemis 写入前 resolve。';
+COMMENT ON COLUMN ods.financial_statement.security_id IS '外键 → ods.security_registry.id；写入前由 artemis/phoenixA resolve。';
 COMMENT ON COLUMN ods.financial_statement.source IS '数据源标识，amazing_data / baostock。';
 COMMENT ON COLUMN ods.financial_statement.statement_type IS '报表类型枚举（PhoenixA 内部，非 SDK 字段）：balance_sheet/income/cashflow/profit_express/profit_notice（AmazingData）及 bs_balance（baostock 偿债能力）。';
 COMMENT ON COLUMN ods.financial_statement.reporting_period IS '报告期（YYYY-MM-DD）；SDK REPORTING_PERIOD。';
@@ -237,7 +275,7 @@ COMMENT ON COLUMN ods.financial_statement.updated_at IS '记录更新时间。';
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.corporate_action (
     id               BIGSERIAL      PRIMARY KEY,
-    security_id      BIGINT         NOT NULL,
+    security_id      BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     source           VARCHAR(32)    NOT NULL,
     action_type      VARCHAR(32)    NOT NULL,
     report_period    VARCHAR(10)    NOT NULL DEFAULT '',
@@ -250,7 +288,6 @@ CREATE TABLE IF NOT EXISTS ods.corporate_action (
     CONSTRAINT chk_corporate_action_data_json_object CHECK (jsonb_typeof(data_json) = 'object')
 ) TABLESPACE warm_storage;
 
--- security_id is a logical FK to ods.security_registry.id (no real FK constraint, per refactor §6 R9).
 CREATE INDEX IF NOT EXISTS idx_ca_security_action
     ON ods.corporate_action (security_id, action_type) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_ca_report_period
@@ -264,7 +301,7 @@ CREATE INDEX IF NOT EXISTS idx_ca_data_gin
 
 COMMENT ON TABLE ods.corporate_action IS '上市公司公司行为（分红/配股）。ODS 落地表，由 artemis 从 AmazingData get_dividend（指南 3.5.7.1）/ get_right_issue（指南 3.5.7.2）下载后 POST 落地。明细字段存 data_json，字段契约见 govern.data_field_dictionary。';
 COMMENT ON COLUMN ods.corporate_action.id IS '自增主键。';
-COMMENT ON COLUMN ods.corporate_action.security_id IS '逻辑外键 → ods.security_registry.id（无真实 FK 约束，refactor §6 R9）。替代原 symbol/market 列，由 artemis 写入前 resolve。';
+COMMENT ON COLUMN ods.corporate_action.security_id IS '外键 → ods.security_registry.id；写入前由 artemis/phoenixA resolve。';
 COMMENT ON COLUMN ods.corporate_action.source IS '数据源标识，如 amazing_data。';
 COMMENT ON COLUMN ods.corporate_action.action_type IS '公司行为类型枚举（PhoenixA 内部）：dividend（分红）/ right_issue（配股）。';
 COMMENT ON COLUMN ods.corporate_action.report_period IS '报告年度；dividend 来自 SDK REPORT_PERIOD（分红年度），right_issue 来自 SDK RIGHTSISSUE_YEAR（配股年度）。';
@@ -278,7 +315,7 @@ COMMENT ON COLUMN ods.corporate_action.updated_at IS '记录更新时间。';
 -- 8. bars_stock_zh_a_daily_nf  (A股日线不复权)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.bars_stock_zh_a_daily_nf (
-    symbol      VARCHAR(32)    NOT NULL,
+    security_id BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     trade_date  DATE           NOT NULL,
     open        DECIMAL(20,4),
     high        DECIMAL(20,4),
@@ -288,12 +325,12 @@ CREATE TABLE IF NOT EXISTS ods.bars_stock_zh_a_daily_nf (
     amount      BIGINT,
     preclose    DECIMAL(20,4),
     pct_chg     DECIMAL(10,4),
-    CONSTRAINT uk_bars_daily_nf PRIMARY KEY (symbol, trade_date)
+    CONSTRAINT uk_bars_daily_nf PRIMARY KEY (security_id, trade_date)
 ) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_bdnf_trade_date
     ON ods.bars_stock_zh_a_daily_nf (trade_date) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_bdnf_symbol
-    ON ods.bars_stock_zh_a_daily_nf (symbol) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_bdnf_security
+    ON ods.bars_stock_zh_a_daily_nf (security_id) TABLESPACE warm_storage;
 
 -- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
 SELECT create_hypertable('ods.bars_stock_zh_a_daily_nf', 'trade_date',
@@ -301,7 +338,7 @@ SELECT create_hypertable('ods.bars_stock_zh_a_daily_nf', 'trade_date',
                          chunk_time_interval => INTERVAL '1 year');
 
 COMMENT ON TABLE ods.bars_stock_zh_a_daily_nf IS 'A 股日线行情（不复权）。ODS 落地表，由 artemis 从 baostock query_history_k_data_plus（adjustflag=3 不复权）下载后 POST 落地。';
-COMMENT ON COLUMN ods.bars_stock_zh_a_daily_nf.symbol IS '证券代码（纯代码，不含交易所后缀）。';
+COMMENT ON COLUMN ods.bars_stock_zh_a_daily_nf.security_id IS '外键 → ods.security_registry.id。';
 COMMENT ON COLUMN ods.bars_stock_zh_a_daily_nf.trade_date IS '交易所行情日期；baostock date。';
 COMMENT ON COLUMN ods.bars_stock_zh_a_daily_nf.open IS '开盘价。';
 COMMENT ON COLUMN ods.bars_stock_zh_a_daily_nf.high IS '最高价。';
@@ -316,7 +353,7 @@ COMMENT ON COLUMN ods.bars_stock_zh_a_daily_nf.pct_chg IS '涨跌幅（%）；ba
 -- 9. bars_stock_zh_a_daily_hfq  (A股日线后复权)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.bars_stock_zh_a_daily_hfq (
-    symbol      VARCHAR(32)    NOT NULL,
+    security_id BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     trade_date  DATE           NOT NULL,
     open        DECIMAL(20,4),
     high        DECIMAL(20,4),
@@ -326,12 +363,12 @@ CREATE TABLE IF NOT EXISTS ods.bars_stock_zh_a_daily_hfq (
     amount      BIGINT,
     preclose    DECIMAL(20,4),
     pct_chg     DECIMAL(10,4),
-    CONSTRAINT uk_bars_daily_hfq PRIMARY KEY (symbol, trade_date)
+    CONSTRAINT uk_bars_daily_hfq PRIMARY KEY (security_id, trade_date)
 ) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_bdhfq_trade_date
     ON ods.bars_stock_zh_a_daily_hfq (trade_date) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_bdhfq_symbol
-    ON ods.bars_stock_zh_a_daily_hfq (symbol) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_bdhfq_security
+    ON ods.bars_stock_zh_a_daily_hfq (security_id) TABLESPACE warm_storage;
 
 -- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
 SELECT create_hypertable('ods.bars_stock_zh_a_daily_hfq', 'trade_date',
@@ -339,7 +376,7 @@ SELECT create_hypertable('ods.bars_stock_zh_a_daily_hfq', 'trade_date',
                          chunk_time_interval => INTERVAL '1 year');
 
 COMMENT ON TABLE ods.bars_stock_zh_a_daily_hfq IS 'A 股日线行情（后复权）。ODS 落地表，由 artemis 从 baostock query_history_k_data_plus（adjustflag=1 后复权）下载后 POST 落地。BaoStock 采用涨跌幅复权法。';
-COMMENT ON COLUMN ods.bars_stock_zh_a_daily_hfq.symbol IS '证券代码（纯代码，不含交易所后缀）。';
+COMMENT ON COLUMN ods.bars_stock_zh_a_daily_hfq.security_id IS '外键 → ods.security_registry.id。';
 COMMENT ON COLUMN ods.bars_stock_zh_a_daily_hfq.trade_date IS '交易所行情日期；baostock date。';
 COMMENT ON COLUMN ods.bars_stock_zh_a_daily_hfq.open IS '开盘价。';
 COMMENT ON COLUMN ods.bars_stock_zh_a_daily_hfq.high IS '最高价。';
@@ -354,7 +391,7 @@ COMMENT ON COLUMN ods.bars_stock_zh_a_daily_hfq.pct_chg IS '涨跌幅（%）；b
 -- 10. bars_index_zh_a_daily_nf  (A股指数日线不复权)
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.bars_index_zh_a_daily_nf (
-    symbol      VARCHAR(32)    NOT NULL,
+    security_id BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     trade_date  DATE           NOT NULL,
     open        DECIMAL(20,4),
     high        DECIMAL(20,4),
@@ -364,12 +401,12 @@ CREATE TABLE IF NOT EXISTS ods.bars_index_zh_a_daily_nf (
     amount      BIGINT,
     preclose    DECIMAL(20,4),
     pct_chg     DECIMAL(10,4),
-    CONSTRAINT uk_bars_idx_daily_nf PRIMARY KEY (symbol, trade_date)
+    CONSTRAINT uk_bars_idx_daily_nf PRIMARY KEY (security_id, trade_date)
 ) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_bidnf_trade_date
     ON ods.bars_index_zh_a_daily_nf (trade_date) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_bidnf_symbol
-    ON ods.bars_index_zh_a_daily_nf (symbol) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_bidnf_security
+    ON ods.bars_index_zh_a_daily_nf (security_id) TABLESPACE warm_storage;
 
 -- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
 SELECT create_hypertable('ods.bars_index_zh_a_daily_nf', 'trade_date',
@@ -377,7 +414,7 @@ SELECT create_hypertable('ods.bars_index_zh_a_daily_nf', 'trade_date',
                          chunk_time_interval => INTERVAL '1 year');
 
 COMMENT ON TABLE ods.bars_index_zh_a_daily_nf IS 'A 股指数日线行情（不复权）。ODS 落地表，由 artemis 从 baostock query_history_k_data_plus（指数代码，adjustflag=3 不复权）下载后 POST 落地。';
-COMMENT ON COLUMN ods.bars_index_zh_a_daily_nf.symbol IS '指数代码（纯代码，不含交易所后缀）。';
+COMMENT ON COLUMN ods.bars_index_zh_a_daily_nf.security_id IS '外键 → ods.security_registry.id。';
 COMMENT ON COLUMN ods.bars_index_zh_a_daily_nf.trade_date IS '交易所行情日期；baostock date。';
 COMMENT ON COLUMN ods.bars_index_zh_a_daily_nf.open IS '开盘价。';
 COMMENT ON COLUMN ods.bars_index_zh_a_daily_nf.high IS '最高价。';
@@ -392,19 +429,21 @@ COMMENT ON COLUMN ods.bars_index_zh_a_daily_nf.pct_chg IS '涨跌幅（%）；ba
 -- 11. bars_ext_baostock_stock_zh_a_daily
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.bars_ext_baostock_stock_zh_a_daily (
-    symbol      VARCHAR(32)    NOT NULL,
+    security_id BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     trade_date  DATE           NOT NULL,
     turn        DECIMAL(10,4),
     pe_ttm      DECIMAL(20,4),
     ps_ttm      DECIMAL(20,4),
     pb_mrq      DECIMAL(20,4),
     pcf_ncf_ttm DECIMAL(20,4),
-    CONSTRAINT uk_bars_ext_baostock PRIMARY KEY (symbol, trade_date)
+    trade_status SMALLINT,
+    is_st        BOOLEAN,
+    CONSTRAINT uk_bars_ext_baostock PRIMARY KEY (security_id, trade_date)
 ) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_beb_trade_date
     ON ods.bars_ext_baostock_stock_zh_a_daily (trade_date) TABLESPACE warm_storage;
-CREATE INDEX IF NOT EXISTS idx_beb_symbol
-    ON ods.bars_ext_baostock_stock_zh_a_daily (symbol) TABLESPACE warm_storage;
+CREATE INDEX IF NOT EXISTS idx_beb_security
+    ON ods.bars_ext_baostock_stock_zh_a_daily (security_id) TABLESPACE warm_storage;
 
 -- Convert to TimescaleDB hypertable (chunk by 1 year for daily data)
 SELECT create_hypertable('ods.bars_ext_baostock_stock_zh_a_daily', 'trade_date',
@@ -412,7 +451,9 @@ SELECT create_hypertable('ods.bars_ext_baostock_stock_zh_a_daily', 'trade_date',
                          chunk_time_interval => INTERVAL '1 year');
 
 COMMENT ON TABLE ods.bars_ext_baostock_stock_zh_a_daily IS 'A 股日线扩展指标（换手率 + 估值指标）。ODS 落地表，由 artemis 从 baostock query_history_k_data_plus 扩展字段下载后 POST 落地，与 bars_stock_zh_a_daily_* 同源同日但拆表存储。';
-COMMENT ON COLUMN ods.bars_ext_baostock_stock_zh_a_daily.symbol IS '证券代码（纯代码，不含交易所后缀）。';
+COMMENT ON COLUMN ods.bars_ext_baostock_stock_zh_a_daily.security_id IS '外键 → ods.security_registry.id。';
+COMMENT ON COLUMN ods.bars_ext_baostock_stock_zh_a_daily.trade_status IS 'BaoStock tradestatus：1=正常交易，0=停牌；NULL=上游未提供。';
+COMMENT ON COLUMN ods.bars_ext_baostock_stock_zh_a_daily.is_st IS 'BaoStock isST；NULL=上游未提供。';
 COMMENT ON COLUMN ods.bars_ext_baostock_stock_zh_a_daily.trade_date IS '交易所行情日期；baostock date。';
 COMMENT ON COLUMN ods.bars_ext_baostock_stock_zh_a_daily.turn IS '换手率（%）；baostock turn，=[当日成交量/当日流通股总股数]*100%。';
 COMMENT ON COLUMN ods.bars_ext_baostock_stock_zh_a_daily.pe_ttm IS '滚动市盈率；baostock peTTM，=收盘价/每股盈余TTM。';
@@ -425,7 +466,7 @@ COMMENT ON COLUMN ods.bars_ext_baostock_stock_zh_a_daily.pcf_ncf_ttm IS '滚动�
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.adjust_factor (
     id                  BIGSERIAL      PRIMARY KEY,
-    security_id         BIGINT         NOT NULL,
+    security_id         BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     source              VARCHAR(32)    NOT NULL,
     divid_operate_date  VARCHAR(10)    NOT NULL,
     fore_adjust_factor  NUMERIC(20,8),
@@ -433,7 +474,6 @@ CREATE TABLE IF NOT EXISTS ods.adjust_factor (
     adjust_factor       NUMERIC(20,8),
     CONSTRAINT uk_adjust_factor UNIQUE (security_id, source, divid_operate_date)
 ) TABLESPACE warm_storage;
--- security_id is a logical FK to ods.security_registry.id (no real FK constraint, per refactor §6 R9).
 CREATE INDEX IF NOT EXISTS idx_af_security_date
     ON ods.adjust_factor (security_id, divid_operate_date DESC) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_af_operate_date
@@ -441,7 +481,7 @@ CREATE INDEX IF NOT EXISTS idx_af_operate_date
 
 COMMENT ON TABLE ods.adjust_factor IS '复权因子。ODS 落地表，由 artemis 从 baostock query_adjust_factor 下载后 POST 落地。';
 COMMENT ON COLUMN ods.adjust_factor.id IS '自增主键。';
-COMMENT ON COLUMN ods.adjust_factor.security_id IS '逻辑外键 → ods.security_registry.id（无真实 FK 约束，refactor §6 R9）。替代原 symbol/market 列，由 artemis 写入前 resolve。';
+COMMENT ON COLUMN ods.adjust_factor.security_id IS '外键 → ods.security_registry.id。';
 COMMENT ON COLUMN ods.adjust_factor.source IS '数据源标识，固定 baostock。';
 COMMENT ON COLUMN ods.adjust_factor.divid_operate_date IS '除权除息日期；baostock dividOperateDate。';
 COMMENT ON COLUMN ods.adjust_factor.fore_adjust_factor IS '向前复权因子；baostock foreAdjustFactor。';
@@ -453,7 +493,7 @@ COMMENT ON COLUMN ods.adjust_factor.adjust_factor IS '本次复权因子；baost
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.long_hu_bang (
     id                BIGSERIAL      PRIMARY KEY,
-    security_id       BIGINT         NOT NULL,
+    security_id       BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     source            VARCHAR(32)    NOT NULL,
     trade_date        VARCHAR(10)    NOT NULL,
     security_name     VARCHAR(128)   NOT NULL DEFAULT '',
@@ -461,16 +501,15 @@ CREATE TABLE IF NOT EXISTS ods.long_hu_bang (
     reason_type_name  VARCHAR(256)   NOT NULL DEFAULT '',
     trader_name       VARCHAR(256)   NOT NULL,
     flow_mark         SMALLINT       NOT NULL,
-    change_range      NUMERIC(20,6)  NOT NULL DEFAULT 0,
-    buy_amount        NUMERIC(24,4)  NOT NULL DEFAULT 0,
-    sell_amount       NUMERIC(24,4)  NOT NULL DEFAULT 0,
-    total_amount      NUMERIC(24,4)  NOT NULL DEFAULT 0,
-    total_volume      NUMERIC(24,4)  NOT NULL DEFAULT 0,
+    change_range      NUMERIC(20,6),
+    buy_amount        NUMERIC(24,4),
+    sell_amount       NUMERIC(24,4),
+    total_amount      NUMERIC(24,4),
+    total_volume      NUMERIC(24,4),
     created_at        TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_long_hu_bang UNIQUE (security_id, source, trade_date, reason_type, trader_name, flow_mark)
 ) TABLESPACE warm_storage;
--- security_id is a logical FK to ods.security_registry.id (no real FK constraint, per refactor §6 R9).
 CREATE INDEX IF NOT EXISTS idx_lhb_security_date
     ON ods.long_hu_bang (security_id, trade_date DESC) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_lhb_trade_date
@@ -480,7 +519,7 @@ CREATE INDEX IF NOT EXISTS idx_lhb_reason_date
 
 COMMENT ON TABLE ods.long_hu_bang IS '龙虎榜数据。ODS 落地表，由 artemis 从 AmazingData get_long_hu_bang（指南 3.5.9.1）下载后 POST 落地。';
 COMMENT ON COLUMN ods.long_hu_bang.id IS '自增主键（Phase 3 surrogate-key 改造新增，原表以复合 UNIQUE 键为唯一标识）。';
-COMMENT ON COLUMN ods.long_hu_bang.security_id IS '逻辑外键 → ods.security_registry.id（无真实 FK 约束，refactor §6 R9）。替代原 symbol/market 列，由 artemis 写入前 resolve。';
+COMMENT ON COLUMN ods.long_hu_bang.security_id IS '外键 → ods.security_registry.id。';
 COMMENT ON COLUMN ods.long_hu_bang.source IS '数据源标识，如 amazing_data。';
 COMMENT ON COLUMN ods.long_hu_bang.trade_date IS '交易日期；SDK TRADE_DATE。';
 COMMENT ON COLUMN ods.long_hu_bang.security_name IS '证券名称；SDK SECURITY_NAME。';
@@ -501,7 +540,7 @@ COMMENT ON COLUMN ods.long_hu_bang.updated_at IS '记录更新时间（Phase 3 �
 -- ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS ods.equity_structure (
     id              BIGSERIAL      PRIMARY KEY,
-    security_id     BIGINT         NOT NULL,
+    security_id     BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     source          VARCHAR(32)    NOT NULL,
     ann_date        VARCHAR(10)    NOT NULL DEFAULT '',
     change_date     VARCHAR(10)    NOT NULL,
@@ -513,7 +552,6 @@ CREATE TABLE IF NOT EXISTS ods.equity_structure (
     CONSTRAINT uk_equity_structure UNIQUE (security_id, source, change_date, ann_date),
     CONSTRAINT chk_equity_structure_data_json_object CHECK (jsonb_typeof(data_json) = 'object')
 ) TABLESPACE warm_storage;
--- security_id is a logical FK to ods.security_registry.id (no real FK constraint, per refactor §6 R9).
 CREATE INDEX IF NOT EXISTS idx_es_security_date
     ON ods.equity_structure (security_id, change_date DESC) TABLESPACE warm_storage;
 CREATE INDEX IF NOT EXISTS idx_es_change_date
@@ -527,7 +565,7 @@ CREATE INDEX IF NOT EXISTS idx_es_data_gin
 
 COMMENT ON TABLE ods.equity_structure IS 'AmazingData get_equity_structure 股本结构数据。用于估值、市值、流通股本、限售股和因子计算。';
 COMMENT ON COLUMN ods.equity_structure.id IS '自增主键。';
-COMMENT ON COLUMN ods.equity_structure.security_id IS '逻辑外键 → ods.security_registry.id（无真实 FK 约束，refactor §6 R9）。替代原 symbol/market 列，由 artemis 写入前 resolve。';
+COMMENT ON COLUMN ods.equity_structure.security_id IS '外键 → ods.security_registry.id。';
 COMMENT ON COLUMN ods.equity_structure.source IS '数据源标识，如 amazing_data。';
 COMMENT ON COLUMN ods.equity_structure.ann_date IS '公告日期，统一 YYYY-MM-DD 格式；来自 SDK ANN_DATE。';
 COMMENT ON COLUMN ods.equity_structure.change_date IS '股本变动日期，统一 YYYY-MM-DD 格式；来自 SDK CHANGE_DATE，是该表主要时间轴。';
@@ -536,46 +574,3 @@ COMMENT ON COLUMN ods.equity_structure.is_valid IS '有效标志；来自 SDK IS
 COMMENT ON COLUMN ods.equity_structure.data_json IS 'AmazingData 股本结构明细 JSONB object。字段契约见 govern.data_field_dictionary dataset=equity_structure。';
 COMMENT ON COLUMN ods.equity_structure.created_at IS '记录创建时间。';
 COMMENT ON COLUMN ods.equity_structure.updated_at IS '记录更新时间。';
-
--- ──────────────────────────────────────────────────────────
--- 15. security_registry  (unified security identifier master)
---    Single external origin: artemis StockZHAList task downloads from
---    AmazingData get_code_info and POSTs to /api/v2/securities/upsert.
---    No `source` column — single source, normalized master data.
--- ──────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS ods.security_registry (
-    id           BIGSERIAL      PRIMARY KEY,
-    exchange     VARCHAR(8)     NOT NULL,
-    asset_type   VARCHAR(16)    NOT NULL,
-    symbol       VARCHAR(32)    NOT NULL,
-    market       VARCHAR(16)    NOT NULL DEFAULT 'zh_a',
-    name         VARCHAR(128)   NOT NULL DEFAULT '',
-    full_name    VARCHAR(256),
-    status       VARCHAR(16)    NOT NULL DEFAULT 'active',
-    list_date    DATE,
-    delist_date  DATE,
-    created_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-    CONSTRAINT uk_sr_exchange_asset_symbol UNIQUE (exchange, asset_type, symbol)
-) TABLESPACE pg_default;
-
--- idx_sr_exchange 已删除：uk_sr_exchange_asset_symbol 唯一约束索引以 exchange 为前导列，已覆盖按 exchange 的查询。
-CREATE INDEX IF NOT EXISTS idx_sr_asset_market
-    ON ods.security_registry (asset_type, market);
-CREATE INDEX IF NOT EXISTS idx_sr_status
-    ON ods.security_registry (status)
-    WHERE status != 'active';
-
-COMMENT ON TABLE ods.security_registry IS '统一证券注册表（股票/ETF/指数基础信息）。代理主键 id (BIGSERIAL) 是 (exchange, asset_type, symbol) 自然键的代理，作为其他表逻辑外键 security_id 的引用目标（不建真实 FK 约束）。单一外部来源：artemis 从 AmazingData get_code_info 下载，POST /api/v2/securities/upsert 按自然键 upsert（id 自增）。单源主数据，无 source 列。';
-COMMENT ON COLUMN ods.security_registry.id IS '代理主键 (BIGSERIAL)，仅在当前重建周期内稳定；是 (exchange, asset_type, symbol) 自然键的代理，被其他表 security_id 逻辑引用。';
-COMMENT ON COLUMN ods.security_registry.exchange IS '交易所（SH/SZ/BJ 大写），由代码后缀派生，phoenixA 落库时统一 ToUpper；与 asset_type、symbol 共同构成自然唯一键。';
-COMMENT ON COLUMN ods.security_registry.asset_type IS '资产类型，当前固定为 stock；与 exchange、symbol 共同构成自然唯一键。';
-COMMENT ON COLUMN ods.security_registry.symbol IS '证券代码（纯代码，不含交易所后缀）；来自 AmazingData get_code_info；与 exchange、asset_type 共同构成自然唯一键。';
-COMMENT ON COLUMN ods.security_registry.market IS '市场标识（普通属性列，不参与自然唯一键），当前固定为 zh_a。';
-COMMENT ON COLUMN ods.security_registry.name IS '证券简称；来自 get_code_info 的 symbol 列。';
-COMMENT ON COLUMN ods.security_registry.full_name IS '证券全称（预留字段，当前无数据源填充）。';
-COMMENT ON COLUMN ods.security_registry.status IS '证券状态，当前固定为 active。';
-COMMENT ON COLUMN ods.security_registry.list_date IS '上市日期（预留字段，当前无数据源填充）。';
-COMMENT ON COLUMN ods.security_registry.delist_date IS '退市日期（预留字段，当前无数据源填充）。';
-COMMENT ON COLUMN ods.security_registry.created_at IS '记录创建时间。';
-COMMENT ON COLUMN ods.security_registry.updated_at IS '记录更新时间。';

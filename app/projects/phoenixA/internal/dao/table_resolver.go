@@ -15,8 +15,8 @@ func BarsTableName(assetType, market, period, adjust string) string {
 	return fmt.Sprintf("ods.bars_%s_%s_%s_%s", assetType, market, period, adjust)
 }
 
-// BarsExtTableName returns the extension table name for a specific source.
-// Pattern: ods.bars_ext_{source}_{assetType}_{market}_{period}
-func BarsExtTableName(source, assetType, market, period string) string {
-	return fmt.Sprintf("ods.bars_ext_%s_%s_%s_%s", source, assetType, market, period)
+// BarsExtTableName returns an optional extension-schema table name.
+// Pattern: ods.bars_ext_{extensionKind}_{assetType}_{market}_{period}
+func BarsExtTableName(extensionKind, assetType, market, period string) string {
+	return fmt.Sprintf("ods.bars_ext_%s_%s_%s_%s", extensionKind, assetType, market, period)
 }

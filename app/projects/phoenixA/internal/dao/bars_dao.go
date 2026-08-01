@@ -50,46 +50,47 @@ func (d *BarsDao) BatchUpsert(ctx context.Context, q *model.BarsQuery, bars []*m
 	tableName := BarsTableName(q.AssetType, q.Market, q.Period, q.Adjust)
 	return d.db.Table(tableName).WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "symbol"}, {Name: "trade_date"}},
+			Columns: []clause.Column{{Name: "security_id"}, {Name: "trade_date"}},
 			DoUpdates: clause.AssignmentColumns(
 				[]string{"open", "high", "low", "close", "volume", "amount", "preclose", "pct_chg"},
 			),
 		}).CreateInBatches(bars, 1000).Error
 }
 
-// GetLatestUpdateBySymbols returns map[symbol]lastTradeDate for the given symbols.
-func (d *BarsDao) GetLatestUpdateBySymbols(ctx context.Context, q *model.BarsQuery) (map[string]string, error) {
+// GetLatestUpdateBySecurityIDs returns map[security_id]lastTradeDate.
+func (d *BarsDao) GetLatestUpdateBySecurityIDs(ctx context.Context, q *model.BarsQuery) (map[uint64]string, error) {
 	tableName := BarsTableName(q.AssetType, q.Market, q.Period, q.Adjust)
 	rows, err := d.db.Table(tableName).WithContext(ctx).
-		Select("symbol, MAX(trade_date) as last_date").
-		Where("symbol IN ?", q.Symbols).
-		Group("symbol").
+		Select("security_id, MAX(trade_date) as last_date").
+		Where("security_id IN ?", q.SecurityIDs).
+		Group("security_id").
 		Rows()
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	result := make(map[string]string)
+	result := make(map[uint64]string)
 	for rows.Next() {
-		var symbol, date string
-		if err = rows.Scan(&symbol, &date); err != nil {
+		var securityID uint64
+		var date string
+		if err = rows.Scan(&securityID, &date); err != nil {
 			continue
 		}
 		if bizConsts.IsIntradayPeriod(q.Period) {
-			result[symbol] = date
+			result[securityID] = date
 		} else {
-			result[symbol] = utils.NormalizedToYYYYMMDD(date)
+			result[securityID] = utils.NormalizedToYYYYMMDD(date)
 		}
 	}
 	return result, nil
 }
 
-// QueryBars returns bars for a single symbol within [startDate, endDate].
+// QueryBars returns bars for one registered security within the range.
 func (d *BarsDao) QueryBars(ctx context.Context, q *model.BarsQuery) ([]*model.StandardBar, error) {
 	tableName := BarsTableName(q.AssetType, q.Market, q.Period, q.Adjust)
 	db := d.db.Table(tableName).WithContext(ctx).
-		Where("symbol = ? AND trade_date >= ? AND trade_date <= ?", q.Symbol, q.StartDate, q.EndDate).
+		Where("security_id = ? AND trade_date >= ? AND trade_date <= ?", q.SecurityID, q.StartDate, q.EndDate).
 		Order("trade_date ASC")
 
 	if len(q.Fields) > 0 {
@@ -109,12 +110,12 @@ func (d *BarsDao) QueryBars(ctx context.Context, q *model.BarsQuery) ([]*model.S
 	return out, nil
 }
 
-// BatchUpsertExt writes extension bars data into the source-specific extension table.
-func (d *BarsDao) BatchUpsertExt(ctx context.Context, source string, q *model.BarsQuery, data []*model.BarsExtBaostock) error {
-	tableName := BarsExtTableName(source, q.AssetType, q.Market, q.Period)
+// BatchUpsertExt writes non-canonical fields into the requested extension schema.
+func (d *BarsDao) BatchUpsertExt(ctx context.Context, extensionKind string, q *model.BarsQuery, data []*model.BarsExtBaostock) error {
+	tableName := BarsExtTableName(extensionKind, q.AssetType, q.Market, q.Period)
 	return d.db.Table(tableName).WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "symbol"}, {Name: "trade_date"}},
+			Columns: []clause.Column{{Name: "security_id"}, {Name: "trade_date"}},
 			DoUpdates: clause.AssignmentColumns(
 				[]string{"turn", "pe_ttm", "ps_ttm", "pb_mrq", "pcf_ncf_ttm", "trade_status", "is_st"},
 			),

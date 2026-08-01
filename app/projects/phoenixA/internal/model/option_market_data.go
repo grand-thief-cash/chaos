@@ -20,7 +20,7 @@ func (OptionQVIXDaily) TableName() string { return "ods.option_qvix_daily" }
 
 type OptionDailyStats struct {
 	Exchange                 string   `gorm:"primaryKey;column:exchange;type:varchar(8)" json:"exchange"`
-	UnderlyingSymbol         string   `gorm:"primaryKey;column:underlying_symbol;type:varchar(16)" json:"underlying_symbol"`
+	UnderlyingSecurityID     uint64   `gorm:"primaryKey;column:underlying_security_id" json:"underlying_security_id"`
 	TradeDate                string   `gorm:"primaryKey;column:trade_date;type:date" json:"trade_date"`
 	UnderlyingName           string   `gorm:"column:underlying_name;type:varchar(64)" json:"underlying_name"`
 	ContractCount            *int64   `gorm:"column:contract_count" json:"contract_count,omitempty"`

@@ -120,7 +120,7 @@ func TestGetColumnDescription_Wildcard(t *testing.T) {
 	cases := []struct {
 		table, column, expected string
 	}{
-		{"bars_stock_zh_a_daily_nf", "symbol", "证券代码"},
+		{"bars_stock_zh_a_daily_nf", "security_id", "证券ID"},
 		{"financial_statement", "trade_date", "交易日期"},
 		{"any_table", "open", "开盘价"},
 		{"any_table", "data_json", "业务数据（JSONB 灵活字段）"},

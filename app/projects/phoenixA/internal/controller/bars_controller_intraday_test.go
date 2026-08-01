@@ -13,12 +13,12 @@ func TestStripVirtualBarFields(t *testing.T) {
 	}{
 		{name: "empty", input: nil, output: nil},
 		{
-			name:   "security id removed",
-			input:  []string{"security_id", "trade_date", "open", "close"},
-			output: []string{"trade_date", "open", "close"},
+			name:   "display symbol removed",
+			input:  []string{"symbol", "security_id", "trade_date", "close"},
+			output: []string{"security_id", "trade_date", "close"},
 		},
-		{name: "only virtual field", input: []string{"security_id"}, output: []string{}},
-		{name: "physical fields unchanged", input: []string{"symbol", "volume"}, output: []string{"symbol", "volume"}},
+		{name: "only virtual field", input: []string{"symbol"}, output: []string{}},
+		{name: "physical fields unchanged", input: []string{"security_id", "volume"}, output: []string{"security_id", "volume"}},
 	}
 
 	for _, test := range tests {

@@ -152,9 +152,9 @@
 
 | 表 | 分区键 | Chunk 间隔 | 压缩 | 表空间 |
 |----|--------|-----------|------|--------|
-| `bars_*_daily_*` | `trade_date` | 1 year | ✅ segmentby=symbol | warm_storage |
-| `bars_*_1min_*` | `trade_date` | 1 week | ✅ segmentby=symbol | warm_storage |
-| `bars_*_5min_*` | `trade_date` | 2 weeks | ✅ segmentby=symbol | warm_storage |
+| `bars_*_daily_*` | `trade_date` | 1 year | ✅ segmentby=security_id | warm_storage |
+| `bars_*_1min_*` | `trade_date` | 1 week | ✅ segmentby=security_id | warm_storage |
+| `bars_*_5min_*` | `trade_date` | 2 weeks | ✅ segmentby=security_id | warm_storage |
 | `factor_daily` | `trade_date` | 3 months | ✅ segmentby=factor_id,symbol | warm_storage |
 | `regime_state` | `trade_date` | 1 year | ✅ segmentby=market | warm_storage |
 | `industry_weight` | `trade_date` | 1 year | ✅ segmentby=index_code | warm_storage |

@@ -52,10 +52,10 @@ func (s *OptionMarketDataService) BatchUpsertOptionDailyStats(
 	ctx context.Context, rows []*model.OptionDailyStats,
 ) error {
 	for _, row := range rows {
-		if row == nil || row.Exchange == "" || row.UnderlyingSymbol == "" ||
+		if row == nil || row.Exchange == "" || row.UnderlyingSecurityID == 0 ||
 			row.TradeDate == "" {
 			return NewValidationError(
-				"exchange, underlying_symbol and trade_date are required",
+				"exchange, underlying_security_id and trade_date are required",
 			)
 		}
 	}

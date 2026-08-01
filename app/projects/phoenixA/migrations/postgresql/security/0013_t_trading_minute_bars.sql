@@ -2,7 +2,7 @@
 -- Raw, non-adjusted prices are the canonical execution/replay input.
 
 CREATE TABLE IF NOT EXISTS ods.bars_stock_zh_a_min5_nf (
-    symbol      VARCHAR(32)    NOT NULL,
+    security_id BIGINT         NOT NULL REFERENCES ods.security_registry(id),
     trade_date  TIMESTAMPTZ    NOT NULL,
     open        DECIMAL(20,4)  NOT NULL,
     high        DECIMAL(20,4)  NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS ods.bars_stock_zh_a_min5_nf (
     amount      BIGINT,
     preclose    DECIMAL(20,4),
     pct_chg     DECIMAL(10,4),
-    CONSTRAINT uk_bars_stock_zh_a_min5_nf PRIMARY KEY (symbol, trade_date),
+    CONSTRAINT uk_bars_stock_zh_a_min5_nf PRIMARY KEY (security_id, trade_date),
     CONSTRAINT ck_bars_stock_zh_a_min5_nf_ohlc CHECK (
         low <= high
         AND open BETWEEN low AND high
@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS ods.bars_stock_zh_a_min5_nf (
     CONSTRAINT ck_bars_stock_zh_a_min5_nf_amount CHECK (amount IS NULL OR amount >= 0)
 ) TABLESPACE warm_storage;
 
-CREATE INDEX IF NOT EXISTS idx_bars_stock_zh_a_min5_nf_symbol_time
-    ON ods.bars_stock_zh_a_min5_nf (symbol, trade_date DESC)
+CREATE INDEX IF NOT EXISTS idx_bars_stock_zh_a_min5_nf_security_time
+    ON ods.bars_stock_zh_a_min5_nf (security_id, trade_date DESC)
     TABLESPACE warm_storage;
 
 CREATE INDEX IF NOT EXISTS idx_bars_stock_zh_a_min5_nf_time

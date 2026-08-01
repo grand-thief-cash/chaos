@@ -1,12 +1,17 @@
 # VERSION
-v1.42.0
+v1.43.0
 
 # Changelog
+- v1.43.0
+    - **Registry-native daily and intraday Bars.** Added canonical `min1/min5/min15/min30/min60` period normalization, full-timestamp watermarks, and Timescale-backed A-share minute storage. Daily and minute Bars now use `security_id` as their physical identity; symbol is resolved response decoration only.
+    - **AmazingData intraday context.** Added one-minute, 30-minute, daily-context and same-minute relative-volume storage needed by the first T-signal strategies, all keyed to `security_registry`.
+    - **Clean migration baseline.** Folded the final ODS/research-report/market-data definitions into their original migrations, removed the undeployed `0015` patch, added database foreign keys for security facts, and provided audited production preflight/rebaseline scripts that preserve `security_registry`, `research_report_download_record`, and migration history.
+    - **Option identity closure.** `option_daily_stats` now persists `underlying_security_id` instead of maintaining a second underlying symbol identity.
+    - **Regression verification.** Validated clean-schema installation, preservation-table rebaseline, registry foreign keys, Go model/DAO/service/controller/buffer tests, and `config-home.yaml` startup against the development database.
 - v1.42.0
     - **Intraday standard Bars.** Added canonical `min1/min5/min15/min30/min60` period normalization and alias handling at controller/table-resolution boundaries. Intraday queries and last-update watermarks preserve full timestamps instead of truncating them to a trading date.
     - **A-share five-minute storage.** Added the Timescale-ready `ods.bars_stock_zh_a_min5_nf` migration with `TIMESTAMPTZ` identity, OHLC/volume constraints, lookup indexes, and monthly chunks. Daily Bars behavior remains unchanged.
     - **Virtual-field projection fix.** `security_id` remains a controller response decoration and is now stripped before DAO field projection, preventing Workbench `fields=security_id,...` queries from selecting a non-existent physical column.
-    - **Regression coverage.** Added period normalization and minute table-resolution tests; targeted Go controller/DAO/const tests pass.
     - **Regression coverage.** Added period normalization and minute table-resolution tests; targeted Go controller/DAO/const tests pass.
 - v1.41.0
     - **ODS domain boundaries.** Replaced the misleading aggregate `RiskData` model/DAO/service/controller with separate capital-flow, option-market-data and market-observation components. Raw source datasets now live under `/api/v2/capital-flows`, `/api/v2/option-market-data` and `/api/v2/market-observations`; the Risk domain is reserved for later derived risk models and signals.

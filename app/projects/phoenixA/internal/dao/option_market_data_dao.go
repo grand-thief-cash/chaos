@@ -64,7 +64,7 @@ func (d *OptionMarketDataDao) BatchUpsertOptionDailyStats(
 	}
 	return d.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
-			{Name: "exchange"}, {Name: "underlying_symbol"}, {Name: "trade_date"},
+			{Name: "exchange"}, {Name: "underlying_security_id"}, {Name: "trade_date"},
 		},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"underlying_name", "contract_count", "turnover", "volume",
@@ -102,7 +102,7 @@ func (d *OptionMarketDataDao) QueryOptionDailyStats(
 		}
 	}
 	err := finishDailyDataQuery(
-		q.Order("exchange ASC").Order("underlying_symbol ASC"),
+		q.Order("exchange ASC").Order("underlying_security_id ASC"),
 		limit,
 		offset,
 	).Find(&rows).Error

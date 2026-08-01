@@ -19,11 +19,9 @@ import (
 
 // BarsController handles HTTP endpoints for unified bars data.
 //
-// Phase 4: the API contract is security_id-native (no dual-track, refactor
-// §3.6). security_id is resolved to the physical symbol at the controller
-// boundary; bars_* tables keep symbol as their physical primary key (§3.2
-// permanent-storage exception). Path {asset_type}/{market} is validated
-// against the resolved security and returns 400 on mismatch (§10.d.4 option A).
+// The API and physical bars tables are security_id-native. Path
+// {asset_type}/{market} is validated against security_registry and returns 400
+// on mismatch.
 // symbol/symbols params are rejected (deprecated) — callers must use security_id.
 type BarsController struct {
 	*core.BaseComponent
@@ -39,10 +37,7 @@ func NewBarsController() *BarsController {
 func (c *BarsController) Start(ctx context.Context) error { return c.BaseComponent.Start(ctx) }
 func (c *BarsController) Stop(ctx context.Context) error  { return c.BaseComponent.Stop(ctx) }
 
-// barInputRow is the API input shape for a standard bar row: identity is
-// security_id (resolved to symbol before reaching the DAO/write buffer). It is
-// distinct from model.StandardBar, which is the physical row (symbol-keyed, no
-// security_id column, §3.2).
+// barInputRow is the API input shape for a standard bar row.
 type barInputRow struct {
 	SecurityID uint64   `json:"security_id"`
 	TradeDate  string   `json:"trade_date"`
@@ -71,11 +66,10 @@ type barExtInputRow struct {
 
 // POST /api/v2/bars/{asset_type}/{market}/upsert
 //
-// Request body: {meta:{period,adjust,source}, bars:[{security_id,...}], ext:[{security_id,...}]}.
+// Request body: {meta:{period,adjust,extension_kind}, bars:[{security_id,...}], ext:[{security_id,...}]}.
 // Each bar/ext row MUST carry a security_id resolved from security_registry;
 // unknown id or path/{asset_type,market} mismatch → 400 (orphan defense, §10.c).
-// The controller resolves security_id → symbol before the DAO/write buffer, so
-// the physical rows entering the async buffer are already validated (§10.d.2).
+// The controller validates every security_id before the DAO/write buffer.
 func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	assetType := chi.URLParam(r, "asset_type")
@@ -112,6 +106,10 @@ func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, apiError{Error: fmt.Sprintf("ext parse error: %s", err.Error())})
 			return
 		}
+		if req.Meta.ExtensionKind == "" {
+			writeJSON(w, http.StatusBadRequest, apiError{Error: "meta.extension_kind is required when ext is present"})
+			return
+		}
 	}
 
 	// Collect security_ids; every row must carry a positive one.
@@ -131,35 +129,34 @@ func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, e.SecurityID)
 	}
 
-	// Resolve each unique id → symbol, validating existence + path asset_type/market.
-	// The resolve IS the orphan defense (found=false = orphan, §10.c); a cache/DB
-	// load failure surfaces as 500 (not the caller's fault).
+	// Validate ids and retain symbol only as response/display metadata.
 	symbolByID, err := c.resolveSymbolsForPath(ctx, ids, assetType, market)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 
-	// Build resolved physical rows.
+	// Build security_id-keyed physical rows.
 	bars := make([]*model.StandardBar, 0, len(inputBars))
 	for _, ib := range inputBars {
 		bars = append(bars, &model.StandardBar{
-			Symbol:    symbolByID[ib.SecurityID],
-			TradeDate: ib.TradeDate,
-			Open:      ib.Open,
-			High:      ib.High,
-			Low:       ib.Low,
-			Close:     ib.Close,
-			Volume:    ib.Volume,
-			Amount:    ib.Amount,
-			Preclose:  ib.Preclose,
-			PctChg:    ib.PctChg,
+			SecurityID: ib.SecurityID,
+			Symbol:     symbolByID[ib.SecurityID],
+			TradeDate:  ib.TradeDate,
+			Open:       ib.Open,
+			High:       ib.High,
+			Low:        ib.Low,
+			Close:      ib.Close,
+			Volume:     ib.Volume,
+			Amount:     ib.Amount,
+			Preclose:   ib.Preclose,
+			PctChg:     ib.PctChg,
 		})
 	}
 	ext := make([]*model.BarsExtBaostock, 0, len(inputExt))
 	for _, ie := range inputExt {
 		ext = append(ext, &model.BarsExtBaostock{
-			Symbol:      symbolByID[ie.SecurityID],
+			SecurityID:  ie.SecurityID,
 			TradeDate:   ie.TradeDate,
 			Turn:        ie.Turn,
 			PeTTM:       ie.PeTTM,
@@ -188,8 +185,8 @@ func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusBadRequest, apiError{Error: errMsg})
 				return
 			}
-			if len(ext) > 0 && req.Meta.Source != "" {
-				if err := c.Svc.BatchUpsertExt(ctx, req.Meta.Source, q, ext); err != nil {
+			if len(ext) > 0 {
+				if err := c.Svc.BatchUpsertExt(ctx, req.Meta.ExtensionKind, q, ext); err != nil {
 					logging.Errorf(ctx, "bars ext upsert error: %s", err.Error())
 				}
 			}
@@ -201,7 +198,7 @@ func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 			if len(ext) > 0 {
 				extJSON, _ = json.Marshal(ext)
 			}
-			if err := c.BufferMgr.Submit(q, bars, extJSON, req.Meta.Source); err != nil {
+			if err := c.BufferMgr.Submit(q, bars, extJSON, req.Meta.ExtensionKind); err != nil {
 				logging.Errorf(ctx, "write buffer submit failed: %s", err.Error())
 				writeJSON(w, http.StatusServiceUnavailable, apiError{Error: "write buffer full, retry later"})
 				return
@@ -218,8 +215,8 @@ func (c *BarsController) Upsert(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: errMsg})
 		return
 	}
-	if len(ext) > 0 && req.Meta.Source != "" {
-		if err := c.Svc.BatchUpsertExt(ctx, req.Meta.Source, q, ext); err != nil {
+	if len(ext) > 0 {
+		if err := c.Svc.BatchUpsertExt(ctx, req.Meta.ExtensionKind, q, ext); err != nil {
 			logging.Errorf(ctx, "bars ext upsert error: %s", err.Error())
 		}
 	}
@@ -317,7 +314,7 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 		limit = maxLimit
 	}
 
-	// Resolve security_id → symbol, validating path asset_type/market (§10.d.4 option A).
+	// Validate security_id and obtain current display symbol.
 	symbolByID, err := c.resolveSymbolsForPath(ctx, []uint64{securityID}, assetType, market)
 	if err != nil {
 		writeServiceError(w, err)
@@ -325,16 +322,16 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := &model.BarsQuery{
-		AssetType: assetType,
-		Market:    market,
-		Period:    period,
-		Adjust:    adjust,
-		Symbol:    symbolByID[securityID],
-		StartDate: startDate,
-		EndDate:   endDate,
-		Fields:    storageFields,
-		Limit:     limit,
-		Offset:    offset,
+		AssetType:  assetType,
+		Market:     market,
+		Period:     period,
+		Adjust:     adjust,
+		SecurityID: securityID,
+		StartDate:  startDate,
+		EndDate:    endDate,
+		Fields:     storageFields,
+		Limit:      limit,
+		Offset:     offset,
 	}
 
 	bars, err := c.Svc.QueryBars(ctx, q)
@@ -344,10 +341,8 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize date-only bars and stamp security_id onto each row for the
-	// response. Intraday timestamps are deliberately preserved: truncating them
-	// would collapse all bars from a trading day onto one chart/storage key.
-	// (physical table has no security_id column; it's a decoration, §10.b).
+	// Normalize date-only bars and attach the current symbol for display.
+	// Intraday timestamps are deliberately preserved.
 	for _, b := range bars {
 		if b == nil {
 			continue
@@ -355,7 +350,7 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 		if !bizConsts.IsIntradayPeriod(period) {
 			b.TradeDate = normalizeDateYYYYMMDD(b.TradeDate)
 		}
-		b.SecurityID = securityID
+		b.Symbol = symbolByID[securityID]
 	}
 
 	if len(fields) > 0 {
@@ -365,16 +360,15 @@ func (c *BarsController) Query(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResponse[any]{Data: bars})
 }
 
-// security_id is resolved at the controller boundary and stamped onto the
-// response; it is deliberately absent from physical bars_* tables. Never push
-// this virtual field into the DAO SELECT list.
+// symbol is resolved at the controller boundary and is not a physical bars
+// column. Never push the display field into the DAO SELECT list.
 func stripVirtualBarFields(fields []string) []string {
 	if len(fields) == 0 {
 		return nil
 	}
 	result := make([]string, 0, len(fields))
 	for _, field := range fields {
-		if field != "security_id" {
+		if field != "symbol" {
 			result = append(result, field)
 		}
 	}
@@ -447,36 +441,30 @@ func (c *BarsController) GetLastUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	securityIDs = deduped
 
-	// Resolve each id → symbol, validating path asset_type/market.
+	// Validate each id and resolve the display symbols.
 	symbolByID, err := c.resolveSymbolsForPath(ctx, securityIDs, assetType, market)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
-	symbols := make([]string, 0, len(securityIDs))
-	for _, id := range securityIDs {
-		symbols = append(symbols, symbolByID[id])
-	}
-
 	q := &model.BarsQuery{
-		AssetType: assetType,
-		Market:    market,
-		Period:    period,
-		Adjust:    adjust,
-		Symbols:   symbols,
+		AssetType:   assetType,
+		Market:      market,
+		Period:      period,
+		Adjust:      adjust,
+		SecurityIDs: securityIDs,
 	}
-	dates, err := c.Svc.GetLatestUpdateBySymbols(ctx, q)
+	dates, err := c.Svc.GetLatestUpdateBySecurityIDs(ctx, q)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		return
 	}
 
-	// Transform symbol-keyed dates → [{security_id, symbol, last_update}],
-	// preserving the caller's security_ids order.
+	// Preserve the caller's security_ids order and attach current symbols.
 	result := make([]map[string]any, 0, len(securityIDs))
 	for _, id := range securityIDs {
 		symbol := symbolByID[id]
-		date, ok := dates[symbol]
+		date, ok := dates[id]
 		if !ok {
 			continue
 		}
@@ -490,7 +478,7 @@ func (c *BarsController) GetLastUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // trimBarFields trims StandardBar list to only include specified JSON fields.
-// security_id is selectable and reads from the stamped response decoration.
+// symbol is selectable and reads from the response decoration.
 func trimBarFields(bars []*model.StandardBar, fields []string) []map[string]any {
 	fieldSet := make(map[string]struct{}, len(fields))
 	for _, f := range fields {

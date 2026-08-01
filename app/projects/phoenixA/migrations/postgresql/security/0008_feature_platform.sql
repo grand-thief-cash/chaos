@@ -283,7 +283,7 @@ CREATE TABLE IF NOT EXISTS govern.feature_run_item (
 
 CREATE TABLE IF NOT EXISTS govern.feature_run_subject (
     run_id                  UUID NOT NULL REFERENCES govern.feature_run(run_id),
-    security_id             BIGINT NOT NULL,
+    security_id             BIGINT NOT NULL REFERENCES ods.security_registry(id),
     symbol_snapshot         VARCHAR(32) NOT NULL DEFAULT '',
     exchange_snapshot       VARCHAR(16) NOT NULL DEFAULT '',
     asset_type_snapshot     VARCHAR(32) NOT NULL DEFAULT '',
@@ -298,7 +298,7 @@ CREATE INDEX IF NOT EXISTS idx_feature_run_subject_security
 CREATE TABLE IF NOT EXISTS dwd.feature_value_numeric (
     run_id                      UUID NOT NULL,
     feature_version_id          BIGINT NOT NULL,
-    security_id                 BIGINT NOT NULL,
+    security_id                 BIGINT NOT NULL REFERENCES ods.security_registry(id),
     observed_at                 TIMESTAMPTZ NOT NULL,
     value                       DOUBLE PRECISION,
     value_status                VARCHAR(16) NOT NULL,

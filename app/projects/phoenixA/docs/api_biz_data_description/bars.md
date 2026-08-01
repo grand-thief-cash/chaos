@@ -4,10 +4,9 @@
 
 提供证券的 K线（OHLCV）行情数据查询与写入。
 
-> **Phase 4 (`security_registry` 代理主键重构)**: bars API 契约已迁 `security_id`（无双轨，§3.6）。
-> `security_id` 在 controller 入口解析为物理 `symbol` 后再查/写 `bars_*` 物理表；`bars_*` 物理表
-> 仍以 `symbol` 为主键（§3.2 永久存储特例）。路径 `{asset_type}/{market}` 必须与 `security_id`
-> 解析出的资产类型/市场一致，否则 400（§10.d.4 option A）。`symbol`/`symbols` 参数已废弃，传则 400。
+> bars API 与 `bars_*` 物理表统一以 `security_id` 标识证券，不保留 symbol 双轨。
+> controller 入口必须验证 ID 已在 `security_registry` 注册，且路径 `{asset_type}/{market}` 与注册记录一致，
+> 否则返回 400。symbol 只在调用上游供应商或响应展示时从 registry 解析；`symbol`/`symbols` 查询参数已废弃。
 
 ## API 端点
 
@@ -47,7 +46,7 @@
 
 ```json
 {
-  "meta": {"period": "daily", "adjust": "nf", "source": "baostock"},
+  "meta": {"period": "daily", "adjust": "nf", "extension_kind": "baostock"},
   "bars": [{"security_id": 1, "trade_date": "2026-01-05", "open": 10.0, "high": 11.0,
             "low": 9.5, "close": 10.5, "volume": 1000, "amount": 10500,
             "preclose": 9.8, "pct_chg": 1.92}],
@@ -56,7 +55,7 @@
 }
 ```
 
-每行 `bars`/`ext` 必须携带 `security_id`；未知 id 或路径 `{asset_type}/{market}` 与解析结果不一致 → 400（orphan 防护，§10.c）。controller 在入口解析 `security_id → symbol` 后再进 DAO/write buffer，故异步 buffer 收到的已是 resolved 物理 行（§10.d.2）。
+每行 `bars`/`ext` 必须携带 `security_id`；未知 id 或路径 `{asset_type}/{market}` 与注册结果不一致 → 400。controller 在进入 DAO/write buffer 前完成 registry 校验，异步 buffer 收到的是已校验的物理行。`extension_kind` 只选择可选扩展字段表，不表示 canonical bar 的来源或版本；核心 bars 不接受 source 参数。
 
 ### GET /api/v2/bars/{asset_type}/{market}/last_update
 
@@ -77,8 +76,8 @@
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
-| security_id | integer | 证券ID（响应装饰，→ security_registry.id；物理表存 symbol，§3.2） |
-| symbol | string | 证券代码（响应装饰） |
+| security_id | integer | 证券ID（物理主键之一，→ security_registry.id） |
+| symbol | string | 证券代码（仅响应装饰，从 registry 读取） |
 | trade_date | string | 交易日期（格式 YYYY-MM-DD） |
 | open | float64 | 开盘价（元） |
 | high | float64 | 最高价（元） |
@@ -91,7 +90,7 @@
 
 ### Baostock 扩展字段
 
-当 data_source 为 baostock 时，以下字段可能存在：
+当 `extension_kind=baostock` 时，以下非 canonical 扩展字段可能存在：
 
 | 字段名 | JSON 类型 | 说明 |
 |--------|----------|------|
