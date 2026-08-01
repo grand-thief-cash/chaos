@@ -27,27 +27,31 @@
 
 | 字段 | 类型 | 规则 |
 |---|---|---|
-| security_id | uint64 | API 必填、PhoenixA 解析为 symbol |
-| symbol | string | 物理存储键，由 PhoenixA 解析后写入 |
+| security_id | uint64 | API 必填、物理主键，逻辑关联 `security_registry.id` |
+| symbol | string | 不进入 bars 物理表；响应需要展示时从 registry 读取 |
 | trade_date | timestamptz | 分钟 bar 时间，Asia/Shanghai offset |
 | open/high/low/close | numeric(20,4) | 非空、有限数、`low <= O/C <= high` |
-| volume | bigint nullable | 统一为股；BaoStock 已为股 |
+| volume | bigint nullable | 供应商原始整数值；真实 AmazingData 样本需核验股票/指数单位后再声明跨源可比 |
 | amount | bigint nullable | 统一为人民币元，四舍五入 |
 | preclose/pct_chg | nullable | 分钟源缺失时保持 NULL |
 
 ## 3. 物理表
 
-第一轮新增：
+已存在/新增：
 
 ```sql
 ods.bars_stock_zh_a_min5_nf
+ods.bars_stock_zh_a_min1_nf
+ods.bars_stock_zh_a_min30_nf
+ods.bars_index_zh_a_min1_nf
+ods.bars_index_zh_a_min5_nf
 ```
 
 建议结构：
 
 ```sql
 CREATE TABLE ods.bars_stock_zh_a_min5_nf (
-    symbol      VARCHAR(32) NOT NULL,
+    security_id BIGINT NOT NULL,
     trade_date  TIMESTAMPTZ NOT NULL,
     open        NUMERIC(20,4) NOT NULL,
     high        NUMERIC(20,4) NOT NULL,
@@ -57,16 +61,16 @@ CREATE TABLE ods.bars_stock_zh_a_min5_nf (
     amount      BIGINT,
     preclose    NUMERIC(20,4),
     pct_chg     NUMERIC(10,4),
-    PRIMARY KEY (symbol, trade_date)
+    PRIMARY KEY (security_id, trade_date)
 );
 ```
 
 转换为 TimescaleDB hypertable，建议 chunk 为 1 个月，并建立：
 
-- `(symbol, trade_date DESC)`；
+- `(security_id, trade_date DESC)`；
 - `(trade_date DESC)`。
 
-后续周期按相同结构新增表，不在第一轮提前创建无数据表。
+新增表由 PhoenixA migration `0014_amazing_data_intraday_context.sql` 创建。尚未投入使用的旧日线 bars 定义已直接在干净基线 `0001_ods.sql` 中改为 `security_id` 物理键，不再保留 `0015` 式补丁迁移。日线复用既有 stock/index daily 表；本阶段不创建行业指数分钟表。
 
 ## 4. 为什么只存不复权成交价
 
@@ -87,26 +91,46 @@ BaoStock `time` 格式为 `YYYYMMDDHHMMSSsss`。转换步骤：
 5. 校验 `date` 与 `time` 的日期部分一致；
 6. 丢弃午休区间和交易时段外的异常记录，但记录 rejected reason。
 
-源时间究竟代表 bar start 或 bar end 必须通过样本与供应商说明确认。第一轮字段按 BaoStock 返回标签保存，并在策略中仅于该 timestamp 后读取；AmazingData 接入时按其“前推算法”单独映射 `available_at`。
+源时间究竟代表 bar start 或 bar end 必须通过样本与供应商说明确认。BaoStock 字段按其返回标签保存，并在策略中仅于该 timestamp 后读取。
+
+AmazingData 文档明确使用前推/开始标签：`09:30 min1` 覆盖 `09:30:00.000~09:30:59.999`，`09:35 min5` 覆盖 `09:35:00.000~09:39:59.999`。下载 adapter 因此把标签转换为完整 bar 首次可用时刻：
+
+```text
+min1 09:30 label -> 09:31 available_at
+min5 09:35 label -> 09:40 available_at
+min30 label       -> label + 30 minutes
+```
+
+这样 signal engine 不会在区间尚未结束时读取最终 OHLCV。
+
+文档还说明开盘集合竞价成交量并入第一根分钟 K 线、收盘集合竞价成交量并入最后一根。它表示 K 线“包含竞价影响”，不表示能从 K 线独立拆出竞价价格、成交量或订单不平衡。
 
 ## 6. Upsert 与 watermark
 
-- upsert 唯一键 `(symbol, trade_date)`，重跑幂等；
+- upsert 唯一键 `(security_id, trade_date)`，重跑幂等；
 - last-update 返回分钟最大时间戳，不得调用日线 `YYYY-MM-DD` 截断器；
 - parent 从最大时间戳所属日期重新下载；
-- 当请求 `end_date` 是当天且当前时间早于 BaoStock 分钟完成时间，任务应允许写入已有数据，但下一轮仍重放当天；
-- 第一轮不在库中保存 completeness 状态，任务日志记录每个 symbol/day 的 bar count。
+- 当请求 `end_date` 是当天且当前时间早于分钟完成时间，任务应允许写入已有数据，但下一轮仍重放当天；
+- 第一轮不在库中保存 completeness 状态，任务日志记录每个 security/day 的 bar count。
+
+Market K-line parent 以 `security_registry` 为唯一 identity 来源：
+
+- 默认显式传 `security_ids` 或 `symbols`，不隐式全市场下载；
+- symbol、exchange、asset_type、market 必须和 registry 匹配；
+- 每个 security 从 PhoenixA watermark 所在交易日重放并 upsert；
+- 只有显式 `all_registered=true` 才扫描对应资产类型的全部 registry；
+- 相同 effective start 的证券合并成 child batch，避免逐证券 SDK 往返。
 
 ## 7. 查询语义
 
-Workbench 查询一个交易日时转换为：
+Workbench 查询 A 股一个交易日时只覆盖实际观察窗口：
 
 ```text
-start = 2026-07-29T00:00:00+08:00
-end   = 2026-07-29T23:59:59.999999+08:00
+start = 2026-07-29T09:15:00+08:00
+end   = 2026-07-29T15:00:59.999999+08:00
 ```
 
-PhoenixA 保持升序、分页。Artemis client 自动翻页，禁止依赖单页 5000 上限。
+09:15 起点为竞价和实时观察预留；历史分钟 K 线通常从连续竞价后的第一根完整 bar 开始。15:00 后不再扩大到自然日末尾。PhoenixA 保持升序、分页，Artemis client 自动翻页，禁止依赖单页 5000 上限。
 
 ## 8. Arrow 缓存
 
@@ -116,7 +140,8 @@ PhoenixA 保持升序、分页。Artemis client 自动翻页，禁止依赖单�
 - `date` 字符串保留完整 timestamp；
 - 切片把 date-only end 扩展为 end-of-day，或统一传 RFC3339；
 - 去重键为完整 timestamp；
-- 缓存 schema 允许 timestamp string，读取后按绝对时间排序。
+- 缓存 schema 允许 timestamp string，读取后按绝对时间排序；
+- 缓存 identity 必须升级为 `security_id + period + adjust`，不能重新引入 symbol 物理身份。
 
 第一轮若缓存契约无法安全满足分钟时间，可对 replay 设置 `use_cache=false`，优先保证正确性；缓存优化不能阻塞 MVP。
 
@@ -141,14 +166,26 @@ PhoenixA 保持升序、分页。Artemis client 自动翻页，禁止依赖单�
 
 ## 10. 多源扩展
 
-当前动态 bars 表保存 canonical 值，不并行保留多个 source 版本。后续接入 AmazingData 时建议增加 raw/source staging 或 observation provenance：
+动态 bars 表只保存一份 canonical 值，不保存同一 security/time 的多源副本，也不增加 `source` 列。上游来源属于采集任务配置和运行日志，不属于 bar identity：
 
-```text
-source
-source_revision
-received_at
-available_at
-quality_flags
-```
+- 同一个 `(security_id, trade_date)` 后写覆盖前写；
+- 生产调度必须为每个 canonical dataset 指定唯一首选源，不能并发混写；
+- 切换供应商需要单独的数据核验和受控回填，不通过 bar 表内 source 分支查询；
+- BaoStock extension 表只保存 canonical bars 没有的估值/状态扩展字段，不代表 bars 多版本。
 
-在此之前，批量报告必须记录运行所选的 source，避免不同供应商数据混合后无法解释结果差异。
+## 11. 实时轮询点与分钟 bars 的边界
+
+新浪/腾讯等轮询接口每约 5 秒返回的 latest price 是离散观察点，不是原生 OHLC bar：
+
+- 原始轮询点默认只驻留内存，不写入分钟 bars 表；
+- 实时计算直接消费每个 `QuotePoint`，维护有限长度的点序列和增量状态；
+- 不把轮询点合成 sampled OHLC，不复用依赖完整 bar 语义的历史策略实现；
+- bar 回测用于低成本发现策略假设；进入实时前必须实现和验证显式的 point-native 策略版本；
+- 信号和 compact forward outcome 可以持久化；
+- 收盘后权威分钟线只用于把实时 signal time/price 投射到图表和做粗粒度审计，不覆盖实时 signal，也不冒充 5 秒 outcome。
+
+point-native 特征可以包括固定秒数/固定点数收益、EWMA、累计量额差分、更新频率、spread、盘口不平衡和 micro-price。每个有效新点到达后即可重算；缺点是轮询没有覆盖的瞬间仍不可见，因此必须记录 gap/stale 质量。
+
+实时 outcome 由后续点流在线更新 MFE/MAE 和 first-touch，因此无需保存全部 5 秒点。若点流中断或进程重启导致窗口不完整，必须标记 incomplete；收盘分钟线不得用来补成同精度 outcome。
+
+供应商接入统一经过 `RealtimeQuoteAdapter -> QuotePoint`。当前新浪实现解析网页实际使用的 `hq.sinajs.cn` GB18030 响应，包括 source time、最新价、累计量额和五档盘口；腾讯与东财必须各自实现、各自保存契约样本测试，禁止假设字段或时间语义相同。轮询响应不是长期历史数据许可，生产使用前必须单独确认授权、限频和稳定性。

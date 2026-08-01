@@ -134,7 +134,6 @@ def sink_bars_by_asset_type(
             market=market,
             period="daily",
             adjust="nf",
-            source="akshare",
             bars=bars,
             run_id=ctx.run_id,
         ):

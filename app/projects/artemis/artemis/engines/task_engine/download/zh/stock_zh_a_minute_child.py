@@ -126,7 +126,6 @@ class StockZhAMinuteChild(WorkerUnit):
             market="zh_a",
             period=str(ctx.params.get("period")),
             adjust=str(ctx.params.get("adjust")),
-            source="baostock",
             bars=bars.to_dict("records"),
             run_id=ctx.run_id,
         )

@@ -213,7 +213,6 @@ class IndexZhADaily(WorkerUnit):
             market="zh_a",
             period="daily",
             adjust="nf",
-            source="amazing_data",
             bars=bars,
             run_id=ctx.run_id,
         )

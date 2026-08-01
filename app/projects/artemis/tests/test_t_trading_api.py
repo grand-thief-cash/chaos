@@ -48,6 +48,7 @@ def _payload() -> dict:
         "adjust": "nf",
         "persistence_mode": "ephemeral",
         "strategy": {
+            "strategy": "causal_mean_reversion_v1",
             "direction": "buy_first",
             "window": 5,
             "entry_z": 0.5,
@@ -82,9 +83,10 @@ def test_replay_http_flow_returns_review_payload(monkeypatch):
     assert body["run_meta"]["symbol"] == "sh.600000"
     assert body["bars"]
     assert body["signals"]
-    assert body["fills"]
-    assert body["fills"][0]["bar_index"] == body["signals"][0]["bar_index"] + 1
-    assert body["summary"]["round_trips"] >= 1
+    assert body["fills"] == []
+    assert body["execution_summary"]["enabled"] is False
+    assert body["signal_evaluation"]["outcomes"]
+    assert body["summary"]["horizon_bars"] == 6
 
 
 def test_persistent_backtest_mode_is_rejected_at_http_boundary():
@@ -98,8 +100,17 @@ def test_config_advertises_ephemeral_as_only_mode():
     response = _client().get("/workbench/t-trading/config")
     assert response.status_code == 200
     assert response.json()["persistence_modes"] == ["ephemeral"]
-    assert response.json()["periods"] == ["min5"]
+    assert response.json()["periods"] == ["min1", "min5"]
     assert response.json()["result_storage"] == "none"
+    assert response.json()["execution_simulation_default"] is False
+    assert (
+        response.json()["signal_semantics"]
+        == "signal_at_bar_close_evaluate_subsequent_bars"
+    )
+    assert len(response.json()["strategies"]) == 7
+    assert response.json()["excluded_strategies"][0]["value"] == (
+        "industry_residual_reversal"
+    )
 
 
 def test_batch_http_flow_returns_summary_only_and_isolates_payload(monkeypatch):
@@ -123,6 +134,7 @@ def test_batch_http_flow_returns_summary_only_and_isolates_payload(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["summary"]["replay_days"] == 1
+    assert body["summary"]["horizon_bars"] == 6
     assert body["failures"] == []
     assert body["by_day"][0]["trade_date"] == "2026-07-01"
     assert "bars" not in body["results"][0]

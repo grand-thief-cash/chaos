@@ -24,6 +24,33 @@ def phoenix_query(path, params=None):
     assert 200 <= r.status_code < 300, f"Query failed: {r.status_code} {r.text[:200]}"
     return r.json()
 
+
+_test_security_id = None
+def ensure_test_security():
+    """Create and resolve an isolated registry identity for integration writes."""
+    global _test_security_id
+    if _test_security_id is not None:
+        return _test_security_id
+    phoenix_upsert("/api/v2/securities/upsert", [{
+        "exchange": "TEST",
+        "asset_type": "stock",
+        "symbol": "TEST001",
+        "market": "zh_a",
+        "name": "Integration Test Security",
+        "status": "active",
+    }])
+    result = phoenix_query("/api/v2/securities", {
+        "symbol_list": "TEST001",
+        "asset_type": "stock",
+        "market": "zh_a",
+        "limit": 10,
+    })
+    rows = result.get("data") or []
+    assert len(rows) == 1, f"Expected one TEST001 registry row, got: {rows}"
+    _test_security_id = int(rows[0]["security_id"])
+    return _test_security_id
+
+
 def phoenix_delete_test_data(table_hint):
     """Note: PhoenixA has no delete API, so we just upsert and verify."""
     pass
@@ -307,10 +334,11 @@ CORP_TASKS = [
 
 def test_phoenixa_financial_upsert_query():
     """Test PhoenixA financial statement CRUD with hand-crafted data."""
+    security_id = ensure_test_security()
     # Upsert
     data = [
         {
-            "symbol": "TEST001",
+            "security_id": security_id,
             "market": "zh_a",
             "reporting_period": "20241231",
             "report_type": "4",
@@ -319,30 +347,31 @@ def test_phoenixa_financial_upsert_query():
             "ann_date": "20250315",
             "actual_ann_date": "20250315",
             "comp_type_code": 1,
-            "data_json": json.dumps({"TOTAL_ASSETS": 1.5e11, "TOTAL_LIAB": 8e10, "CURRENCY_CAP": 5e10}),
+            "data_json": {"TOTAL_ASSETS": 1.5e11, "TOTAL_LIAB": 8e10, "CURRENCY_CAP": 5e10},
         }
     ]
     resp = phoenix_upsert("/api/v2/financial/amazing_data/balance_sheet/upsert", data)
     assert resp["status"] == "ok" and resp["count"] == 1, f"Unexpected upsert response: {resp}"
 
     # Query
-    result = phoenix_query("/api/v2/financial/amazing_data/balance_sheet", {"symbol": "TEST001"})
+    result = phoenix_query("/api/v2/financial/amazing_data/balance_sheet", {"security_id": security_id})
     assert result["total"] >= 1, f"Expected >=1 result, got {result['total']}"
-    rec = result["data"][0]
-    assert rec["symbol"] == "TEST001"
-    assert rec["reporting_period"] == "20241231"
-    assert rec["statement_type"] == "balance_sheet"
-    dj = json.loads(rec["data_json"])
+    rec = result["rows"][0]
+    top_level = rec["top_level"]
+    assert top_level["security_id"] == security_id
+    assert top_level["reporting_period"] == "20241231"
+    assert top_level["statement_type"] == "balance_sheet"
+    dj = rec["data_json"]
     assert "TOTAL_ASSETS" in dj, f"TOTAL_ASSETS not in data_json: {dj}"
 
     # Update (upsert same key with new data)
-    data[0]["data_json"] = json.dumps({"TOTAL_ASSETS": 1.6e11, "TOTAL_LIAB": 8.5e10, "CURRENCY_CAP": 5.5e10})
+    data[0]["data_json"] = {"TOTAL_ASSETS": 1.6e11, "TOTAL_LIAB": 8.5e10, "CURRENCY_CAP": 5.5e10}
     resp2 = phoenix_upsert("/api/v2/financial/amazing_data/balance_sheet/upsert", data)
     assert resp2["status"] == "ok"
 
-    result2 = phoenix_query("/api/v2/financial/amazing_data/balance_sheet", {"symbol": "TEST001"})
-    rec2 = result2["data"][0]
-    dj2 = json.loads(rec2["data_json"])
+    result2 = phoenix_query("/api/v2/financial/amazing_data/balance_sheet", {"security_id": security_id})
+    rec2 = result2["rows"][0]
+    dj2 = rec2["data_json"]
     assert dj2["TOTAL_ASSETS"] == 1.6e11, f"Upsert update failed: {dj2}"
 
     print(f"  Upsert→Query→Upsert(update)→Query verified for financial_statement")
@@ -350,33 +379,35 @@ def test_phoenixa_financial_upsert_query():
 
 def test_phoenixa_corporate_upsert_query():
     """Test PhoenixA corporate action CRUD with hand-crafted data."""
+    security_id = ensure_test_security()
     data = [
         {
-            "symbol": "TEST001",
+            "security_id": security_id,
             "market": "zh_a",
             "report_period": "20241231",
             "ann_date": "20250401",
             "progress_code": "3",
-            "data_json": json.dumps({"DVD_PER_SHARE_STK": 0.5, "DVD_PER_SHARE_PRE_TAX_CASH": 2.0}),
+            "data_json": {"DVD_PER_SHARE_STK": 0.5, "DVD_PER_SHARE_PRE_TAX_CASH": 2.0},
         }
     ]
     resp = phoenix_upsert("/api/v2/corporate-action/amazing_data/dividend/upsert", data)
     assert resp["status"] == "ok" and resp["count"] == 1
 
     # Query
-    result = phoenix_query("/api/v2/corporate-action/amazing_data/dividend", {"symbol": "TEST001"})
+    result = phoenix_query("/api/v2/corporate-action/amazing_data/dividend", {"security_id": security_id})
     assert result["total"] >= 1
-    rec = result["data"][0]
-    assert rec["symbol"] == "TEST001"
-    assert rec["action_type"] == "dividend"
-    dj = json.loads(rec["data_json"])
+    rec = result["rows"][0]
+    top_level = rec["top_level"]
+    assert top_level["security_id"] == security_id
+    assert top_level["action_type"] == "dividend"
+    dj = rec["data_json"]
     assert "DVD_PER_SHARE_STK" in dj
 
     # Update
-    data[0]["data_json"] = json.dumps({"DVD_PER_SHARE_STK": 0.6, "DVD_PER_SHARE_PRE_TAX_CASH": 2.5})
+    data[0]["data_json"] = {"DVD_PER_SHARE_STK": 0.6, "DVD_PER_SHARE_PRE_TAX_CASH": 2.5}
     phoenix_upsert("/api/v2/corporate-action/amazing_data/dividend/upsert", data)
-    result2 = phoenix_query("/api/v2/corporate-action/amazing_data/dividend", {"symbol": "TEST001"})
-    dj2 = json.loads(result2["data"][0]["data_json"])
+    result2 = phoenix_query("/api/v2/corporate-action/amazing_data/dividend", {"security_id": security_id})
+    dj2 = result2["rows"][0]["data_json"]
     assert dj2["DVD_PER_SHARE_STK"] == 0.6
 
     print(f"  Upsert→Query→Upsert(update)→Query verified for corporate_action")
@@ -384,9 +415,10 @@ def test_phoenixa_corporate_upsert_query():
 
 def test_phoenixa_financial_period_range_query():
     """Test PhoenixA financial period range query."""
+    security_id = ensure_test_security()
     # Query with period range
     result = phoenix_query("/api/v2/financial/amazing_data/balance_sheet", {
-        "symbol": "TEST001",
+        "security_id": security_id,
         "period_start": "20240101",
         "period_end": "20251231",
     })
@@ -400,8 +432,10 @@ def test_phoenixa_pagination():
         "page": 1,
         "page_size": 1,
     })
-    assert "data" in result and "total" in result
-    print(f"  Pagination: page_size=1, total={result['total']}, returned={len(result['data'])}")
+    assert "rows" in result and "total" in result
+    assert result["page"] == 1 and result["page_size"] == 1
+    assert len(result["rows"]) <= 1
+    print(f"  Pagination: page_size=1, total={result['total']}, returned={len(result['rows'])}")
 
 
 def make_sdk_download_test(task_type, sdk_method, statement_type):

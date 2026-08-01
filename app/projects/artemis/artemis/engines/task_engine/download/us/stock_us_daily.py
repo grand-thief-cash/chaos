@@ -182,7 +182,6 @@ class StockUSDaily(WorkerUnit):
             market="us",
             period="daily",
             adjust="nf",
-            source="akshare",
             bars=rows,
             run_id=ctx.run_id,
         ):

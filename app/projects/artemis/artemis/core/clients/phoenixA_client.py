@@ -5,8 +5,7 @@ from artemis.core.clients.dept_clients import HTTPDeptServiceClient
 
 
 # Unified field name constants (matching PhoenixA v2). security_id is the
-# Phase 4 identity (response decoration; bars_* physical tables still store
-# symbol, §3.2).
+# physical identity stored by bars_* tables; symbol is response decoration.
 _V2_BARS_FIELDS = [
     "security_id",
     "trade_date",
@@ -289,28 +288,29 @@ class PhoenixAClient(HTTPDeptServiceClient):
         market: str = "zh_a",
         period: str,
         adjust: str,
-        source: str = "",
+        extension_kind: str = "",
         bars: List[Dict[str, Any]],
         ext: Optional[List[Dict[str, Any]]] = None,
         run_id: Optional[int | str] = None,
     ) -> bool:
         """Upsert bars via v2 API.
 
-        Each bar/ext row MUST carry a security_id resolved from security_registry
-        (Phase 4); phoenixA resolves security_id → physical symbol before writing
-        the bars_* table (§3.2). The caller (download task) is responsible for
-        putting security_id on each row.
+        Each bar/ext row MUST carry a security_id resolved from security_registry.
+        extension_kind selects an optional non-canonical extension schema; it is
+        not a bars source/version discriminator.
         """
         path = f"/api/v2/bars/{asset_type}/{market}/upsert"
         payload = {
             "meta": {
                 "period": period,
                 "adjust": adjust,
-                "source": source,
             },
             "bars": bars,
         }
         if ext:
+            if not extension_kind:
+                raise ValueError("extension_kind is required when ext is present")
+            payload["meta"]["extension_kind"] = extension_kind
             payload["ext"] = ext
         try:
             resp = self.post(path, payload)
@@ -346,7 +346,6 @@ class PhoenixAClient(HTTPDeptServiceClient):
         period: str = "daily",
         adjust: str = ADJUST_NONE,
         fields: Optional[List[str]] = None,
-        source: str | None = None,
         limit: int = 5000,
         normalize_for_cache: bool = True,
     ) -> List[Dict[str, Any]]:
@@ -366,7 +365,6 @@ class PhoenixAClient(HTTPDeptServiceClient):
             period=period,
             adjust=adjust,
             fields=fields,
-            source=source,
             limit=limit,
             normalize_for_cache=normalize_for_cache,
         ))
@@ -382,7 +380,6 @@ class PhoenixAClient(HTTPDeptServiceClient):
         period: str = "daily",
         adjust: str = ADJUST_NONE,
         fields: Optional[List[str]] = None,
-        source: str | None = None,
         limit: int = 5000,
         normalize_for_cache: bool = True,
     ) -> Iterator[Dict[str, Any]]:
@@ -421,9 +418,6 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     "limit": page_size,
                     "offset": offset,
                 }
-                if source:
-                    params["source"] = source
-
                 resp = self.get(path, params=params)
                 if not (200 <= resp.status_code < 300):
                     if self.logger:
@@ -473,9 +467,8 @@ class PhoenixAClient(HTTPDeptServiceClient):
     ) -> Dict[int, str]:
         """Query last update dates for securities via v2 API.
 
-        Identity is security_id (Phase 4). Returns {security_id: last_update_date};
-        symbol is the physical key bars_* stores (§3.2) but the API contract is
-        security_id-native.
+        Identity is security_id. Returns {security_id: last_update_date};
+        bars_* physical storage and the API contract are both security_id-native.
         """
         path = f"/api/v2/bars/{asset_type}/{market}/last_update"
         try:

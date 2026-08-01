@@ -57,8 +57,9 @@
 
 - TTrading Pydantic/领域模型；
 - causal feature engine；
-- mean-reversion candidate/confirmation state machine；
-- next-bar execution、成本、配对和 MAE/MFE；
+- mean-reversion、MACD 量价、VWAP/Bollinger 和 opening-range 状态机；
+- 独立 forward event evaluator（多 horizon、MFE/MAE、first-touch）；
+- next-bar execution 保留为默认关闭的可选诊断；
 - replay service；
 - batch aggregator；
 - config/replay/batch API。
@@ -67,7 +68,8 @@
 测试：
 
 - 前缀一致性/未来数据扰动测试；
-- decision 与 fill 时间关系；
+- signal engine 与 future evaluator 模块隔离；
+- BUY/SELL 方向收益对称、horizon 完整性和同 bar ambiguity；
 - buy_first/sell_first；
 - 成本、最低佣金、印花税和滑点；
 - paired/unpaired；
@@ -75,7 +77,7 @@
 - FastAPI contract tests。
 - ephemeral 路径不调用任何结果 sink 的测试。
 
-退出标准：使用固定分钟 bars 可以稳定产生可解释结果和批量报告。
+退出标准：使用固定分钟 bars 可以稳定产生多策略可解释信号、多个 horizon outcome 和批量信号效果报告。
 
 ## Phase 4：Cthulhu 页面
 
@@ -84,7 +86,7 @@
 - TypeScript models 和 WorkbenchApiService；
 - `/workbench/t-trading` route；
 - 参数、日期导航、分钟图、markers；
-- 统计卡片和 signal/fill/trade 明细；
+- 方向正确率、方向收益、MFE/MAE 卡片和 signal/outcome 明细；
 - 批量表单和报告展示。
 
 测试：
@@ -140,11 +142,29 @@
 
 ### Phase 8：AmazingData 与 Level-1
 
-- min1 历史 K 线；
-- 历史 Level-1 snapshot；
+- 已完成：基于 `security_registry` 的个股/指数 `min1/min5/min30/daily` 按需增量 K 线任务；
+- 已完成：PhoenixA 个股 `min1/min30`、指数 `min1/min5` 物理表 migration；
+- 已完成：同分钟历史量比、宽基市场残差、多周期顺势回踩策略和按需上下文读取；
+- 已完成：单日/批量多策略请求、`by_strategy` 汇总和 Cthulhu 多选分色；
+- 明确不做：行业残差，原因是行业指数分钟 K 线能力未在供应商 API 中明确；
+- 待完成：真实 AmazingData 账号上的历史 Level-1 snapshot/竞价阶段权限探测；
 - spread、queue imbalance、microprice 和交易阶段；
-- Level1TouchExecution；
-- 与 min5 基线做增量价值比较。
+- OFI、queue imbalance、microprice 买卖点策略；
+- 与 min5 基线做样本外增量价值比较。
+
+### Phase 8A：实时轻存储信号链路
+
+- 已完成：统一 `RealtimeQuoteAdapter` 协议、`SinaRealtimeQuoteAdapter` GB18030/五档解析和真实响应离线契约测试；
+- 已完成：`QuotePoint`、五档结构和直接消费报价点的在线 compact outcome tracker；
+- 待完成：Tencent/Eastmoney QuotePoint adapter；
+- source time/observed time、延迟、重复、乱序和 stale 管理；
+- point-native feature/signal runtime：每个有效 QuotePoint 更新状态，不合成 OHLC bar；
+- 为历史候选策略设计显式、独立版本的实时 point-native 对应策略，并分别评估；
+- signal sink 只保存信号、策略/配置 checksum 和特征快照；
+- active outcome tracker 在线更新 1/3/5/15 分钟 MFE/MAE/first-touch；
+- compact state checkpoint 与崩溃 incomplete 语义；
+- 收盘权威分钟线投射，不覆盖实时 signal time/price；
+- 新浪/腾讯/东财数据授权、频率限制、字段漂移和稳定性评审。
 
 ### Phase 9：机器学习候选过滤
 

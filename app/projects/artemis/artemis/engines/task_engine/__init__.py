@@ -9,6 +9,7 @@ from artemis.engines.task_engine.base import BaseTaskUnit
 from artemis.engines.task_engine.download.zh import (
     StockZhAHistParent, StockZhAHistChild,
     StockZhAMinuteParent, StockZhAMinuteChild,
+    MarketZhAKlineParent, MarketZhAKlineChild,
     StockZHAMktCategoryMairui, StockZHAMarketCategorySWHY,
     StockZHAIndustryWeightSWHY, StockZHAIndustryWeightSWHYChild,
     StockZHAIndustryDailySWHY, StockZHAIndustryDailySWHYChild,
@@ -88,6 +89,18 @@ registry.register(
     TaskCode.STOCK_ZH_A_MINUTE_CHILD,
     module=StockZhAMinuteChild.__module__,
     class_name=StockZhAMinuteChild.__name__,
+)
+
+registry.register(
+    TaskCode.MARKET_ZH_A_KLINE_PARENT,
+    module=MarketZhAKlineParent.__module__,
+    class_name=MarketZhAKlineParent.__name__,
+)
+
+registry.register(
+    TaskCode.MARKET_ZH_A_KLINE_CHILD,
+    module=MarketZhAKlineChild.__module__,
+    class_name=MarketZhAKlineChild.__name__,
 )
 
 registry.register(

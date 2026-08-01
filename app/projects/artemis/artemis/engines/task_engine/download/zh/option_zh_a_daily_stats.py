@@ -22,6 +22,11 @@ OPTION_APIS = {
     "SZSE": ("option_daily_stats_szse", ak.option_daily_stats_szse),
 }
 
+REGISTRY_EXCHANGES = {
+    "SSE": "SH",
+    "SZSE": "SZ",
+}
+
 
 def _exchanges(value: Any) -> List[str]:
     if isinstance(value, str):
@@ -150,5 +155,46 @@ class OptionZhADailyStats(WorkerUnit):
         if not rows:
             return
         phoenix = cast(PhoenixAClient, ctx.dept_http[DeptServices.PHOENIXA])
-        if not phoenix.upsert_option_daily_stats(rows=rows, run_id=ctx.run_id):
+        symbols = sorted({str(row["underlying_symbol"]) for row in rows})
+        exchanges = sorted({
+            REGISTRY_EXCHANGES[str(row["exchange"])]
+            for row in rows
+        })
+        identities: Dict[tuple[str, str], Dict[str, Any]] = {}
+        for asset_type in ("etf", "index", "stock"):
+            registry = phoenix.get_securities(
+                symbols=symbols,
+                asset_type=asset_type,
+                market="zh_a",
+                exchanges=exchanges,
+                limit=max(100, len(symbols) * 3),
+            )
+            for identity in registry.values():
+                identities[(
+                    str(identity["exchange"]).upper(),
+                    str(identity["symbol"]),
+                )] = identity
+
+        payload: List[Dict[str, Any]] = []
+        missing: List[str] = []
+        for row in rows:
+            registry_exchange = REGISTRY_EXCHANGES[str(row["exchange"])]
+            symbol = str(row["underlying_symbol"])
+            identity = identities.get((registry_exchange, symbol))
+            if identity is None:
+                missing.append(f"{registry_exchange}:{symbol}")
+                continue
+            item = dict(row)
+            item["underlying_security_id"] = int(identity["security_id"])
+            item.pop("underlying_symbol", None)
+            payload.append(item)
+
+        if missing:
+            ctx.fail(
+                "option underlyings missing from security_registry; "
+                f"run the ETF/index registry task first: {sorted(set(missing))}",
+                phase="sink",
+            )
+            return
+        if not phoenix.upsert_option_daily_stats(rows=payload, run_id=ctx.run_id):
             ctx.fail("failed to sink option daily stats", phase="sink")

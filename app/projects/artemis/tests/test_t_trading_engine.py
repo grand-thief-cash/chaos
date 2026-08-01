@@ -2,10 +2,29 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from artemis.models.t_trading import TBatchReplayRequest, TExecutionConfig, TReplayRequest, TStrategyConfig
+import pandas as pd
+
+from artemis.models.t_trading import (
+    TBatchReplayRequest,
+    TExecutionConfig,
+    TReplayRequest,
+    TSignalEvaluationConfig,
+    TStrategyConfig,
+)
 from artemis.services.t_trading.features import build_causal_features
-from artemis.services.t_trading.replay import run_replay_from_bars
+from artemis.services.t_trading.replay import (
+    _intraday_session_bounds,
+    run_replay_from_bars,
+)
+from artemis.services.t_trading.signal_evaluation import evaluate_signals
 from artemis.services.t_trading.signal_engine import generate_signals
+
+
+def test_intraday_session_bounds_cover_auction_to_close_only():
+    start, end = _intraday_session_bounds(date(2026, 7, 1))
+
+    assert start == "2026-07-01T09:15:00+08:00"
+    assert end == "2026-07-01T15:00:59.999999+08:00"
 
 
 def _bars() -> list[dict]:
@@ -52,15 +71,22 @@ def _request() -> TReplayRequest:
     )
 
 
-def test_replay_is_ephemeral_and_fills_on_next_bar():
+def test_replay_is_ephemeral_and_signal_evaluation_is_primary():
     result = run_replay_from_bars(_request(), _bars(), symbol="sh.600000")
     assert result["run_meta"]["persistence_mode"] == "ephemeral"
-    assert result["run_meta"]["causality"] == "decision_at_bar_close_fill_at_next_bar_open"
+    assert (
+        result["run_meta"]["causality"]
+        == "signal_at_bar_close_evaluate_subsequent_bars"
+    )
+    assert result["run_meta"]["execution_simulation"] == "disabled"
     assert result["signals"]
-    assert len(result["signals"]) == len(result["fills"])
-    for signal, fill in zip(result["signals"], result["fills"]):
-        assert fill["bar_index"] == signal["bar_index"] + 1
-        assert fill["fill_time"] > signal["decision_time"]
+    assert result["fills"] == []
+    assert result["round_trips"] == []
+    assert result["execution_summary"]["enabled"] is False
+    assert result["signal_evaluation"]["evaluation_kind"] == "forward_event_study_v1"
+    assert result["summary"] == result["signal_evaluation"]["summary"]
+    assert result["summary"]["horizon_bars"] == 6
+    assert result["signal_evaluation"]["outcomes"]
 
 
 def test_signal_prefix_invariance_proves_no_future_dependency():
@@ -70,18 +96,370 @@ def test_signal_prefix_invariance_proves_no_future_dependency():
     full_signals = generate_signals(full_frame, request.strategy)
     assert full_signals
     first = full_signals[0]
-    prefix = bars[: first["bar_index"] + 2]
+    prefix = bars[: first["bar_index"] + 1]
     prefix_frame = build_causal_features(prefix, request.strategy.window)
     prefix_signals = generate_signals(prefix_frame, request.strategy)
     assert prefix_signals[0]["decision_time"] == first["decision_time"]
     assert prefix_signals[0]["side"] == first["side"]
 
 
-def test_costs_are_included_in_round_trip_net_pnl():
-    result = run_replay_from_bars(_request(), _bars())
+def test_signal_engine_does_not_drop_last_bar_for_execution_convenience():
+    config = TStrategyConfig(window=5, confirmation_bars=1)
+    frame = pd.DataFrame(
+        [
+            {
+                "date": datetime(2026, 7, 1, 9, 35, tzinfo=timezone.utc),
+                "open": 9.0,
+                "close": 9.0,
+                "zscore": 0.0,
+                "rsi": 50.0,
+                "vwap": 9.0,
+                "vwap_deviation": 0.0,
+                "prev_close": None,
+                "prev_rsi": None,
+            },
+            {
+                "date": datetime(2026, 7, 1, 9, 40, tzinfo=timezone.utc),
+                "open": 8.8,
+                "close": 9.0,
+                "zscore": -2.0,
+                "rsi": 30.0,
+                "vwap": 9.1,
+                "vwap_deviation": -0.011,
+                "prev_close": 8.9,
+                "prev_rsi": 25.0,
+            },
+        ]
+    )
+
+    signals = generate_signals(frame, config)
+
+    assert len(signals) == 1
+    assert signals[0]["bar_index"] == 1
+
+
+def test_execution_simulation_is_opt_in_and_kept_out_of_signal_summary():
+    request = _request().model_copy(update={"include_execution_simulation": True})
+    result = run_replay_from_bars(request, _bars())
     assert result["round_trips"]
+    assert result["execution_summary"]["enabled"] is True
     for trip in result["round_trips"]:
         assert trip["net_pnl"] == round(trip["gross_pnl"] - trip["total_fee"], 4)
+    assert "net_pnl" not in result["summary"]
+
+
+def test_forward_event_study_scores_buy_and_sell_symmetrically():
+    frame = build_causal_features(_bars(), 5)
+    signals = [
+        {
+            "signal_id": "buy-low",
+            "bar_index": 14,
+            "decision_time": frame.iloc[14]["date"].isoformat(),
+            "decision_price": float(frame.iloc[14]["close"]),
+            "side": "BUY",
+            "strategy": "test",
+        },
+        {
+            "signal_id": "sell-high",
+            "bar_index": 24,
+            "decision_time": frame.iloc[24]["date"].isoformat(),
+            "decision_price": float(frame.iloc[24]["close"]),
+            "side": "SELL",
+            "strategy": "test",
+        },
+    ]
+    evaluation = evaluate_signals(
+        frame,
+        signals,
+        TSignalEvaluationConfig(
+            horizons_bars=[1, 3],
+            primary_horizon_bars=3,
+            target_return=0.003,
+            stop_return=0.003,
+        ),
+    )
+
+    horizon_three = [
+        outcome
+        for outcome in evaluation["outcomes"]
+        if outcome["horizon_bars"] == 3
+    ]
+    assert all(outcome["direction_correct"] for outcome in horizon_three)
+    assert all(outcome["directional_return"] > 0 for outcome in horizon_three)
+    assert evaluation["summary"]["directional_accuracy"] == 1.0
+    assert evaluation["summary"]["mean_mfe"] > evaluation["summary"]["mean_mae"]
+
+
+def test_excursions_are_non_negative_and_exclude_decision_bar():
+    bars = [
+        {
+            "date": datetime(2026, 7, 1, 9, 35, tzinfo=timezone.utc),
+            "open": 10.0,
+            "high": 10.2,
+            "low": 9.9,
+            "close": 10.0,
+            "volume": 100,
+            "amount": 1000,
+        },
+        {
+            "date": datetime(2026, 7, 1, 9, 40, tzinfo=timezone.utc),
+            "open": 9.8,
+            "high": 9.9,
+            "low": 9.5,
+            "close": 9.6,
+            "volume": 100,
+            "amount": 960,
+        },
+    ]
+    frame = build_causal_features(bars, 5)
+    evaluation = evaluate_signals(
+        frame,
+        [
+            {
+                "signal_id": "buy-adverse-only",
+                "bar_index": 0,
+                "decision_time": frame.iloc[0]["date"].isoformat(),
+                "decision_price": 10.0,
+                "side": "BUY",
+                "strategy": "test",
+            }
+        ],
+        TSignalEvaluationConfig(
+            horizons_bars=[1],
+            primary_horizon_bars=1,
+        ),
+    )
+
+    outcome = evaluation["outcomes"][0]
+    assert outcome["mfe"] == 0.0
+    assert outcome["mae"] == 0.05
+
+
+def test_strategy_summary_keeps_selected_strategy_with_zero_signals():
+    frame = build_causal_features(_bars(), 5)
+    evaluation = evaluate_signals(
+        frame,
+        [],
+        TSignalEvaluationConfig(),
+        strategies=["multi_timeframe_pullback_v1"],
+    )
+
+    assert evaluation["by_strategy"] == [
+        {
+            **evaluation["summary"],
+            "strategy": "multi_timeframe_pullback_v1",
+        }
+    ]
+
+
+def test_all_ohlcv_strategy_variants_generate_auditable_signals():
+    configs = [
+        TStrategyConfig(
+            strategy="macd_volume_momentum_v1",
+            window=5,
+            ema_fast=3,
+            ema_slow=6,
+            macd_signal=2,
+            atr_window=5,
+            min_volume_ratio=0.5,
+            confirmation_bars=4,
+            cooldown_bars=0,
+        ),
+        TStrategyConfig(
+            strategy="vwap_bollinger_reversion_v1",
+            window=5,
+            ema_fast=3,
+            ema_slow=6,
+            macd_signal=2,
+            atr_window=5,
+            bollinger_z=0.5,
+            min_volume_ratio=0.5,
+            max_trend_strength_atr=10,
+            reversal_wick_ratio=0.1,
+            entry_rsi=50,
+            exit_rsi=50,
+            confirmation_bars=4,
+            cooldown_bars=0,
+        ),
+        TStrategyConfig(
+            strategy="opening_range_breakout_v1",
+            window=5,
+            ema_fast=3,
+            ema_slow=6,
+            macd_signal=2,
+            atr_window=5,
+            opening_range_bars=4,
+            breakout_atr_buffer=0,
+            min_volume_ratio=0.5,
+            confirmation_bars=4,
+            cooldown_bars=0,
+        ),
+    ]
+    for config in configs:
+        frame = build_causal_features(
+            _bars(),
+            config.window,
+            ema_fast=config.ema_fast,
+            ema_slow=config.ema_slow,
+            macd_signal=config.macd_signal,
+            atr_window=config.atr_window,
+            opening_range_bars=config.opening_range_bars,
+        )
+        signals = generate_signals(frame, config)
+        assert signals, config.strategy
+        assert {signal["strategy"] for signal in signals} == {config.strategy}
+        assert {signal["confidence_kind"] for signal in signals} == {
+            "rule_score_v2"
+        }
+        first = signals[0]
+        prefix = frame.iloc[: first["bar_index"] + 1].copy()
+        prefix_signals = generate_signals(prefix, config)
+        assert prefix_signals[0]["decision_time"] == first["decision_time"]
+
+
+def test_context_strategies_run_together_with_independent_signal_ids():
+    bars = _bars()
+    history = []
+    for day_offset in range(1, 25):
+        for bar in bars:
+            item = dict(bar)
+            item["date"] = (
+                pd.Timestamp(bar["date"]) - pd.Timedelta(days=day_offset)
+            ).isoformat()
+            item["volume"] = 200
+            history.append(item)
+
+    benchmark = []
+    benchmark_close = 100.0
+    benchmark_moves = [0.001, -0.0006, 0.0003, -0.0002, 0.0008]
+    for index, bar in enumerate(bars):
+        benchmark_close *= 1 + benchmark_moves[index % len(benchmark_moves)]
+        benchmark.append(
+            {
+                **bar,
+                "open": benchmark_close,
+                "high": benchmark_close * 1.001,
+                "low": benchmark_close * 0.999,
+                "close": benchmark_close,
+            }
+        )
+
+    daily = []
+    daily_start = pd.Timestamp("2026-05-01", tz="Asia/Shanghai")
+    for index in range(50):
+        price = 8 + index * 0.05
+        daily.append(
+            {
+                "date": (daily_start + pd.Timedelta(days=index)).isoformat(),
+                "open": price,
+                "high": price * 1.01,
+                "low": price * 0.99,
+                "close": price,
+                "volume": 1000,
+            }
+        )
+    higher = []
+    higher_start = pd.Timestamp(
+        "2026-06-30 09:30", tz="Asia/Shanghai"
+    )
+    for index in range(60):
+        price = 9 + index * 0.03
+        higher.append(
+            {
+                "date": (
+                    higher_start + pd.Timedelta(minutes=30 * index)
+                ).isoformat(),
+                "open": price,
+                "high": price * 1.01,
+                "low": price * 0.99,
+                "close": price,
+                "volume": 1000,
+            }
+        )
+
+    common = {
+        "window": 5,
+        "ema_fast": 3,
+        "ema_slow": 6,
+        "macd_signal": 2,
+        "atr_window": 5,
+        "confirmation_bars": 4,
+        "cooldown_bars": 0,
+    }
+    strategies = [
+        TStrategyConfig(
+            strategy="time_of_day_volume_momentum_v1",
+            relative_volume_tod_threshold=0.5,
+            min_time_of_day_history_days=20,
+            **common,
+        ),
+        TStrategyConfig(
+            strategy="market_residual_reversal_v1",
+            market_beta_window=5,
+            residual_z_threshold=0.25,
+            **common,
+        ),
+        TStrategyConfig(
+            strategy="multi_timeframe_pullback_v1",
+            higher_ema_fast=3,
+            higher_ema_slow=5,
+            daily_trend_window=5,
+            pullback_tolerance_atr=5,
+            **common,
+        ),
+    ]
+    request = TReplayRequest(
+        security_id=1,
+        trade_date=date(2026, 7, 1),
+        period="min5",
+        strategies=strategies,
+        benchmark_security_id=2,
+    )
+
+    result = run_replay_from_bars(
+        request,
+        bars,
+        context_bars={
+            "historical_bars": history,
+            "benchmark_bars": benchmark,
+            "daily_bars": daily,
+            "higher_timeframe_bars": higher,
+        },
+    )
+
+    assert {signal["strategy"] for signal in result["signals"]} == {
+        strategy.strategy for strategy in strategies
+    }
+    assert len({signal["signal_id"] for signal in result["signals"]}) == len(
+        result["signals"]
+    )
+    assert result["run_meta"]["strategies"] == [
+        strategy.strategy for strategy in strategies
+    ]
+    assert {
+        row["strategy"] for row in result["signal_evaluation"]["by_strategy"]
+    } == {strategy.strategy for strategy in strategies}
+    features_by_strategy = {
+        signal["strategy"]: signal["features"] for signal in result["signals"]
+    }
+    assert (
+        features_by_strategy["time_of_day_volume_momentum_v1"][
+            "relative_volume_tod"
+        ]
+        is not None
+    )
+    assert (
+        features_by_strategy["market_residual_reversal_v1"][
+            "market_residual_zscore"
+        ]
+        is not None
+    )
+    assert (
+        features_by_strategy["multi_timeframe_pullback_v1"][
+            "higher_timeframe_trend"
+        ]
+        == 1.0
+    )
 
 
 def test_batch_isolates_item_failure_and_omits_large_details(monkeypatch):
@@ -103,6 +481,10 @@ def test_batch_isolates_item_failure_and_omits_large_details(monkeypatch):
     result = replay_module.run_batch_replay(request)
 
     assert result["summary"]["replay_days"] == 1
+    assert result["summary"]["horizon_bars"] == 6
     assert result["failures"][0]["security_id"] == 2
     assert result["by_day"][0]["trade_date"] == "2026-07-01"
+    assert result["by_strategy"][0]["strategy"] == (
+        "causal_mean_reversion_v1"
+    )
     assert "bars" not in result["results"][0]

@@ -6,11 +6,11 @@
 
 | Method | Path | 用途 |
 |---|---|---|
-| GET | `/config` | 返回周期、策略默认值、成本默认值和 engine version |
-| POST | `/replay` | 单证券单交易日回放 |
-| POST | `/batch` | 多证券日期范围批量报告 |
+| GET | `/config` | 返回周期、策略列表、默认 horizons 和执行默认关闭状态 |
+| POST | `/replay` | 单证券单交易日信号回放与事件评估 |
+| POST | `/batch` | 多证券日期范围的信号效果报告 |
 
-分钟原始数据继续通过已有 `/workbench/market-data` 查询；做 T API 返回 bars 是为了确保图表、signal 和 fill 来自同一冻结输入。
+分钟原始数据继续通过已有 `/workbench/market-data` 查询。做 T API 返回同一冻结输入的 bars、signals 和 outcomes，便于审计。
 
 ## 2. Replay Request
 
@@ -18,47 +18,82 @@
 {
   "security_id": 1,
   "trade_date": "2026-07-29",
-  "period": "min5",
+  "period": "min1",
   "adjust": "nf",
   "source": null,
   "persistence_mode": "ephemeral",
-  "strategy": {
-    "direction": "buy_first",
-    "window": 20,
-    "entry_z": 1.25,
-    "exit_z": 1.0,
-    "entry_rsi": 35,
-    "exit_rsi": 65,
-    "confirmation_bars": 3,
-    "cooldown_bars": 2,
-    "max_round_trips": 2
+  "strategy": {"strategy": "time_of_day_volume_momentum_v1"},
+  "strategies": [
+    {"strategy": "time_of_day_volume_momentum_v1"},
+    {"strategy": "market_residual_reversal_v1"},
+    {"strategy": "multi_timeframe_pullback_v1"}
+  ],
+  "benchmark_security_id": 1001,
+  "evaluation": {
+    "horizons_bars": [1, 3, 5, 15],
+    "primary_horizon_bars": 5,
+    "target_return": 0.005,
+    "stop_return": 0.003
   },
-  "execution": {
-    "quantity": 100,
-    "commission_rate": 0.0003,
-    "minimum_commission": 5,
-    "stamp_duty_rate_on_sell": 0.0005,
-    "transfer_fee_rate": 0.00001,
-    "slippage_bps": 1
-  }
+  "include_execution_simulation": false,
+  "execution": {}
 }
 ```
 
-第一轮仅接受 `persistence_mode=ephemeral`。契约提前保留 `summary_only/full`，但在结果存储 schema 和容量策略评审完成前返回 422。
+`strategy` 为单策略旧请求兼容字段；提供 `strategies[]` 时以数组为准，最多 8 个且策略名不得重复。选择 `market_residual_reversal_v1` 时必须提供已注册的宽基指数 `benchmark_security_id`。行业残差不在合法策略列表内。
 
-校验失败返回 422；身份/维度不匹配或无数据返回 400；内部上游失败返回 502/500。合法无信号返回 200。
+`execution` 只为兼容可选诊断层保留；默认请求不使用它，多策略请求禁止同时开启成交模拟。`primary_horizon_bars` 必须包含在 `horizons_bars` 中。
 
-## 3. Batch Request
+第一轮仅接受 `persistence_mode=ephemeral`。合法无信号返回 200。
+
+## 3. Replay Response
+
+主字段：
+
+```text
+run_meta
+bars
+signals
+signal_evaluation
+summary                   # primary horizon signal summary
+data_quality
+fills                     # 默认 []
+round_trips               # 默认 []
+execution_summary.enabled # 默认 false
+```
+
+`signal_evaluation`：
+
+```text
+evaluation_kind=forward_event_study_v1
+price_basis=decision_bar_close
+same_bar_touch_policy=ambiguous
+config
+summary
+by_horizon[].by_side
+by_strategy[]
+outcomes[]
+```
+
+`summary` 不再包含 net PnL/Profit Factor，而包含 directional accuracy、directional return、MFE、MAE、edge ratio 和 touch rates。
+
+## 4. Batch Request 与响应
 
 ```json
 {
   "security_ids": [1, 2],
   "start_date": "2026-07-01",
   "end_date": "2026-07-10",
-  "period": "min5",
+  "period": "min1",
   "adjust": "nf",
   "persistence_mode": "ephemeral",
   "strategy": {},
+  "strategies": [
+    {"strategy": "time_of_day_volume_momentum_v1"},
+    {"strategy": "multi_timeframe_pullback_v1"}
+  ],
+  "evaluation": {},
+  "include_execution_simulation": false,
   "execution": {}
 }
 ```
@@ -68,102 +103,104 @@
 - security_ids 去重、全部为正数；
 - 日期范围最多 366 个自然日；
 - 第一轮组合数最多 500；
-- 周末/节假日无数据按 skipped 计入，不作为 failure；
-- 单项异常进入 failures，整体仍返回 200；请求级配置非法才返回 422。
+- 周末/节假日无数据按 skipped 计入；
+- 单项异常进入 failures，整体仍返回 200；
+- 默认 results 只返回 run_meta、signal summary 和 data quality。
 
-## 4. 前端路由
-
-```text
-/workbench/market-data       现有市场数据页
-/workbench/t-trading         新增做 T 研究页
-```
-
-Workbench shell 增加导航项“做 T 复盘”。
+批量 `summary/by_strategy/by_security/by_day` 均按主 horizon 的信号效果聚合。
 
 ## 5. 页面布局
 
 ```mermaid
 flowchart TB
-    Controls["证券 / 日期 / 周期 / 方向 / 结果不保存 / 运行"]
+    Controls["证券 / 日期 / 周期 / 多选策略 / 宽基 ID / Horizon / 运行"]
     Nav["上一交易日  当前日期  下一交易日"]
-    Chart["分钟 K 线 + Decision/Fill 标记 + 成交量"]
-    Stats["净收益 / 胜率 / 交易数 / Profit Factor / Bars"]
-    Details["Signals | Fills | Trades | Quality"]
+    Chart["分钟 K 线 + BUY/SELL 信号"]
+    Stats["方向正确率 / 方向收益 / MFE / MAE / Edge Ratio"]
+    Details["Signals | Horizon Outcomes | Quality"]
     Batch["批量范围与 security_ids"]
     Report["Overall + By Security + By Day + Failures"]
     Controls --> Nav --> Chart --> Stats --> Details --> Batch --> Report
 ```
 
-第一轮使用单页，避免为策略配置、单日 review 和报告建立过多路由。
+结果保存控件默认并锁定为“仅本次查看（不落库）”。策略选择提供：
 
-结果保存控件默认并锁定为“仅本次查看（不落库）”。未来启用其他模式时必须由用户主动选择，并展示预计保存内容和容量影响。
+- Z-score + RSI + VWAP 反转；
+- MACD + 量能 + 分钟 EMA；
+- VWAP + Bollinger + 拒绝影线；
+- 开盘区间 + 量能突破；
+- 同分钟历史量比 + 价格确认；
+- 宽基市场残差反转；
+- 日线 / 30 分钟顺势回踩。
 
-## 6. 图表契约
+行业残差不展示。策略可以选择一个或多个；选中宽基市场残差时才显示基准指数 Security ID 输入。
 
-X 轴使用完整时间戳：
+## 6. 图表与 Tooltip
+
+X 轴使用完整时间戳。默认 series：
+
+- `K-Line`；
+- `Volume`；
+- 每个选中且实际出信号的策略各有一对 `Buy Decision/Sell Decision` series；
+- 不同策略采用不同色系，同一策略 BUY/SELL 使用同色系的不同色值；
+- BUY 使用向上 pin，SELL 使用旋转向下 pin，颜色和形状双编码；
+- 后续 `Oracle` marker 使用低饱和灰色。
+
+图例为可滚动策略图例；成交模拟关闭时不显示 fill 数据点。
+
+Tooltip：
 
 ```text
-2026-07-29T09:35:00+08:00
-```
-
-Series：
-
-- `K-Line`：candlestick；
-- `Volume`：bar；
-- `Buy Decision`：向上三角，位置为 decision price；
-- `Sell Decision`：向下三角；
-- `Buy Fill`、`Sell Fill`：圆点/菱形，位置为 fill price；
-- 后续 oracle markers 使用低饱和灰色，不与真实信号混淆。
-
-Tooltip 展示：
-
-```text
-side
-decision_time / fill_time
-decision_price / fill_price
+strategy / side
+decision_time / decision_price
 confidence + confidence_kind
 reason_codes
 zscore / RSI / VWAP deviation
-costs
+EMA / MACD / volume ratio / ATR
+selected horizon directional return / MFE / MAE / first-touch
 ```
 
-## 7. 交易日导航
-
-按钮行为：
-
-1. 前一天/后一天先按自然日移动；
-2. 自动跳过周末；
-3. 请求无 bars 时提示“该日无分钟数据”，保留日期；
-4. 后续接入 PhoenixA 交易日历后替换为精确交易日导航。
-
-禁止一次预取未来多日并在前端隐藏；每次 replay 请求只取指定交易日。
-
-## 8. 统计与明细
+## 7. 统计与明细
 
 统计卡片：
 
-- Completed Trades；
-- Net PnL；
-- Win Rate；
-- Profit Factor；
-- Signal Count；
+- 主 horizon 方向正确率；
+- 平均方向收益；
+- 平均 MFE；
+- 平均 MAE；
+- MFE/MAE edge ratio；
+- 可评估信号 / 总信号；
 - Bars/Quality。
 
-明细表：
+明细：
 
-- signals：状态、原因、置信度；
-- fills：实际价格、数量、成本；
-- trades：进出方向、净收益、MAE/MFE；
-- quality：缺口、重复、零量、拒绝原因。
+- signals：策略、方向、原因、规则分数和特征；
+- outcomes：各 horizon 的 return/MFE/MAE/first-touch；
+- quality：缺口、重复、零量和拒绝原因；
+- execution：仅显式开启时展示，视觉上与 signal evaluation 分区。
 
-## 9. 空态和错误态
+## 8. 实时页扩展
 
-- 无数据：不显示旧图，明确提示 security/date/period；
-- 无信号：显示 K 线和“策略选择不交易”，不是错误；
-- signal 未成交：在表中标 `unfilled`；
-- 批量部分失败：报告顶部 warning，仍展示成功汇总；
-- API 错误使用现有 ErrorNotificationInterceptor 和 NzMessage。
+未来实时模式增加：
 
-## 10. 响应体大小
+```text
+input_mode=point_native
+source/source_time/observed_at
+poll latency/staleness/max quote gap
+active signals
+1/3/5/15-minute online outcomes
+EOD projection status
+```
 
-单日 min5 约 48 bars，可直接返回；min1 约 240 bars，也可接受。批量 API 默认不返回每一天的完整 bars/signals，只返回摘要与失败，防止响应膨胀。需要查看某一天时由前端再次调用 replay。
+实时图直接画 QuotePoint price line，并按所选策略分别显示 BUY/SELL marker。收盘后可切换为 canonical 分钟 K 线背景，但 marker 始终保留实时 signal time/price；前端和 API 都不生成或展示“采样合成 bar”。
+
+## 9. 空态、错误态与响应体
+
+- 无数据：不显示旧图；
+- 无信号：显示 K 线和“策略未产生候选”；
+- horizon 不完整：显示 insufficient，不进入准确率分母；
+- OHLC 同 bar 双触达：显示 ambiguous；
+- 批量部分失败：warning + 成功汇总；
+- 实时 stale/乱序/采集断档：停止生成新信号或降级，并显示质量状态。
+
+单日 min5/min1 可直接返回详细 outcomes。批量默认不返回每一天的 bars/signals/outcomes；查看具体日期时重新调用 replay。

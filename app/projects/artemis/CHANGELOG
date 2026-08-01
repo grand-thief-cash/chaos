@@ -1,7 +1,14 @@
 # VERSION
-v0.49.0
+v0.50.0
 
 # Changelog
+- v0.50.0
+    - **Signal-first T-trading evaluation.** Replaced transaction-result-first scoring with forward-event labels at multiple horizons: BUY signals measure subsequent rise, SELL signals measure subsequent decline, including hit rate, MFE, MAE, time-to-hit, and coverage. The fill/cost simulator is no longer the primary strategy evaluator.
+    - **Expanded causal strategy set.** Added MACD + time-of-day relative volume + minute trend confirmation, VWAP/Bollinger reversal, opening-range breakout, multi-timeframe trend pullback, and causal mean-reversion implementations with auditable per-signal factors.
+    - **AmazingData incremental context tasks.** Added registry-driven parent/child downloads for one-minute history, 30-minute context, daily trend context, and at least 20 prior sessions of same-minute volume baselines; tasks use per-security watermarks and fail closed on unresolved identities.
+    - **Point-native real-time loop.** Added pluggable Sina/Tencent-style quote adapters and five-second quote polling. Every new point can trigger a calculation without persisting quotes or synthesizing fake bars; generated signals retain timestamp/price and can later be projected onto authoritative intraday bars for evaluation.
+    - **Ephemeral by contract.** Single-day and bounded batch replay APIs remain non-persistent for parameters, signals, and reports. Only reusable market data is durable.
+    - **Design and verification.** Expanded the seven-part design package with causal engine responsibilities, trading-session boundaries, adapter contracts, strategy availability, multi-strategy filtering, and event-study evaluation tests.
 - v0.49.0
     - **T-trading Workbench replay plane.** Added causal minute-bar features and alternating buy/sell signal generation, with decisions fixed at the current bar close and fills simulated at the next bar open. Round trips include A-share commission, minimum commission, stamp duty, transfer fee, slippage, MFE/MAE, win rate, and net PnL.
     - **Ephemeral by contract.** Added single-day and bounded batch replay APIs under `/workbench/t-trading`; `persistence_mode=ephemeral` is the only accepted mode, and parameters, signals, fills, and reports have no repository or database sink. Only downloaded minute bars are durable.

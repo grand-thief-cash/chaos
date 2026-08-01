@@ -25,8 +25,8 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_hist_parent import Stock
 def _make_baostock_df(symbol: str = "600000", rows: int = 3, security_id: int = 1) -> pd.DataFrame:
     """Simulate a DataFrame as returned by execute() — baostock fields + identity.
 
-    execute() attaches both symbol (physical key, §3.2) and security_id (Phase 4
-    API identity) to each row.
+    execute() attaches security_id as bars identity and symbol only as
+    vendor/display metadata.
     """
     data = []
     for i in range(rows):
@@ -73,13 +73,13 @@ class FakePhoenixClient:
         self._upsert_ok = upsert_ok
 
     def upsert_bars(self, *, asset_type="stock", market="zh_a",
-                    period, adjust, source="", bars, ext=None, run_id=None):
+                    period, adjust, extension_kind="", bars, ext=None, run_id=None):
         self.upsert_calls.append({
             "asset_type": asset_type,
             "market": market,
             "period": period,
             "adjust": adjust,
-            "source": source,
+            "extension_kind": extension_kind,
             "bars": bars,
             "ext": ext,
             "run_id": run_id,
@@ -268,7 +268,7 @@ class TestSinkCallsV2API(unittest.TestCase):
         call = self.fake_client.upsert_calls[0]
         self.assertEqual(call["period"], "daily")
         self.assertEqual(call["adjust"], "hfq")
-        self.assertEqual(call["source"], "baostock")
+        self.assertEqual(call["extension_kind"], "baostock")
 
     def test_sink_bars_have_trade_date_and_symbol(self):
         ctx = self._make_sink_ctx(symbol="000001")

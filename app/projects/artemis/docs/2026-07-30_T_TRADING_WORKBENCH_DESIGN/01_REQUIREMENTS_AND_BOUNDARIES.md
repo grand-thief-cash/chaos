@@ -7,9 +7,8 @@
 - 当前日期之前的日线背景，不展示未来交易日；
 - 当前交易日的分钟 K 线；
 - 当时可识别的 BUY/SELL 决策点；
-- 下一根可成交 bar 上的模拟成交点；
 - 置信度、触发原因、关键指标快照；
-- 当日交易配对、收益、MAE/MFE 和信号质量统计；
+- 信号后 5/15/30/60 分钟的方向收益、MFE/MAE 和 first-touch；
 - 上一个/下一个交易日快捷导航。
 
 批量模式对一个或多个股票、一个日期区间执行同样的逐根回放，生成可按股票、月份、时段和市场状态切片的报告。
@@ -50,42 +49,43 @@ model/trading configuration frozen before the run
 
 训练标签可以使用未来窗口，但必须由独立 label pipeline 生成，且不能被 feature pipeline 读取。
 
-## 4. 信号与成交分离
+## 4. 信号生成与事后评估分离
 
-第一轮使用 bar-close 决策和 next-bar-open 成交：
+第一轮在 bar close 生成决策：
 
 ```text
 09:35 bar 完整
     -> 计算特征和 BUY 决策
-    -> 09:40 bar open 模拟成交
+    -> 冻结信号
+    -> 独立 evaluator 读取 09:40 之后的窗口
 ```
 
-API 和 UI 必须同时返回/显示 decision 与 fill，禁止用决策 bar 的 close 冒充成交价。最后一根 bar 上产生但没有下一根可成交 bar 的信号应标记为 `unfilled`。
+默认不模拟成交。API 和 UI 将 `decision_price` 明确解释为信号参考价，不冒充可成交价格。未来窗口不足的信号标记为 `insufficient_future_bars`，不进入该 horizon 的统计分母。可选成交模拟必须显式开启，并使用独立 summary。
 
 ## 5. 第一轮功能需求
 
 ### 5.1 数据
 
-- 下载指定股票或股票集合的 BaoStock 5 分钟 K 线；
-- 分钟字段为 `date,time,open,high,low,close,volume,amount,adjustflag`；
+- 按 `security_registry` 中的指定股票/指数按需增量下载 AmazingData `min1/min5/min30/daily` K 线；BaoStock 5 分钟任务作为兼容源；
+- 下载任务默认不扫描全市场，只有显式 `all_registered=true` 才扩大范围；
 - 组合日期和时间为带 `Asia/Shanghai` 偏移的时间戳；
-- 以 `security_id` 作为 API 身份，以 symbol 作为 PhoenixA 物理 bars 键；
+- 以 `security_id` 作为 API 与 PhoenixA 物理 bars 的唯一证券身份；symbol 只从 registry 解析用于供应商调用和展示；
 - 支持按交易日范围分页查询；
 - 数据质量失败应显式拒绝，不得用 0 填充无效 OHLC。
 
 ### 5.2 单日回放
 
-- 输入 `security_id/trade_date/period/strategy_config`；
-- 返回 bars、features 摘要、signals、fills、trade pairs 和 daily summary；
+- 输入 `security_id/trade_date/period/strategy_config`，可选择一个或多个策略；
+- 返回 bars、features 摘要、signals、forward outcomes 和 signal summary；
 - 支持 `buy_first` 和 `sell_first` 方向；
-- 支持最大往返次数、确认窗口、最小毛利阈值和成本配置；
+- 支持多种买卖点策略、多个 horizon、确认窗口和 target/stop 阈值；
 - 无交易机会时返回成功且 `signals=[]`。
 
 ### 5.3 批量报告
 
 - 输入多个 security_id 和日期区间；
 - 对每个证券、每个交易日复用单日回放；
-- 返回 overall、by_security、by_day 和 failure 列表；
+- 返回 overall、by_strategy、by_security、by_day 和 failure 列表；
 - 单个证券/交易日失败不应抹掉其他成功结果；
 - 报告记录策略配置、数据周期和生成时间。
 
@@ -107,7 +107,8 @@ API 和 UI 必须同时返回/显示 decision 与 fill，禁止用决策 bar 的
 - 做 T 页面位于 Artemis Workbench；
 - 复用 security_id、日期和 period 选择方式；
 - K 线保留完整分钟时间，不得截断成日期；
-- BUY/SELL decision 与 fill 使用不同图例；
+- 不同策略的 BUY/SELL decision 以策略色系和方向形状区分，fill 使用独立图例；
+- 默认只展示 decision；成交模拟显式开启时才展示 fill；
 - 提供前后交易日导航；第一轮若没有独立交易日历 API，可跳过周末并在无数据时继续提示；
 - 展示当日和批量统计。
 - 提供结果保存方式配置；第一轮只启用“不保存（推荐）”。
@@ -127,8 +128,8 @@ API 和 UI 必须同时返回/显示 decision 与 fill，禁止用决策 bar 的
 1. 一只股票一天的分钟 bars 能从下载任务写入 PhoenixA 并查询回来；
 2. 时间戳不被截断，顺序、去重和日内切片正确；
 3. replay 每根 bar 只读取当前及历史数据；
-4. decision 和 fill 至少相隔一个可成交步骤；
-5. 单日 API 返回图表和统计所需完整契约；
+4. evaluator 只在 signal 冻结后读取未来数据，且不被 signal engine import；
+5. 单日 API 返回图表、多个 horizon 和 MFE/MAE/first-touch 所需完整契约；
 6. 批量 API 能汇总多日结果并保留失败明细；
 7. Cthulhu 能展示 K 线、信号、成交和统计并翻页；
 8. Python、Go 测试与前端类型检查通过；

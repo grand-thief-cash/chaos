@@ -360,6 +360,60 @@ def test_option_daily_stats_supports_sse_and_szse_fields():
     assert rows[1]["put_call_open_interest_ratio"] == 88.8
 
 
+def test_option_daily_stats_resolves_registry_identity_before_sink():
+    class Phoenix:
+        def __init__(self):
+            self.payload = None
+
+        def get_securities(self, **kwargs):
+            if kwargs["asset_type"] != "etf":
+                return {}
+            return {
+                51: {
+                    "security_id": 51,
+                    "symbol": "510050",
+                    "exchange": "SH",
+                },
+                159915: {
+                    "security_id": 159915,
+                    "symbol": "159915",
+                    "exchange": "SZ",
+                },
+            }
+
+        def upsert_option_daily_stats(self, *, rows, run_id):
+            self.payload = rows
+            return run_id == "risk-test"
+
+    phoenix = Phoenix()
+    ctx = FakeCtx()
+    ctx.dept_http = {DeptServices.PHOENIXA: phoenix}
+    OptionZhADailyStats().sink(ctx, [
+        {
+            "exchange": "SSE",
+            "underlying_symbol": "510050",
+            "trade_date": "2026-07-27",
+        },
+        {
+            "exchange": "SZSE",
+            "underlying_symbol": "159915",
+            "trade_date": "2026-07-27",
+        },
+    ])
+    assert phoenix.payload == [
+        {
+            "exchange": "SSE",
+            "underlying_security_id": 51,
+            "trade_date": "2026-07-27",
+        },
+        {
+            "exchange": "SZSE",
+            "underlying_security_id": 159915,
+            "trade_date": "2026-07-27",
+        },
+    ]
+
+
 def test_global_index_requires_real_ohlc():
     task = GlobalIndexDaily()
     result = {

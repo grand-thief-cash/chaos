@@ -59,8 +59,7 @@ class StockZhAHistChild(WorkerUnit):
             return pd.DataFrame()
 
         df = pd.DataFrame(data_list, columns=fields_str.split(','))
-        # Attach identity (PhoenixA v2 unified field names). security_id is the
-        # Phase 4 identity; symbol is kept as the physical storage key (§3.2).
+        # security_id is the physical bars identity; symbol is vendor metadata.
         df['symbol'] = symbol
         df['security_id'] = int(security_id)
         return df
@@ -224,7 +223,7 @@ class StockZhAHistChild(WorkerUnit):
         success = phoenix_client.upsert_bars(
             period=period,
             adjust=adjust,
-            source="baostock",
+            extension_kind="baostock",
             bars=bars_list,
             ext=ext_list,
             run_id=ctx.run_id,

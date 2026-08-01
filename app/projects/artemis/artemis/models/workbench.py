@@ -91,7 +91,7 @@ class IndicatorsRequest(BaseModel):
 
 
 class CompactRequest(BaseModel):
-    """缓存 Compaction 请求（cache_engine 物理 symbol-keyed，§3.2 永久存储特例）。"""
+    """缓存 Compaction 请求；cache identity 必须与 bars 一样使用 security_id。"""
 
     symbol: str
     period: str = "daily"
