@@ -89,7 +89,17 @@ export interface IndicatorSeriesMeta {
 
 // ===== T-trading replay (ephemeral; never persisted) =====
 
+export type TStrategyName =
+  | 'causal_mean_reversion_v1'
+  | 'macd_volume_momentum_v1'
+  | 'vwap_bollinger_reversion_v1'
+  | 'opening_range_breakout_v1'
+  | 'time_of_day_volume_momentum_v1'
+  | 'market_residual_reversal_v1'
+  | 'multi_timeframe_pullback_v1';
+
 export interface TStrategyConfig {
+  strategy: TStrategyName;
   direction: 'buy_first' | 'sell_first';
   window: number;
   entry_z: number;
@@ -99,6 +109,31 @@ export interface TStrategyConfig {
   confirmation_bars: number;
   cooldown_bars: number;
   max_round_trips: number;
+  ema_fast: number;
+  ema_slow: number;
+  macd_signal: number;
+  min_volume_ratio: number;
+  bollinger_z: number;
+  reversal_wick_ratio: number;
+  max_trend_strength_atr: number;
+  atr_window: number;
+  opening_range_bars: number;
+  breakout_atr_buffer: number;
+  relative_volume_tod_threshold: number;
+  min_time_of_day_history_days: number;
+  market_beta_window: number;
+  residual_z_threshold: number;
+  higher_ema_fast: number;
+  higher_ema_slow: number;
+  daily_trend_window: number;
+  pullback_tolerance_atr: number;
+}
+
+export interface TSignalEvaluationConfig {
+  horizons_bars: number[];
+  primary_horizon_bars: number;
+  target_return: number;
+  stop_return: number;
 }
 
 export interface TExecutionConfig {
@@ -113,11 +148,15 @@ export interface TExecutionConfig {
 export interface TReplayRequest {
   security_id: number;
   trade_date: string;
-  period: 'min5';
+  period: 'min1' | 'min5';
   adjust: 'nf';
   source?: string;
   persistence_mode: 'ephemeral';
   strategy: TStrategyConfig;
+  strategies?: TStrategyConfig[];
+  benchmark_security_id?: number;
+  evaluation: TSignalEvaluationConfig;
+  include_execution_simulation: boolean;
   execution: TExecutionConfig;
 }
 
@@ -127,7 +166,9 @@ export interface TSignal {
   decision_time: string;
   side: 'BUY' | 'SELL';
   decision_price: number;
+  strategy: TStrategyConfig['strategy'];
   confidence: number;
+  confidence_kind: 'rule_score_v2';
   reason_codes: string[];
   features: Record<string, number | null>;
 }
@@ -166,22 +207,63 @@ export interface TRoundTrip {
   win: boolean;
 }
 
-export interface TReplaySummary {
-  round_trips: number;
-  wins: number;
-  losses: number;
-  win_rate: number;
-  gross_pnl: number;
-  total_fee: number;
-  net_pnl: number;
-  average_return_pct: number;
-  best_return_pct: number;
-  worst_return_pct: number;
-  profit_factor: number | null;
+export interface TSignalEvaluationSummary {
+  horizon_bars: number;
+  side: 'ALL' | 'BUY' | 'SELL';
+  signal_count: number;
+  evaluable_signal_count: number;
+  insufficient_future_count: number;
+  directional_accuracy: number | null;
+  mean_directional_return: number | null;
+  median_directional_return: number | null;
+  mean_mfe: number | null;
+  median_mfe: number | null;
+  mean_mae: number | null;
+  median_mae: number | null;
+  edge_ratio: number | null;
+  target_touch_rate: number | null;
+  stop_touch_rate: number | null;
+  target_first_rate: number | null;
+  stop_first_rate: number | null;
+  ambiguous_same_bar_rate: number | null;
   replay_days?: number;
-  days_with_trades?: number;
-  signal_count?: number;
-  fill_count?: number;
+  days_with_signals?: number;
+  strategy?: TStrategyName | null;
+}
+
+export interface TSignalOutcome {
+  signal_id: string;
+  strategy: TStrategyConfig['strategy'];
+  side: 'BUY' | 'SELL';
+  decision_time: string;
+  decision_price: number;
+  horizon_bars: number;
+  evaluable: boolean;
+  reason?: string;
+  directional_return?: number;
+  direction_correct?: boolean;
+  mfe?: number;
+  mae?: number;
+  time_to_mfe_bars?: number;
+  time_to_mae_bars?: number;
+  target_touched?: boolean;
+  stop_touched?: boolean;
+  first_touch?: 'target_first' | 'stop_first' | 'ambiguous_same_bar' | 'no_touch';
+  first_touch_bar?: number | null;
+}
+
+export interface TSignalEvaluation {
+  evaluation_kind: 'forward_event_study_v1';
+  price_basis: 'decision_bar_close';
+  future_window: 'bars_after_decision';
+  same_bar_touch_policy: 'ambiguous';
+  config: TSignalEvaluationConfig;
+  summary: TSignalEvaluationSummary;
+  by_horizon: Array<TSignalEvaluationSummary & {
+    by_side: { BUY: TSignalEvaluationSummary; SELL: TSignalEvaluationSummary };
+  }>;
+  by_strategy: Array<TSignalEvaluationSummary & { strategy: TStrategyName }>;
+  outcomes: TSignalOutcome[];
 }
 
 export interface TReplayResponse {
@@ -194,18 +276,32 @@ export interface TReplayResponse {
     adjust: string;
     persistence_mode: 'ephemeral';
     causality: string;
+    engine_version: string;
+    strategies: TStrategyName[];
   };
   bars: Bar[];
   signals: TSignal[];
+  signal_evaluation: TSignalEvaluation;
   fills: TFill[];
   round_trips: TRoundTrip[];
-  summary: TReplaySummary;
+  summary: TSignalEvaluationSummary;
+  execution_summary: {
+    enabled: boolean;
+    round_trips: number;
+    wins: number;
+    losses: number;
+    win_rate: number;
+    gross_pnl: number;
+    total_fee: number;
+    net_pnl: number;
+  };
   data_quality: {
     bar_count: number;
     zero_volume_bars: number;
     unexpected_gap_count: number;
     first_bar_time: string;
     last_bar_time: string;
+    strategy_context?: Record<string, unknown>;
   };
 }
 
@@ -213,21 +309,26 @@ export interface TBatchReplayRequest {
   security_ids: number[];
   start_date: string;
   end_date: string;
-  period: 'min5';
+  period: 'min1' | 'min5';
   adjust: 'nf';
   source?: string;
   persistence_mode: 'ephemeral';
   strategy: TStrategyConfig;
+  strategies?: TStrategyConfig[];
+  benchmark_security_id?: number;
+  evaluation: TSignalEvaluationConfig;
+  include_execution_simulation: boolean;
   execution: TExecutionConfig;
   include_details?: boolean;
 }
 
 export interface TBatchReplayResponse {
   run_meta: { run_id: string; start_date: string; end_date: string; period: string; persistence_mode: 'ephemeral' };
-  summary: TReplaySummary;
-  by_security: Array<TReplaySummary & { security_id: number }>;
-  by_day: Array<TReplaySummary & { trade_date: string }>;
-  results: Array<TReplayResponse | { run_meta: TReplayResponse['run_meta']; summary: TReplaySummary; data_quality: TReplayResponse['data_quality'] }>;
+  summary: TSignalEvaluationSummary;
+  by_strategy: Array<TSignalEvaluationSummary & { strategy: TStrategyName }>;
+  by_security: Array<TSignalEvaluationSummary & { security_id: number }>;
+  by_day: Array<TSignalEvaluationSummary & { trade_date: string }>;
+  results: Array<TReplayResponse | { run_meta: TReplayResponse['run_meta']; summary: TSignalEvaluationSummary; data_quality: TReplayResponse['data_quality'] }>;
   skipped: Array<{ security_id: number; trade_date: string; reason: string }>;
   failures: Array<{ security_id: number; trade_date: string; error_type: string; reason: string }>;
 }

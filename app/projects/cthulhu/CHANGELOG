@@ -1,7 +1,11 @@
 # VERSION
-v0.24.0
+v0.25.0
 
 # Changelog
+- v0.25.0
+    - **T-trading Signal Workbench.** Added a routed single-day replay page with previous/next-day navigation, multiple strategy selection, and strategy-colored BUY/SELL markers.
+    - **Signal event-study statistics.** The page now emphasizes how far and how quickly price rises after BUY or falls after SELL across configured horizons, with hit rate, MFE/MAE, coverage, signal-factor audit rows, and data-quality counts.
+    - **Ephemeral batch reports.** Added bounded security/date-range evaluation and per-security summaries; generated signals and reports remain browser memory only. Production Angular build passes.
 - v0.24.0
     - **做 T Review Workbench.** Added a routed Workbench page for single-day minute replay with previous/next-day navigation, strategy and cost controls, and an explicit `ephemeral · 不落库` state.
     - **Auditable chart and statistics.** Added an ECharts minute candlestick/volume view that distinguishes close-time BUY/SELL decisions from next-bar-open simulated fills, plus signal-factor audit rows, data-quality counts, costs, win rate, and net PnL.
