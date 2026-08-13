@@ -1,7 +1,11 @@
 # VERSION
-v1.43.0
+v1.44.0
 
 # Changelog
+- v1.44.0
+    - **Atlas sample-run persistence.** Added `atlas_kg.sample_run`, `atlas_kg.sample_category_result`, and `atlas_kg.sample_document_result` tables (migration `0015_atlas_sample_tables.sql`) so Atlas can persist async sampling task state, per-category aggregated JSON output, and per-document processing records without owning a database. `sample_document_result` references `extraction_run` for per-document LLM timing and traceability; `sample_run.cronjob_run_id` links a sampling task to its cronjob run.
+    - **Atlas sample-run HTTP endpoints.** Added 11 endpoints under `/api/v1/atlas-kg/sample-runs` for create, get, progress update, status update, per-category result upsert/get/list, field-summary update (human review), and per-document result create/update/list. Follows the existing Atlas controller/DAO/service layering and JSONB `jsonb_typeof` CHECK conventions.
+    - Current released baseline; the Atlas sample-run persistence changes above remain Unreleased until commit/release preparation.
 - v1.43.0
     - **Registry-native daily and intraday Bars.** Added canonical `min1/min5/min15/min30/min60` period normalization, full-timestamp watermarks, and Timescale-backed A-share minute storage. Daily and minute Bars now use `security_id` as their physical identity; symbol is resolved response decoration only.
     - **AmazingData intraday context.** Added one-minute, 30-minute, daily-context and same-minute relative-volume storage needed by the first T-signal strategies, all keyed to `security_registry`.

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/consts"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -94,6 +95,93 @@ func (s *AtlasKGService) UpsertClaims(ctx context.Context, claims []*model.Atlas
 }
 func (s *AtlasKGService) ListClaims(ctx context.Context, entityID, predicate string, limit int) ([]*model.AtlasClaim, error) {
 	return s.Dao.ListClaims(ctx, entityID, predicate, boundedAtlasLimit(limit))
+}
+
+// ---------------- Sample Run ----------------
+
+func (s *AtlasKGService) CreateSampleRun(ctx context.Context, run *model.AtlasSampleRun) error {
+	return s.Dao.CreateSampleRun(ctx, run)
+}
+func (s *AtlasKGService) GetSampleRun(ctx context.Context, id string) (*model.AtlasSampleRun, error) {
+	return s.Dao.GetSampleRun(ctx, id)
+}
+func (s *AtlasKGService) ListSampleRuns(ctx context.Context, status string, limit int) ([]*model.AtlasSampleRun, error) {
+	return s.Dao.ListSampleRuns(ctx, status, boundedAtlasLimit(limit))
+}
+func (s *AtlasKGService) UpdateSampleRunStatus(
+	ctx context.Context,
+	id, status string,
+	startedAt, completedAt *time.Time,
+	errorCode, errorMessage *string,
+) error {
+	return s.Dao.UpdateSampleRunStatus(ctx, id, status, startedAt, completedAt, errorCode, errorMessage)
+}
+func (s *AtlasKGService) UpdateSampleRunProgress(
+	ctx context.Context,
+	id string,
+	current, total int,
+	progressMessage *string,
+) error {
+	return s.Dao.UpdateSampleRunProgress(ctx, id, current, total, progressMessage)
+}
+func (s *AtlasKGService) UpdateSampleRunSampledDocs(
+	ctx context.Context,
+	id string,
+	sampledDocumentIDs model.StringArray,
+) error {
+	return s.Dao.UpdateSampleRunSampledDocs(ctx, id, sampledDocumentIDs)
+}
+
+// ---------------- Sample Category Result ----------------
+
+func (s *AtlasKGService) UpsertSampleCategoryResult(
+	ctx context.Context,
+	result *model.AtlasSampleCategoryResult,
+) error {
+	return s.Dao.UpsertSampleCategoryResult(ctx, result)
+}
+func (s *AtlasKGService) UpdateSampleFieldSummary(
+	ctx context.Context,
+	sampleRunID, reportType string,
+	fieldSummary []byte,
+) error {
+	return s.Dao.UpdateSampleFieldSummary(ctx, sampleRunID, reportType, fieldSummary)
+}
+func (s *AtlasKGService) GetSampleCategoryResult(
+	ctx context.Context,
+	sampleRunID, reportType string,
+) (*model.AtlasSampleCategoryResult, error) {
+	return s.Dao.GetSampleCategoryResult(ctx, sampleRunID, reportType)
+}
+func (s *AtlasKGService) ListSampleCategoryResults(
+	ctx context.Context,
+	sampleRunID string,
+) ([]*model.AtlasSampleCategoryResult, error) {
+	return s.Dao.ListSampleCategoryResults(ctx, sampleRunID)
+}
+
+// ---------------- Sample Document Result ----------------
+
+func (s *AtlasKGService) CreateSampleDocumentResult(
+	ctx context.Context,
+	doc *model.AtlasSampleDocumentResult,
+) error {
+	return s.Dao.CreateSampleDocumentResult(ctx, doc)
+}
+func (s *AtlasKGService) UpdateSampleDocumentResult(
+	ctx context.Context,
+	id, status string,
+	startedAt, completedAt *time.Time,
+	durationMs *int,
+	errorCode, errorMessage *string,
+) error {
+	return s.Dao.UpdateSampleDocumentResult(ctx, id, status, startedAt, completedAt, durationMs, errorCode, errorMessage)
+}
+func (s *AtlasKGService) ListSampleDocumentResults(
+	ctx context.Context,
+	sampleRunID string,
+) ([]*model.AtlasSampleDocumentResult, error) {
+	return s.Dao.ListSampleDocumentResults(ctx, sampleRunID)
 }
 
 func boundedAtlasLimit(limit int) int {

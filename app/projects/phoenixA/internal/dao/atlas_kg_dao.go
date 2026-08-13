@@ -3,6 +3,7 @@ package dao
 import (
 	"context"
 	"fmt"
+	"time"
 
 	pg "github.com/grand-thief-cash/chaos/app/infra/go/application/components/postgresgorm"
 	"github.com/grand-thief-cash/chaos/app/infra/go/application/core"
@@ -234,4 +235,215 @@ func (d *AtlasKGDao) ListClaims(ctx context.Context, entityID, predicate string,
 		q = q.Where("canonical_predicate = ?", predicate)
 	}
 	return result, q.Find(&result).Error
+}
+
+// ---------------- Sample Run ----------------
+
+func (d *AtlasKGDao) CreateSampleRun(ctx context.Context, run *model.AtlasSampleRun) error {
+	return d.db.WithContext(ctx).Create(run).Error
+}
+
+func (d *AtlasKGDao) GetSampleRun(ctx context.Context, id string) (*model.AtlasSampleRun, error) {
+	var result model.AtlasSampleRun
+	if err := d.db.WithContext(ctx).First(&result, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (d *AtlasKGDao) ListSampleRuns(ctx context.Context, status string, limit int) ([]*model.AtlasSampleRun, error) {
+	var result []*model.AtlasSampleRun
+	q := d.db.WithContext(ctx).Order("updated_at DESC").Limit(limit)
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	return result, q.Find(&result).Error
+}
+
+func (d *AtlasKGDao) UpdateSampleRunStatus(
+	ctx context.Context,
+	id, status string,
+	startedAt, completedAt *time.Time,
+	errorCode, errorMessage *string,
+) error {
+	updates := map[string]any{"status": status, "updated_at": gorm.Expr("NOW()")}
+	if startedAt != nil {
+		updates["started_at"] = *startedAt
+	}
+	if completedAt != nil {
+		updates["completed_at"] = *completedAt
+	}
+	if errorCode != nil {
+		updates["error_code"] = *errorCode
+	}
+	if errorMessage != nil {
+		updates["error_message"] = *errorMessage
+	}
+	tx := d.db.WithContext(ctx).Model(&model.AtlasSampleRun{}).
+		Where("id = ?", id).Updates(updates)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (d *AtlasKGDao) UpdateSampleRunProgress(
+	ctx context.Context,
+	id string,
+	current, total int,
+	progressMessage *string,
+) error {
+	updates := map[string]any{
+		"current":    current,
+		"total":      total,
+		"updated_at": gorm.Expr("NOW()"),
+	}
+	if progressMessage != nil {
+		updates["progress_message"] = *progressMessage
+	}
+	tx := d.db.WithContext(ctx).Model(&model.AtlasSampleRun{}).
+		Where("id = ?", id).Updates(updates)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (d *AtlasKGDao) UpdateSampleRunSampledDocs(
+	ctx context.Context,
+	id string,
+	sampledDocumentIDs model.StringArray,
+) error {
+	tx := d.db.WithContext(ctx).Model(&model.AtlasSampleRun{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"sampled_document_ids": sampledDocumentIDs,
+			"updated_at":           gorm.Expr("NOW()"),
+		})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// ---------------- Sample Category Result ----------------
+
+func (d *AtlasKGDao) UpsertSampleCategoryResult(
+	ctx context.Context,
+	result *model.AtlasSampleCategoryResult,
+) error {
+	return d.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "sample_run_id"}, {Name: "report_type"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"document_count", "raw_results", "generated_at", "updated_at",
+		}),
+	}).Create(result).Error
+}
+
+func (d *AtlasKGDao) UpdateSampleFieldSummary(
+	ctx context.Context,
+	sampleRunID, reportType string,
+	fieldSummary []byte,
+) error {
+	tx := d.db.WithContext(ctx).Model(&model.AtlasSampleCategoryResult{}).
+		Where("sample_run_id = ? AND report_type = ?", sampleRunID, reportType).
+		Updates(map[string]any{
+			"field_summary": fieldSummary,
+			"updated_at":    gorm.Expr("NOW()"),
+		})
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (d *AtlasKGDao) GetSampleCategoryResult(
+	ctx context.Context,
+	sampleRunID, reportType string,
+) (*model.AtlasSampleCategoryResult, error) {
+	var result model.AtlasSampleCategoryResult
+	err := d.db.WithContext(ctx).
+		Where("sample_run_id = ? AND report_type = ?", sampleRunID, reportType).
+		First(&result).Error
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (d *AtlasKGDao) ListSampleCategoryResults(
+	ctx context.Context,
+	sampleRunID string,
+) ([]*model.AtlasSampleCategoryResult, error) {
+	var result []*model.AtlasSampleCategoryResult
+	err := d.db.WithContext(ctx).
+		Where("sample_run_id = ?", sampleRunID).
+		Order("report_type ASC").Find(&result).Error
+	return result, err
+}
+
+// ---------------- Sample Document Result ----------------
+
+func (d *AtlasKGDao) CreateSampleDocumentResult(
+	ctx context.Context,
+	doc *model.AtlasSampleDocumentResult,
+) error {
+	return d.db.WithContext(ctx).Create(doc).Error
+}
+
+func (d *AtlasKGDao) UpdateSampleDocumentResult(
+	ctx context.Context,
+	id, status string,
+	startedAt, completedAt *time.Time,
+	durationMs *int,
+	errorCode, errorMessage *string,
+) error {
+	updates := map[string]any{"status": status, "updated_at": gorm.Expr("NOW()")}
+	if startedAt != nil {
+		updates["started_at"] = *startedAt
+	}
+	if completedAt != nil {
+		updates["completed_at"] = *completedAt
+	}
+	if durationMs != nil {
+		updates["duration_ms"] = *durationMs
+	}
+	if errorCode != nil {
+		updates["error_code"] = *errorCode
+	}
+	if errorMessage != nil {
+		updates["error_message"] = *errorMessage
+	}
+	tx := d.db.WithContext(ctx).Model(&model.AtlasSampleDocumentResult{}).
+		Where("id = ?", id).Updates(updates)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (d *AtlasKGDao) ListSampleDocumentResults(
+	ctx context.Context,
+	sampleRunID string,
+) ([]*model.AtlasSampleDocumentResult, error) {
+	var result []*model.AtlasSampleDocumentResult
+	err := d.db.WithContext(ctx).
+		Where("sample_run_id = ?", sampleRunID).
+		Order("report_type ASC, created_at ASC").Find(&result).Error
+	return result, err
 }

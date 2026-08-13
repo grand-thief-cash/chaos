@@ -81,3 +81,57 @@ type AtlasClaim struct {
 }
 
 func (AtlasClaim) TableName() string { return "atlas_kg.claim" }
+
+// AtlasSampleRun 记录一次完整采样任务的状态与进度。
+type AtlasSampleRun struct {
+	ID                 string          `gorm:"type:uuid;primaryKey" json:"id"`
+	RequestPayload     json.RawMessage `gorm:"type:jsonb;not null;default:'{}'::jsonb" json:"request_payload"`
+	Status             string          `gorm:"type:varchar(50);not null;default:PENDING;index" json:"status"`
+	CronjobRunID       *int64          `gorm:"index" json:"cronjob_run_id,omitempty"`
+	SampledDocumentIDs StringArray     `gorm:"type:text[];not null;default:'{}'" json:"sampled_document_ids"`
+	Current            int             `gorm:"not null;default:0" json:"current"`
+	Total              int             `gorm:"not null;default:0" json:"total"`
+	ProgressMessage    *string         `json:"progress_message,omitempty"`
+	StartedAt          *time.Time      `json:"started_at,omitempty"`
+	CompletedAt        *time.Time      `json:"completed_at,omitempty"`
+	ErrorCode          *string         `json:"error_code,omitempty"`
+	ErrorMessage       *string         `json:"error_message,omitempty"`
+	CreatedAt          time.Time       `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt          time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (AtlasSampleRun) TableName() string { return "atlas_kg.sample_run" }
+
+// AtlasSampleCategoryResult 每类采样的聚合 JSON 产出,含人审 field_summary。
+type AtlasSampleCategoryResult struct {
+	ID            string          `gorm:"type:uuid;primaryKey" json:"id"`
+	SampleRunID   string          `gorm:"type:uuid;not null;uniqueIndex:uidx_sample_category,priority:1;index:idx_sample_category_run" json:"sample_run_id"`
+	ReportType    string          `gorm:"not null;uniqueIndex:uidx_sample_category,priority:2" json:"report_type"`
+	DocumentCount int             `gorm:"not null;default:0" json:"document_count"`
+	RawResults    json.RawMessage `gorm:"type:jsonb;not null;default:'[]'::jsonb" json:"raw_results"`
+	FieldSummary  json.RawMessage `gorm:"type:jsonb" json:"field_summary,omitempty"`
+	GeneratedAt   *time.Time      `json:"generated_at,omitempty"`
+	CreatedAt     time.Time       `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt     time.Time       `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (AtlasSampleCategoryResult) TableName() string { return "atlas_kg.sample_category_result" }
+
+// AtlasSampleDocumentResult 单个采样文档的处理明细,关联 extraction_run。
+type AtlasSampleDocumentResult struct {
+	ID              string     `gorm:"type:uuid;primaryKey" json:"id"`
+	SampleRunID     string     `gorm:"type:uuid;not null;index:idx_sample_doc_run" json:"sample_run_id"`
+	DocumentID      string     `gorm:"not null;index:idx_sample_doc_document" json:"document_id"`
+	ReportType      string     `gorm:"not null" json:"report_type"`
+	ExtractionRunID string     `gorm:"type:uuid;not null" json:"extraction_run_id"`
+	Status          string     `gorm:"type:varchar(50);not null;default:PENDING" json:"status"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	DurationMs      *int       `gorm:"check:duration_ms >= 0" json:"duration_ms,omitempty"`
+	ErrorCode       *string    `json:"error_code,omitempty"`
+	ErrorMessage    *string    `json:"error_message,omitempty"`
+	CreatedAt       time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt       time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+func (AtlasSampleDocumentResult) TableName() string { return "atlas_kg.sample_document_result" }
