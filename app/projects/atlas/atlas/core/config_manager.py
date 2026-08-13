@@ -67,6 +67,7 @@ class ConfigManager:
             override = yaml.safe_load(override_path.read_text(encoding="utf-8")) or {}
             base = self._merge(base, override)
         base["env"] = env_name
+        self._hydrate_minio_credentials(base, config_path.parent)
         self._config = Config.model_validate(base)
         project_root = config_path.parent.parent
         knowledge = self._config.engine.knowledge_engine
@@ -85,6 +86,33 @@ class ConfigManager:
         self._config_path = config_path
         self._env = env_name
         return self._config
+
+    @staticmethod
+    def _hydrate_minio_credentials(base: dict[str, Any], config_dir: Path) -> None:
+        """Import MinIO connection fields from a referenced service config.
+
+        This is deliberately narrow: only the source config's top-level
+        ``minio`` block is read, and only endpoint/access_key/secret_key/secure
+        are copied. Atlas never modifies the source file.
+        """
+        endpoints = base.get("minio", {}).get("endpoints", {})
+        if not isinstance(endpoints, dict):
+            return
+        for name, endpoint in endpoints.items():
+            if not isinstance(endpoint, dict) or not endpoint.get("credential_source"):
+                continue
+            source_path = Path(str(endpoint["credential_source"]))
+            if not source_path.is_absolute():
+                source_path = (config_dir / source_path).resolve()
+            source = yaml.safe_load(source_path.read_text(encoding="utf-8")) or {}
+            source_minio = source.get("minio")
+            if not isinstance(source_minio, dict):
+                raise ValueError(
+                    f"MinIO credential source for '{name}' has no minio block: {source_path}"
+                )
+            for key in ("endpoint", "access_key", "secret_key", "secure"):
+                if key in source_minio:
+                    endpoint[key] = source_minio[key]
 
     @staticmethod
     def _resolve_resource_path(value: str, project_root: Path) -> Path:

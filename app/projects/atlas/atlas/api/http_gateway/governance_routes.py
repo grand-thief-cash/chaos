@@ -43,6 +43,11 @@ class CrosswalkPublishRequest(BaseModel):
 
 @router.post("/discovery-runs")
 async def create_discovery_run(payload: DiscoveryRequest, request: Request):
+    if not request.app.state.runtime.config.engine.knowledge_engine.sampling_enabled:
+        raise HTTPException(
+            status_code=404,
+            detail="semantic field discovery is available only in development/test",
+        )
     if request.app.state.runtime.discovery_orchestrator is None:
         raise HTTPException(status_code=503, detail="discovery model adapter is not configured")
     return await request.app.state.runtime.discovery_orchestrator.run(payload)

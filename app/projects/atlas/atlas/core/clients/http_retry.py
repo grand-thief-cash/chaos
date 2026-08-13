@@ -16,6 +16,7 @@ async def post_json_with_retry(
     *,
     maximum_attempts: int = 4,
     retry_base_seconds: float = 1,
+    headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     """Retry transient model API failures without logging request payloads."""
 
@@ -24,7 +25,7 @@ async def post_json_with_retry(
     for attempt in range(1, maximum_attempts + 1):
         delay = retry_base_seconds * (2 ** (attempt - 1))
         try:
-            response = await client.post(url, json=payload)
+            response = await client.post(url, json=payload, headers=headers)
         except httpx.ReadTimeout:
             raise
         except (

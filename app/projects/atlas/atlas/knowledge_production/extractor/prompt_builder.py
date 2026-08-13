@@ -39,8 +39,16 @@ FIELD_DICTIONARY = {
         "mention": "PDF 中出现的原始实体称呼，不要先自行改成数据库名称。",
         "suggested_entity_type": (
             "必须严格选择 COMPANY、PRODUCT、MATERIAL、TECHNOLOGY、MARKET、"
-            "INDUSTRY_CLASS、VALUE_CHAIN、ASSET、OTHER 之一；人物、机构或其他"
-            "无法准确归类的实体使用 OTHER，不得创造新枚举。"
+            "INDUSTRY_CLASS、VALUE_CHAIN、ASSET、OTHER 之一，不得创造新枚举。"
+            "常见归类：公司/企业/集团/子公司->COMPANY；产品/主营产品/商品/品牌/服务->PRODUCT；"
+            "原材料/大宗商品/化工原料->MATERIAL；技术/工艺/专利/算法->TECHNOLOGY；"
+            "市场/细分市场/应用领域->MARKET；行业分类/赛道->INDUSTRY_CLASS；"
+            "产业链/价值链环节->VALUE_CHAIN；资产/矿权/产能->ASSET；"
+            "人物、机构或其他无法准确归类的实体->OTHER。"
+            "relation_claims 的 object 类型必须与 canonical_predicate_hint 语义一致："
+            "例如 MAKES_PRODUCT/HAS_PRODUCT 的客体应是 PRODUCT，USES_MATERIAL 的客体应是 "
+            "MATERIAL，ADOPTS_TECHNOLOGY 的客体应是 TECHNOLOGY，不得把产品/材料/技术等客体"
+            "误标为 COMPANY。"
         ),
         "country_hint": "仅在 PDF 明确表述时填写国家/地区代码。",
         "ticker_hint": "仅在 PDF 明确出现股票代码时填写。",

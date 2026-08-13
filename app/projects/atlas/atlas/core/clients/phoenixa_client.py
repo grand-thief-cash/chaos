@@ -395,5 +395,257 @@ class PhoenixAClient:
         )
         response.raise_for_status()
 
+    # ---------------- Sample Run ----------------
+
+    async def create_sample_run(
+        self,
+        run_id: str,
+        request_payload: dict[str, Any],
+        *,
+        cronjob_run_id: int | None = None,
+        total: int = 0,
+        status: str = "PENDING",
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "id": run_id,
+            "request_payload": request_payload,
+            "status": status,
+            "total": total,
+        }
+        if cronjob_run_id is not None:
+            payload["cronjob_run_id"] = cronjob_run_id
+        response = await self._client.post(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def get_sample_run(self, run_id: str) -> dict[str, Any]:
+        response = await self._client.get(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}"
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def list_sample_runs(self, status: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"limit": limit}
+        if status:
+            params["status"] = status
+        response = await self._client.get(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs",
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json().get("data", [])
+
+    async def list_extraction_runs(self, status: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"limit": limit}
+        if status:
+            params["status"] = status
+        response = await self._client.get(
+            f"{self.base_url}/api/v1/atlas-kg/extraction-runs",
+            params=params,
+        )
+        response.raise_for_status()
+        return response.json().get("data", [])
+
+    async def recover_orphaned_runs(self) -> dict[str, int]:
+        """Mark in-flight runs as FAILED after an atlas restart.
+
+        Atlas cannot resume a sample/extraction that was mid-flight when it
+        restarted, so any PROCESSING extraction_run or RUNNING sample_run left
+        behind would hang forever. Call this once on startup to fail them
+        closed. Best-effort: per-run errors are logged and skipped.
+        """
+        from datetime import UTC, datetime
+        now_iso = datetime.now(UTC).isoformat()
+        recovered = {"extraction_runs": 0, "sample_runs": 0}
+        try:
+            for run in await self.list_extraction_runs("PROCESSING", limit=500):
+                payload = run.get("payload") or {}
+                payload["status"] = "FAILED_RETRYABLE"
+                payload["error_code"] = "ORPHANED_BY_RESTART"
+                payload["error_summary"] = "atlas restarted while run was in flight"
+                payload["completed_at"] = now_iso
+                try:
+                    validated = ExtractionRun.model_validate(payload)
+                    await self.update_extraction_run(validated)
+                    recovered["extraction_runs"] += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            for sr in await self.list_sample_runs("RUNNING", limit=500):
+                try:
+                    await self.update_sample_run_status(
+                        sr["id"], "FAILED",
+                        completed_at=now_iso,
+                        error_code="ORPHANED_BY_RESTART",
+                        error_message="atlas restarted while sample run was in flight",
+                    )
+                    recovered["sample_runs"] += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return recovered
+
+    async def update_sample_run_progress(
+        self,
+        run_id: str,
+        current: int,
+        total: int,
+        message: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {"current": current, "total": total}
+        if message is not None:
+            payload["progress_message"] = message
+        response = await self._client.post(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/progress",
+            json=payload,
+        )
+        response.raise_for_status()
+
+    async def update_sample_run_status(
+        self,
+        run_id: str,
+        status: str,
+        *,
+        started_at: str | None = None,
+        completed_at: str | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {"status": status}
+        if started_at is not None:
+            payload["started_at"] = started_at
+        if completed_at is not None:
+            payload["completed_at"] = completed_at
+        if error_code is not None:
+            payload["error_code"] = error_code
+        if error_message is not None:
+            payload["error_message"] = error_message
+        response = await self._client.put(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/status",
+            json=payload,
+        )
+        response.raise_for_status()
+
+    async def upsert_sample_category_result(
+        self,
+        run_id: str,
+        report_type: str,
+        raw_results: list[dict[str, Any]],
+        *,
+        document_count: int | None = None,
+        field_summary: dict[str, Any] | None = None,
+        generated_at: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "raw_results": raw_results,
+            "document_count": document_count if document_count is not None else len(raw_results),
+        }
+        if generated_at is not None:
+            payload["generated_at"] = generated_at
+        response = await self._client.put(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/category-results/{report_type}",
+            json=payload,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if field_summary is not None:
+            await self.update_sample_field_summary(run_id, report_type, field_summary)
+        return result
+
+    async def update_sample_field_summary(
+        self,
+        run_id: str,
+        report_type: str,
+        field_summary: dict[str, Any],
+    ) -> None:
+        response = await self._client.put(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/category-results/{report_type}/field-summary",
+            json={"field_summary": field_summary},
+        )
+        response.raise_for_status()
+
+    async def list_sample_category_results(self, run_id: str) -> list[dict[str, Any]]:
+        response = await self._client.get(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/category-results"
+        )
+        response.raise_for_status()
+        return response.json().get("data", [])
+
+    async def get_sample_category_result(
+        self, run_id: str, report_type: str
+    ) -> dict[str, Any]:
+        response = await self._client.get(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/category-results/{report_type}"
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def create_sample_document_result(
+        self,
+        run_id: str,
+        doc_id: str,
+        document_id: str,
+        report_type: str,
+        extraction_run_id: str,
+        *,
+        status: str = "PENDING",
+    ) -> dict[str, Any]:
+        payload = {
+            "id": doc_id,
+            "document_id": document_id,
+            "report_type": report_type,
+            "extraction_run_id": extraction_run_id,
+            "status": status,
+        }
+        response = await self._client.post(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/document-results",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def update_sample_document_result(
+        self,
+        run_id: str,
+        doc_id: str,
+        status: str,
+        *,
+        started_at: str | None = None,
+        completed_at: str | None = None,
+        duration_ms: int | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {"status": status}
+        if started_at is not None:
+            payload["started_at"] = started_at
+        if completed_at is not None:
+            payload["completed_at"] = completed_at
+        if duration_ms is not None:
+            payload["duration_ms"] = duration_ms
+        if error_code is not None:
+            payload["error_code"] = error_code
+        if error_message is not None:
+            payload["error_message"] = error_message
+        response = await self._client.put(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/document-results/{doc_id}",
+            json=payload,
+        )
+        response.raise_for_status()
+
+    async def list_sample_document_results(self, run_id: str) -> list[dict[str, Any]]:
+        response = await self._client.get(
+            f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/document-results"
+        )
+        response.raise_for_status()
+        return response.json().get("data", [])
+
     async def close(self) -> None:
         await self._client.aclose()

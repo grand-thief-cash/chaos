@@ -1,0 +1,777 @@
+{
+  "catalog_version": "sampling-field-catalog-v1",
+  "status": "CANDIDATE_NOT_APPROVED_FOR_PRODUCTION",
+  "generated_at": "2026-08-13T11:50:07.396468+00:00",
+  "fields": [
+    {
+      "field_name": "上下游关系",
+      "description": "研究主体与上游投入、供应商、下游应用或客户的关系",
+      "scope": "CORE",
+      "knowledge_graph_role": "ENTITY_HAS_SUPPLY_CHAIN_RELATION",
+      "value_shape": "[{direction,entity_or_category,relationship,impact}]",
+      "applicability": "stock 或 industry 报告出现明确供应、客户或应用关系时",
+      "priority": 3,
+      "source_field_ids": [
+        "5f1a5b56-e31b-48de-89eb-bc1874fa8c3f:morning_report:下游应用与客户关系",
+        "4ea1ed8a-4f85-4a8e-92df-799104a6d129:new_stock:下游应用与客户关系",
+        "ec8a8220-3acb-4461-92aa-a2bbca76ed0a:stock:上游投入与供应关系",
+        "69d49b93-3f99-4a14-bd7b-b9fedc2c99a5:new_stock:下游应用与客户关系"
+      ],
+      "applicable_report_types": [
+        "morning_report",
+        "new_stock",
+        "stock"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000009008155858",
+        "eastmoney:173000009008349622",
+        "eastmoney:AP202411021640680959",
+        "eastmoney:AP202605231822724832",
+        "eastmoney:AP202607141826955330",
+        "eastmoney:AP202607281827420361",
+        "eastmoney:AP202607291827455712"
+      ],
+      "observed_json_paths": [
+        "sections.公司研究.捷昌驱动.core_business.downstream_markets",
+        "sections.行业分析_轨交设备.upstream_analysis.customer",
+        "客户与市场.核心客户",
+        "customers_and_competition.major_clients",
+        "document.business_analysis.upstream",
+        "sections.3. 行业分析.下游应用",
+        "company_overview.main_customers",
+        "market_and_customers.key_customers"
+      ],
+      "support_document_count": 7,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "核心技术与研发能力",
+      "description": "主体掌握的核心技术、研发能力及可验证的创新产出",
+      "scope": "CORE",
+      "knowledge_graph_role": "ENTITY_HAS_TECHNOLOGY_CAPABILITY",
+      "value_shape": "[{technology,capability,evidence,application}]",
+      "applicability": "stock、industry 或 strategy 报告出现明确技术/研发证据时",
+      "priority": 3,
+      "source_field_ids": [
+        "1060c969-632e-4253-8398-76cc54fd0f63:industry:核心技术与技术路线",
+        "4ea1ed8a-4f85-4a8e-92df-799104a6d129:new_stock:核心技术与技术路线",
+        "5e428757-ac3e-4306-ab82-5940bcff46a2:morning_report:核心技术与技术路线",
+        "69d49b93-3f99-4a14-bd7b-b9fedc2c99a5:new_stock:核心技术与技术路线"
+      ],
+      "applicable_report_types": [
+        "industry",
+        "morning_report",
+        "new_stock"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000008990372410",
+        "eastmoney:AP202503031643995070",
+        "eastmoney:AP202503031643995782",
+        "eastmoney:AP202605231822724832",
+        "eastmoney:AP202607141826955330",
+        "eastmoney:AP202607281827420361",
+        "eastmoney:AP202607291827455712"
+      ],
+      "observed_json_paths": [
+        "无锡科之鑫.核心技术",
+        "industry_chain.midstream.technology",
+        "产品与技术.技术优势.研发驱动",
+        "products_and_technology.tech_features",
+        "机器人产业与技术进展.宇树G1机器人技术突破.技术架构",
+        "机器人产业与技术进展.宇树G1机器人技术突破.运动控制",
+        "sections.2. 公司概况.核心技术",
+        "products_and_technology.core_technologies"
+      ],
+      "support_document_count": 7,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "业务板块与主营产品/服务",
+      "description": "公司的业务板块、主营产品或服务及其结构",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "COMPANY_PRODUCES_PRODUCT_OR_SERVICE",
+      "value_shape": "[{segment,products_or_services,revenue_share}]",
+      "applicability": "stock 报告披露业务构成或主要供给时",
+      "priority": 3,
+      "source_field_ids": [
+        "5f1a5b56-e31b-48de-89eb-bc1874fa8c3f:morning_report:业务板块与主营产品/服务",
+        "4ea1ed8a-4f85-4a8e-92df-799104a6d129:new_stock:业务板块与主营产品/服务",
+        "69d49b93-3f99-4a14-bd7b-b9fedc2c99a5:new_stock:业务板块与主营产品/服务"
+      ],
+      "applicable_report_types": [
+        "morning_report",
+        "new_stock"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:AP202605231822724832",
+        "eastmoney:AP202607141826955330",
+        "eastmoney:AP202607291827455712"
+      ],
+      "observed_json_paths": [
+        "company_profile.main_business",
+        "sections.2. 公司概况.主营业务",
+        "products_and_technology.main_products",
+        "company_overview.main_business"
+      ],
+      "support_document_count": 3,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "产业链定位",
+      "description": "研究主体在产业链中的环节、角色与定位",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "ENTITY_HAS_CHAIN_POSITION",
+      "value_shape": "[{chain,position,role}]",
+      "applicability": "stock 或 industry 报告有明确产业链环节证据时",
+      "priority": 3,
+      "source_field_ids": [
+        "4ea1ed8a-4f85-4a8e-92df-799104a6d129:new_stock:产业链定位"
+      ],
+      "applicable_report_types": [
+        "new_stock"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:AP202607281827420361"
+      ],
+      "observed_json_paths": [
+        "产业链位置.上游",
+        "产业链位置.下游",
+        "产业链位置.应用场景"
+      ],
+      "support_document_count": 1,
+      "evidence_grade": "PROVISIONAL"
+    },
+    {
+      "field_name": "产能与项目布局",
+      "description": "产能、生产基地、在建或募投项目及投产进度",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "ENTITY_HAS_CAPACITY_OR_PROJECT",
+      "value_shape": "[{entity,project_or_base,capacity,unit,status,timeline,location}]",
+      "applicability": "stock、new_stock 或 industry 报告披露产能、基地或项目建设时",
+      "priority": 3,
+      "source_field_ids": [
+        "45d74665-1def-4d61-a63d-e12fd2fe0f15:stock:产能与项目布局"
+      ],
+      "applicable_report_types": [
+        "stock"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:AP202410311640628194"
+      ],
+      "observed_json_paths": [
+        "analysis.reason.company_factors.capacity_expansion"
+      ],
+      "support_document_count": 1,
+      "evidence_grade": "PROVISIONAL"
+    },
+    {
+      "field_name": "供需格局与驱动",
+      "description": "产品或行业的供给、需求、缺口及其驱动因素",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "SUPPLY_DEMAND_AFFECTS_ENTITY",
+      "value_shape": "[{subject,side,factor,current_state,trend,period}]",
+      "applicability": "industry 或 stock 报告讨论供需、产能、库存或需求驱动时",
+      "priority": 3,
+      "source_field_ids": [
+        "1060c969-632e-4253-8398-76cc54fd0f63:industry:供需格局与驱动",
+        "b8757cfe-7692-45e0-8db8-b17458603608:strategy:供需格局与驱动",
+        "5f1a5b56-e31b-48de-89eb-bc1874fa8c3f:morning_report:供需格局与驱动",
+        "4ea1ed8a-4f85-4a8e-92df-799104a6d129:new_stock:供需格局与驱动",
+        "878e44de-5db9-4cba-9638-f1b92c6ec053:industry:供需格局与驱动"
+      ],
+      "applicable_report_types": [
+        "industry",
+        "morning_report",
+        "new_stock",
+        "strategy"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000009008155858",
+        "eastmoney:173000009095620051",
+        "eastmoney:AP202503021643662465",
+        "eastmoney:AP202503101644231380"
+      ],
+      "observed_json_paths": [
+        "industry_overview.key_findings.drivers",
+        "analysis_and_forecast.oil_market.driver",
+        "sections.公司研究.捷昌驱动.downstream_applications.medical_care.market_drivers",
+        "analysis_logic.drivers[2].details[0].driver"
+      ],
+      "support_document_count": 4,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "关键经营指标",
+      "description": "跨行业承载业务特有的经营量化指标",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "ENTITY_HAS_OPERATING_METRIC",
+      "value_shape": "[{metric_name,period,value,unit,business_segment}]",
+      "applicability": "stock 或 industry 报告披露业务量化指标时",
+      "priority": 3,
+      "source_field_ids": [
+        "ec8a8220-3acb-4461-92aa-a2bbca76ed0a:stock:关键经营指标",
+        "69d49b93-3f99-4a14-bd7b-b9fedc2c99a5:new_stock:关键经营指标"
+      ],
+      "applicable_report_types": [
+        "new_stock",
+        "stock"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:AP202411021640684886",
+        "eastmoney:AP202605231822724832"
+      ],
+      "observed_json_paths": [
+        "核心事件.单季度表现.24Q3收入",
+        "核心事件.单季度表现.24Q3归母净利润",
+        "sections.5. 公司核心产品与技术.主要客户"
+      ],
+      "support_document_count": 2,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "关键风险与传导",
+      "description": "关键风险、影响对象、传导机制与潜在后果",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "RISK_AFFECTS_ENTITY",
+      "value_shape": "[{risk,affected_entity,mechanism,consequence}]",
+      "applicability": "任一报告披露经营、行业、政策、宏观或市场风险时",
+      "priority": 3,
+      "source_field_ids": [
+        "1060c969-632e-4253-8398-76cc54fd0f63:industry:关键风险与传导",
+        "b8757cfe-7692-45e0-8db8-b17458603608:strategy:关键风险与传导",
+        "ec8a8220-3acb-4461-92aa-a2bbca76ed0a:stock:关键风险与传导",
+        "878e44de-5db9-4cba-9638-f1b92c6ec053:industry:关键风险与传导",
+        "e7674f17-e5b4-4880-8fc9-0e049bdc9754:macro:关键风险与传导",
+        "5e428757-ac3e-4306-ab82-5940bcff46a2:morning_report:关键风险与传导"
+      ],
+      "applicable_report_types": [
+        "industry",
+        "macro",
+        "morning_report",
+        "stock",
+        "strategy"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000008990372410",
+        "eastmoney:173000008997446581",
+        "eastmoney:173000009006446658",
+        "eastmoney:173000009097506610",
+        "eastmoney:AP202411021640680959",
+        "eastmoney:AP202503031643995782",
+        "eastmoney:AP202503101644224256",
+        "eastmoney:AP202503101644232325"
+      ],
+      "observed_json_paths": [
+        "risks_and_challenges.market_competition",
+        "风险提示.风险项",
+        "document.risk_factors",
+        "风险提示.主要风险",
+        "行业周报.风险提示",
+        "风险提示.监管政策",
+        "风险提示",
+        "风险提示.政策转向风险.说明"
+      ],
+      "support_document_count": 8,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "宏观经济指标",
+      "description": "财政、货币、增长、通胀、就业或地产等宏观指标",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "MACRO_INDICATOR",
+      "value_shape": "[{metric_name,period,value,unit,change,region}]",
+      "applicability": "macro 报告披露宏观量化指标时",
+      "priority": 3,
+      "source_field_ids": [
+        "e7674f17-e5b4-4880-8fc9-0e049bdc9754:macro:宏观经济指标"
+      ],
+      "applicable_report_types": [
+        "macro"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000009001932351",
+        "eastmoney:173000009004973150"
+      ],
+      "observed_json_paths": [
+        "事件.内容.制造业PMI.数值",
+        "key_charts.图表10_企业利润与价格.核心结论"
+      ],
+      "support_document_count": 2,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "市场表现与市场信号",
+      "description": "市场、行业或资产表现，以及资金、情绪和技术信号",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "MARKET_SIGNAL",
+      "value_shape": "[{subject,period,signal_type,value,direction}]",
+      "applicability": "industry、morning_report 或 strategy 包含行情/指数/资金信号时",
+      "priority": 3,
+      "source_field_ids": [
+        "b8757cfe-7692-45e0-8db8-b17458603608:strategy:市场表现与市场信号",
+        "badb16ca-4d8f-4277-912c-46f3964082a1:strategy:市场表现与市场信号"
+      ],
+      "applicable_report_types": [
+        "strategy"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000009094914019",
+        "eastmoney:173000009097506610"
+      ],
+      "observed_json_paths": [
+        "行业资金流动分析.正向净流入行业",
+        "北交所市场表现.北证50指数.本周跌幅"
+      ],
+      "support_document_count": 2,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "投资建议与评级",
+      "description": "对行业、公司、资产或配置方向的建议与评级",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "ANALYST_RECOMMENDS_ENTITY_OR_DIRECTION",
+      "value_shape": "[{subject,recommendation,rating,horizon,rationale}]",
+      "applicability": "报告明确给出投资建议、评级或关注方向时",
+      "priority": 3,
+      "source_field_ids": [
+        "ec8a8220-3acb-4461-92aa-a2bbca76ed0a:stock:投资建议/评级",
+        "878e44de-5db9-4cba-9638-f1b92c6ec053:industry:投资建议/评级",
+        "badb16ca-4d8f-4277-912c-46f3964082a1:strategy:投资建议/评级"
+      ],
+      "applicable_report_types": [
+        "industry",
+        "stock",
+        "strategy"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000009094914019",
+        "eastmoney:AP202411021640684886",
+        "eastmoney:AP202503101644232325"
+      ],
+      "observed_json_paths": [
+        "投资建议.评级",
+        "行业周报.投资评级",
+        "投资建议.重点关注.财富管理业务优势明显",
+        "行业周报.投资建议.推荐",
+        "北交所市场表现.投资建议.建议"
+      ],
+      "support_document_count": 3,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "政策事件及影响",
+      "description": "政策或制度事件、作用对象、传导机制与预期影响",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "POLICY_AFFECTS_ENTITY",
+      "value_shape": "[{policy_or_event,target,mechanism,impact,direction}]",
+      "applicability": "报告包含政策、监管或重大制度事件时",
+      "priority": 3,
+      "source_field_ids": [
+        "7294fd87-7726-40b3-a470-9ba51f520928:macro:政策事件及影响",
+        "ec8a8220-3acb-4461-92aa-a2bbca76ed0a:stock:政策事件及影响",
+        "878e44de-5db9-4cba-9638-f1b92c6ec053:industry:政策事件及影响",
+        "e7674f17-e5b4-4880-8fc9-0e049bdc9754:macro:政策事件及影响",
+        "badb16ca-4d8f-4277-912c-46f3964082a1:strategy:政策事件及影响"
+      ],
+      "applicable_report_types": [
+        "industry",
+        "macro",
+        "stock",
+        "strategy"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000009004973150",
+        "eastmoney:173000009038599785",
+        "eastmoney:173000009075815101",
+        "eastmoney:AP202411021640684916",
+        "eastmoney:AP202503101644224256"
+      ],
+      "observed_json_paths": [
+        "sections.2024年以来并购重组政策脉络与红利释放.policy_timeline[0].time",
+        "sections.核心观点.产业链影响.央国企.政策导向",
+        "事件回顾.政策支持.内容",
+        "政策要点.货币政策.影响",
+        "分析要点.制造业PMI回升原因.政策因素.央行政策.内容",
+        "事件.内容.制造业PMI.原因",
+        "分析要点.未来预测.政策空间.财政政策",
+        "sections.宏观事件点评.事件进展.印度.6月5日.事件"
+      ],
+      "support_document_count": 5,
+      "evidence_grade": "CROSS_DOCUMENT"
+    },
+    {
+      "field_name": "研究对象",
+      "description": "报告所研究的公司、行业、资产、地区或宏观主题",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "RESEARCH_REPORT_STUDIES_ENTITY",
+      "value_shape": "{entity_name,entity_type,security_code,industry}",
+      "applicability": "报告明确给出研究主体时",
+      "priority": 3,
+      "source_field_ids": [
+        "5f1a5b56-e31b-48de-89eb-bc1874fa8c3f:morning_report:研究对象"
+      ],
+      "applicable_report_types": [
+        "morning_report"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:173000009005602453"
+      ],
+      "observed_json_paths": [
+        "sections.研究主题[0].title"
+      ],
+      "support_document_count": 1,
+      "evidence_grade": "PROVISIONAL"
+    },
+    {
+      "field_name": "竞争格局",
+      "description": "研究主体的竞争地位、竞争者、份额或市场集中度",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "ENTITY_COMPETES_WITH_ENTITY",
+      "value_shape": "[{market,entity,competitor,position,market_share}]",
+      "applicability": "stock 或 industry 报告出现明确竞争证据时",
+      "priority": 3,
+      "source_field_ids": [
+        "878e44de-5db9-4cba-9638-f1b92c6ec053:industry:竞争格局与竞争关系"
+      ],
+      "applicable_report_types": [
+        "industry"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:AP202503101644232325"
+      ],
+      "observed_json_paths": [
+        "行业周报.快递.行业竞争.现状"
+      ],
+      "support_document_count": 1,
+      "evidence_grade": "PROVISIONAL"
+    },
+    {
+      "field_name": "财务与盈利预测",
+      "description": "历史或预测财务指标的期间、口径、数值、单位与关键假设",
+      "scope": "CONDITIONAL",
+      "knowledge_graph_role": "ENTITY_HAS_FINANCIAL_METRIC_OR_FORECAST",
+      "value_shape": "[{entity,metric,period,value,unit,is_forecast,assumption}]",
+      "applicability": "stock 或 new_stock 报告披露财务数据、盈利预测或估值假设时",
+      "priority": 3,
+      "source_field_ids": [
+        "45d74665-1def-4d61-a63d-e12fd2fe0f15:stock:财务与盈利预测",
+        "ec8a8220-3acb-4461-92aa-a2bbca76ed0a:stock:财务与盈利预测"
+      ],
+      "applicable_report_types": [
+        "stock"
+      ],
+      "evidence_document_ids": [
+        "eastmoney:AP202410311640627679",
+        "eastmoney:AP202411021640680959"
+      ],
+      "observed_json_paths": [
+        "forecast_table.revenue",
+        "forecast_table.net_profit",
+        "document.forecast.eps",
+        "盈利预测.归母净利润"
+      ],
+      "support_document_count": 2,
+      "evidence_grade": "CROSS_DOCUMENT"
+    }
+  ],
+  "coverage_gaps": [
+    "free catalog reviewer returned incompatible JSON; deterministic evidence-backed fallback used",
+    "以下字段当前仅有单文档证据，保留为 PROVISIONAL/CONDITIONAL，需继续扩样：产业链定位、产能与项目布局、研究对象、竞争格局",
+    "当前样本尚未形成可通过字段审计的跨行业产品-技术-应用关系证据；需定向扩样"
+  ],
+  "review_notes": "deterministic_catalog_fallback",
+  "extraction_profiles": {
+    "industry": [
+      {
+        "field_name": "核心技术与研发能力",
+        "scope": "CORE",
+        "knowledge_graph_role": "ENTITY_HAS_TECHNOLOGY_CAPABILITY",
+        "value_shape": "[{technology,capability,evidence,application}]",
+        "applicability": "stock、industry 或 strategy 报告出现明确技术/研发证据时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "供需格局与驱动",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "SUPPLY_DEMAND_AFFECTS_ENTITY",
+        "value_shape": "[{subject,side,factor,current_state,trend,period}]",
+        "applicability": "industry 或 stock 报告讨论供需、产能、库存或需求驱动时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "关键风险与传导",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "RISK_AFFECTS_ENTITY",
+        "value_shape": "[{risk,affected_entity,mechanism,consequence}]",
+        "applicability": "任一报告披露经营、行业、政策、宏观或市场风险时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "投资建议与评级",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ANALYST_RECOMMENDS_ENTITY_OR_DIRECTION",
+        "value_shape": "[{subject,recommendation,rating,horizon,rationale}]",
+        "applicability": "报告明确给出投资建议、评级或关注方向时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "政策事件及影响",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "POLICY_AFFECTS_ENTITY",
+        "value_shape": "[{policy_or_event,target,mechanism,impact,direction}]",
+        "applicability": "报告包含政策、监管或重大制度事件时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "竞争格局",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ENTITY_COMPETES_WITH_ENTITY",
+        "value_shape": "[{market,entity,competitor,position,market_share}]",
+        "applicability": "stock 或 industry 报告出现明确竞争证据时",
+        "evidence_grade": "PROVISIONAL"
+      }
+    ],
+    "macro": [
+      {
+        "field_name": "关键风险与传导",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "RISK_AFFECTS_ENTITY",
+        "value_shape": "[{risk,affected_entity,mechanism,consequence}]",
+        "applicability": "任一报告披露经营、行业、政策、宏观或市场风险时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "宏观经济指标",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "MACRO_INDICATOR",
+        "value_shape": "[{metric_name,period,value,unit,change,region}]",
+        "applicability": "macro 报告披露宏观量化指标时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "政策事件及影响",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "POLICY_AFFECTS_ENTITY",
+        "value_shape": "[{policy_or_event,target,mechanism,impact,direction}]",
+        "applicability": "报告包含政策、监管或重大制度事件时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      }
+    ],
+    "morning_report": [
+      {
+        "field_name": "上下游关系",
+        "scope": "CORE",
+        "knowledge_graph_role": "ENTITY_HAS_SUPPLY_CHAIN_RELATION",
+        "value_shape": "[{direction,entity_or_category,relationship,impact}]",
+        "applicability": "stock 或 industry 报告出现明确供应、客户或应用关系时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "核心技术与研发能力",
+        "scope": "CORE",
+        "knowledge_graph_role": "ENTITY_HAS_TECHNOLOGY_CAPABILITY",
+        "value_shape": "[{technology,capability,evidence,application}]",
+        "applicability": "stock、industry 或 strategy 报告出现明确技术/研发证据时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "业务板块与主营产品/服务",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "COMPANY_PRODUCES_PRODUCT_OR_SERVICE",
+        "value_shape": "[{segment,products_or_services,revenue_share}]",
+        "applicability": "stock 报告披露业务构成或主要供给时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "供需格局与驱动",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "SUPPLY_DEMAND_AFFECTS_ENTITY",
+        "value_shape": "[{subject,side,factor,current_state,trend,period}]",
+        "applicability": "industry 或 stock 报告讨论供需、产能、库存或需求驱动时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "关键风险与传导",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "RISK_AFFECTS_ENTITY",
+        "value_shape": "[{risk,affected_entity,mechanism,consequence}]",
+        "applicability": "任一报告披露经营、行业、政策、宏观或市场风险时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "研究对象",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "RESEARCH_REPORT_STUDIES_ENTITY",
+        "value_shape": "{entity_name,entity_type,security_code,industry}",
+        "applicability": "报告明确给出研究主体时",
+        "evidence_grade": "PROVISIONAL"
+      }
+    ],
+    "new_stock": [
+      {
+        "field_name": "上下游关系",
+        "scope": "CORE",
+        "knowledge_graph_role": "ENTITY_HAS_SUPPLY_CHAIN_RELATION",
+        "value_shape": "[{direction,entity_or_category,relationship,impact}]",
+        "applicability": "stock 或 industry 报告出现明确供应、客户或应用关系时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "核心技术与研发能力",
+        "scope": "CORE",
+        "knowledge_graph_role": "ENTITY_HAS_TECHNOLOGY_CAPABILITY",
+        "value_shape": "[{technology,capability,evidence,application}]",
+        "applicability": "stock、industry 或 strategy 报告出现明确技术/研发证据时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "业务板块与主营产品/服务",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "COMPANY_PRODUCES_PRODUCT_OR_SERVICE",
+        "value_shape": "[{segment,products_or_services,revenue_share}]",
+        "applicability": "stock 报告披露业务构成或主要供给时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "产业链定位",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ENTITY_HAS_CHAIN_POSITION",
+        "value_shape": "[{chain,position,role}]",
+        "applicability": "stock 或 industry 报告有明确产业链环节证据时",
+        "evidence_grade": "PROVISIONAL"
+      },
+      {
+        "field_name": "供需格局与驱动",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "SUPPLY_DEMAND_AFFECTS_ENTITY",
+        "value_shape": "[{subject,side,factor,current_state,trend,period}]",
+        "applicability": "industry 或 stock 报告讨论供需、产能、库存或需求驱动时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "关键经营指标",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ENTITY_HAS_OPERATING_METRIC",
+        "value_shape": "[{metric_name,period,value,unit,business_segment}]",
+        "applicability": "stock 或 industry 报告披露业务量化指标时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      }
+    ],
+    "stock": [
+      {
+        "field_name": "上下游关系",
+        "scope": "CORE",
+        "knowledge_graph_role": "ENTITY_HAS_SUPPLY_CHAIN_RELATION",
+        "value_shape": "[{direction,entity_or_category,relationship,impact}]",
+        "applicability": "stock 或 industry 报告出现明确供应、客户或应用关系时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "产能与项目布局",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ENTITY_HAS_CAPACITY_OR_PROJECT",
+        "value_shape": "[{entity,project_or_base,capacity,unit,status,timeline,location}]",
+        "applicability": "stock、new_stock 或 industry 报告披露产能、基地或项目建设时",
+        "evidence_grade": "PROVISIONAL"
+      },
+      {
+        "field_name": "关键经营指标",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ENTITY_HAS_OPERATING_METRIC",
+        "value_shape": "[{metric_name,period,value,unit,business_segment}]",
+        "applicability": "stock 或 industry 报告披露业务量化指标时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "关键风险与传导",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "RISK_AFFECTS_ENTITY",
+        "value_shape": "[{risk,affected_entity,mechanism,consequence}]",
+        "applicability": "任一报告披露经营、行业、政策、宏观或市场风险时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "投资建议与评级",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ANALYST_RECOMMENDS_ENTITY_OR_DIRECTION",
+        "value_shape": "[{subject,recommendation,rating,horizon,rationale}]",
+        "applicability": "报告明确给出投资建议、评级或关注方向时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "政策事件及影响",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "POLICY_AFFECTS_ENTITY",
+        "value_shape": "[{policy_or_event,target,mechanism,impact,direction}]",
+        "applicability": "报告包含政策、监管或重大制度事件时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "财务与盈利预测",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ENTITY_HAS_FINANCIAL_METRIC_OR_FORECAST",
+        "value_shape": "[{entity,metric,period,value,unit,is_forecast,assumption}]",
+        "applicability": "stock 或 new_stock 报告披露财务数据、盈利预测或估值假设时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      }
+    ],
+    "strategy": [
+      {
+        "field_name": "供需格局与驱动",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "SUPPLY_DEMAND_AFFECTS_ENTITY",
+        "value_shape": "[{subject,side,factor,current_state,trend,period}]",
+        "applicability": "industry 或 stock 报告讨论供需、产能、库存或需求驱动时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "关键风险与传导",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "RISK_AFFECTS_ENTITY",
+        "value_shape": "[{risk,affected_entity,mechanism,consequence}]",
+        "applicability": "任一报告披露经营、行业、政策、宏观或市场风险时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "市场表现与市场信号",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "MARKET_SIGNAL",
+        "value_shape": "[{subject,period,signal_type,value,direction}]",
+        "applicability": "industry、morning_report 或 strategy 包含行情/指数/资金信号时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "投资建议与评级",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "ANALYST_RECOMMENDS_ENTITY_OR_DIRECTION",
+        "value_shape": "[{subject,recommendation,rating,horizon,rationale}]",
+        "applicability": "报告明确给出投资建议、评级或关注方向时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      },
+      {
+        "field_name": "政策事件及影响",
+        "scope": "CONDITIONAL",
+        "knowledge_graph_role": "POLICY_AFFECTS_ENTITY",
+        "value_shape": "[{policy_or_event,target,mechanism,impact,direction}]",
+        "applicability": "报告包含政策、监管或重大制度事件时",
+        "evidence_grade": "CROSS_DOCUMENT"
+      }
+    ]
+  },
+  "core_semantics": "CORE means priority KG semantics when supported by the document; it is not a required non-null field for every PDF",
+  "source_sample_run_ids": [
+    "45d74665-1def-4d61-a63d-e12fd2fe0f15",
+    "1060c969-632e-4253-8398-76cc54fd0f63",
+    "7294fd87-7726-40b3-a470-9ba51f520928",
+    "b8757cfe-7692-45e0-8db8-b17458603608",
+    "5f1a5b56-e31b-48de-89eb-bc1874fa8c3f",
+    "4ea1ed8a-4f85-4a8e-92df-799104a6d129",
+    "ec8a8220-3acb-4461-92aa-a2bbca76ed0a",
+    "878e44de-5db9-4cba-9638-f1b92c6ec053",
+    "e7674f17-e5b4-4880-8fc9-0e049bdc9754",
+    "badb16ca-4d8f-4277-912c-46f3964082a1",
+    "5e428757-ac3e-4306-ab82-5940bcff46a2",
+    "69d49b93-3f99-4a14-bd7b-b9fedc2c99a5"
+  ],
+  "source_field_count": 41
+}

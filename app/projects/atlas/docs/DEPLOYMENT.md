@@ -1,5 +1,8 @@
 # Atlas deployment
 
+Architecture and environment boundaries are defined in
+[`2026-08-13 ARCHITECTURE_DESIGN_FOR_ATLAS_V3.md`](2026-08-13%20ARCHITECTURE_DESIGN_FOR_ATLAS_V3.md).
+
 Atlas follows the same dependency-cached base-image and lightweight
 application-image layout as Artemis.
 
@@ -70,6 +73,17 @@ Place the production configuration and published semantic YAML files under:
 The production configuration must point to externally managed phoenixA, MinIO,
 the PDF-capable extraction endpoint, and the Ollama agent endpoint. Atlas does
 not receive PostgreSQL or Neo4j credentials.
+
+Production must set `engine.knowledge_engine.sampling_enabled: false` (the
+checked-in `config-production.yaml` override does so). With that boundary Atlas
+does not register `/sample-runs`, and the production Cthulhu build omits sample
+navigation. Sampling and field-catalog discovery run only in development.
+
+Development may point `sampling_catalog_phoenixA` and
+`minio.sampling_source_bucket` at production for representative sampling. Use a
+dedicated MinIO identity with server-side list/get-only policy; `read_only: true`
+is required by Atlas configuration validation but does not replace the MinIO
+policy. Results must continue to target the development PhoenixA connection.
 
 Ollama's OpenAI-compatible endpoint is used for structured text agents
 (discovery aggregation, entity coreference/reranking, crosswalk, query, and

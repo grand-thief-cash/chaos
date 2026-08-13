@@ -2,7 +2,7 @@ env: development
 
 server:
   host: 0.0.0.0
-  port: 18400
+  port: 8086
   access_log: false
 
 http_client:
@@ -15,40 +15,128 @@ dept_services:
     host: 127.0.0.1
     port: 18085
     scheme: http
+  cronjob:
+    host: 127.0.0.1
+    port: 18090
+    scheme: http
+  sampling_catalog_phoenixA: null
 
 minio:
-  endpoint: 127.0.0.1:9000
-  access_key: ""
-  secret_key: ""
-  secure: false
-  bucket: research-report
-  sample_bucket: ""
-  sample_output_prefix: sample_output
+  # Multi-endpoint registry. Business code references buckets by logical name.
+  endpoints:
+    primary:
+      endpoint: 127.0.0.1:9000
+      access_key: ""
+      secret_key: ""
+      secure: false
+      read_only: false
+  buckets:
+    source:               # logical name for the source PDF store (Artemis writes here)
+      endpoint: primary
+      name: research-report
+  source_bucket: source   # logical bucket name used as the source PDF store
+  sampling_source_bucket: null
 
 llm:
-  # Whole-PDF 输入必须由真正支持 PDF file content 的 endpoint 承接。
-  # Ollama OpenAI compatibility 只支持文本/图片，不能直接读取 PDF。
-  extraction:
-    provider: openai_compatible_pdf
-    base_url: http://127.0.0.1:11435/v1
-    model: qwen3-14b-q4_k_m
-    api_key: ""
-    api_key_env: ""
-    timeout_seconds: 900
-    temperature: 0
-    maximum_output_tokens: 16384
-    structured_output_mode: json_object
-  # Discovery 汇总、Crosswalk、Query Planner 和公司综述首先接 Ollama。
-  agent:
-    provider: ollama
-    base_url: http://127.0.0.1:11434/v1
-    model: qwen3-14b-q4_k_m
-    api_key: ""
-    api_key_env: OLLAMA_API_KEY
-    timeout_seconds: 300
-    temperature: 0
-    maximum_output_tokens: 8192
-    structured_output_mode: json_schema
+  # Roles bind to named models in the registry below.
+  roles:
+    extraction: openrouter-ling
+    agent: ollama-qwen3
+  # Development sampling can use every available free/local provider. Missing
+  # or rate-limited providers are isolated by the harness and do not stop a run.
+  harnesses:
+    sampling_extraction:
+      models: [openrouter-free, openrouter-ling]
+      strategy: balanced_failover
+      failure_threshold: 2
+      cooldown_seconds: 120
+    sampling_review:
+      models: [openrouter-free, openrouter-ling]
+      strategy: priority_failover
+      failure_threshold: 2
+      cooldown_seconds: 120
+  models:
+    # Random free-capacity router. Business validators and the fixed-model
+    # fallback remain mandatory because availability/model choice can vary.
+    openrouter-free:
+      provider: openrouter
+      base_url: https://openrouter.ai/api/v1
+      model: openrouter/free
+      capabilities:
+        structured_output: true
+        pdf_direct: false
+        text_extraction: true
+        thinking: false
+        response_format_api: true
+      api_keys:
+        - key_env: OPENROUTER_API_KEY
+          key: ""
+          max_concurrency: 1
+      timeout_seconds: 300
+      maximum_output_tokens: 16384
+      context_window_tokens: 32768
+      structured_output_mode: json_schema
+      temperature: 0
+      thinking_mode: disabled
+      extra_body:
+        provider:
+          require_parameters: true
+    # Primary extraction model: OpenRouter Ling-3.0-flash (text-extracted PDF).
+    # Faster and more reliable than GLM-4.7 for the current sample workload.
+    openrouter-ling:
+      provider: openrouter
+      base_url: https://openrouter.ai/api/v1
+      model: inclusionai/ling-3.0-flash:free
+      capabilities:
+        structured_output: true
+        pdf_direct: false
+        text_extraction: true
+        thinking: true
+        response_format_api: false
+      # API key pool: each key has its own max_concurrency cap to avoid being banned.
+      api_keys:
+        - key_env: OPENROUTER_API_KEY
+          key: ""
+          max_concurrency: 4
+      timeout_seconds: 300
+      maximum_output_tokens: 16384
+      structured_output_mode: json_object
+      temperature: 0
+      thinking_mode: enabled
+    # Agent / structured-chat model: Ollama Qwen3 14B on the dedicated host.
+    ollama-qwen3:
+      provider: ollama
+      base_url: http://192.168.31.170:11434/v1
+      model: qwen3:14b-q4_K_M
+      capabilities:
+        structured_output: true
+        pdf_direct: false
+        text_extraction: false
+        thinking: false
+      api_keys:
+        - key: ""
+          max_concurrency: 2
+      timeout_seconds: 300
+      maximum_output_tokens: 8192
+      structured_output_mode: json_schema
+      temperature: 0
+    # Local multimodal PDF gateway (kept as a fallback extraction model).
+    local-pdf:
+      provider: openai_compatible_pdf
+      base_url: http://127.0.0.1:11435/v1
+      model: qwen3-14b-q4_k_m
+      capabilities:
+        structured_output: true
+        pdf_direct: true
+        text_extraction: false
+        thinking: false
+      api_keys:
+        - key: ""
+          max_concurrency: 2
+      timeout_seconds: 900
+      maximum_output_tokens: 16384
+      structured_output_mode: json_object
+      temperature: 0
 
 taxonomy:
   canonical_seed_scheme: SW2021
@@ -71,7 +159,12 @@ engine:
     pipeline_version: atlas-kg-v1
     research_report_source: eastmoney
     poll_batch_size: 20
-    llm_concurrency: 1
+    llm_concurrency: 4            # global cap on in-flight LLM calls (sum of per-key caps is the natural ceiling)
     maximum_total_attempts: 3
+    sampling_enabled: true
+    sampling_field_review_batch_size: 4
+    sampling_local_ocr_enabled: false
+    sampling_local_ocr_dpi: 160
+    sampling_local_ocr_maximum_pages: 12
     semantic_config_path: config/semantic/atlas-semantic-v0001.yaml
     prompt_mapping_path: config/report_prompt_mapping.yaml

@@ -1,46 +1,36 @@
 # Atlas
 
-Atlas 是 Chaos 的研报知识生产与查询服务。Artemis 负责下载 PDF 到 MinIO 并在 phoenixA 记录下载状态；Atlas 消费 PDF、完成语义发现/抽取/实体解析/Claim 构建，并通过 phoenixA 写 PostgreSQL 和 Neo4j。Atlas 不直接连接数据库。
+Atlas 是 Chaos 的研报知识生产与受控查询服务。Artemis 负责下载 PDF 到 MinIO 并登记研报元数据；Atlas 负责开发期字段发现、生产期严格抽取、实体解析、Claim 构建和图投影编排，所有持久化与图访问都通过 PhoenixA 完成。
 
-## Phase 1 范围
+## 当前设计
 
-- Whole-PDF 模型抽取；pikepdf 只在内存中解除 owner permission。
-- Sample 驱动的报告类型选择、Predicate/Concept proposal、人工审核和版本 YAML 发布。
-- 申万/东财/券商分类的模型 Crosswalk 与程序化完整性校验。
-- 全球上市和非上市公司统一实体、别名与 security_registry 链接。
-- 事实、量化主张和分析师观点分离；只有允许的事实 Claim 投影到图。
-- 固定图查询工具和只读 Query Agent；不接受任意 Cypher。
-- Event/Impact Engine 留到后续阶段。
+Atlas 有两个明确生命周期：
 
-Bootstrap semantic YAML 不启用任何正式研报类型。必须先运行 Sample、
-在 Cthulhu 完成人工 Review 并发布新 YAML，再通过部署配置切换
-`semantic_config_path`，批量消费入口才会处理正式 PDF。
+- **Development/Test Sampling**：对六种 `report_type` 逐 PDF 生成自由 JSON，再按类型归纳可复用字段、审核并发布 extraction profile。开发环境可使用专用只读身份读取生产 PhoenixA 目录和生产 MinIO，结果只写开发 PhoenixA。
+- **Production Full Extraction**：只使用已审核、不可变、按类型划分的 profile。生产配置强制 `sampling_enabled: false`，后端不注册 Sampling API，Cthulhu 生产构建也不提供 Sampling 页面。
+
+模型调用由可插拔 Harness 编排，支持 NVIDIA NIM、OpenRouter、Zhipu 和本地 Ollama 的多模型、多 key、失败降级；PDF 默认走 pdfplumber，只有质量门控触发时才升级到 layout sidecar 或本地 OCR。
+
+Bootstrap semantic YAML 不启用任何正式研报类型。候选字段目录不能自动进入生产，必须人工 Review、发布新 Semantic YAML，并显式切换 `semantic_config_path`。
 
 ## 工程入口
 
-```powershell
-C:\Users\gaoc3\projects\chaos\.venv\Scripts\python.exe -m atlas.main -c config/config.yaml
-```
-
-配置加载和启动参数参考 Artemis 约定，但 Atlas 保留自己的领域目录：
-
-```text
-atlas/
-├── api/http_gateway
-├── application
-├── core/clients
-├── knowledge_production
-├── knowledge_store
-├── intelligence
-└── models
+```bash
+cd /home/machine/projects/chaos
+PYTHONPATH=app/projects/atlas venv/bin/python -m atlas.main \
+  -c app/projects/atlas/config/config-home.yaml
 ```
 
 运行测试：
 
-```powershell
-C:\Users\gaoc3\projects\chaos\.venv\Scripts\python.exe -m pytest app/projects/atlas/tests -q
+```bash
+cd /home/machine/projects/chaos/app/projects/atlas
+PYTHONPATH=. ../../../venv/bin/python -m pytest tests -q
 ```
 
-部署说明：[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+## 文档
 
-设计文档入口：[`docs/2026-07-27 DESIGN_ATLAS_KNOWLEDGE_GRAPH_ENGINE/00_头部.md`](docs/2026-07-27%20DESIGN_ATLAS_KNOWLEDGE_GRAPH_ENGINE/00_%E5%A4%B4%E9%83%A8.md)
+- 现行架构设计：[`docs/2026-08-13 ARCHITECTURE_DESIGN_FOR_ATLAS_V3.md`](docs/2026-08-13%20ARCHITECTURE_DESIGN_FOR_ATLAS_V3.md)
+- 部署说明：[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- 真实 Sampling 验收：[`docs/2026-08-13 ATLAS_SAMPLING_VALIDATION.md`](docs/2026-08-13%20ATLAS_SAMPLING_VALIDATION.md)
+- 候选字段目录（未批准生产）：[`docs/2026-08-13 ATLAS_SAMPLING_CANDIDATE_FIELD_CATALOG_V1.json`](docs/2026-08-13%20ATLAS_SAMPLING_CANDIDATE_FIELD_CATALOG_V1.json)

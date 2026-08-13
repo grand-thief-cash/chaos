@@ -1,4 +1,10 @@
 from atlas.knowledge_production.ontology_discovery.aggregator import DiscoveryAggregator
+from atlas.knowledge_production.ontology_discovery.free_summarizer import (
+    FreeDiscoverySummariser,
+)
+from atlas.knowledge_production.ontology_discovery.free_field_reviewer import (
+    FreeFieldReviewSummariser,
+)
 from atlas.knowledge_production.ontology_discovery.sampler import stratified_sample
 from atlas.knowledge_production.ontology_discovery.semantic_registry import SemanticRegistry
 from atlas.knowledge_production.ontology_discovery.version_builder import SemanticVersionBuilder
@@ -9,6 +15,8 @@ from atlas.knowledge_production.ontology_discovery.document_converter import (
 
 __all__ = [
     "DiscoveryAggregator",
+    "FreeDiscoverySummariser",
+    "FreeFieldReviewSummariser",
     "SemanticRegistry",
     "SemanticVersionBuilder",
     "SemanticYamlPublisher",
