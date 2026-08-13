@@ -1,7 +1,9 @@
 # VERSION
-v0.50.0
+v0.50.1
 
 # Changelog
+- v0.50.1
+    - **Delisted research reports no longer clog the download queue.** Eastmoney delists reports from its rolling ~2-year list window, after which their detail pages return HTTP 404 permanently. The download task used to retry each 404 three times with a 45-120s backoff (~2-3 min/record) and mark the row `pdf_error`, which `QueryPending` re-queued every run - so a growing set of delisted records consumed the entire per-run budget and blew the cronjob callback deadline (production symptom: the `strategy` and `morning_report` feeds, task 21, timed out with `callback_deadline_exceeded` every tick while still slowly draining the queue). A 404 on a report page now raises `ReportGone` immediately with no retry/backoff, and the PROCESS loop marks the record terminal (`no_pdf`) so it is dropped from the retry set. The fix is feed-agnostic (covers stock/industry/macro/new_stock/strategy/morning_report) and self-healing: existing `pdf_error` rows that 404 are converted to `no_pdf` on the next run after deploy, so no manual data cleanup is required. A 404 on the list endpoint itself (a moved URL) now fails the run loudly with a clear message instead of crashing. Added `ReportGone` and two regression tests (404 detail -> `no_pdf` and run continues; `_request` does not retry/backoff on 404).
 - v0.50.0
     - **Signal-first T-trading evaluation.** Replaced transaction-result-first scoring with forward-event labels at multiple horizons: BUY signals measure subsequent rise, SELL signals measure subsequent decline, including hit rate, MFE, MAE, time-to-hit, and coverage. The fill/cost simulator is no longer the primary strategy evaluator.
     - **Expanded causal strategy set.** Added MACD + time-of-day relative volume + minute trend confirmation, VWAP/Bollinger reversal, opening-range breakout, multi-timeframe trend pullback, and causal mean-reversion implementations with auditable per-signal factors.

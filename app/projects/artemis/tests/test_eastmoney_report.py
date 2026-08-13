@@ -18,6 +18,7 @@ from artemis.core import TaskContext
 from artemis.core.clients.minio_client import NoopMinioClient
 from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import (
     EastmoneyResearchReport,
+    ReportGone,
     StockZhAEastmoneyReport,
     _extra_industry_name,
     build_object_key,
@@ -279,6 +280,73 @@ class TestExecuteRealMinioMarksDownloaded:
         # path uses subject_source_code (the raw symbol); no resource_id segment
         assert upd["pdf_object_key"] == "stock/000001/2026-07-07_平安银行2026年半年报点评.pdf"
         assert minio.puts == [upd["pdf_object_key"]]
+
+
+class TestDelistedReportMarkedTerminal:
+    """P0 regression: a report whose detail page is gone (HTTP 404 / delisted
+    from Eastmoney's rolling window) must be marked terminal 'no_pdf' - NOT
+    'pdf_error' (which QueryPending re-queues every run, clogging the callback
+    deadline until the cronjob times out). The run must continue and not fail."""
+
+    def test_404_detail_marks_no_pdf_and_continues(self):
+        gone = dict(PENDING_REPORT, resource_id="AP_GONE_001",
+                    detail_url="https://data.eastmoney.com/report/info/AP_GONE_001.html")
+        ok = dict(PENDING_REPORT, resource_id="AP_OK_001")
+        task = _make_task_with_http_mocked()
+
+        def fake_detail(ctx, url, referer=""):
+            if "AP_GONE_001" in url:
+                raise ReportGone("HTTP 404 Not Found (report delisted)")
+            return DETAIL_HTML
+        task._fetch_detail_html = fake_detail
+
+        phoenix = _FakePhoenix(pending=[gone, ok])
+        minio = _FakeMinioReal()
+        ctx = _FakeCtx(
+            params=_base_params(),
+            dept_http={
+                DeptServices.PHOENIXA: phoenix,
+                DeptServices.MINIO: minio,
+                DeptServices.CRONJOB: _FakeCronjob(),
+            },
+        )
+
+        task.execute(_as_task_context(ctx))
+
+        statuses = {u["resource_id"]: u["status"] for u in phoenix.status_updates}
+        assert statuses["AP_GONE_001"] == "no_pdf"   # terminal, not retried next run
+        assert statuses["AP_OK_001"] == "downloaded"  # run continued past the delisted row
+        assert not ctx.has_failed()                   # delisted != run failure
+
+    def test_request_404_raises_report_gone_without_retry(self):
+        # _request must NOT retry/backoff on 404 - doing so wastes ~2-3 min per
+        # delisted record (3x 45-120s backoff) and is the root cause of the
+        # strategy / morning_report callback-deadline timeouts.
+        task = StockZhAEastmoneyReport()
+        sleep_calls = []
+        task._sleep = lambda ctx, secs, reason: sleep_calls.append(reason)
+
+        class _Resp:
+            status_code = 404
+            headers = {}
+            text = "not found"
+
+            def raise_for_status(self):
+                from requests import HTTPError
+                raise HTTPError("404 Client Error: Not Found")
+        class _Sess:
+            def request(self, method, url, **kw):
+                return _Resp()
+        task._session = _Sess()
+        ctx = _FakeCtx(params={}, dept_http={})
+
+        raised = None
+        try:
+            task._request(ctx, "GET", "https://data.eastmoney.com/report/info/AP_GONE.html")
+        except ReportGone as e:
+            raised = e
+        assert raised is not None
+        assert sleep_calls == []  # 404 must not trigger retry backoff
 
 
 class TestBuildObjectKey:

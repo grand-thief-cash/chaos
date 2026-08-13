@@ -169,6 +169,15 @@ class CrawlStopped(RuntimeError):
     """Raised when eastmoney appears to block/captcha us; the run should stop."""
 
 
+class ReportGone(RuntimeError):
+    """Raised when a report's page is permanently gone (HTTP 404) - the report
+    has been delisted from Eastmoney's rolling ~2-year list window. This is NOT
+    transient: retrying wastes ~2-3 min/record (3x 45-120s backoff) on records
+    that will never come back, clogging the pending queue every run and blowing
+    the cronjob callback deadline (task 21 strategy / morning_report timeouts).
+    The record is marked terminal (no_pdf) so QueryPending stops re-queuing it."""
+
+
 class StockZhAEastmoneyReport(WorkerUnit):
     """Download Eastmoney stock research-report PDFs → MinIO + phoenixA state.
 
@@ -282,6 +291,11 @@ class StockZhAEastmoneyReport(WorkerUnit):
         except CrawlStopped as e:
             ctx.fail(f"eastmoney block during list: {e}", phase="execute")
             return {"listed": listed, "processed": 0, "pending_count": 0}
+        except ReportGone as e:
+            # A 404 on the list endpoint itself means the URL moved (code/config
+            # bug) - fail loudly so it is noticed, rather than crashing the run.
+            ctx.fail(f"eastmoney list endpoint gone (404): {e}", phase="execute")
+            return {"listed": listed, "processed": 0, "pending_count": 0}
 
         # ── PROCESS phase ──
         # If MinIO is the noop mock (no real endpoint configured), SKIP the
@@ -327,6 +341,24 @@ class StockZhAEastmoneyReport(WorkerUnit):
             except CrawlStopped as e:
                 ctx.fail(f"eastmoney block during process: {e}", phase="execute")
                 break
+            except ReportGone as e:
+                # Detail page 404 -> report delisted from Eastmoney's rolling
+                # window. Mark terminal (no_pdf) so QueryPending stops re-queuing
+                # it every run; retrying would just burn the callback deadline on
+                # gone reports. (Self-healing: existing pdf_error rows that 404
+                # are converted to no_pdf on the next run after this ships.)
+                resource_id = report.get("resource_id", "?")
+                ctx.logger.info({
+                    "event": "eastmoney_report_delisted",
+                    "resource_id": resource_id, "error": str(e), "run_id": ctx.run_id,
+                })
+                try:
+                    phoenix_client.update_research_report_status(
+                        source=source, resource_id=resource_id, status="no_pdf",
+                        last_error=str(e)[:2000], run_id=ctx.run_id,
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 resource_id = report.get("resource_id", "?")
                 ctx.logger.warning({
@@ -638,11 +670,18 @@ class StockZhAEastmoneyReport(WorkerUnit):
                 response = self._session.request(method, url, timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
                 if response.status_code in {403, 429, 503}:
                     raise CrawlStopped(f"blocked or rate limited: HTTP {response.status_code}")
+                if response.status_code == 404:
+                    # Page is gone (report delisted from Eastmoney's rolling
+                    # window). Not transient - do NOT retry/backoff. The caller
+                    # (PROCESS loop) catches ReportGone and marks the record
+                    # terminal (no_pdf) so it stops clogging the pending queue.
+                    raise ReportGone(
+                        f"HTTP 404 Not Found (report delisted): {method} {url}")
                 if 500 <= response.status_code < 600:
                     raise RuntimeError(f"server error HTTP {response.status_code}")
                 response.raise_for_status()
                 return response
-            except CrawlStopped:
+            except (CrawlStopped, ReportGone):
                 raise
             except Exception as exc:
                 last_exc = exc
