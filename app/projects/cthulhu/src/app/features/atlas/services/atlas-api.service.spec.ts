@@ -21,16 +21,25 @@ describe('AtlasApiService', () => {
   afterEach(() => http.verify());
 
   it('submits explicit report types for discovery sampling', () => {
-    service.startDiscovery(120, ['stock', 'industry']).subscribe();
+    service.createSampleRun({
+      sample_size: 120,
+      report_types: ['stock', 'industry'],
+      published_from: null,
+      published_to: null,
+      force: false,
+    }).subscribe();
     const request = http.expectOne(req =>
-      req.url.endsWith('/api/v1/atlas-kg/discovery-runs'),
+      req.url.endsWith('/api/v1/atlas-kg/sample-runs'),
     );
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({
       sample_size: 120,
       report_types: ['stock', 'industry'],
+      published_from: null,
+      published_to: null,
+      force: false,
     });
-    request.flush({run_id: 'run-1'});
+    request.flush({sample_run_id: 'run-1', accepted: true, cronjob_run_id: null});
   });
 
   it('keeps review and semantic publication as separate writes', () => {
@@ -136,5 +145,17 @@ describe('AtlasApiService', () => {
     expect(request.request.body.report_types).toBeNull();
     expect(request.request.body.force).toBeFalse();
     request.flush({count: 0, runs: []});
+  });
+
+  it('falls back to empty graph stats when the graph endpoint is unavailable', () => {
+    let stats: {entities: number; claims: number} | undefined;
+    service.graphStats().subscribe(value => (stats = value));
+    const request = http.expectOne(req =>
+      req.url.endsWith('/api/v1/atlas-graph/stats'),
+    );
+    // The graph service may be undeployed (404); the call must not surface as
+    // a global error and must resolve to zeros so overview cards still render.
+    request.flush('404 page not found', {status: 404, statusText: 'Not Found'});
+    expect(stats).toEqual({entities: 0, claims: 0});
   });
 });

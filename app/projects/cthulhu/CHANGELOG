@@ -2,6 +2,9 @@
 v0.25.0
 
 # Changelog
+- v0
+    - **Atlas sampling is development-only.** Added environment-gated Atlas sample-run and raw free-extraction review routes. Development builds expose the field-discovery workbench; production builds omit both sample routes from navigation while retaining approved-profile full extraction and governance pages.
+    - **Async sampling review workflow.** Added sample-run progress polling, per-type category summaries and expandable per-document free JSON so reviewers can judge semantic usefulness rather than only task completion.
 - v0.25.0
     - **T-trading Signal Workbench.** Added a routed single-day replay page with previous/next-day navigation, multiple strategy selection, and strategy-colored BUY/SELL markers.
     - **Signal event-study statistics.** The page now emphasizes how far and how quickly price rises after BUY or falls after SELL across configured horizons, with hit rate, MFE/MAE, coverage, signal-factor audit rows, and data-quality counts.

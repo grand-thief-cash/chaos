@@ -55,3 +55,54 @@ export interface KnowledgeEntity {
   country_code: string; resolution_state: string; attributes: Record<string, unknown>;
 }
 export interface GraphStats { entities: number; claims: number; }
+
+export interface SampleRun {
+  id: string;
+  status: string;
+  cronjob_run_id: number | null;
+  current: number;
+  total: number;
+  progress_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  request_payload: Record<string, unknown>;
+}
+export interface SampleCategoryResult {
+  id: string;
+  sample_run_id: string;
+  report_type: string;
+  document_count: number;
+  raw_results: Array<{
+    document_id: string;
+    title: string;
+    s3_path: string;
+    report_type: string;
+    extraction_run_id: string;
+    extraction_result: unknown | null;
+    // Free-form per-PDF extraction (discovery phase). Present when the sample
+    // run used the two-stage free-extraction path; absent for legacy strict runs.
+    free_extraction_result?: unknown | null;
+    discovery_result: unknown;
+  }>;
+  field_summary: {
+    report_type?: string;
+    recommended_fields?: Array<{
+      field_name: string;
+      description: string;
+      rationale: string;
+      occurrence_count: number;
+    }>;
+    recommended_prompt_profile_key?: string | null;
+    notes?: string;
+  } | null;
+  generated_at: string | null;
+}
+export interface SampleRunRequest {
+  sample_size: number;
+  report_types: string[];
+  published_from: string | null;
+  published_to: string | null;
+  force: boolean;
+}

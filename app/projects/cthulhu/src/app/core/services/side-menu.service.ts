@@ -7,6 +7,7 @@ export interface SideMenuItem {
   route?: string;
   selectedMatchExact?: boolean;
   order?: number;
+  group?: string;
   children?: SideMenuItem[];
 }
 
@@ -18,7 +19,7 @@ export interface SideMenuGroup {
 }
 
 interface MenuGroupMeta { title: string; icon?: string; }
-interface MenuItemMeta { label: string; icon?: string; order?: number; hide?: boolean; }
+interface MenuItemMeta { label: string; icon?: string; order?: number; group?: string; hide?: boolean; }
 
 @Injectable({ providedIn: 'root' })
 export class SideMenuService {
@@ -52,9 +53,38 @@ export class SideMenuService {
       .filter((item): item is SideMenuItem => !!item)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-    if (groupMeta && items.length) {
-      this.cache[firstSegment] = [{ title: groupMeta.title, icon: groupMeta.icon || null, open: true, items }];
+    const grouped = this.groupBySubGroup(items);
+    if (groupMeta && grouped.length) {
+      this.cache[firstSegment] = [{ title: groupMeta.title, icon: groupMeta.icon || null, open: true, items: grouped }];
     }
+  }
+
+  /**
+   * Cluster items that declare a `group` into nested sub-menus (one nz-submenu
+   * per group). Items without a group stay flat. Group sub-menus are ordered by
+   * the smallest order of their children so the overall sort is preserved.
+   */
+  private groupBySubGroup(items: SideMenuItem[]): SideMenuItem[] {
+    const withGroup = items.filter(i => i.group);
+    if (!withGroup.length) return items;
+    const withoutGroup = items.filter(i => !i.group);
+    const order: string[] = [];
+    const buckets: Record<string, SideMenuItem[]> = {};
+    for (const item of withGroup) {
+      const g = item.group as string;
+      if (!buckets[g]) {
+        buckets[g] = [];
+        order.push(g);
+      }
+      buckets[g].push(item);
+    }
+    const subMenus: SideMenuItem[] = order.map(g => ({
+      label: g,
+      order: Math.min(...buckets[g].map(i => i.order ?? 0)),
+      children: buckets[g],
+    }));
+    subMenus.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return [...withoutGroup, ...subMenus];
   }
 
   private buildMenuItem(firstSegment: string, parentPath: string, route: Route): SideMenuItem | null {
@@ -72,6 +102,7 @@ export class SideMenuService {
       route: `/${firstSegment}/${fullPath}`,
       selectedMatchExact: !children.length,
       order: meta.order ?? 0,
+      group: meta.group,
       children: children.length ? children : undefined,
     };
   }
