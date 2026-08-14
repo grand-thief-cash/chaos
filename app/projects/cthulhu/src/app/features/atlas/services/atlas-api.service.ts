@@ -7,7 +7,7 @@ import {SKIP_GLOBAL_ERROR_NOTIFICATION} from '../../../core/errors/error-notific
 import {
   AtlasList, ExtractionBatchRequest, ExtractionBatchResponse, ExtractionRun,
   GovernanceRecord, GraphStats, KnowledgeEntity,
-  SampleCategoryResult, SampleRun, SampleRunRequest,
+  ActiveSampleRun, HarnessEventPage, SampleCategoryResult, SampleRun, SampleRunRequest,
 } from '../models/atlas.models';
 
 @Injectable({providedIn: 'root'})
@@ -113,6 +113,22 @@ export class AtlasApiService {
   }
   getSampleRun(runId: string): Observable<SampleRun> {
     return this.http.get<SampleRun>(`${this.atlas}/api/v1/atlas-kg/sample-runs/${runId}`);
+  }
+  getActiveSampleRuns(): Observable<AtlasList<ActiveSampleRun> & {ephemeral: boolean}> {
+    return this.http.get<AtlasList<ActiveSampleRun> & {ephemeral: boolean}>(
+      `${this.atlas}/api/v1/atlas-kg/sample-runs/active`,
+    );
+  }
+  getSampleHarnessEvents(
+    runId: string, afterSequence = 0, limit = 200,
+  ): Observable<HarnessEventPage> {
+    const params = new HttpParams()
+      .set('after_sequence', afterSequence)
+      .set('limit', limit);
+    return this.http.get<HarnessEventPage>(
+      `${this.atlas}/api/v1/atlas-kg/sample-runs/${runId}/harness-events`,
+      {params},
+    );
   }
   listSampleRuns(status: string): Observable<AtlasList<SampleRun>> {
     const params = status ? new HttpParams().set('status', status) : undefined;

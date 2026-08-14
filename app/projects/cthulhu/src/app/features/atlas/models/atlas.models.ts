@@ -106,3 +106,32 @@ export interface SampleRunRequest {
   published_to: string | null;
   force: boolean;
 }
+export interface ActiveSampleRun {
+  run_id: string;
+  cronjob_run_id: number | null;
+  identity_key: string;
+}
+export interface HarnessEvent {
+  sequence: number;
+  timestamp: string;
+  run_id: string;
+  stage: string;
+  event_type: string;
+  level: string;
+  message: string;
+  document_id: string | null;
+  report_type: string | null;
+  provider: string | null;
+  parser: string | null;
+  details: Record<string, unknown>;
+}
+export interface HarnessEventPage {
+  run_id: string;
+  events: HarnessEvent[];
+  latest_sequence: number;
+  newest_available_sequence: number;
+  oldest_available_sequence: number;
+  buffer_limit: number;
+  truncated: boolean;
+  ephemeral: boolean;
+}

@@ -1,8 +1,10 @@
 # VERSION
-v0.25.0
+- v0.26.1
 
 # Changelog
-- v0
+- v0.26.1
+    - **Sampling Harness live timeline.** The development Atlas Sample Runs page now discovers and attaches to Sampling tasks already running when the page opens, then incrementally displays bounded in-memory Workflow, Document Parser and LLM provider events, including OCR escalation, chunk map/merge, provider failover/circuit state and field-review progress. Events are explicitly ephemeral, automatically scroll, and disappear normally after an Atlas restart.
+- v0.26.0
     - **Atlas sampling is development-only.** Added environment-gated Atlas sample-run and raw free-extraction review routes. Development builds expose the field-discovery workbench; production builds omit both sample routes from navigation while retaining approved-profile full extraction and governance pages.
     - **Async sampling review workflow.** Added sample-run progress polling, per-type category summaries and expandable per-document free JSON so reviewers can judge semantic usefulness rather than only task completion.
 - v0.25.0

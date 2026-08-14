@@ -42,6 +42,15 @@ describe('AtlasApiService', () => {
     request.flush({sample_run_id: 'run-1', accepted: true, cronjob_run_id: null});
   });
 
+  it('discovers active in-memory sampling tasks for late-opened pages', () => {
+    service.getActiveSampleRuns().subscribe();
+    const request = http.expectOne(req =>
+      req.url.endsWith('/api/v1/atlas-kg/sample-runs/active'),
+    );
+    expect(request.request.method).toBe('GET');
+    request.flush({data: [], ephemeral: true});
+  });
+
   it('keeps review and semantic publication as separate writes', () => {
     const payload = {
       run_id: 'run-1',
