@@ -1,7 +1,9 @@
 # VERSION
-v1.44.0
+v1.44.1
 
 # Changelog
+- v1.44.1
+    - **Complete Atlas Sampling run state.** The sample-run status endpoint now accepts `sampled_document_ids` so Atlas can persist the exact stratified document set together with the terminal run state. This closes the audit gap where per-document/category rows existed but the parent run returned an empty selected-document list.
 - v1.44.0
     - **Atlas sample-run persistence.** Added `atlas_kg.sample_run`, `atlas_kg.sample_category_result`, and `atlas_kg.sample_document_result` tables (migration `0015_atlas_sample_tables.sql`) so Atlas can persist async sampling task state, per-category aggregated JSON output, and per-document processing records without owning a database. `sample_document_result` references `extraction_run` for per-document LLM timing and traceability; `sample_run.cronjob_run_id` links a sampling task to its cronjob run.
     - **Atlas sample-run HTTP endpoints.** Added 11 endpoints under `/api/v1/atlas-kg/sample-runs` for create, get, progress update, status update, per-category result upsert/get/list, field-summary update (human review), and per-document result create/update/list. Follows the existing Atlas controller/DAO/service layering and JSONB `jsonb_typeof` CHECK conventions.

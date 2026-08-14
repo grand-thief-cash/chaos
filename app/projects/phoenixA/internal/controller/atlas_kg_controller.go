@@ -567,11 +567,12 @@ func (c *AtlasKGController) UpdateSampleRunStatus(w http.ResponseWriter, r *http
 		return
 	}
 	var req struct {
-		Status       string `json:"status"`
-		StartedAt    string `json:"started_at"`
-		CompletedAt  string `json:"completed_at"`
-		ErrorCode    string `json:"error_code"`
-		ErrorMessage string `json:"error_message"`
+		Status             string            `json:"status"`
+		StartedAt          string            `json:"started_at"`
+		CompletedAt        string            `json:"completed_at"`
+		ErrorCode          string            `json:"error_code"`
+		ErrorMessage       string            `json:"error_message"`
+		SampledDocumentIDs model.StringArray `json:"sampled_document_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
@@ -580,6 +581,14 @@ func (c *AtlasKGController) UpdateSampleRunStatus(w http.ResponseWriter, r *http
 	if !validSampleRunStatuses[req.Status] {
 		writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid status"})
 		return
+	}
+	if req.SampledDocumentIDs != nil {
+		if err := c.Svc.UpdateSampleRunSampledDocs(
+			r.Context(), runID, req.SampledDocumentIDs,
+		); err != nil {
+			writeSampleNotFound(w, err)
+			return
+		}
 	}
 	err := c.Svc.UpdateSampleRunStatus(
 		r.Context(), runID, req.Status,
