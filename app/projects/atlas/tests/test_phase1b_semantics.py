@@ -415,6 +415,7 @@ async def test_run_sample_free_extraction_invokes_summariser_and_publishes_gover
         def __init__(self):
             self.category_results = {}
             self.governance = None
+            self.terminal_sampled_document_ids = None
 
         async def list_research_reports(self, **_):
             return [report]
@@ -423,7 +424,11 @@ async def test_run_sample_free_extraction_invokes_summariser_and_publishes_gover
             self.governance = payload
             return {"kind": kind, "payload": payload}
 
-        async def update_sample_run_status(self, *_, **__):
+        async def update_sample_run_status(self, *args, **kwargs):
+            if len(args) >= 2 and args[1] in {"SUCCESS", "FAILED"}:
+                self.terminal_sampled_document_ids = kwargs.get(
+                    "sampled_document_ids"
+                )
             return None
 
         async def update_sample_run_progress(self, *_, **__):
@@ -579,6 +584,7 @@ async def test_run_sample_free_extraction_invokes_summariser_and_publishes_gover
         p["canonical_name"] for p in repo.governance["predicate_proposals"]
     ]
     assert "PRODUCES" in predicate_names
+    assert repo.terminal_sampled_document_ids == [report.document_id]
 
 
 @pytest.mark.asyncio

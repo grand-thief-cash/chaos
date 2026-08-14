@@ -22,6 +22,7 @@ from atlas.core.clients import (
     build_structured_chat_client,
 )
 from atlas.core.llm import FailoverLLMClient, KeyPool
+from atlas.core.harness_events import HarnessEventRegistry
 from atlas.core.sample_task_registry import SampleTaskRegistry
 from atlas.intelligence import (
     CompanyReviewAgent,
@@ -53,6 +54,7 @@ from atlas.knowledge_production.pdf_preprocessor import (
     HTTPLayoutParserSidecar,
     PikePDFUnlocker,
     RapidOCRLayoutParser,
+    DocumentParserHarness,
 )
 from atlas.models import Config, LLMModelCfg, ModelProvider
 
@@ -72,6 +74,8 @@ class AtlasRuntime:
     query_orchestrator: object | None = None
     company_review_agent: object | None = None
     layout_parser_sidecar: object | None = None
+    document_parser_harness: object | None = None
+    harness_events: HarnessEventRegistry = field(default_factory=HarnessEventRegistry)
     sampling_llm_harnesses: dict[str, object] = field(default_factory=dict)
 
 
@@ -94,20 +98,25 @@ def _build_model_client(
     model_cfg: LLMModelCfg,
     key_pools: dict[str, KeyPool],
     total_concurrency: int,
+    document_parser: DocumentParserHarness | None = None,
 ):
     pool = _build_key_pool(model_name, model_cfg, key_pools, total_concurrency)
     if model_cfg.provider == ModelProvider.ZHIPU_TEXT:
-        return ZhipuTextPDFClient(model_cfg, pool)
+        return ZhipuTextPDFClient(model_cfg, pool, document_parser=document_parser)
     if model_cfg.provider == ModelProvider.OLLAMA:
-        return OllamaChatClient(model_cfg, pool)
+        return OllamaChatClient(model_cfg, pool, document_parser=document_parser)
     if model_cfg.capabilities.pdf_direct and not model_cfg.capabilities.text_extraction:
         return OpenAICompatiblePDFClient(model_cfg, pool)
     if model_cfg.provider in {
         ModelProvider.NVIDIA_NIM,
         ModelProvider.OPENAI_COMPATIBLE,
     }:
-        return OpenAICompatibleTextPDFClient(model_cfg, pool)
-    return OpenRouterTextPDFClient(model_cfg, pool)
+        return OpenAICompatibleTextPDFClient(
+            model_cfg, pool, document_parser=document_parser
+        )
+    return OpenRouterTextPDFClient(
+        model_cfg, pool, document_parser=document_parser
+    )
 
 
 def _build_stage_harness(
@@ -115,6 +124,8 @@ def _build_stage_harness(
     config: Config,
     key_pools: dict[str, KeyPool],
     client_cache: dict[str, object],
+    document_parser: DocumentParserHarness | None = None,
+    events: HarnessEventRegistry | None = None,
 ):
     harness_cfg = config.llm.harness_for_stage(stage)
     if harness_cfg is None:
@@ -128,10 +139,13 @@ def _build_stage_harness(
                 config.llm.models[model_name],
                 key_pools,
                 config.engine.knowledge_engine.llm_concurrency,
+                document_parser,
             )
             client_cache[model_name] = client
         clients.append((model_name, client))
-    return FailoverLLMClient(clients, harness_cfg)
+    return FailoverLLMClient(
+        clients, harness_cfg, stage=stage, events=events
+    )
 
 
 def build_runtime(config: Config) -> AtlasRuntime:
@@ -173,11 +187,29 @@ def build_runtime(config: Config) -> AtlasRuntime:
         secure=sampling_endpoint_cfg.secure,
     )
 
+    harness_events = HarnessEventRegistry(
+        maximum_events_per_run=knowledge.harness_event_buffer_size,
+        maximum_runs=knowledge.harness_event_maximum_runs,
+    )
+    layout_sidecar = None
+    if knowledge.document_layout_sidecar_url:
+        layout_sidecar = HTTPLayoutParserSidecar(knowledge.document_layout_sidecar_url)
+    elif knowledge.document_local_ocr_enabled:
+        layout_sidecar = RapidOCRLayoutParser(
+            dpi=knowledge.document_local_ocr_dpi,
+            maximum_pages=knowledge.document_local_ocr_maximum_pages,
+        )
+    document_parser = DocumentParserHarness(layout_sidecar, events=harness_events)
+
     key_pools: dict[str, KeyPool] = {}
     model_clients: dict[str, object] = {}
     extraction_name, extraction_model = config.llm.model_for_role("extraction")
     llm = _build_model_client(
-        extraction_name, extraction_model, key_pools, knowledge.llm_concurrency
+        extraction_name,
+        extraction_model,
+        key_pools,
+        knowledge.llm_concurrency,
+        document_parser,
     )
     model_clients[extraction_name] = llm
     extractor = WholePDFExtractor(
@@ -211,19 +243,21 @@ def build_runtime(config: Config) -> AtlasRuntime:
         semantic_directory=Path(knowledge.semantic_config_path).parent,
     )
     cronjob_callback = CronjobCallbackClient(config.dept_services.cronjob.base_url)
-    layout_sidecar = None
-    if knowledge.sampling_layout_sidecar_url:
-        layout_sidecar = HTTPLayoutParserSidecar(knowledge.sampling_layout_sidecar_url)
-    elif knowledge.sampling_local_ocr_enabled:
-        layout_sidecar = RapidOCRLayoutParser(
-            dpi=knowledge.sampling_local_ocr_dpi,
-            maximum_pages=knowledge.sampling_local_ocr_maximum_pages,
-        )
     sampling_extraction_harness = _build_stage_harness(
-        "sampling_extraction", config, key_pools, model_clients
+        "sampling_extraction",
+        config,
+        key_pools,
+        model_clients,
+        document_parser,
+        harness_events,
     )
     sampling_review_harness = _build_stage_harness(
-        "sampling_review", config, key_pools, model_clients
+        "sampling_review",
+        config,
+        key_pools,
+        model_clients,
+        document_parser,
+        harness_events,
     )
     sampling_llm = sampling_extraction_harness or llm
     reviewer_llm = sampling_review_harness or sampling_llm
@@ -240,7 +274,8 @@ def build_runtime(config: Config) -> AtlasRuntime:
         merge_output_tokens=knowledge.sampling_merge_output_tokens,
         maximum_chunks=knowledge.sampling_maximum_chunks,
         prompt_reserve_tokens=knowledge.sampling_prompt_reserve_tokens,
-        layout_sidecar=layout_sidecar,
+        document_parser=document_parser,
+        events=harness_events,
     )
     free_runner = FreeExtractionRunner(
         # Sampling may read a larger production corpus through a dedicated
@@ -251,6 +286,7 @@ def build_runtime(config: Config) -> AtlasRuntime:
         extractor=free_extractor,
         unlocker=PikePDFUnlocker(),
         pipeline_version=knowledge.pipeline_version,
+        events=harness_events,
     )
     # Predicate/concept induction is a separate, expensive pass. Field
     # discovery and support counting do not depend on it, so keep it opt-in for
@@ -276,6 +312,7 @@ def build_runtime(config: Config) -> AtlasRuntime:
         free_field_reviewer=free_field_reviewer,
         document_concurrency=knowledge.llm_concurrency,
         minimum_success_ratio=knowledge.sampling_minimum_success_ratio,
+        harness_events=harness_events,
     )
     knowledge_production = KnowledgeProductionOrchestrator(
         orchestrator,
@@ -302,6 +339,8 @@ def build_runtime(config: Config) -> AtlasRuntime:
         query_orchestrator=query_orchestrator,
         company_review_agent=CompanyReviewAgent(query_orchestrator),
         layout_parser_sidecar=layout_sidecar,
+        document_parser_harness=document_parser,
+        harness_events=harness_events,
         sampling_llm_harnesses={
             name: harness
             for name, harness in {

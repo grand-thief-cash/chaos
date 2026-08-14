@@ -68,3 +68,30 @@ async def test_entity_candidate_lookup_can_request_exact_alias_match():
         "entity_type": "COMPANY",
         "match": "exact",
     }
+
+
+@pytest.mark.asyncio
+async def test_sample_terminal_status_sends_exact_sampled_document_ids():
+    captured = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["path"] = request.url.path
+        captured["payload"] = __import__("json").loads(request.content)
+        return httpx.Response(200, json={"updated": True})
+
+    client = PhoenixAClient(
+        "http://phoenix.test",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    await client.update_sample_run_status(
+        "11111111-2222-3333-4444-555555555555",
+        "SUCCESS",
+        sampled_document_ids=["eastmoney:r1", "eastmoney:r2"],
+    )
+    assert captured == {
+        "path": "/api/v1/atlas-kg/sample-runs/11111111-2222-3333-4444-555555555555/status",
+        "payload": {
+            "status": "SUCCESS",
+            "sampled_document_ids": ["eastmoney:r1", "eastmoney:r2"],
+        },
+    }

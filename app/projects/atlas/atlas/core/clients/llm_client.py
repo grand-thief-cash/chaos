@@ -16,6 +16,9 @@ from atlas.knowledge_production.pdf_preprocessor.text_extractor import (
     extract_pdf_pages,
     render_pdf_pages,
 )
+from atlas.knowledge_production.pdf_preprocessor.document_harness import (
+    DocumentParserHarness,
+)
 from atlas.models import LLMModelCfg, ThinkingMode
 
 
@@ -126,6 +129,7 @@ class ZhipuTextPDFClient:
         client: httpx.AsyncClient | None = None,
         request_maximum_attempts: int = 4,
         retry_base_seconds: float = 1,
+        document_parser: DocumentParserHarness | None = None,
     ) -> None:
         self.config = config
         self.key_pool = key_pool
@@ -133,6 +137,10 @@ class ZhipuTextPDFClient:
         self.request_maximum_attempts = request_maximum_attempts
         self.retry_base_seconds = retry_base_seconds
         self._client = client or httpx.AsyncClient(timeout=config.timeout_seconds)
+        self.document_parser = document_parser
+        self.document_parser_signature = (
+            document_parser.signature if document_parser else "legacy-pdfplumber"
+        )
 
     @staticmethod
     def extract_page_delimited_text(pdf: bytes) -> str:
@@ -149,9 +157,13 @@ class ZhipuTextPDFClient:
         max_tokens: int | None = None,
         response_schema: dict | None = None,
     ) -> str:
-        extracted_text = await asyncio.to_thread(
-            self.extract_page_delimited_text, pdf
-        )
+        if self.document_parser is not None:
+            parsed = await self.document_parser.parse(pdf, filename=filename)
+            extracted_text = parsed.text
+        else:
+            extracted_text = await asyncio.to_thread(
+                self.extract_page_delimited_text, pdf
+            )
         return await self.complete_text(
             prompt=prompt,
             extracted_text=extracted_text,

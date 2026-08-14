@@ -18,6 +18,10 @@ from atlas.knowledge_production.pdf_preprocessor.layout_sidecar import (
     LayoutParserSidecar,
     RapidOCRLayoutParser,
 )
+from atlas.knowledge_production.pdf_preprocessor.document_harness import (
+    DocumentParseResult,
+    DocumentParserHarness,
+)
 
 __all__ = [
     "PDFTextChunk",
@@ -27,6 +31,8 @@ __all__ = [
     "HTTPLayoutParserSidecar",
     "LayoutParserSidecar",
     "RapidOCRLayoutParser",
+    "DocumentParseResult",
+    "DocumentParserHarness",
     "PikePDFUnlocker",
     "chunk_pdf_pages",
     "assess_pdf_text_quality",

@@ -114,9 +114,45 @@ async def list_sample_runs(request: Request, status: str = ""):
     return {"data": items}
 
 
+@router.get("/sample-runs/active")
+async def list_active_sample_runs(request: Request):
+    """Return process-local tasks so a newly opened UI can attach immediately."""
+    handles = request.app.state.runtime.sample_task_registry.active_handles()
+    return {
+        "data": [
+            {
+                "run_id": handle.run_id,
+                "cronjob_run_id": handle.cronjob_run_id,
+                "identity_key": handle.identity_key,
+            }
+            for handle in handles
+        ],
+        "ephemeral": True,
+    }
+
+
 @router.get("/sample-runs/{run_id}")
 async def get_sample_run(run_id: str, request: Request):
     return await request.app.state.runtime.phoenixa.get_sample_run(run_id)
+
+
+@router.get("/sample-runs/{run_id}/harness-events")
+async def list_harness_events(
+    run_id: str,
+    request: Request,
+    after_sequence: int = 0,
+    limit: int = 200,
+):
+    """Return the bounded, process-local Sampling Harness timeline.
+
+    These events are observability only: service restart clears them, while the
+    durable run/category/document state remains in PhoenixA.
+    """
+    return request.app.state.runtime.harness_events.list_events(
+        run_id,
+        after_sequence=max(0, after_sequence),
+        limit=limit,
+    )
 
 
 @router.get("/sample-runs/{run_id}/category-results")

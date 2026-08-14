@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import math
@@ -32,6 +33,7 @@ from atlas.models import (
     FieldRecommendation,
 )
 from atlas.models.free_extraction import CategoryFieldReview, FreeExtractionResult
+from atlas.core.harness_events import HarnessEventRegistry, harness_context
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +79,7 @@ class SemanticDiscoveryService:
         document_concurrency: int = 1,
         minimum_success_ratio: float = 0.6,
         clock: Callable[[], datetime] | None = None,
+        harness_events: HarnessEventRegistry | None = None,
     ) -> None:
         self.repository = repository
         self.sample_catalog = sample_catalog or repository
@@ -94,6 +97,7 @@ class SemanticDiscoveryService:
         self.document_concurrency = max(1, document_concurrency)
         self.minimum_success_ratio = min(1, max(0, minimum_success_ratio))
         self.clock = clock or (lambda: datetime.now(UTC))
+        self.harness_events = harness_events
 
     @staticmethod
     def _now_iso() -> str:
@@ -114,6 +118,19 @@ class SemanticDiscoveryService:
         are recorded on the sample_run and reported via cronjob finalize).
         """
         started_at = self._now_iso()
+        if self.harness_events is not None:
+            self.harness_events.start_run(sample_run_id)
+            self._emit(
+                sample_run_id,
+                "workflow.sample",
+                "SAMPLE_RUN_ACCEPTED",
+                "Sampling Harness 已接管任务",
+                details={
+                    "requested_sample_size": request.sample_size,
+                    "report_types": request.report_types,
+                    "sample_seed": getattr(request, "sample_seed", 0),
+                },
+            )
         try:
             await self.repository.update_sample_run_status(
                 sample_run_id, "RUNNING", started_at=started_at
@@ -159,6 +176,17 @@ class SemanticDiscoveryService:
                     seed=getattr(request, "sample_seed", 0),
                 )
             total = len(sampled)
+            self._emit(
+                sample_run_id,
+                "workflow.sample",
+                "SAMPLE_SELECTION_COMPLETED",
+                f"完成分层抽样，共选择 {total} 篇文档",
+                details={
+                    "candidate_count": len(reports),
+                    "selected_count": total,
+                    "all_mode": all_mode,
+                },
+            )
             await self._report_progress(sample_run_id, cronjob_run_id, 0, total, "sampling started")
 
             semantic = self.semantic_registry.get()
@@ -170,6 +198,15 @@ class SemanticDiscoveryService:
             document_semaphore = asyncio.Semaphore(self.document_concurrency)
 
             async def process_one_inner(report: Any) -> None:
+                self._emit(
+                    sample_run_id,
+                    "workflow.document",
+                    "DOCUMENT_STARTED",
+                    "开始处理样本文档",
+                    document_id=report.document_id,
+                    report_type=report.report_type,
+                    details={"title": report.title[:180]},
+                )
                 profile = semantic.report_profile(report.report_type, allow_disabled=True)
                 profile_key = (
                     profile.get("prompt_profile_key")
@@ -181,13 +218,20 @@ class SemanticDiscoveryService:
                 free_result: FreeExtractionResult | None = None
                 document_result: DiscoveryDocumentResult | None = None
                 if use_free:
-                    outcome = await self.free_runner.run_document(
-                        report,
-                        report_profile={
+                    free_runner_parameters = inspect.signature(
+                        self.free_runner.run_document
+                    ).parameters
+                    free_runner_kwargs = {
+                        "report_profile": {
                             **profile,
                             "prompt_profile_key": profile_key,
                             "sampling_subtype": infer_report_subtype(report),
-                        },
+                        }
+                    }
+                    if "harness_run_id" in free_runner_parameters:
+                        free_runner_kwargs["harness_run_id"] = sample_run_id
+                    outcome = await self.free_runner.run_document(
+                        report, **free_runner_kwargs
                     )
                     run = outcome.run
                     free_result = outcome.result
@@ -286,6 +330,20 @@ class SemanticDiscoveryService:
                     sample_run_id, cronjob_run_id, done, total,
                     f"{report.report_type}: {done}/{total}",
                 )
+                self._emit(
+                    sample_run_id,
+                    "workflow.document",
+                    "DOCUMENT_COMPLETED" if doc_status == "SUCCESS" else "DOCUMENT_FAILED",
+                    "样本文档处理完成" if doc_status == "SUCCESS" else "样本文档处理失败",
+                    level="INFO" if doc_status == "SUCCESS" else "ERROR",
+                    document_id=report.document_id,
+                    report_type=report.report_type,
+                    details={
+                        "status": doc_status,
+                        "duration_ms": duration_ms,
+                        "error_code": run.error_code,
+                    },
+                )
 
             async def process_one(report: Any) -> None:
                 async with document_semaphore:
@@ -381,12 +439,23 @@ class SemanticDiscoveryService:
                     sample_run_id, cronjob_run_id, total, total,
                     f"{report_type}: summarizing fields",
                 )
+                self._emit(
+                    sample_run_id,
+                    "workflow.field_review",
+                    "FIELD_REVIEW_STARTED",
+                    f"开始归纳 {report_type} 的通用抽取字段",
+                    report_type=report_type,
+                    details={"document_count": len(work["free_results"])},
+                )
                 if use_free:
                     if self.free_field_reviewer is None:
                         raise RuntimeError("free field reviewer is not configured")
-                    field_review = await self.free_field_reviewer.summarise(
-                        report_type, free_results
-                    )
+                    with harness_context(
+                        sample_run_id, report_type=report_type
+                    ):
+                        field_review = await self.free_field_reviewer.summarise(
+                            report_type, free_results
+                        )
                     if not (field_review.core_fields or field_review.conditional_fields):
                         raise RuntimeError(
                             f"field reviewer produced no reusable fields for {report_type}"
@@ -404,6 +473,18 @@ class SemanticDiscoveryService:
                     )
                 await self.repository.update_sample_field_summary(
                     sample_run_id, report_type, field_summary
+                )
+                self._emit(
+                    sample_run_id,
+                    "workflow.field_review",
+                    "FIELD_REVIEW_COMPLETED",
+                    f"{report_type} 字段归纳完成",
+                    report_type=report_type,
+                    details={
+                        "recommended_field_count": len(
+                            field_summary.get("recommended_fields") or []
+                        )
+                    },
                 )
 
             # Preserve the existing discovery -> semantic-version governance pipeline.
@@ -438,12 +519,26 @@ class SemanticDiscoveryService:
                 f"({success_ratio:.1%}), required {self.minimum_success_ratio:.1%}"
             )
             quality_passed = total > 0 and success_ratio >= self.minimum_success_ratio
+            self._emit(
+                sample_run_id,
+                "workflow.quality_gate",
+                "SAMPLE_QUALITY_GATE_PASSED" if quality_passed else "SAMPLE_QUALITY_GATE_FAILED",
+                quality_message,
+                level="INFO" if quality_passed else "ERROR",
+                details={
+                    "readable_document_count": success_count,
+                    "total_document_count": total,
+                    "success_ratio": success_ratio,
+                    "required_ratio": self.minimum_success_ratio,
+                },
+            )
             await self.repository.update_sample_run_status(
                 sample_run_id,
                 "SUCCESS" if quality_passed else "FAILED",
                 completed_at=self._now_iso(),
                 error_code=None if quality_passed else "SAMPLE_QUALITY_GATE_FAILED",
                 error_message=None if quality_passed else quality_message,
+                sampled_document_ids=[item.document_id for item in sampled],
             )
             if self.cronjob_callback is not None:
                 if quality_passed:
@@ -463,6 +558,14 @@ class SemanticDiscoveryService:
             logger.info("sample run %s completed: %d documents", sample_run_id, total)
         except Exception as exc:
             logger.exception("sample run %s failed", sample_run_id)
+            self._emit(
+                sample_run_id,
+                "workflow.sample",
+                "SAMPLE_RUN_FAILED",
+                "Sampling Harness 执行失败",
+                level="ERROR",
+                details={"error_type": type(exc).__name__, "reason": str(exc)},
+            )
             try:
                 await self.repository.update_sample_run_status(
                     sample_run_id, "FAILED",
@@ -614,6 +717,23 @@ class SemanticDiscoveryService:
             logger.warning("failed to update sample progress for %s", sample_run_id)
         if self.cronjob_callback is not None:
             await self.cronjob_callback.report_progress(cronjob_run_id, current, total, message)
+
+    def _emit(
+        self,
+        run_id: str,
+        stage: str,
+        event_type: str,
+        message: str,
+        **kwargs: Any,
+    ) -> None:
+        if self.harness_events is not None:
+            self.harness_events.emit(
+                run_id=run_id,
+                stage=stage,
+                event_type=event_type,
+                message=message,
+                **kwargs,
+            )
 
     @staticmethod
     def _duration_ms(started_at: str, completed_at: str) -> int:

@@ -1,3 +1,3 @@
-# Optional development-only, quality-gated OCR fallback.
+# Quality-gated OCR fallback shared by Sampling and Production extraction.
 rapidocr-onnxruntime==1.4.4
 PyMuPDF==1.26.3

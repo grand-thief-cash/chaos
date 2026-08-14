@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from atlas.core.clients import ExtractionRunStore, PDFObjectReader
 from atlas.core.errors import AtlasError
+from atlas.core.harness_events import HarnessEventRegistry, harness_context
 from atlas.knowledge_production.extractor import FreeExtractionExtractor
 from atlas.knowledge_production.pdf_preprocessor import PikePDFUnlocker
 from atlas.models import ExtractionRun, ExtractionRunStatus, ResearchReport
@@ -39,21 +40,32 @@ class FreeExtractionRunner:
         extractor: FreeExtractionExtractor,
         unlocker: PikePDFUnlocker,
         pipeline_version: str,
+        events: HarnessEventRegistry | None = None,
     ) -> None:
         self.reader = reader
         self.store = store
         self.extractor = extractor
         self.unlocker = unlocker
         self.pipeline_version = pipeline_version
+        self.events = events
 
     async def run_document(
         self,
         report: ResearchReport,
         *,
         report_profile: dict | None = None,
+        harness_run_id: str | None = None,
     ) -> FreeExtractionOutcome:
+        parser_signature = getattr(
+            self.extractor.llm, "document_parser_signature", None
+        ) or getattr(
+            getattr(self.extractor, "document_parser", None),
+            "signature",
+            "legacy-pdfplumber",
+        )
         prompt_signature = self.extractor.prompt_builder.signature(
-            report_profile or {}, self.extractor.llm.model_id
+            report_profile or {},
+            self.extractor.llm.model_id + "|" + parser_signature,
         )
         finder = getattr(self.store, "find_reusable_extraction", None)
         reusable = None
@@ -71,6 +83,13 @@ class FreeExtractionRunner:
             except Exception:
                 reusable_result = None
             if reusable_result is not None and reusable_result.readable:
+                self._emit(
+                    "DOCUMENT_RESULT_REUSED",
+                    "复用已完成的自由抽取 JSON，不重复调用模型",
+                    document_id=report.document_id,
+                    report_type=report.report_type,
+                    details={"extraction_run_id": str(reusable_run.id)},
+                )
                 return FreeExtractionOutcome(
                     run=reusable_run,
                     result=reusable_result,
@@ -91,19 +110,41 @@ class FreeExtractionRunner:
         await self.store.update_extraction_run(run)
         result: FreeExtractionResult | None = None
         try:
-            source = await asyncio.to_thread(self.reader.read, report.pdf_object_key)
-            run.pdf_size_bytes = len(source)
-            unlocked = await asyncio.to_thread(self.unlocker.unlock, source)
-            run.pdf_page_count = unlocked.page_count
-            run.pdf_unlock_status = unlocked.status
-            result, attempts = await self.extractor.extract(
-                pdf=unlocked.content,
-                filename=f"{report.resource_id}.pdf",
+            with harness_context(
+                harness_run_id or str(run.id),
                 document_id=report.document_id,
-                title=report.title,
                 report_type=report.report_type,
-                report_profile=report_profile,
-            )
+            ):
+                self._emit(
+                    "DOCUMENT_READ_STARTED",
+                    "开始从 MinIO 读取样本文档",
+                )
+                source = await asyncio.to_thread(self.reader.read, report.pdf_object_key)
+                run.pdf_size_bytes = len(source)
+                self._emit(
+                    "DOCUMENT_READ_COMPLETED",
+                    "样本文档读取完成",
+                    details={"pdf_size_bytes": len(source)},
+                )
+                unlocked = await asyncio.to_thread(self.unlocker.unlock, source)
+                run.pdf_page_count = unlocked.page_count
+                run.pdf_unlock_status = unlocked.status
+                self._emit(
+                    "DOCUMENT_UNLOCK_COMPLETED",
+                    "PDF 解保护检查完成",
+                    details={
+                        "page_count": unlocked.page_count,
+                        "unlock_status": unlocked.status,
+                    },
+                )
+                result, attempts = await self.extractor.extract(
+                    pdf=unlocked.content,
+                    filename=f"{report.resource_id}.pdf",
+                    document_id=report.document_id,
+                    title=report.title,
+                    report_type=report.report_type,
+                    report_profile=report_profile,
+                )
             run.request_attempt_count = attempts
             run.possible_truncation = result.coverage_truncated
             run.last_page_referenced = max(result.covered_page_numbers, default=None)
@@ -129,3 +170,12 @@ class FreeExtractionRunner:
                 run.completed_at = datetime.now(UTC)
             await self.store.update_extraction_run(run)
         return FreeExtractionOutcome(run=run, result=result)
+
+    def _emit(self, event_type: str, message: str, **kwargs) -> None:
+        if self.events is not None:
+            self.events.emit(
+                stage="workflow.document",
+                event_type=event_type,
+                message=message,
+                **kwargs,
+            )

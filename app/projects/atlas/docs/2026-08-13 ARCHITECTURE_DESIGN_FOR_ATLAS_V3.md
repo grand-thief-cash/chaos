@@ -524,6 +524,8 @@ n={sample_size};types={sorted report types};from={...};to={...};seed={...}
 
 `SampleTaskRegistry` 在单进程内拒绝相同身份的并行任务并返回 409；任务以 `asyncio.create_task` 启动，完成后从内存 registry 释放。持久状态在 PhoenixA，内存 registry 不是事实源。进程重启时，不能恢复 Python coroutine，因此 startup 把孤儿运行 fail closed。
 
+分层抽样选出的精确 `document_id` 集合在终态更新中写入 PhoenixA `sample_run.sampled_document_ids`；逐文档状态和分类结果不能替代该父级审计字段。142 的 PhoenixA 必须运行包含 v1.44.0 Sampling API 的当前源码构建，旧 v1.43.0 二进制没有这些路由。
+
 ### 9.5 Sample Run 状态
 
 ```mermaid
@@ -728,9 +730,52 @@ OpenRouter Free Router 的实际模型因此可以追溯，而不是只看到 `o
 
 ---
 
-## 12. PDF / Layout / OCR Harness
+## 12. Document Parser Harness：PDF / Layout / OCR
 
-### 12.1 为什么是 Harness 而不是替换 pdfplumber
+### 12.1 Harness 在 Atlas 中不是一个类
+
+网页讨论中对 Harness 的核心定义是“执行环境 + 控制循环”：模型负责理解和决策，工具负责执行，Harness 负责把输入、工具、观察、重试、状态和验证组织成可持续运行的系统。Atlas 借鉴这个思想，但不把 Coding Agent 的 Shell/Browser/Memory 全套概念机械搬入文档抽取。
+
+Atlas 当前把 Harness 分成三个协作层：
+
+| 层 | 当前代码 | 职责 | 状态 |
+| --- | --- | --- | --- |
+| Document Parser Harness | `pdf_preprocessor/document_harness.py` | 读取 PDF 文本层、质量门、按需 layout/OCR、改善判定、页码与覆盖信息 | **Implemented** |
+| Stage LLM Harness | `core/llm/harness.py` + `key_pool.py` | provider/model/key 路由、业务 validator、failover、冷却、provenance | **Implemented for Sampling** |
+| Sampling Workflow Harness | `SemanticDiscoveryService` + runner/extractor/reviewer | 选择样本、逐文档 map/merge、checkpoint、字段 Review、质量门、状态与事件 | **Implemented** |
+| Production Workflow Harness | strict extraction → entity → claim → graph | 正式全量运行的统一事件与策略编排 | **Partial / Planned** |
+
+`FailoverLLMClient` 因此不是 Atlas Harness 的全部，只是其中的 Stage LLM Router。一个完整 Sampling run 的执行闭环如下：
+
+```mermaid
+flowchart TD
+    A["Sampling 请求"] --> B["Workflow Harness<br/>分层抽样与任务状态"]
+    B --> C["Document Parser Harness<br/>PDF 文本层与质量门"]
+    C --> D{"文本是否可靠?"}
+    D -->|"否"| E["Layout/OCR Tool"]
+    E --> F{"fallback 是否改善?"}
+    F -->|"否"| G["保留原文或标记不可读"]
+    F -->|"是"| H["页级 Structured Document"]
+    D -->|"是"| H
+    H --> I["Chunk Planner"]
+    I --> J["Stage LLM Harness<br/>自由 JSON map"]
+    J --> K{"业务 validator 通过?"}
+    K -->|"否"| L["Provider failover / retry"]
+    L --> J
+    K -->|"是"| M["Document merge"]
+    M --> N["Durable checkpoint"]
+    N --> O["Stage LLM Harness<br/>跨文档字段 Review"]
+    O --> P["Evidence / 通用性 Guard"]
+    P --> Q["候选字段 Profile"]
+    B -.-> R["Ephemeral Event Registry"]
+    C -.-> R
+    E -.-> R
+    J -.-> R
+    O -.-> R
+    R --> S["Cthulhu 实时时间线"]
+```
+
+### 12.2 为什么是 Harness 而不是替换 pdfplumber
 
 PDF 的失败类型不同：
 
@@ -742,7 +787,7 @@ PDF 的失败类型不同：
 
 把所有 PDF 统一 OCR 会显著增加内存、时间和依赖，却不保证业务语义更好。Parser Harness 必须先衡量原文本，再决定是否升级，并比较 fallback 是否真的改善。
 
-### 12.2 页级文本模型
+### 12.3 页级文本模型
 
 `PDFTextPage` 保留 authoritative page number；渲染格式：
 
@@ -754,7 +799,7 @@ PDF 的失败类型不同：
 
 页面 ID 在分块、Prompt、evidence 和质量诊断中保持一致。
 
-### 12.3 质量指标
+### 12.4 质量指标
 
 `PDFTextQuality` 包含：
 
@@ -768,7 +813,7 @@ PDF 的失败类型不同：
 | `suspicious_axis_page_count` | 百分比坐标密集、无研究信号的页数 |
 | `escalation_reasons` | 触发 fallback 的原因 |
 
-### 12.4 当前门控规则
+### 12.5 当前门控规则
 
 ```mermaid
 flowchart TD
@@ -793,7 +838,30 @@ flowchart TD
 
 百分比标签本身不会触发 OCR；必须同时满足页占比、低研究信号和短文本条件。
 
-### 12.5 Parser 插件接口
+### 12.6 `DocumentParserHarness.parse` 契约
+
+输入是 PDF bytes 和 filename，输出 `DocumentParseResult`：
+
+```text
+pages                   authoritative page-numbered text
+parser                  最终采用的 parser 名称
+source_page_count       原 PDF 页数
+coverage_truncated      fallback 是否只覆盖代表页
+primary_quality         pdfplumber 质量指标
+final_quality           最终文本质量指标
+quality_issues          升级、失败、无改善等机器码
+```
+
+文本模型收到的输入带有 parser envelope：
+
+```xml
+<atlas_document_parse parser="RapidOCRLayoutParser"
+  source_page_count="38" coverage="partial" />
+```
+
+Production validator 因而不能把 OCR 代表页当成整份覆盖；parser signature 也进入 extraction cache signature，切换 OCR 配置后不会错误复用旧的低质量抽取结果。
+
+### 12.7 Parser 插件接口
 
 ```python
 class LayoutParserSidecar(Protocol):
@@ -809,7 +877,25 @@ class LayoutParserSidecar(Protocol):
 
 HTTP sidecar 优先于本地 OCR；两者不会同时启用。
 
-### 12.6 依赖隔离
+### 12.8 Sampling 与 Production 的正确边界
+
+**Sampling API、自由 JSON 和字段发现是 development-only；Document/OCR Harness 不是。** Production 使用审核后的字段做严格抽取，但仍面对相同的扫描件、稀疏文本层和图表乱序问题，所以所有 text-extraction provider 都必须先经过共享 `DocumentParserHarness`。
+
+```mermaid
+flowchart TD
+    A["Development"] --> B["Sampling Workflow"]
+    A --> C["Document Parser Harness"]
+    D["Production"] --> E["Strict Full Extraction"]
+    D --> C
+    B --> F["Free JSON / Field Review"]
+    C --> G["Page-numbered text"]
+    G --> F
+    G --> E
+```
+
+当前生产镜像安装 `requirements-ocr.txt`；默认仍先走 pdfplumber，只有质量门触发才延迟加载 RapidOCR。Docling/PP-StructureV3 继续建议作为独立 sidecar，而非把重依赖塞入 Atlas 主进程。
+
+### 12.9 依赖与部署
 
 主依赖只有 `pdfplumber`、`pikepdf` 等轻量组件。OCR 通过：
 
@@ -818,14 +904,14 @@ requirements-ocr.txt
 pyproject.toml -> [project.optional-dependencies].ocr
 ```
 
-显式安装 `rapidocr-onnxruntime` 和 `PyMuPDF`。Docling/PP-StructureV3 应放在独立 venv/容器，避免模型权重和二进制依赖进入 Atlas 主镜像。
+显式安装 `rapidocr-onnxruntime` 和 `PyMuPDF`。Home venv 已安装；`Dockerfile-atlas-base` 同时安装主 requirements 与 OCR requirements，部署脚本将两者共同纳入 base image hash 并上传。Docling/PP-StructureV3 应放在独立 venv/容器，避免模型权重和二进制依赖进入 Atlas 主镜像。
 
-### 12.7 实测基线
+### 12.10 实测基线
 
 - 九州通 born-digital canary：pdfplumber 5 页、5,308 字符、45 个研究信号；layout 无增益，说明旧失败不能简单归因于图表。
 - 无文本层 morning report：RapidOCR 1 页、1,632 字符，约 7.1 秒、峰值 RSS 约 566 MiB；后续生成 1,795 字符自由 JSON。
 
-### 12.8 Docling / PP-StructureV3 引入 Gate
+### 12.11 Docling / PP-StructureV3 引入 Gate
 
 新 parser 只有满足下列条件才应成为默认 fallback：
 
@@ -855,7 +941,19 @@ pyproject.toml -> [project.optional-dependencies].ocr
 
 因此 Harness 的成功定义必须是“transport + business validation 成功”，而不是 HTTP 200。
 
-### 13.2 配置模型
+### 13.2 LLM Harness 的边界
+
+`FailoverLLMClient` 是**阶段级模型执行器**，不负责抽样、不解析 PDF、不决定字段是否跨文档通用，也不持久化业务状态。调用者必须提供：
+
+- stage 名称，例如 `sampling_extraction` 或 `sampling_review`；
+- 可调用的 model adapters；
+- 业务请求参数；
+- 可选 validator，用于把“HTTP 200 但 JSON/证据无效”转为 failover；
+- run context，用于把事件关联到当前 Sampling run。
+
+它返回第一个通过业务验证的响应；所有 provider 失败时才抛出聚合错误。
+
+### 13.3 配置模型
 
 ```mermaid
 classDiagram
@@ -903,7 +1001,7 @@ classDiagram
     LLMModelCfg "1" --> "many" LLMAPIKeyCfg
 ```
 
-### 13.3 Provider 枚举和适配器
+### 13.4 Provider 枚举和适配器
 
 | Provider | Adapter | Endpoint 特征 |
 | --- | --- | --- |
@@ -916,7 +1014,7 @@ classDiagram
 
 业务层不针对 `glm-5.2`、Nemotron 或 Muse 写分支。provider 差异由 adapter 和 `extra_body` 承载。
 
-### 13.4 Capability 校验
+### 13.5 Capability 校验
 
 启动时校验：
 
@@ -928,7 +1026,7 @@ classDiagram
 
 能力错误在启动时暴露，而不是运行几个小时后才失败。
 
-### 13.5 Role 与 Stage Harness
+### 13.6 Role 与 Stage Harness
 
 `roles` 用于稳定单模型职责：
 
@@ -942,7 +1040,7 @@ classDiagram
 
 这种区分避免把“Production 默认模型”和“Development 免费资源池”绑在一起。
 
-### 13.6 当前 Home 模型注册
+### 13.7 当前 Home 模型注册
 
 | 名称 | Provider / 模型 | 主要用途 | 当前备注 |
 | --- | --- | --- | --- |
@@ -957,7 +1055,7 @@ classDiagram
 
 这些是 `config-home.yaml` 的当前资源，不是硬编码保证。任何 provider 都可以从 Harness 移除而不改变 Sampling 业务代码。
 
-### 13.7 当前 Stage 顺序
+### 13.8 当前 Stage 顺序
 
 `sampling_extraction`：
 
@@ -975,7 +1073,7 @@ nvidia-glm52
 
 `sampling_review` 使用同一资源集合的 `priority_failover`：每次从高优先级开始，因为跨文档 Review 更看重一致性；失败或业务无效再向后切换。
 
-### 13.8 单次请求算法
+### 13.9 单次请求算法
 
 ```mermaid
 flowchart TD
@@ -1006,7 +1104,19 @@ flowchart TD
     O --> U["返回业务有效响应"]
 ```
 
-### 13.9 Circuit Breaker 状态
+### 13.10 validator 驱动的 failover
+
+同一个模型调用有三种失败层：
+
+| 层 | 示例 | Harness 行为 |
+| --- | --- | --- |
+| Transport | timeout、429、404、5xx | 记录失败，尝试下一 provider |
+| Protocol | 空响应、输出截断、非 JSON | adapter/parser 抛错，尝试下一 provider |
+| Business | 元响应、Schema 错、字段无 evidence、Review 为空 | validator 拒绝，按 provider failure 处理 |
+
+Sampling extraction 用自由 JSON parser 作为 validator；Field Review 使用 `CategoryFieldReview`、evidence ownership 和通用性规则。免费 provider 返回得快但内容不可用时，不会污染后续字段目录。
+
+### 13.11 Circuit Breaker 状态
 
 每模型状态：
 
@@ -1019,7 +1129,7 @@ unavailable_until
 
 当前 circuit breaker 是进程内、按模型名的轻量保护，不持久化，不跨多进程共享。
 
-### 13.10 KeyPool 设计
+### 13.12 KeyPool 设计
 
 每个 model name 只构建一个共享 `KeyPool`，即使多个 role/stage 使用同一模型也共享并发约束。
 
@@ -1038,7 +1148,7 @@ flowchart TD
 
 **限制：** KeyPool 只约束一个 Python 进程。多个 Atlas/离线脚本共用账号会绕过计数。当前 home 约束是一次一个主要 Sampling run，re-review/catalog 顺序运行。未来确需多进程时才增加 Redis/数据库 lease，不通过盲目放大并发解决。
 
-### 13.11 Structured Output 和 Thinking
+### 13.13 Structured Output 和 Thinking
 
 - `json_schema`：provider 支持时发送完整 response schema；
 - `json_object`：只要求 JSON object，Atlas 再做 Pydantic/业务校验；
@@ -1052,7 +1162,7 @@ Reasoning 参数按 provider 区分：
 
 Sampling 的 Free Router 关闭 reasoning，因为隐藏思考会占用输出预算、增加截断和延迟。若未来某 Review 阶段开启，必须通过 A/B 证明字段质量收益。
 
-### 13.12 OpenRouter Free Router
+### 13.14 OpenRouter Free Router
 
 `openrouter/free` 根据请求需要随机选择免费模型。Atlas：
 
@@ -1064,7 +1174,7 @@ Sampling 的 Free Router 关闭 reasoning，因为隐藏思考会占用输出预
 
 真实 canary 曾路由到 `google/gemma-4-26b-a4b-it:free` 并返回有效 JSON，但该结果只证明当时可用。
 
-### 13.13 扩展新 Provider
+### 13.15 扩展新 Provider
 
 新增 OpenAI-compatible 模型的步骤：
 
@@ -1078,9 +1188,70 @@ Sampling 的 Free Router 关闭 reasoning，因为隐藏思考会占用输出预
 
 只有 endpoint 协议确实不兼容现有 adapter 时才新增 provider adapter。
 
-### 13.14 Python SDK 边界
+### 13.16 Python SDK 边界
 
 Atlas 产品运行时使用 `httpx`，不依赖 `openai` Python SDK。`app/tools/py/nvdia/glm52.py` 是独立手工探针，使用 `from openai import OpenAI`；只有执行该工具时才需要额外安装 SDK。工具目录不进入 Atlas requirements，也不属于本次产品代码暂存范围。
+
+### 13.17 Harness 实时事件与 Cthulhu
+
+`HarnessEventRegistry` 是有界、进程内、非持久化的观测日志。默认每个 run 最多 400 条、最多保留 20 个 run，服务重启后自然清空；PhoenixA 的 run/document/category 记录仍是持久化事实。
+
+事件结构：
+
+```text
+sequence / timestamp / run_id
+stage / event_type / level / message
+document_id / report_type
+provider / parser
+details (受限白名单式标量元数据)
+```
+
+禁止写入 Prompt、PDF 文本、模型原始 content、API key、secret 或 password。典型事件包括：
+
+- `SAMPLE_SELECTION_COMPLETED`
+- `DOCUMENT_READ_STARTED/COMPLETED`
+- `PRIMARY_PARSER_COMPLETED`
+- `PARSER_ESCALATION_REQUESTED`
+- `PARSER_FALLBACK_ACCEPTED/FAILED`
+- `CHUNK_PLAN_CREATED`
+- `PROVIDER_ATTEMPT_STARTED/FAILED/ACCEPTED`
+- `PROVIDER_CIRCUIT_OPENED`
+- `DOCUMENT_MERGE_STARTED/ACCEPTED/FALLBACK`
+- `FIELD_REVIEW_STARTED/COMPLETED`
+- `SAMPLE_QUALITY_GATE_PASSED/FAILED`
+
+API 使用 cursor 增量读取：
+
+```http
+GET /api/v1/atlas-kg/sample-runs/active
+
+GET /api/v1/atlas-kg/sample-runs/{run_id}/harness-events
+    ?after_sequence=120&limit=200
+```
+
+Cthulhu 页面打开后每三秒读取进程内 active task 列表，自动接管首个正在运行的 Sampling，并允许在多个活跃任务之间切换；接管后再随 run 状态增量读取事件，按时间线显示 stage、parser、provider 和安全 details，并可自动滚动。任务进入终态时额外读取一次尾部事件，避免漏掉最后的 Review/质量门。缓冲区滚动或服务重启不会被解释为任务失败。
+
+```mermaid
+sequenceDiagram
+    participant UI as Cthulhu
+    participant API as Atlas API
+    participant REG as Event Registry
+    participant WF as Sampling Workflow
+    participant DOC as Document Harness
+    participant LLM as LLM Harness
+    WF->>REG: emit workflow event
+    DOC->>REG: emit parser event
+    LLM->>REG: emit provider event
+    loop every 3 seconds
+        UI->>API: GET active Sampling tasks
+        UI->>API: GET events after_sequence=N
+        API->>REG: list_events(run_id, N, limit)
+        REG-->>API: bounded event page
+        API-->>UI: events + latest_sequence + truncated
+    end
+```
+
+当前实时 UI 只服务 Sampling。未来 Production 全量运行若需要同样能力，应复用事件契约并增加跨进程/实例聚合，而不是依赖当前进程内 registry。
 
 ## 14. 跨文档字段 Review 与目录治理
 
@@ -1981,7 +2152,9 @@ Atlas 自身路由统一为：
 | --- | --- | --- |
 | POST | `/sample-runs` | 异步创建，202 |
 | GET | `/sample-runs` | 最近 run 列表 |
+| GET | `/sample-runs/active` | 当前 Atlas 进程的运行任务；供晚打开页面接管，不持久化 |
 | GET | `/sample-runs/{id}` | 详情/进度 |
+| GET | `/sample-runs/{id}/harness-events` | 有界内存事件，支持 `after_sequence` 增量读取 |
 | GET | `/sample-runs/{id}/document-results` | 逐文档状态 |
 | GET | `/sample-runs/{id}/category-results` | 六类结果 |
 | GET | `/sample-runs/{id}/category-results/{type}` | 类型详情与 raw JSON |
@@ -2172,7 +2345,14 @@ taxonomy:
   canonical_seed_scheme: SW2021
   schemes: {}
 engine:
-  knowledge_engine: {}
+  knowledge_engine:
+    sampling_enabled: true
+    document_layout_sidecar_url: null
+    document_local_ocr_enabled: true
+    document_local_ocr_dpi: 160
+    document_local_ocr_maximum_pages: 12
+    harness_event_buffer_size: 400
+    harness_event_maximum_runs: 20
 ```
 
 ### 28.3 密钥原则
@@ -2462,7 +2642,7 @@ PYTHONPATH=app/projects/atlas venv/bin/python -m atlas.main \
 - Production bundle `atlasSamplingEnabled=false`；
 - 使用已批准 Semantic YAML；
 - Atlas 容器不配置 PostgreSQL/Neo4j 凭据；
-- OCR 重依赖不进入默认镜像；
+- 生产镜像安装轻量 `RapidOCR + PyMuPDF` fallback；Docling / PP-StructureV3 等重型 parser 保持独立 sidecar；
 - 修改 active YAML path 后必须重启；
 - 发布脚本默认不覆盖远端持久配置，除非显式 `ATLAS_UPLOAD_CONFIG=1`。
 

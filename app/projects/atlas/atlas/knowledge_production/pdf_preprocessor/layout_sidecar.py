@@ -43,11 +43,12 @@ class HTTPLayoutParserSidecar:
 
 
 class RapidOCRLayoutParser:
-    """Lazy, CPU-only OCR fallback for resource-constrained development.
+    """Lazy, CPU-only OCR fallback for resource-constrained deployments.
 
     RapidOCR and PyMuPDF are imported inside the worker thread so the normal
     pdfplumber path pays no model-memory or import cost. Calls are serialized:
-    sampling correctness matters more than overloading a 15 GiB CPU host.
+    correctness matters more than overloading a small CPU host. The same
+    parser can serve development Sampling and production full extraction.
     """
 
     def __init__(self, *, dpi: int = 160, maximum_pages: int = 12) -> None:

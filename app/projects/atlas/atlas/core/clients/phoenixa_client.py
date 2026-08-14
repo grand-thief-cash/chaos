@@ -517,6 +517,7 @@ class PhoenixAClient:
         completed_at: str | None = None,
         error_code: str | None = None,
         error_message: str | None = None,
+        sampled_document_ids: list[str] | None = None,
     ) -> None:
         payload: dict[str, Any] = {"status": status}
         if started_at is not None:
@@ -527,6 +528,8 @@ class PhoenixAClient:
             payload["error_code"] = error_code
         if error_message is not None:
             payload["error_message"] = error_message
+        if sampled_document_ids is not None:
+            payload["sampled_document_ids"] = sampled_document_ids
         response = await self._client.put(
             f"{self.base_url}/api/v1/atlas-kg/sample-runs/{run_id}/status",
             json=payload,

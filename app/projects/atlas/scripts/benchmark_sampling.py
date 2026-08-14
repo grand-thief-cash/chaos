@@ -110,10 +110,10 @@ async def main() -> int:
         thinking_mode=None if harness is not None else model.thinking_mode,
         layout_sidecar=(
             RapidOCRLayoutParser(
-                dpi=knowledge.sampling_local_ocr_dpi,
-                maximum_pages=knowledge.sampling_local_ocr_maximum_pages,
+                dpi=knowledge.document_local_ocr_dpi,
+                maximum_pages=knowledge.document_local_ocr_maximum_pages,
             )
-            if knowledge.sampling_local_ocr_enabled
+            if knowledge.document_local_ocr_enabled
             else None
         ),
     )

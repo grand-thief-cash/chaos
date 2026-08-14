@@ -15,5 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt /app/requirements.txt
+COPY requirements-ocr.txt /app/requirements-ocr.txt
 RUN pip install --no-cache-dir --trusted-host pypi.org \
-    --trusted-host files.pythonhosted.org -r /app/requirements.txt
+    --trusted-host files.pythonhosted.org \
+    -r /app/requirements.txt -r /app/requirements-ocr.txt

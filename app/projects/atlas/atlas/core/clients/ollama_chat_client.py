@@ -10,6 +10,9 @@ from atlas.core.clients.openrouter_client import _strip_markdown_fence
 from atlas.core.errors import ModelRequestError, ModelTimeoutError
 from atlas.core.llm import KeyPool
 from atlas.models import LLMModelCfg, ThinkingMode
+from atlas.knowledge_production.pdf_preprocessor.document_harness import (
+    DocumentParserHarness,
+)
 
 
 class OllamaChatClient:
@@ -31,6 +34,7 @@ class OllamaChatClient:
         client: httpx.AsyncClient | None = None,
         request_maximum_attempts: int = 4,
         retry_base_seconds: float = 1,
+        document_parser: DocumentParserHarness | None = None,
     ) -> None:
         self.config = config
         self.key_pool = key_pool
@@ -38,6 +42,10 @@ class OllamaChatClient:
         self.request_maximum_attempts = request_maximum_attempts
         self.retry_base_seconds = retry_base_seconds
         self._client = client or httpx.AsyncClient(timeout=config.timeout_seconds)
+        self.document_parser = document_parser
+        self.document_parser_signature = (
+            document_parser.signature if document_parser else "legacy-pdfplumber"
+        )
 
     @property
     def _chat_url(self) -> str:
@@ -59,9 +67,13 @@ class OllamaChatClient:
         max_tokens: int | None = None,
         response_schema: dict | None = None,
     ) -> str:
-        extracted_text = await asyncio.to_thread(
-            ZhipuTextPDFClient.extract_page_delimited_text, pdf
-        )
+        if self.document_parser is not None:
+            parsed = await self.document_parser.parse(pdf, filename=filename)
+            extracted_text = parsed.text
+        else:
+            extracted_text = await asyncio.to_thread(
+                ZhipuTextPDFClient.extract_page_delimited_text, pdf
+            )
         return await self.complete_text(
             prompt=prompt,
             extracted_text=extracted_text,

@@ -8,6 +8,7 @@ import yaml
 
 from atlas.api.http_gateway.routes import create_app
 from atlas.core.config_manager import ConfigManager
+from atlas.core.harness_events import HarnessEventRegistry, harness_context
 from atlas.core.llm import FailoverLLMClient
 from atlas.models import Config, LLMHarnessCfg, LLMHarnessStrategy
 
@@ -86,6 +87,36 @@ async def test_harness_fails_over_on_business_validation_error():
 
 
 @pytest.mark.asyncio
+async def test_harness_events_distinguish_transport_and_validator_failures():
+    events = HarnessEventRegistry()
+    transport = _Client(error=RuntimeError("offline"))
+    invalid = _Client(response='{"wrong":true}')
+    valid = _Client(response='{"fields":[]}')
+    harness = FailoverLLMClient(
+        [("transport", transport), ("invalid", invalid), ("valid", valid)],
+        LLMHarnessCfg(models=["transport", "invalid", "valid"]),
+        stage="field-review",
+        events=events,
+    )
+
+    def validator(raw: str):
+        if '"fields"' not in raw:
+            raise ValueError("wrong shape")
+
+    with harness_context("run-events"):
+        await harness.complete_text_validated(
+            prompt="p", extracted_text="t", filename="f", validator=validator
+        )
+    failed = [
+        event for event in events.list_events("run-events")["events"]
+        if event["event_type"] == "PROVIDER_ATTEMPT_FAILED"
+    ]
+    assert [event["details"]["validator_rejected"] for event in failed] == [
+        False, True
+    ]
+
+
+@pytest.mark.asyncio
 async def test_harness_records_actual_model_selected_by_router():
     harness = FailoverLLMClient(
         [("openrouter-free", _RoutingClient(response='{"ok":true}'))],
@@ -156,6 +187,13 @@ def test_production_app_does_not_register_sampling_routes():
     app = create_app(Runtime())
     paths = {route.path for route in app.routes}
     assert "/api/v1/atlas-kg/sample-runs" not in paths
+
+
+def test_production_can_enable_document_ocr_while_sampling_is_disabled():
+    config = ConfigManager().init_config(path="config/config.yaml", env="production")
+    assert config.engine.knowledge_engine.sampling_enabled is False
+    assert config.engine.knowledge_engine.document_local_ocr_enabled is True
+    app = create_app(type("Runtime", (), {"config": config})())
     client = TestClient(app)
     response = client.post("/api/v1/atlas-kg/discovery-runs", json={
         "sample_size": 1, "report_types": ["stock"]

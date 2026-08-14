@@ -6,11 +6,12 @@ import logging
 from typing import Any
 
 from atlas.core.clients import PDFLLMClient
+from atlas.core.harness_events import HarnessEventRegistry
 from atlas.knowledge_production.extractor.free_extraction_prompt import (
     FreeExtractionPromptBuilder,
 )
 from atlas.knowledge_production.pdf_preprocessor import (
-    LayoutParserSidecar,
+    DocumentParserHarness,
     assess_pdf_text_quality,
     chunk_pdf_pages,
     extract_pdf_pages_for_sampling as extract_pdf_pages,
@@ -42,7 +43,9 @@ class FreeExtractionExtractor:
         merge_output_tokens: int = 2560,
         maximum_chunks: int = 3,
         prompt_reserve_tokens: int = 2200,
-        layout_sidecar: LayoutParserSidecar | None = None,
+        document_parser: DocumentParserHarness | None = None,
+        layout_sidecar: Any | None = None,
+        events: HarnessEventRegistry | None = None,
     ) -> None:
         self.llm = llm
         self.prompt_builder = prompt_builder or FreeExtractionPromptBuilder()
@@ -52,7 +55,14 @@ class FreeExtractionExtractor:
         self.merge_output_tokens = merge_output_tokens
         self.maximum_chunks = maximum_chunks
         self.prompt_reserve_tokens = prompt_reserve_tokens
-        self.layout_sidecar = layout_sidecar
+        if document_parser is not None and layout_sidecar is not None:
+            raise ValueError("configure document_parser or layout_sidecar, not both")
+        self.document_parser = document_parser or DocumentParserHarness(
+            layout_sidecar,
+            events=events,
+            primary_extractor=extract_pdf_pages,
+        )
+        self.events = events
 
     async def extract(
         self,
@@ -93,27 +103,12 @@ class FreeExtractionExtractor:
         report_type: str,
         report_profile: dict | None,
     ) -> tuple[FreeExtractionResult, int]:
-        pages = await asyncio.to_thread(extract_pdf_pages, pdf)
-        text_quality = assess_pdf_text_quality(pages)
-        parser_issues: list[str] = []
-        if text_quality.requires_layout_fallback and self.layout_sidecar is not None:
-            try:
-                fallback_pages = await self.layout_sidecar.extract_pages(
-                    pdf, filename=filename
-                )
-                fallback_quality = assess_pdf_text_quality(fallback_pages)
-                if (
-                    fallback_quality.visible_characters > text_quality.visible_characters
-                    or fallback_quality.research_signal_count > text_quality.research_signal_count
-                ):
-                    pages = fallback_pages
-                    text_quality = fallback_quality
-                    parser_issues.append("LAYOUT_SIDECAR_USED")
-                else:
-                    parser_issues.append("LAYOUT_SIDECAR_NO_IMPROVEMENT")
-            except Exception as exc:
-                logger.warning("layout sidecar failed for %s: %s", document_id, exc)
-                parser_issues.append("LAYOUT_SIDECAR_FAILED")
+        parsed = await self.document_parser.parse(
+            pdf, filename=filename, allow_empty=True
+        )
+        pages = list(parsed.pages)
+        text_quality = parsed.final_quality
+        parser_issues: list[str] = list(parsed.quality_issues)
         if not any(page.text for page in pages):
             return _unreadable_result(
                 document_id,
@@ -138,11 +133,26 @@ class FreeExtractionExtractor:
             maximum_chunk_tokens=chunk_budget,
             maximum_chunks=self.maximum_chunks,
         )
+        self._emit(
+            "CHUNK_PLAN_CREATED",
+            f"文档已规划为 {len(chunks)} 个代表性页段",
+            details={
+                "chunk_count": len(chunks),
+                "page_count": len(pages),
+                "chunk_budget_tokens": chunk_budget,
+                "coverage_truncated": any(chunk.coverage_truncated for chunk in chunks),
+            },
+        )
         extracted_chunks: list[tuple[Any, dict[str, Any]]] = []
         attempts = 0
         errors: list[str] = []
         recovered_chunk_indexes: list[int] = []
         for chunk in chunks:
+            self._emit(
+                "CHUNK_EXTRACTION_STARTED",
+                f"开始理解页段 {chunk.index}/{chunk.total}",
+                details={"chunk_index": chunk.index, "page_numbers": chunk.page_numbers},
+            )
             prompt = self.prompt_builder.build(
                 document_id=document_id,
                 title=title,
@@ -163,6 +173,11 @@ class FreeExtractionExtractor:
             attempts += used_attempts
             if content is not None:
                 extracted_chunks.append((chunk, content))
+                self._emit(
+                    "CHUNK_EXTRACTION_ACCEPTED",
+                    f"页段 {chunk.index}/{chunk.total} 已产生有效自由 JSON",
+                    details={"chunk_index": chunk.index, "attempts": used_attempts},
+                )
             if recovered:
                 recovered_chunk_indexes.append(chunk.index)
             if error:
@@ -192,6 +207,11 @@ class FreeExtractionExtractor:
         if len(extracted_chunks) == 1:
             content = extracted_chunks[0][1]
         else:
+            self._emit(
+                "DOCUMENT_MERGE_STARTED",
+                "开始合并各页段自由 JSON",
+                details={"chunk_count": len(extracted_chunks)},
+            )
             content, merge_attempts, merge_error = await self._merge_document_content(
                 document_id=document_id,
                 title=title,
@@ -203,6 +223,18 @@ class FreeExtractionExtractor:
             if merge_error:
                 issues.append("DOCUMENT_MERGE_FALLBACK")
                 errors.append(f"merge: {merge_error}")
+                self._emit(
+                    "DOCUMENT_MERGE_FALLBACK",
+                    "模型合并失败，保留可审阅的分段结果",
+                    level="WARNING",
+                    details={"reason": merge_error},
+                )
+            else:
+                self._emit(
+                    "DOCUMENT_MERGE_ACCEPTED",
+                    "各页段已合并为单文档自由 JSON",
+                    details={"chunk_count": len(extracted_chunks)},
+                )
 
         _append_provider_issues(self.llm, issues)
 
@@ -227,6 +259,15 @@ class FreeExtractionExtractor:
             coverage_truncated=any(chunk.coverage_truncated for chunk in chunks),
             quality_issues=list(dict.fromkeys(issues)),
         ), attempts
+
+    def _emit(self, event_type: str, message: str, **kwargs: Any) -> None:
+        if self.events is not None:
+            self.events.emit(
+                stage="workflow.document_understanding",
+                event_type=event_type,
+                message=message,
+                **kwargs,
+            )
 
     async def _extract_one_text_chunk(
         self,

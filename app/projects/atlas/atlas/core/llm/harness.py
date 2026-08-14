@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any, Callable
 
 from atlas.models import LLMHarnessCfg, LLMHarnessStrategy
+from atlas.core.harness_events import HarnessEventRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,8 @@ class FailoverLLMClient:
         config: LLMHarnessCfg,
         *,
         clock: Callable[[], float] = time.monotonic,
+        stage: str = "llm",
+        events: HarnessEventRegistry | None = None,
     ) -> None:
         if not clients:
             raise ValueError("LLM harness requires at least one available client")
@@ -43,6 +46,8 @@ class FailoverLLMClient:
         ]
         self.config = SimpleNamespace(context_window_tokens=min(context_windows))
         self.clock = clock
+        self.stage = stage
+        self.events = events
         self.model_id = "harness:" + ",".join(name for name, _ in clients)
         self.input_mode = "TEXT_EXTRACTED"
         self._states = {name: _ProviderState() for name, _ in clients}
@@ -79,6 +84,12 @@ class FailoverLLMClient:
     ) -> str:
         errors: list[str] = []
         for name, client in await self._ordered_candidates(method_name):
+            self._emit(
+                "PROVIDER_ATTEMPT_STARTED",
+                f"阶段 {self.stage} 尝试模型 {name}",
+                provider=name,
+                details={"operation": method_name},
+            )
             try:
                 result = await getattr(client, method_name)(**kwargs)
                 consume_response_model = getattr(
@@ -89,13 +100,19 @@ class FailoverLLMClient:
                     if callable(consume_response_model)
                     else None
                 )
-                if validator is not None:
-                    validator(result)
             except Exception as exc:
-                self._record_failure(name)
+                self._reject_attempt(name, method_name, exc, validator_rejected=False)
                 errors.append(f"{name}: {type(exc).__name__}: {exc}")
-                logger.warning("LLM harness provider %s failed: %s", name, exc)
                 continue
+            if validator is not None:
+                try:
+                    validator(result)
+                except Exception as exc:
+                    self._reject_attempt(
+                        name, method_name, exc, validator_rejected=True
+                    )
+                    errors.append(f"{name}: {type(exc).__name__}: {exc}")
+                    continue
             self._record_success(name)
             provider_label = (
                 f"{name}->{routed_model}"
@@ -106,8 +123,44 @@ class FailoverLLMClient:
             logger.info(
                 "LLM harness completed request with provider %s", provider_label
             )
+            self._emit(
+                "PROVIDER_ATTEMPT_ACCEPTED",
+                f"阶段 {self.stage} 已采用模型 {provider_label}",
+                provider=provider_label,
+                details={"operation": method_name},
+            )
             return result
+        self._emit(
+            "HARNESS_EXHAUSTED",
+            f"阶段 {self.stage} 的所有模型均失败",
+            level="ERROR",
+            details={"operation": method_name, "failure_count": len(errors)},
+        )
         raise RuntimeError("all LLM harness providers failed: " + " | ".join(errors))
+
+    def _reject_attempt(
+        self,
+        name: str,
+        method_name: str,
+        exc: Exception,
+        *,
+        validator_rejected: bool,
+    ) -> None:
+        self._record_failure(name)
+        logger.warning("LLM harness provider %s failed: %s", name, exc)
+        failure_kind = "业务输出校验未通过" if validator_rejected else "调用失败"
+        self._emit(
+            "PROVIDER_ATTEMPT_FAILED",
+            f"模型 {name}{failure_kind}，Harness 将尝试下一候选",
+            level="WARNING",
+            provider=name,
+            details={
+                "operation": method_name,
+                "error_type": type(exc).__name__,
+                "reason": str(exc),
+                "validator_rejected": validator_rejected,
+            },
+        )
 
     async def _ordered_candidates(self, method_name: str) -> list[tuple[str, Any]]:
         now = self.clock()
@@ -134,6 +187,16 @@ class FailoverLLMClient:
         state.consecutive_failures += 1
         if state.consecutive_failures >= self.harness_config.failure_threshold:
             state.unavailable_until = self.clock() + self.harness_config.cooldown_seconds
+            self._emit(
+                "PROVIDER_CIRCUIT_OPENED",
+                f"模型 {name} 连续失败，进入冷却期",
+                level="WARNING",
+                provider=name,
+                details={
+                    "consecutive_failures": state.consecutive_failures,
+                    "cooldown_seconds": self.harness_config.cooldown_seconds,
+                },
+            )
 
     def _record_success(self, name: str) -> None:
         state = self._states[name]
@@ -156,3 +219,12 @@ class FailoverLLMClient:
         providers = list(_request_providers.get())
         _request_providers.set(())
         return providers
+
+    def _emit(self, event_type: str, message: str, **kwargs: Any) -> None:
+        if self.events is not None:
+            self.events.emit(
+                stage=f"llm.{self.stage}",
+                event_type=event_type,
+                message=message,
+                **kwargs,
+            )

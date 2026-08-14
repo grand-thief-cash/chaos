@@ -254,13 +254,15 @@ class KnowledgeEngineCfg(StrictConfigModel):
     sampling_field_review_output_tokens: int = Field(default=2800, ge=512, le=8192)
     sampling_minimum_success_ratio: float = Field(default=0.6, ge=0, le=1)
     sampling_enable_semantic_summarizer: bool = False
-    sampling_layout_sidecar_url: str | None = None
-    # Optional in-process CPU fallback for development sampling. Imported only
-    # when the text-quality gate requests it; normal born-digital PDFs do not
-    # load OCR models. Production cannot enable sampling at all.
-    sampling_local_ocr_enabled: bool = False
-    sampling_local_ocr_dpi: int = Field(default=160, ge=96, le=240)
-    sampling_local_ocr_maximum_pages: int = Field(default=12, ge=1, le=60)
+    # Shared Document Harness. Sampling and production text-model extraction
+    # both use this quality-gated parser chain; only Sampling APIs are dev-only.
+    document_layout_sidecar_url: str | None = None
+    document_local_ocr_enabled: bool = False
+    document_local_ocr_dpi: int = Field(default=160, ge=96, le=240)
+    document_local_ocr_maximum_pages: int = Field(default=12, ge=1, le=60)
+    # Ephemeral live-event journal used by the development Sampling UI.
+    harness_event_buffer_size: int = Field(default=400, ge=20, le=5000)
+    harness_event_maximum_runs: int = Field(default=20, ge=1, le=200)
     # Sampling is a development-time schema-discovery workflow. Production
     # consumes approved field catalogs and must not expose sampling endpoints.
     sampling_enabled: bool = True

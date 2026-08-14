@@ -64,6 +64,11 @@ class ExtractionOrchestrator:
         prompt_signature = self.extractor.prompt_builder.signature(
             semantic_config["version"], report_profile, self.extractor.llm.model_id
         )
+        parser_signature = getattr(
+            self.extractor.llm, "document_parser_signature", None
+        )
+        if parser_signature:
+            prompt_signature = f"{prompt_signature}|parser={parser_signature}"
         finder = getattr(self.store, "find_reusable_extraction", None)
         if not force and finder is not None:
             reusable = await finder(

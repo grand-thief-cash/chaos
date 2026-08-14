@@ -163,8 +163,12 @@ engine:
     maximum_total_attempts: 3
     sampling_enabled: true
     sampling_field_review_batch_size: 4
-    sampling_local_ocr_enabled: false
-    sampling_local_ocr_dpi: 160
-    sampling_local_ocr_maximum_pages: 12
+    # Shared quality-gated Document Harness for Sampling and Production.
+    document_layout_sidecar_url: null
+    document_local_ocr_enabled: true
+    document_local_ocr_dpi: 160
+    document_local_ocr_maximum_pages: 12
+    harness_event_buffer_size: 400
+    harness_event_maximum_runs: 20
     semantic_config_path: config/semantic/atlas-semantic-v0001.yaml
     prompt_mapping_path: config/report_prompt_mapping.yaml

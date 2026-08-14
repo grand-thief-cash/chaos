@@ -41,9 +41,10 @@ def read_version() -> str:
 
 
 def dependency_tag() -> str:
-    digest = hashlib.sha256(
-        (PROJECT_PATH / "requirements.txt").read_bytes()
-    ).hexdigest()
+    digest = hashlib.sha256()
+    digest.update((PROJECT_PATH / "requirements.txt").read_bytes())
+    digest.update((PROJECT_PATH / "requirements-ocr.txt").read_bytes())
+    digest = digest.hexdigest()
     return digest[:12]
 
 
@@ -141,6 +142,11 @@ def upload_build_context(
         client,
         PROJECT_PATH / "requirements.txt",
         f"{REMOTE_DEPLOY_PATH}/requirements.txt",
+    )
+    upload_file(
+        client,
+        PROJECT_PATH / "requirements-ocr.txt",
+        f"{REMOTE_DEPLOY_PATH}/requirements-ocr.txt",
     )
     upload_file(client, DOCKERFILE, f"{REMOTE_DEPLOY_PATH}/Dockerfile")
     upload_file(
