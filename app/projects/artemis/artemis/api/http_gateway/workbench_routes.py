@@ -13,8 +13,10 @@ logger = get_logger("workbench.routes")
 router = APIRouter(prefix="/workbench", tags=["workbench"])
 
 from artemis.api.http_gateway.t_trading_routes import router as t_trading_router  # noqa: E402
+from artemis.api.http_gateway.valuation_routes import router as valuation_router  # noqa: E402
 
 router.include_router(t_trading_router)
+router.include_router(valuation_router)
 
 
 def _indicator_warmup_start(start_date: str, period: str) -> str:

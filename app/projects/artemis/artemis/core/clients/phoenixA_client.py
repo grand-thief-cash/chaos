@@ -683,6 +683,66 @@ class PhoenixAClient(HTTPDeptServiceClient):
             run_id=run_id,
         )
 
+    def query_market_observations(
+        self,
+        *,
+        source: str,
+        security_ids: List[int],
+        start_date: str = "",
+        end_date: str = "",
+        observation_types: Optional[List[str]] = None,
+        limit: int = 5000,
+    ) -> List[Dict[str, Any]]:
+        """Read vertical observations with bounded pagination.
+
+        Valuation history and consensus snapshots share PhoenixA's governed
+        scalar-observation store. Identity is mandatory here so an empty or
+        invalid selection can never degrade to a market-wide scan.
+        """
+        ids = sorted({int(value) for value in security_ids if int(value) > 0})
+        if not ids:
+            raise ValueError("security_ids must contain a positive integer")
+        path = f"/api/v2/market-observations/{source}"
+        page_size = min(max(int(limit), 1), 5000)
+        offset = 0
+        result: List[Dict[str, Any]] = []
+        while True:
+            params: Dict[str, Any] = {
+                "security_ids": ",".join(map(str, ids)),
+                "limit": str(page_size),
+                "offset": str(offset),
+            }
+            if start_date:
+                params["start_date"] = start_date
+            if end_date:
+                params["end_date"] = end_date
+            if observation_types:
+                params["observation_types"] = ",".join(observation_types)
+            resp = self.get(path, params)
+            if not 200 <= resp.status_code < 300:
+                raise RuntimeError(
+                    f"phoenixA market observation query failed: {resp.status_code}"
+                )
+            rows = self._coerce_hist_rows(resp.json())
+            result.extend(rows)
+            if len(rows) < page_size:
+                return result
+            offset += len(rows)
+
+    def upsert_equity_structures(
+        self,
+        *,
+        source: str,
+        rows: List[Dict[str, Any]],
+        run_id: Optional[int | str] = None,
+    ) -> bool:
+        return self._upsert_ods_rows(
+            path=f"/api/v2/equity-structure/{source}/upsert",
+            event="phoenixA_upsert_equity_structures",
+            rows=rows,
+            run_id=run_id,
+        )
+
     def upsert_security_events(
         self,
         *,
@@ -1726,4 +1786,3 @@ class PhoenixAClient(HTTPDeptServiceClient):
                     'error': str(e),
                 })
             return {"data": [], "total": 0}
-

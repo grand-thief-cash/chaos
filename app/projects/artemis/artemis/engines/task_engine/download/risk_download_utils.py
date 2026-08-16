@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import time
 from datetime import timedelta
 from typing import Any, Dict
@@ -47,17 +48,38 @@ def incremental_start_date(
 
 
 def rate_limited_call(ctx: TaskContext, label: str, func):
-    seconds = max(float((ctx.params or {}).get("request_interval_seconds", 1.5)), 0.0)
-    try:
-        return func()
-    except Exception as exc:
-        ctx.logger.warning({
-            "event": "risk_download_source_call_failed",
-            "label": label,
-            "error": str(exc),
-            "run_id": ctx.run_id,
-        })
-        return None
-    finally:
-        if seconds:
-            time.sleep(seconds)
+    """Call a public data source conservatively.
+
+    Free endpoints are deliberately single-threaded. Every attempt is followed
+    by a minimum delay plus jitter; transient failures use exponential backoff.
+    All knobs are task parameters so production can slow a provider without a
+    code release. A caller still receives ``None`` after the final failure,
+    preserving the download-task partial-progress contract.
+    """
+    params = ctx.params or {}
+    seconds = max(float(params.get("request_interval_seconds", 2.0)), 0.0)
+    jitter = max(float(params.get("request_jitter_seconds", 0.8)), 0.0)
+    retries = min(max(int(params.get("request_retry_attempts", 3)), 1), 6)
+    max_backoff = max(float(params.get("request_max_backoff_seconds", 30.0)), seconds)
+
+    for attempt in range(1, retries + 1):
+        failed = False
+        try:
+            return func()
+        except Exception as exc:
+            failed = True
+            ctx.logger.warning({
+                "event": "risk_download_source_call_failed",
+                "label": label,
+                "attempt": attempt,
+                "max_attempts": retries,
+                "error": str(exc),
+                "run_id": ctx.run_id,
+            })
+        finally:
+            delay = seconds + (random.uniform(0.0, jitter) if jitter else 0.0)
+            if failed:
+                delay += min(seconds * (2 ** (attempt - 1)), max_backoff)
+            if delay:
+                time.sleep(delay)
+    return None

@@ -32,6 +32,9 @@ from artemis.engines.task_engine.download.zh.stock_zh_a_profit_express import St
 from artemis.engines.task_engine.download.zh.stock_zh_a_profit_notice import StockZHAProfitNotice
 from artemis.engines.task_engine.download.zh.stock_zh_a_dividend import StockZHADividend
 from artemis.engines.task_engine.download.zh.stock_zh_a_right_issue import StockZHARightIssue
+from artemis.engines.task_engine.download.zh.stock_zh_a_equity_structure import StockZHAEquityStructure
+from artemis.engines.task_engine.download.zh.stock_zh_a_valuation_daily import StockZHAValuationDaily
+from artemis.engines.task_engine.download.zh.stock_zh_a_earnings_consensus import StockZHAEarningsConsensus
 from artemis.engines.task_engine.download.zh.stock_zh_a_eastmoney_report import (
     EastmoneyResearchReport,
 )
@@ -289,6 +292,24 @@ registry.register(
     TaskCode.STOCK_ZH_A_RIGHT_ISSUE,
     module=StockZHARightIssue.__module__,
     class_name=StockZHARightIssue.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_EQUITY_STRUCTURE,
+    module=StockZHAEquityStructure.__module__,
+    class_name=StockZHAEquityStructure.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_VALUATION_DAILY,
+    module=StockZHAValuationDaily.__module__,
+    class_name=StockZHAValuationDaily.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_EARNINGS_CONSENSUS,
+    module=StockZHAEarningsConsensus.__module__,
+    class_name=StockZHAEarningsConsensus.__name__,
 )
 
 registry.register(
