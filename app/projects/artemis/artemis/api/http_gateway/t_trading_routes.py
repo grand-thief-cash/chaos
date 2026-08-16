@@ -1,6 +1,9 @@
 """Ephemeral T-trading replay APIs for the Artemis Workbench."""
 
-from fastapi import APIRouter, HTTPException
+from datetime import date, timedelta
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Query
 
 from artemis.log.logger import get_logger
 from artemis.models.t_trading import TBatchReplayRequest, TReplayRequest
@@ -8,6 +11,61 @@ from artemis.services.t_trading import NoMinuteDataError, run_batch_replay, run_
 
 logger = get_logger("t_trading.routes")
 router = APIRouter(prefix="/t-trading", tags=["t-trading"])
+
+NEAREST_TRADE_DATE_WINDOW_DAYS = 45
+
+
+@router.get("/nearest-trade-date")
+async def nearest_trade_date(
+    security_id: int = Query(gt=0),
+    trade_date: date = Query(),
+    direction: Literal["prev", "next"] = Query(),
+):
+    """Return the closest day that actually has daily bars for the security.
+
+    Drives the UI day navigator so weekends/holidays/suspensions are skipped
+    instead of surfacing a no-data error.
+    """
+    from artemis.services.workbench import get_market_bars
+
+    if direction == "prev":
+        start = (trade_date - timedelta(days=NEAREST_TRADE_DATE_WINDOW_DAYS)).isoformat()
+        end = (trade_date - timedelta(days=1)).isoformat()
+    else:
+        start = (trade_date + timedelta(days=1)).isoformat()
+        end = (trade_date + timedelta(days=NEAREST_TRADE_DATE_WINDOW_DAYS)).isoformat()
+    try:
+        data = get_market_bars(
+            security_id=security_id,
+            start_date=start,
+            end_date=end,
+            period="daily",
+            adjust="nf",
+            asset_type="stock",
+            market="zh_a",
+            use_cache=False,
+        )
+    except Exception as exc:
+        logger.warning({"event": "nearest_trade_date_lookup_failed", "error": str(exc)})
+        raise HTTPException(status_code=502, detail="trade-date lookup failed")
+    # phoenixA_client renames trade_date -> date for cache compatibility.
+    available = sorted({str(item["date"])[:10] for item in data.get("bars", [])})
+    if not available:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"no daily bars within {NEAREST_TRADE_DATE_WINDOW_DAYS} days "
+                f"{'before' if direction == 'prev' else 'after'} {trade_date.isoformat()}"
+            ),
+        )
+    picked = available[-1] if direction == "prev" else available[0]
+    return {
+        "security_id": security_id,
+        "requested_trade_date": trade_date.isoformat(),
+        "direction": direction,
+        "trade_date": picked,
+        "available_count": len(available),
+    }
 
 
 @router.get("/config")
@@ -35,6 +93,7 @@ async def get_t_trading_config():
         },
         "execution_simulation_default": False,
         "result_storage": "none",
+        "direction_modes": ["independent", "buy_first", "sell_first"],
         "strategies": [
             {
                 "value": "causal_mean_reversion_v1",
@@ -43,7 +102,7 @@ async def get_t_trading_config():
             },
             {
                 "value": "macd_volume_momentum_v1",
-                "label": "MACD + 成交量 + 分钟 EMA",
+                "label": "MACD + 量能 + EMA 偏离回归",
                 "data_tier": "min1_or_min5_ohlcv",
             },
             {
@@ -87,7 +146,16 @@ async def replay(req: TReplayRequest):
     try:
         return run_replay(req)
     except NoMinuteDataError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "NO_MINUTE_BARS",
+                "message": "所选日期没有分钟行情，可能是周末、休市或停牌",
+                "security_id": req.security_id,
+                "trade_date": req.trade_date.isoformat(),
+                "reason": str(exc),
+            },
+        )
     except ValueError as exc:
         logger.warning({"event": "t_replay_validation_error", "error": str(exc)})
         raise HTTPException(status_code=400, detail=str(exc))

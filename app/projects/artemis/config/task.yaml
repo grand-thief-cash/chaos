@@ -42,63 +42,76 @@ tasks:
           end_date: null
           fields: "date,time,open,high,low,close,volume,amount,adjustflag"
 
-  # Registry-native, on-demand AmazingData K-lines. Callers must supply
-  # security_ids/symbols unless all_registered=true is explicitly requested.
-  MARKET_ZH_A_KLINE_PARENT:
+  # Registry-native, on-demand AmazingData stock K-lines. Task identity fixes
+  # asset_type=stock; callers only select registered security_ids/symbols.
+  STOCK_ZH_A_KLINE_PARENT:
     variants:
-      - match: { asset_type: "stock", period: "min1", adjust: "nf" }
+      - match: { period: "min1", adjust: "nf" }
         config:
-          asset_type: "stock"
           period: "min1"
           adjust: "nf"
           start_date: "2021-01-01"
           end_date: null
           max_symbols_per_child: 50
-      - match: { asset_type: "stock", period: "min5", adjust: "nf" }
+      - match: { period: "min5", adjust: "nf" }
         config:
-          asset_type: "stock"
           period: "min5"
           adjust: "nf"
           start_date: "2021-01-01"
           end_date: null
           max_symbols_per_child: 50
-      - match: { asset_type: "stock", period: "min30", adjust: "nf" }
+      - match: { period: "min30", adjust: "nf" }
         config:
-          asset_type: "stock"
           period: "min30"
           adjust: "nf"
           start_date: "2021-01-01"
           end_date: null
           max_symbols_per_child: 50
-      - match: { asset_type: "stock", period: "daily", adjust: "nf" }
+      - match: { period: "daily", adjust: "nf" }
         config:
-          asset_type: "stock"
           period: "daily"
           adjust: "nf"
           start_date: "2015-01-01"
           end_date: null
           max_symbols_per_child: 100
-      - match: { asset_type: "index", period: "min1", adjust: "nf" }
+  STOCK_ZH_A_KLINE_CHILD:
+    variants:
+      - match: {}
+        config: {}
+
+  # Registry-native, on-demand AmazingData mainland-index K-lines.
+  INDEX_ZH_A_KLINE_PARENT:
+    variants:
+      - match: { period: "min1", adjust: "nf" }
         config:
-          asset_type: "index"
           period: "min1"
           adjust: "nf"
           start_date: "2021-01-01"
           end_date: null
           max_symbols_per_child: 20
-      - match: { asset_type: "index", period: "min5", adjust: "nf" }
+      - match: { period: "min5", adjust: "nf" }
         config:
-          asset_type: "index"
           period: "min5"
           adjust: "nf"
           start_date: "2021-01-01"
           end_date: null
           max_symbols_per_child: 20
 
-  MARKET_ZH_A_KLINE_CHILD:
+  INDEX_ZH_A_KLINE_CHILD:
     variants:
       - match: {}
         config: {}
+
+  # File-only Level-1 research pilot. Raw snapshots never enter PhoenixA.
+  # Callers must select at most 10 registry stocks and at most 31 calendar days.
+  STOCK_ZH_A_LEVEL1_FILE:
+    variants:
+      - match: {}
+        config:
+          storage_root: "runtime/artemis/level1_snapshot"
+          max_securities: 10
+          max_calendar_days: 31
+          force: false
 
   # Core A-share index download whitelist. Identity and names come from
   # STOCK_ZH_A_LIST/security_registry; this list only controls what is downloaded.
@@ -529,4 +542,3 @@ tasks:
           detail_page_sleep: [7.0, 15.0]
           pdf_download_sleep: [9.0, 18.0]
           retry_sleep: [45.0, 120.0]
-

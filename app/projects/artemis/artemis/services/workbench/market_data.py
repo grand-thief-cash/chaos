@@ -13,6 +13,30 @@ from artemis.services.workbench.providers import provider_registry
 
 logger = get_logger("market_data_service")
 
+INTRADAY_PERIODS = {
+    "min1", "1min", "min5", "5min", "min15", "15min",
+    "min30", "30min", "min60", "60min",
+}
+
+
+def _normalize_query_range(
+    start_date: str, end_date: str, period: str
+) -> tuple[str, str]:
+    """Expand date-only intraday requests to the A-share session bounds."""
+    if period not in INTRADAY_PERIODS:
+        return start_date, end_date
+    start = (
+        f"{start_date}T09:15:00+08:00"
+        if len(start_date) == 10
+        else start_date
+    )
+    end = (
+        f"{end_date}T15:00:59.999999+08:00"
+        if len(end_date) == 10
+        else end_date
+    )
+    return start, end
+
 
 def _build_phoenix_client(source: str | None = None) -> PhoenixAClient:
     """从配置构建 PhoenixAClient。source 指定数据源名称。"""
@@ -83,6 +107,9 @@ def _build_query(
 ) -> MarketDataQuery:
     if not security_id:
         raise ValueError("security_id is required")
+    start_date, end_date = _normalize_query_range(
+        start_date, end_date, period
+    )
     if start_date > end_date:
         raise ValueError("start_date must be <= end_date")
 
@@ -166,7 +193,7 @@ def get_market_bars(
     provider = provider_registry.resolve(asset_type=query.asset_type, market=query.market)
 
     cache = None
-    if query.use_cache:
+    if query.use_cache and query.period not in INTRADAY_PERIODS:
         try:
             from artemis.engines.cache_engine import get_cache_engine
             cache = get_cache_engine()
@@ -174,6 +201,13 @@ def get_market_bars(
                 logger.info({"event": "cache_not_enabled", "security_id": query.security_id})
         except Exception:
             logger.warning({"event": "cache_init_failed", "security_id": query.security_id}, exc_info=True)
+    elif query.use_cache:
+        logger.info({
+            "event": "intraday_cache_bypassed",
+            "security_id": query.security_id,
+            "period": query.period,
+            "reason": "arrow_cache_accepts_date_only_bounds",
+        })
 
     if cache:
         logger.info({

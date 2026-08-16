@@ -18,19 +18,22 @@ class TStrategyConfig(BaseModel):
         "market_residual_reversal_v1",
         "multi_timeframe_pullback_v1",
     ] = "causal_mean_reversion_v1"
-    direction: Literal["buy_first", "sell_first"] = "buy_first"
+    direction: Literal["buy_first", "sell_first", "independent"] = "buy_first"
     window: int = Field(default=20, ge=5, le=120)
     entry_z: float = Field(default=1.25, ge=0.0, le=5.0)
     exit_z: float = Field(default=1.0, ge=0.0, le=5.0)
     entry_rsi: float = Field(default=35.0, ge=0.0, le=100.0)
     exit_rsi: float = Field(default=65.0, ge=0.0, le=100.0)
     confirmation_bars: int = Field(default=3, ge=1, le=12)
-    cooldown_bars: int = Field(default=2, ge=0, le=30)
+    cooldown_bars: int = Field(default=5, ge=0, le=30)
     max_round_trips: int = Field(default=2, ge=1, le=10)
     ema_fast: int = Field(default=5, ge=2, le=60)
     ema_slow: int = Field(default=13, ge=3, le=120)
     macd_signal: int = Field(default=4, ge=2, le=30)
-    min_volume_ratio: float = Field(default=1.2, ge=0.0, le=10.0)
+    min_volume_ratio: float = Field(default=0.8, ge=0.0, le=10.0)
+    ema_deviation_atr: float = Field(default=0.35, ge=0.0, le=5.0)
+    macd_turn_bars: int = Field(default=2, ge=1, le=6)
+    volume_confirmation_window: int = Field(default=3, ge=1, le=20)
     bollinger_z: float = Field(default=1.5, ge=0.25, le=5.0)
     reversal_wick_ratio: float = Field(default=0.25, ge=0.0, le=1.0)
     max_trend_strength_atr: float = Field(default=0.8, ge=0.0, le=10.0)
@@ -47,7 +50,6 @@ class TStrategyConfig(BaseModel):
     higher_ema_slow: int = Field(default=10, ge=3, le=120)
     daily_trend_window: int = Field(default=20, ge=5, le=120)
     pullback_tolerance_atr: float = Field(default=0.5, ge=0.0, le=5.0)
-
     @model_validator(mode="after")
     def validate_indicator_windows(self):
         if self.ema_fast >= self.ema_slow:

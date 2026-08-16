@@ -5,12 +5,15 @@ from types import SimpleNamespace
 import pandas as pd
 
 from artemis.consts import DeptServices, TaskCode
-from artemis.engines.task_engine.download.zh.market_zh_a_kline_child import (
-    MarketZhAKlineChild,
+from artemis.engines.task_engine.download.zh.stock_zh_a_kline_child import (
+    StockZhAKlineChild,
     amazing_data_bar_available_at,
 )
-from artemis.engines.task_engine.download.zh.market_zh_a_kline_parent import (
-    MarketZhAKlineParent,
+from artemis.engines.task_engine.download.zh.stock_zh_a_kline_parent import (
+    StockZhAKlineParent,
+)
+from artemis.engines.task_engine.download.zh.index_zh_a_kline_parent import (
+    IndexZhAKlineParent,
 )
 
 
@@ -49,7 +52,7 @@ def test_amazing_data_forward_label_becomes_complete_bar_time():
 
 
 def test_amazing_data_parent_batches_incremental_registry_securities():
-    parent = MarketZhAKlineParent()
+    parent = StockZhAKlineParent()
     ctx = _Context(
         {
             "asset_type": "stock",
@@ -71,9 +74,42 @@ def test_amazing_data_parent_batches_incremental_registry_securities():
     specs = parent.plan(ctx)
 
     assert len(specs) == 1
-    assert specs[0]["key"] == TaskCode.MARKET_ZH_A_KLINE_CHILD
+    assert specs[0]["key"] == TaskCode.STOCK_ZH_A_KLINE_CHILD
+    assert "asset_type" not in specs[0]["params"]
     assert specs[0]["params"]["start_date"] == "2026-07-29"
     assert specs[0]["params"]["securities"]["600183.SH"]["security_id"] == 7
+
+
+def test_amazing_data_parent_splits_large_min1_requests_below_provider_cap():
+    parent = IndexZhAKlineParent()
+    ctx = _Context(
+        {
+            "asset_type": "index",
+            "period": "min1",
+            "adjust": "nf",
+            "end_date": "2026-03-31",
+            "max_symbols_per_child": 20,
+            "max_rows_per_child": 12_000,
+            "selected_securities": {
+                security_id: {
+                    "security_id": security_id,
+                    "symbol": f"{security_id:06d}",
+                    "exchange": "SH",
+                }
+                for security_id in range(1, 5)
+            },
+            "effective_start_dates": {
+                security_id: "2026-01-01" for security_id in range(1, 5)
+            },
+        }
+    )
+
+    specs = parent.plan(ctx)
+
+    assert len(specs) > 1
+    assert specs[0]["params"]["start_date"] == "2026-01-01"
+    assert specs[-1]["params"]["end_date"] == "2026-03-31"
+    assert all(len(spec["params"]["securities"]) == 4 for spec in specs)
 
 
 def test_amazing_data_parent_resolves_registry_and_replays_watermark_day():
@@ -93,7 +129,7 @@ def test_amazing_data_parent_resolves_registry_and_replays_watermark_day():
             assert kwargs["period"] == "min5"
             return {7: "2026-07-29T14:55:00+08:00"}
 
-    parent = MarketZhAKlineParent()
+    parent = StockZhAKlineParent()
     ctx = _Context(
         {
             "asset_type": "stock",
@@ -113,8 +149,42 @@ def test_amazing_data_parent_resolves_registry_and_replays_watermark_day():
     assert ctx.params["effective_start_dates"][7] == "2026-07-29"
 
 
+def test_amazing_data_parent_can_explicitly_replay_before_watermark():
+    class _Phoenix:
+        def get_security_by_id(self, security_id):
+            return {
+                "security_id": security_id,
+                "symbol": "000001",
+                "exchange": "SH",
+                "asset_type": "index",
+                "market": "zh_a",
+            }
+
+        def get_bars_last_update(self, **kwargs):
+            return {10520: "2026-08-14T15:00:00+08:00"}
+
+    parent = IndexZhAKlineParent()
+    ctx = _Context(
+        {
+            "asset_type": "index",
+            "period": "min1",
+            "adjust": "nf",
+            "security_ids": [10520],
+            "start_date": "2025-01-01",
+            "end_date": "2026-08-14",
+            "replay_from_start": True,
+        }
+    )
+    ctx.dept_http = {DeptServices.PHOENIXA: _Phoenix()}
+
+    parent.load_dynamic_parameters(ctx)
+
+    assert ctx.failed == []
+    assert ctx.params["effective_start_dates"][10520] == "2025-01-01"
+
+
 def test_amazing_data_child_normalizes_frame_and_rejects_bad_ohlc():
-    child = MarketZhAKlineChild()
+    child = StockZhAKlineChild()
     ctx = _Context(
         {
             "asset_type": "stock",
@@ -155,3 +225,23 @@ def test_amazing_data_child_normalizes_frame_and_rejects_bad_ohlc():
     assert bars[0]["security_id"] == 7
     assert bars[0]["volume"] == 100
     assert ctx.logger.events[-1]["rejected_count"] == 1
+
+
+def test_asset_specific_parent_rejects_conflicting_asset_type():
+    parent = IndexZhAKlineParent()
+    ctx = _Context(
+        {
+            "asset_type": "stock",
+            "period": "min1",
+            "adjust": "nf",
+        }
+    )
+
+    parent.load_dynamic_parameters(ctx)
+
+    assert ctx.failed == [
+        (
+            "IndexZhAKlineParent only accepts asset_type=index",
+            "load_dynamic_parameters",
+        )
+    ]

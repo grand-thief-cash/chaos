@@ -218,6 +218,38 @@ def test_market_data_normalizes_asset_type_before_resolve(monkeypatch):
     assert fake_client.calls[0]["asset_type"] == "stock"  # normalized on the wire
 
 
+def test_minute_date_only_range_expands_to_a_share_session(monkeypatch):
+    fake_client = FakeStockClient()
+    cache_calls = []
+    monkeypatch.setattr(
+        "artemis.services.workbench.market_data._build_phoenix_client",
+        lambda source=None: fake_client,
+    )
+    monkeypatch.setattr(
+        "artemis.engines.cache_engine.get_cache_engine",
+        lambda: cache_calls.append(True),
+    )
+
+    get_market_bars(
+        security_id=1,
+        start_date="2026-08-14",
+        end_date="2026-08-14",
+        period="min1",
+        adjust="nf",
+        asset_type="stock",
+        market="zh_a",
+        use_cache=True,
+    )
+
+    assert fake_client.calls[0]["start_date"] == (
+        "2026-08-14T09:15:00+08:00"
+    )
+    assert fake_client.calls[0]["end_date"] == (
+        "2026-08-14T15:00:59.999999+08:00"
+    )
+    assert cache_calls == []
+
+
 def test_phoenix_stock_client_paginates_until_last_page(monkeypatch):
     client = PhoenixAClient(host="127.0.0.1", port=8080)
     offsets = []

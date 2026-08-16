@@ -87,6 +87,36 @@ def test_replay_is_ephemeral_and_signal_evaluation_is_primary():
     assert result["summary"] == result["signal_evaluation"]["summary"]
     assert result["summary"]["horizon_bars"] == 6
     assert result["signal_evaluation"]["outcomes"]
+    assert result["indicator_sets"][0]["strategy"] == (
+        "causal_mean_reversion_v1"
+    )
+    assert len(result["indicator_sets"][0]["points"]) == len(result["bars"])
+
+
+def test_prior_session_warmup_seeds_opening_indicators_but_resets_vwap():
+    target = _bars()[:5]
+    warmup = []
+    for day_offset in (2, 1):
+        for bar in _bars():
+            item = dict(bar)
+            item["date"] = (
+                pd.Timestamp(bar["date"]) - pd.Timedelta(days=day_offset)
+            ).isoformat()
+            warmup.append(item)
+
+    result = run_replay_from_bars(
+        _request(),
+        target,
+        context_bars={"warmup_bars": warmup},
+    )
+    first = result["indicator_sets"][0]["points"][0]
+
+    assert first["ema_fast"] is not None
+    assert first["macd"] is not None
+    assert first["macd_signal"] is not None
+    assert first["rsi"] is not None
+    assert first["vwap"] == target[0]["close"]
+    assert len(result["bars"]) == len(target)
 
 
 def test_signal_prefix_invariance_proves_no_future_dependency():
@@ -99,6 +129,95 @@ def test_signal_prefix_invariance_proves_no_future_dependency():
     prefix = bars[: first["bar_index"] + 1]
     prefix_frame = build_causal_features(prefix, request.strategy.window)
     prefix_signals = generate_signals(prefix_frame, request.strategy)
+    assert prefix_signals[0]["decision_time"] == first["decision_time"]
+    assert prefix_signals[0]["side"] == first["side"]
+
+
+def test_macd_reversion_signals_stay_on_the_correct_ema_side():
+    config = TStrategyConfig(
+        strategy="macd_volume_momentum_v1",
+        direction="independent",
+        window=5,
+        ema_fast=3,
+        ema_slow=6,
+        macd_signal=2,
+        atr_window=5,
+        ema_deviation_atr=0.05,
+        macd_turn_bars=1,
+        min_volume_ratio=0.5,
+        volume_confirmation_window=1,
+        confirmation_bars=1,
+        cooldown_bars=0,
+        max_round_trips=3,
+    )
+    base_time = datetime(2026, 7, 1, 9, 35, tzinfo=timezone.utc)
+    frame = pd.DataFrame(
+        [
+            {
+                "date": base_time,
+                "open": 9.0,
+                "close": 9.0,
+                "prev_close": None,
+                "rsi": 25.0,
+                "prev_rsi": None,
+                "macd_hist": -0.2,
+                "prev_macd_hist": -0.3,
+                "macd_hist_delta": 0.1,
+                "macd_hist_rising_bars": 1,
+                "macd_hist_falling_bars": 0,
+                "ema_slow": 10.0,
+                "ema_deviation_atr": -1.0,
+                "recent_volume_ratio_max": 2.0,
+                "atr": 0.2,
+            },
+            {
+                "date": base_time + timedelta(minutes=1),
+                "open": 8.9,
+                "close": 9.0,
+                "prev_close": 8.95,
+                "rsi": 30.0,
+                "prev_rsi": 25.0,
+                "macd_hist": -0.1,
+                "prev_macd_hist": -0.2,
+                "macd_hist_delta": 0.1,
+                "macd_hist_rising_bars": 2,
+                "macd_hist_falling_bars": 0,
+                "ema_slow": 10.0,
+                "ema_deviation_atr": -1.0,
+                "recent_volume_ratio_max": 2.0,
+                "atr": 0.2,
+            },
+            {
+                "date": base_time + timedelta(minutes=2),
+                "open": 11.1,
+                "close": 11.0,
+                "prev_close": 11.05,
+                "rsi": 70.0,
+                "prev_rsi": 75.0,
+                "macd_hist": 0.1,
+                "prev_macd_hist": 0.2,
+                "macd_hist_delta": -0.1,
+                "macd_hist_rising_bars": 0,
+                "macd_hist_falling_bars": 2,
+                "ema_slow": 10.0,
+                "ema_deviation_atr": 1.0,
+                "recent_volume_ratio_max": 2.0,
+                "atr": 0.2,
+            },
+        ]
+    )
+    signals = generate_signals(frame, config)
+
+    assert {signal["side"] for signal in signals} == {"BUY", "SELL"}
+    for signal in signals:
+        deviation = signal["features"]["ema_deviation_atr"]
+        if signal["side"] == "BUY":
+            assert deviation <= -config.ema_deviation_atr
+        else:
+            assert deviation >= config.ema_deviation_atr
+    first = signals[0]
+    prefix_frame = frame.iloc[: first["bar_index"] + 1].copy()
+    prefix_signals = generate_signals(prefix_frame, config)
     assert prefix_signals[0]["decision_time"] == first["decision_time"]
     assert prefix_signals[0]["side"] == first["side"]
 
@@ -262,6 +381,9 @@ def test_all_ohlcv_strategy_variants_generate_auditable_signals():
             macd_signal=2,
             atr_window=5,
             min_volume_ratio=0.5,
+            ema_deviation_atr=0.0,
+            macd_turn_bars=1,
+            volume_confirmation_window=1,
             confirmation_bars=4,
             cooldown_bars=0,
         ),
@@ -304,6 +426,7 @@ def test_all_ohlcv_strategy_variants_generate_auditable_signals():
             macd_signal=config.macd_signal,
             atr_window=config.atr_window,
             opening_range_bars=config.opening_range_bars,
+            volume_confirmation_window=config.volume_confirmation_window,
         )
         signals = generate_signals(frame, config)
         assert signals, config.strategy

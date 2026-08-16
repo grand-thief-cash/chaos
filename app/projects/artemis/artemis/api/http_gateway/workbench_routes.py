@@ -1,5 +1,7 @@
 """Workbench API routes — market data + indicators + cache management."""
 
+from datetime import date, timedelta
+
 from fastapi import APIRouter, HTTPException
 
 from artemis.core import cfg_mgr
@@ -13,6 +15,26 @@ router = APIRouter(prefix="/workbench", tags=["workbench"])
 from artemis.api.http_gateway.t_trading_routes import router as t_trading_router  # noqa: E402
 
 router.include_router(t_trading_router)
+
+
+def _indicator_warmup_start(start_date: str, period: str) -> str:
+    """Return a conservative history start used only to seed indicators."""
+    requested = date.fromisoformat(start_date[:10])
+    calendar_days = {
+        "weekly": 1800,
+        "daily": 550,
+        "min1": 45,
+        "1min": 45,
+        "min5": 45,
+        "5min": 45,
+        "min15": 90,
+        "15min": 90,
+        "min30": 120,
+        "30min": 120,
+        "min60": 180,
+        "60min": 180,
+    }.get(period, 550)
+    return (requested - timedelta(days=calendar_days)).isoformat()
 
 
 @router.get("/sources")
@@ -79,7 +101,7 @@ async def compute_indicators(req: IndicatorsRequest):
     from artemis.services.workbench import get_market_bars
 
     try:
-        market_data = get_market_bars(
+        target_market_data = get_market_bars(
             security_id=req.security_id,
             start_date=req.start_date,
             end_date=req.end_date,
@@ -89,17 +111,58 @@ async def compute_indicators(req: IndicatorsRequest):
             market=req.market,
             source=req.source,
         )
+        target_bars = target_market_data["bars"]
+        if not target_bars:
+            raise ValueError("no bars for requested indicator range")
+
+        # Technical indicators are continuous across sessions. Load preceding
+        # bars for EMA/MACD/RSI/ATR state, then return only points aligned with
+        # the user's requested bars. This matches brokerage-terminal behavior
+        # at the open without backfilling or using future data.
+        market_data = get_market_bars(
+            security_id=req.security_id,
+            start_date=_indicator_warmup_start(req.start_date, req.period),
+            end_date=req.end_date,
+            period=req.period,
+            adjust=req.adjust,
+            asset_type=req.asset_type,
+            market=req.market,
+            source=req.source,
+        )
         df = pd.DataFrame(market_data["bars"])
+        df["_indicator_time"] = pd.to_datetime(
+            df["date"], errors="coerce", utc=True
+        )
+        df = (
+            df.dropna(subset=["_indicator_time"])
+            .sort_values("_indicator_time")
+            .drop_duplicates(subset=["_indicator_time"], keep="last")
+            .reset_index(drop=True)
+        )
 
         indicator_requests = [r.model_dump() for r in req.indicators]
-        series, meta = do_compute(df, indicator_requests)
+        full_series, meta = do_compute(df, indicator_requests)
+        position_by_time = {
+            value: index for index, value in enumerate(df["_indicator_time"])
+        }
+        target_times = pd.to_datetime(
+            [item["date"] for item in target_bars],
+            errors="coerce",
+            utc=True,
+        )
+        positions = [position_by_time[value] for value in target_times]
+        series = {
+            key: [values[index] for index in positions]
+            for key, values in full_series.items()
+        }
 
         return {
             "security_id": req.security_id,
-            "symbol": market_data.get("symbol", ""),
+            "symbol": target_market_data.get("symbol", ""),
             "period": req.period,
             "indicators": series,
             "indicator_meta": meta,
+            "warmup_bar_count": max(0, len(df) - len(target_bars)),
         }
     except ValueError as e:
         logger.warning({"event": "indicators_validation_error", "error": str(e)})

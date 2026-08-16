@@ -25,6 +25,29 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
             ctx.fail(f"index_codes must be a list of index codes (e.g. ['851426.SI']), got {type(index_codes).__name__}", phase='parameter_check')
             return
 
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def load_dynamic_parameters(self, ctx: TaskContext) -> None:
+        if not self._as_bool((ctx.params or {}).get("current_only")):
+            return
+        phoenix = ctx.dept_http.get(DeptServices.PHOENIXA)
+        securities = phoenix.get_securities(
+            asset_type="stock",
+            market="zh_a",
+            status="active",
+            limit=20000,
+        )
+        ctx.params["known_security_keys"] = [
+            [str(info.get("symbol", "")), str(info.get("exchange", "")).upper()]
+            for info in securities.values()
+            if str(info.get("symbol", ""))
+            and str(info.get("exchange", "")).upper() in {"SH", "SZ", "BJ"}
+        ]
+
     def before_execute(self, ctx: TaskContext) -> None:
         from artemis.core.sdk.manager import sdk_mgr
         from artemis.consts import SDK_NAME
@@ -57,6 +80,14 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
         processed = []
         seen = set()
         dup_count = 0
+        current_only = self._as_bool((ctx.params or {}).get("current_only"))
+        known_security_keys = {
+            (str(item[0]), str(item[1]).upper())
+            for item in (ctx.params or {}).get("known_security_keys", [])
+            if isinstance(item, (list, tuple)) and len(item) == 2
+        }
+        filtered_historical = 0
+        filtered_unknown = 0
         for code, df in result.items():
             if not isinstance(df, pd.DataFrame) or df.empty:
                 continue
@@ -64,6 +95,15 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
                 con_code = str(row.get("CON_CODE", "")).strip()
                 symbol = con_code.split(".")[0] if "." in con_code else con_code
                 index_code = str(row.get("INDEX_CODE", code))
+                exchange = con_code.rsplit(".", 1)[-1].upper() if "." in con_code else ""
+                raw_out_date = row.get("OUTDATE", "")
+                out_date = "" if pd.isna(raw_out_date) else str(raw_out_date).strip()
+                if current_only and out_date:
+                    filtered_historical += 1
+                    continue
+                if current_only and (symbol, exchange) not in known_security_keys:
+                    filtered_unknown += 1
+                    continue
                 key = (index_code, symbol)
                 if key in seen:
                     dup_count += 1
@@ -74,13 +114,21 @@ class StockZHAIndustryConstituentSWHY(WorkerUnit):
                     "con_code": con_code,
                     "symbol": symbol,
                     "in_date": str(row.get("INDATE", "")),
-                    "out_date": str(row.get("OUTDATE", "")),
+                    "out_date": out_date,
                     "index_name": str(row.get("INDEX_NAME", "")),
                 })
         if dup_count > 0:
             ctx.logger.info({
                 'event': 'swhy_constituent_dedup',
                 'duplicates_dropped': dup_count,
+                'kept': len(processed),
+                'run_id': ctx.run_id,
+            })
+        if current_only:
+            ctx.logger.info({
+                'event': 'swhy_constituent_current_filter',
+                'filtered_historical': filtered_historical,
+                'filtered_unknown': filtered_unknown,
                 'kept': len(processed),
                 'run_id': ctx.run_id,
             })

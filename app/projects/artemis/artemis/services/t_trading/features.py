@@ -18,6 +18,7 @@ def build_causal_features(
     macd_signal: int = 4,
     atr_window: int = 14,
     opening_range_bars: int = 6,
+    volume_confirmation_window: int = 3,
 ) -> pd.DataFrame:
     """Build trailing-only features. No negative shift or centered window is used."""
     if not bars:
@@ -45,6 +46,10 @@ def build_causal_features(
     if (frame["low"] > frame[["open", "close", "high"]].min(axis=1)).any():
         raise ValueError("minute bars contain invalid low values")
 
+    frame["_trade_day"] = frame["date"].dt.tz_convert(
+        "Asia/Shanghai"
+    ).dt.date
+
     frame["return_1"] = frame["close"].pct_change()
     rolling_close = frame["close"].rolling(window, min_periods=window)
     frame["rolling_mean"] = rolling_close.mean()
@@ -60,8 +65,14 @@ def build_causal_features(
     frame.loc[(loss == 0) & (gain == 0), "rsi"] = 50.0
 
     amount = frame["amount"].where(frame["amount"] > 0, frame["close"] * frame["volume"])
-    cumulative_volume = frame["volume"].clip(lower=0).cumsum()
-    frame["vwap"] = (amount.clip(lower=0).cumsum() / cumulative_volume.replace(0, np.nan)).fillna(frame["close"])
+    positive_volume = frame["volume"].clip(lower=0)
+    cumulative_volume = positive_volume.groupby(frame["_trade_day"]).cumsum()
+    cumulative_amount = amount.clip(lower=0).groupby(
+        frame["_trade_day"]
+    ).cumsum()
+    frame["vwap"] = (
+        cumulative_amount / cumulative_volume.replace(0, np.nan)
+    ).fillna(frame["close"])
     frame["vwap_deviation"] = frame["close"] / frame["vwap"] - 1
 
     rolling_high = frame["high"].rolling(window, min_periods=window).max()
@@ -69,6 +80,10 @@ def build_causal_features(
     frame["range_position"] = (frame["close"] - rolling_low) / (rolling_high - rolling_low).replace(0, np.nan)
     frame["volume_median"] = frame["volume"].rolling(window, min_periods=window).median()
     frame["volume_ratio"] = frame["volume"] / frame["volume_median"].replace(0, np.nan)
+    frame["recent_volume_ratio_max"] = frame["volume_ratio"].rolling(
+        volume_confirmation_window,
+        min_periods=volume_confirmation_window,
+    ).max()
     frame["prev_close"] = frame["close"].shift(1)
     frame["prev_rsi"] = frame["rsi"].shift(1)
 
@@ -84,8 +99,24 @@ def build_causal_features(
     frame["macd_signal"] = frame["macd"].ewm(
         span=macd_signal, adjust=False, min_periods=macd_signal
     ).mean()
-    frame["macd_hist"] = frame["macd"] - frame["macd_signal"]
+    # Chinese brokerage charts conventionally display the MACD histogram as
+    # 2 * (DIF - DEA). The factor does not change crossings, but keeps the
+    # audit chart and configured strategy on the same visual convention.
+    frame["macd_hist"] = 2.0 * (frame["macd"] - frame["macd_signal"])
     frame["prev_macd_hist"] = frame["macd_hist"].shift(1)
+    frame["macd_hist_delta"] = frame["macd_hist"].diff()
+    direction = np.sign(frame["macd_hist_delta"].fillna(0.0))
+    direction_group = direction.ne(direction.shift()).cumsum()
+    frame["macd_hist_rising_bars"] = (
+        direction.eq(1).groupby(direction_group).cumsum().where(
+            direction.eq(1), 0
+        )
+    )
+    frame["macd_hist_falling_bars"] = (
+        direction.eq(-1).groupby(direction_group).cumsum().where(
+            direction.eq(-1), 0
+        )
+    )
 
     true_range = pd.concat(
         [
@@ -102,6 +133,10 @@ def build_causal_features(
         (frame["ema_fast"] - frame["ema_slow"]).abs()
         / frame["atr"].replace(0, np.nan)
     )
+    frame["ema_deviation_atr"] = (
+        (frame["close"] - frame["ema_slow"])
+        / frame["atr"].replace(0, np.nan)
+    )
 
     bar_range = (frame["high"] - frame["low"]).replace(0, np.nan)
     frame["body_ratio"] = (frame["close"] - frame["open"]).abs() / bar_range
@@ -114,11 +149,16 @@ def build_causal_features(
 
     frame["opening_range_high"] = np.nan
     frame["opening_range_low"] = np.nan
-    if len(frame) > opening_range_bars:
-        opening_slice = frame.iloc[:opening_range_bars]
-        eligible = frame.index >= opening_range_bars
-        frame.loc[eligible, "opening_range_high"] = float(opening_slice["high"].max())
-        frame.loc[eligible, "opening_range_low"] = float(opening_slice["low"].min())
+    session_position = frame.groupby("_trade_day").cumcount()
+    eligible = session_position >= opening_range_bars
+    opening_high = frame.groupby("_trade_day")["high"].transform(
+        lambda values: values.iloc[:opening_range_bars].max()
+    )
+    opening_low = frame.groupby("_trade_day")["low"].transform(
+        lambda values: values.iloc[:opening_range_bars].min()
+    )
+    frame.loc[eligible, "opening_range_high"] = opening_high[eligible]
+    frame.loc[eligible, "opening_range_low"] = opening_low[eligible]
     opening_width = frame["opening_range_high"] - frame["opening_range_low"]
     frame["opening_range_position"] = (
         (frame["close"] - frame["opening_range_low"])
@@ -141,6 +181,10 @@ def feature_snapshot(row: pd.Series) -> dict[str, float | None]:
         "macd",
         "macd_signal",
         "macd_hist",
+        "macd_hist_delta",
+        "macd_hist_rising_bars",
+        "macd_hist_falling_bars",
+        "ema_deviation_atr",
         "atr",
         "trend_strength_atr",
         "body_ratio",
@@ -158,6 +202,7 @@ def feature_snapshot(row: pd.Series) -> dict[str, float | None]:
         "daily_trend",
         "higher_timeframe_trend",
         "pullback_distance_atr",
+        "recent_volume_ratio_max",
     )
     result: dict[str, float | None] = {}
     for field in fields:

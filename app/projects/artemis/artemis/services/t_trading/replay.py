@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
+import math
 from typing import Any
 from uuid import uuid4
+
+import pandas as pd
 
 from artemis.models.t_trading import TBatchReplayRequest, TReplayRequest
 from artemis.services.t_trading.execution import pair_round_trips, simulate_fills
@@ -48,6 +51,53 @@ def _public_bars(frame) -> list[dict[str, Any]]:
     return result
 
 
+def _indicator_set(frame, strategy) -> dict[str, Any]:
+    """Expose causal chart points calculated with this strategy's parameters."""
+    fields = (
+        "ema_fast",
+        "ema_slow",
+        "macd",
+        "macd_signal",
+        "macd_hist",
+        "vwap",
+        "rsi",
+        "volume_ratio",
+        "relative_volume_tod",
+        "opening_range_high",
+        "opening_range_low",
+        "ema_deviation_atr",
+        "macd_hist_delta",
+        "macd_hist_rising_bars",
+        "macd_hist_falling_bars",
+        "recent_volume_ratio_max",
+    )
+    points = []
+    for _, row in frame.iterrows():
+        point: dict[str, Any] = {"date": row["date"].isoformat()}
+        for field in fields:
+            raw = row.get(field)
+            value = float(raw) if raw is not None else math.nan
+            point[field] = round(value, 6) if math.isfinite(value) else None
+        mean = float(row.get("rolling_mean", math.nan))
+        std = float(row.get("rolling_std", math.nan))
+        if math.isfinite(mean) and math.isfinite(std):
+            point["bollinger_upper"] = round(
+                mean + strategy.bollinger_z * std, 6
+            )
+            point["bollinger_lower"] = round(
+                mean - strategy.bollinger_z * std, 6
+            )
+        else:
+            point["bollinger_upper"] = None
+            point["bollinger_lower"] = None
+        points.append(point)
+    return {
+        "strategy": strategy.strategy,
+        "parameters": strategy.model_dump(mode="json"),
+        "points": points,
+    }
+
+
 def _quality(frame, period: str) -> dict[str, Any]:
     expected_minutes = {"min1": 1, "min5": 5}[period]
     deltas = frame["date"].diff().dt.total_seconds().div(60)
@@ -77,20 +127,31 @@ def run_replay_from_bars(
         raise NoMinuteDataError(f"no {request.period} bars for {request.trade_date.isoformat()}")
 
     context_bars = context_bars or {}
+    target_times = set(
+        pd.to_datetime(
+            [item.get("date") for item in bars],
+            errors="coerce",
+            utc=True,
+        ).dropna()
+    )
+    feature_bars = [*context_bars.get("warmup_bars", []), *bars]
     strategy_frames = []
     signals: list[dict[str, Any]] = []
     for strategy_index, strategy in enumerate(request.effective_strategies, start=1):
-        strategy_frame = build_causal_features(
-            bars,
+        full_strategy_frame = build_causal_features(
+            feature_bars,
             strategy.window,
             ema_fast=strategy.ema_fast,
             ema_slow=strategy.ema_slow,
             macd_signal=strategy.macd_signal,
             atr_window=strategy.atr_window,
             opening_range_bars=strategy.opening_range_bars,
+            volume_confirmation_window=(
+                strategy.volume_confirmation_window
+            ),
         )
-        strategy_frame = attach_strategy_context(
-            strategy_frame,
+        full_strategy_frame = attach_strategy_context(
+            full_strategy_frame,
             historical_bars=context_bars.get("historical_bars"),
             benchmark_bars=context_bars.get("benchmark_bars"),
             daily_bars=context_bars.get("daily_bars"),
@@ -100,6 +161,14 @@ def run_replay_from_bars(
             higher_ema_slow=strategy.higher_ema_slow,
             daily_trend_window=strategy.daily_trend_window,
         )
+        strategy_frame = full_strategy_frame[
+            full_strategy_frame["date"].isin(target_times)
+        ].copy().reset_index(drop=True)
+        if strategy_frame.empty:
+            raise NoMinuteDataError(
+                f"no {request.period} target bars for "
+                f"{request.trade_date.isoformat()} after warmup"
+            )
         local_signals = generate_signals(strategy_frame, strategy)
         for local_index, signal in enumerate(local_signals, start=1):
             signal["signal_id"] = (
@@ -155,6 +224,12 @@ def run_replay_from_bars(
             ),
         },
         "bars": _public_bars(frame),
+        "indicator_sets": [
+            _indicator_set(strategy_frame, strategy)
+            for strategy_frame, strategy in zip(
+                strategy_frames, request.effective_strategies
+            )
+        ],
         "signals": signals,
         "signal_evaluation": signal_evaluation,
         "fills": fills,
@@ -189,6 +264,11 @@ def run_replay(request: TReplayRequest) -> dict[str, Any]:
         source=request.source,
         use_cache=False,
     )
+    market_bars = market_data.get("bars", [])
+    if not market_bars:
+        raise NoMinuteDataError(
+            f"no {request.period} bars for {request.trade_date.isoformat()}"
+        )
     strategy_names = {
         item.strategy for item in request.effective_strategies
     }
@@ -212,6 +292,24 @@ def run_replay(request: TReplayRequest) -> dict[str, Any]:
                 "error_type": type(exc).__name__,
                 "reason": str(exc),
             }
+
+    # EMA/MACD/RSI/ATR are continuous indicators. Brokerage terminals draw
+    # them from the opening bar because they seed the calculation with prior
+    # bars; loading 45 calendar days safely covers long holidays and the
+    # largest configurable minute window. Session VWAP/opening range still
+    # reset by Shanghai trade date inside build_causal_features().
+    warmup_start = request.trade_date - timedelta(days=45)
+    warmup_end = request.trade_date - timedelta(days=1)
+    load_context(
+        "warmup_bars",
+        security_id=request.security_id,
+        start_date=_intraday_session_bounds(warmup_start)[0],
+        end_date=_intraday_session_bounds(warmup_end)[1],
+        period=request.period,
+        adjust=request.adjust,
+        asset_type="stock",
+        market="zh_a",
+    )
 
     if "time_of_day_volume_momentum_v1" in strategy_names:
         history_start = request.trade_date - timedelta(days=70)
@@ -265,7 +363,7 @@ def run_replay(request: TReplayRequest) -> dict[str, Any]:
 
     return run_replay_from_bars(
         request,
-        market_data.get("bars", []),
+        market_bars,
         symbol=market_data.get("symbol", ""),
         context_bars=context_bars,
         context_diagnostics=context_diagnostics,

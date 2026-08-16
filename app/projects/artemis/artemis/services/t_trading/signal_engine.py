@@ -49,48 +49,65 @@ def _mean_reversion_exit(
 def _macd_volume_entry(
     row: pd.Series, side: str, config: TStrategyConfig
 ) -> bool:
+    """Fade an ATR-sized EMA deviation only after MACD starts to turn.
+
+    This is deliberately a mean-reversion entry, not the former trend-following
+    rule. BUY must remain below the slow EMA; SELL is its exact mirror.
+    """
     if not _present(
         row,
         "macd_hist",
         "prev_macd_hist",
-        "ema_fast",
         "ema_slow",
-        "volume_ratio",
+        "macd_hist_rising_bars",
+        "macd_hist_falling_bars",
+        "ema_deviation_atr",
+        "recent_volume_ratio_max",
     ):
         return False
+    volume_ok = (
+        row["recent_volume_ratio_max"] >= config.min_volume_ratio
+    )
     if side == "BUY":
-        return bool(
-            row["macd_hist"] > row["prev_macd_hist"]
-            and row["close"] >= row["ema_fast"] * 0.998
-            and row["ema_fast"] >= row["ema_slow"]
-            and row["volume_ratio"] >= config.min_volume_ratio
+        macd_turn = (
+            (
+                row["macd_hist"] <= 0
+                and row["macd_hist_rising_bars"]
+                >= config.macd_turn_bars
+            )
+            or (
+                row["prev_macd_hist"] <= 0
+                and row["macd_hist"] > 0
+            )
         )
+        return bool(
+            row["ema_deviation_atr"] <= -config.ema_deviation_atr
+            and row["close"] < row["ema_slow"]
+            and macd_turn
+            and volume_ok
+        )
+    macd_turn = (
+        (
+            row["macd_hist"] >= 0
+            and row["macd_hist_falling_bars"] >= config.macd_turn_bars
+        )
+        or (
+            row["prev_macd_hist"] >= 0
+            and row["macd_hist"] < 0
+        )
+    )
     return bool(
-        row["macd_hist"] < row["prev_macd_hist"]
-        and row["close"] <= row["ema_fast"] * 1.002
-        and row["ema_fast"] <= row["ema_slow"]
-        and row["volume_ratio"] >= config.min_volume_ratio
+        row["ema_deviation_atr"] >= config.ema_deviation_atr
+        and row["close"] > row["ema_slow"]
+        and macd_turn
+        and volume_ok
     )
 
 
 def _macd_volume_exit(
-    row: pd.Series, side: str, _config: TStrategyConfig
+    row: pd.Series, side: str, config: TStrategyConfig
 ) -> bool:
-    if not _present(
-        row, "macd_hist", "prev_macd_hist", "ema_fast", "prev_close"
-    ):
-        return False
-    if side == "SELL":
-        return bool(
-            row["macd_hist"] < row["prev_macd_hist"]
-            and row["close"] >= row["ema_fast"]
-            and row["close"] < row["prev_close"]
-        )
-    return bool(
-        row["macd_hist"] > row["prev_macd_hist"]
-        and row["close"] <= row["ema_fast"]
-        and row["close"] > row["prev_close"]
-    )
+    return _macd_volume_entry(row, side, config)
 
 
 def _bollinger_reversion_entry(
@@ -368,8 +385,17 @@ def _candidate(
     )
 
 
-def _confirmed(row: pd.Series, side: str) -> bool:
+def _confirmed(
+    row: pd.Series,
+    side: str,
+    config: TStrategyConfig,
+    candidate_now: bool,
+) -> bool:
     if not _present(row, "prev_close", "prev_rsi"):
+        return False
+    # A stale candidate must never turn into a MACD BUY above the EMA (or a
+    # SELL below it) merely because the generic confirmation window is open.
+    if config.strategy == "macd_volume_momentum_v1" and not candidate_now:
         return False
     if side == "BUY":
         return bool(
@@ -398,10 +424,10 @@ def _confidence(
 ) -> float:
     if config.strategy == "macd_volume_momentum_v1":
         atr = max(float(row["atr"]), 1e-9) if _present(row, "atr") else 1.0
-        momentum = _bounded(abs(float(row["macd_hist"])) / atr)
-        volume = _bounded(float(row["volume_ratio"]) / max(config.min_volume_ratio * 2, 0.01))
-        alignment = _bounded(abs(float(row["ema_fast"] - row["ema_slow"])) / atr)
-        score = 0.4 * momentum + 0.35 * volume + 0.25 * alignment
+        turn = _bounded(abs(float(row["macd_hist_delta"])) / (atr * 0.1))
+        volume = _bounded(float(row["recent_volume_ratio_max"]) / max(config.min_volume_ratio * 2, 0.01))
+        deviation = _bounded(abs(float(row["ema_deviation_atr"])) / max(config.ema_deviation_atr * 2, 0.01))
+        score = 0.35 * turn + 0.25 * volume + 0.4 * deviation
     elif config.strategy == "time_of_day_volume_momentum_v1":
         relative_volume = _bounded(
             float(row["relative_volume_tod"])
@@ -457,10 +483,65 @@ def _confidence(
     return round(_bounded(score), 4)
 
 
+def _generate_independent_signals(
+    frame: pd.DataFrame, config: TStrategyConfig
+) -> list[dict[str, Any]]:
+    """Find BUY and SELL events independently, without forced pairing."""
+    pending_since: dict[str, int | None] = {"BUY": None, "SELL": None}
+    cooldown_until = {"BUY": -1, "SELL": -1}
+    emitted = {"BUY": 0, "SELL": 0}
+    signals: list[dict[str, Any]] = []
+
+    for index, row in frame.iterrows():
+        for side in ("BUY", "SELL"):
+            if (
+                index < cooldown_until[side]
+                or emitted[side] >= config.max_round_trips
+            ):
+                continue
+            candidate = _candidate(row, side, True, config)
+            if pending_since[side] is None and candidate:
+                pending_since[side] = int(index)
+            pending = pending_since[side]
+            if pending is None:
+                continue
+            if int(index) - pending > config.confirmation_bars:
+                pending_since[side] = int(index) if candidate else None
+                continue
+            if not _confirmed(row, side, config, candidate):
+                continue
+
+            signals.append(
+                {
+                    "signal_id": f"sig-{len(signals) + 1:03d}",
+                    "bar_index": int(index),
+                    "decision_time": row["date"].isoformat(),
+                    "side": side,
+                    "decision_price": round(float(row["close"]), 4),
+                    "strategy": config.strategy,
+                    "confidence": _confidence(row, side, True, config),
+                    "confidence_kind": "rule_score_v2",
+                    "reason_codes": [
+                        f"{config.strategy}_independent_confirmed",
+                        "price_direction_confirmed",
+                    ],
+                    "features": feature_snapshot(row),
+                }
+            )
+            emitted[side] += 1
+            pending_since[side] = None
+            cooldown_until[side] = int(index) + 1 + config.cooldown_bars
+
+    return signals
+
+
 def generate_signals(
     frame: pd.DataFrame, config: TStrategyConfig
 ) -> list[dict[str, Any]]:
     """Generate alternating decisions from trailing features only."""
+    if config.direction == "independent":
+        return _generate_independent_signals(frame, config)
+
     first_side = "BUY" if config.direction == "buy_first" else "SELL"
     second_side = "SELL" if first_side == "BUY" else "BUY"
     expected_side = first_side
@@ -486,7 +567,7 @@ def generate_signals(
         if int(index) - pending_since > config.confirmation_bars:
             pending_since = int(index) if candidate else None
             continue
-        if not _confirmed(row, expected_side):
+        if not _confirmed(row, expected_side, config, candidate):
             continue
 
         phase = "entry" if is_entry else "exit"

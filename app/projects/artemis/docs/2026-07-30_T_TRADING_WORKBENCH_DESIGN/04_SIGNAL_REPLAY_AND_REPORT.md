@@ -31,6 +31,7 @@ execution_simulation_default = false
 3. 原始成交量不是最短周期上最直接的供需信息。order-flow imbalance、盘口队列不平衡和 micro-price 在论文中对短期价格变化具有更直接的解释或预测作用；分钟 OHLCV 策略应视为可交付基线，不是数据终点。
 4. 日内成交量和波动率有强烈时段季节性。当前 bar 的量不能只和“同一天此前若干 bar”比较；成熟版本应使用过去交易日相同分钟的 time-of-day 基线。
 5. 买卖点应先做事件研究：固定多个 horizon，报告方向收益、MFE、MAE 和 first-touch。只看胜率会忽略盈亏幅度，只看 PnL 又会混入执行假设。
+6. “V 形”只作为理想结果和事后描述，不注册为策略，也不把未来最低点/最高点回标成实时信号。策略必须从可解释的当时状态出发，例如价格相对均线的偏离、MACD 动能收敛和量能确认。
 
 ### 2.2 主要参考
 
@@ -43,6 +44,8 @@ execution_simulation_default = false
 - Chen et al., *Assessing the Profitability of Timely Opening Range Breakout on Index Futures Markets*：使用 1 分钟数据研究不同市场的开盘区间突破，最佳 probing time 存在市场差异。[DOAJ/IEEE Access](https://doaj.org/article/3976caa87d1c48e4837a4f5d606b54a2)
 - Marshall, Nguyen and Visaltanachoti, *A Note on Intraday Event Studies*：讨论日内事件研究统计量的设定与检验能力。[SSRN](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3015618)
 - Sullivan, Timmermann and White, *Data Snooping, Technical Trading Rule Performance, and the Bootstrap*：大量规则中挑选“最好规则”必须校正数据窥探偏差。[LSE](https://researchonline.lse.ac.uk/119144/)
+- Chen and Tsang et al., *Volatility measurement with directional change in Chinese stock market*：用 directional-change 事件而不是固定时间采样描述中国股票价格反向移动，并指出阈值依赖估计期与市场状态。[Physica A / DOI](https://doi.org/10.1016/j.physa.2016.11.113)
+- Bailey and López de Prado, *The Deflated Sharpe Ratio*：多次尝试策略和参数会产生选择偏差，报告 champion 时必须保留尝试次数并做样本外验证。[SSRN](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551)
 
 这些研究来自不同市场、时期和数据结构，只用于形成待验证假设。任何论文结果都不能直接外推为 A 股单股 5 分钟做 T 的有效性证明。
 
@@ -74,6 +77,8 @@ range_position
 volume_ratio
 ema_fast / ema_slow / ema_fast_slope
 macd / macd_signal / macd_hist / previous_macd_hist
+macd_hist_delta / consecutive rising or falling histogram bars
+ema_deviation_atr / recent_volume_ratio_max
 atr / trend_strength_atr
 body_ratio / lower_wick_ratio / upper_wick_ratio
 opening_range_high / opening_range_low / opening_range_position
@@ -112,20 +117,27 @@ AND close <= session_vwap
 
 ### 3.3 `macd_volume_momentum_v1`
 
-定位：实现用户提出的“MACD + 成交量 + 分钟均线”，但避免只在滞后的传统金叉时入场。
+定位：实现“MACD + 成交量 + 分钟均线”的偏离回归，而不是原实现中的均线多头追涨。
 
 BUY 候选：
 
 ```text
-macd_hist > previous_macd_hist
-AND close >= ema_fast * 0.998
-AND ema_fast >= ema_slow
-AND volume_ratio >= min_volume_ratio
+close < ema_slow
+AND (close - ema_slow) / ATR <= -ema_deviation_atr
+AND (
+  negative macd_hist has risen for macd_turn_bars
+  OR macd_hist crosses from <= 0 to > 0
+)
+AND max(volume_ratio over recent volume_confirmation_window)
+    >= min_volume_ratio
+AND current price bar / RSI confirms upward direction
 ```
 
-随后要求价格方向、K 线实体和 RSI 同向确认。SELL 对称。离场候选使用 MACD histogram 动能衰减、价格相对 EMA 的位置和价格反转。
+SELL 完全镜像：价格必须仍位于慢 EMA 上方并达到正向 ATR 偏离，正 MACD 柱连续收缩或刚由正转负，近期出现有效量能且当前价格方向向下确认。
 
-这里使用 histogram 改善而非强制 `EMA_fast > EMA_slow`，目的是把候选点提前到负动能收缩阶段；严格均线多头排列通常明显滞后。`0.998/1.002` 是 V1 的“靠近快线”容差，必须在 walk-forward 中做扰动检验，不能在同一回测集上挑最优值。
+候选在确认窗口内失去上述均线位置时立即失效，因此 BUY 不会在慢 EMA 上方落点，SELL 不会在慢 EMA 下方落点。MACD 柱采用 A 股终端常见的 `2 * (DIF - DEA)` 口径；倍数不改变转折/穿零时刻，只统一图表尺度。阈值必须在 walk-forward 中做扰动检验，不能在同一回测集上挑最优值。
+
+当前页面默认实验参数为 `ema_deviation_atr=0.35`、`macd_turn_bars=2`、`min_volume_ratio=0.8`、`volume_confirmation_window=3`、`cooldown_bars=5`。在生益科技 2026-07-15 至 2026-08-14 的 23 个交易日上，前 17 日用于参数比较、最后 6 日留出：全段 89 个信号的 5 分钟方向正确率为 53.93%、平均方向收益为 +0.1629%；留出 24 个信号为 54.17%、+0.1320%，错误均线一侧信号为 0。该结果只证明规则方向较原实现合理，不能外推为其他股票或未来区间的稳定 alpha。
 
 ### 3.4 `vwap_bollinger_reversion_v1`
 
@@ -206,14 +218,17 @@ AND macd_hist > previous_macd_hist
 
 SELL 对称。日线只取目标日前已完成的数据；30 分钟上下文按 completed bar 的 `available_at` as-of 合并，禁止把尚未完成的 30 分钟 K 线提前给 1/5 分钟信号。
 
-### 3.9 信号状态
+### 3.9 指标预热与信号状态
 
-当前仍保留 `buy_first/sell_first` 和交替状态机，用于表达做 T 的方向语义：
+EMA、MACD、RSI、ATR 是跨交易日连续状态。回放会读取目标日前 45 个自然日的同周期分钟线作为只读 warm-up，计算后只返回并发出目标日的 bars/signals；当日 session VWAP 和 opening range 仍按上海交易日分组重置。这样开盘第一根 bar 已有连续指标，同时没有回填未来数据。
 
+当前支持三种模式：
+
+- `independent`：BUY/SELL 各自寻找、确认、冷却和限流，不要求配对；这是页面默认研究模式；
 - `buy_first`：先寻找 BUY 点，再寻找 SELL 点；
 - `sell_first`：先寻找 SELL 点，再寻找 BUY 点。
 
-这不是成交配对。每个信号都独立做前瞻事件评估。后续应增加 `independent_events` 研究模式，让 BUY/SELL 候选各自去重后独立评估，以免交替状态机抑制有效但未配对的候选点。
+三种模式都不是成交模型。每个信号都独立做前瞻事件评估；`independent` 的每侧信号上限沿用 `max_round_trips` 字段以保持请求兼容，但语义是“每侧最多信号数”。
 
 ## 4. 策略落地状态与后续数据
 
@@ -223,6 +238,7 @@ SELL 对称。日线只取目标日前已完成的数据；30 分钟上下文按
 | 宽基市场残差反转 | 个股相对宽基的异常残差后反转 | 个股和宽基同步分钟线；滚动 beta | **已实现** |
 | 行业残差反转 | 个股相对行业的异常残差后反转 | 行业指数同步分钟线 | **暂不实现：供应商只明确行业日线** |
 | 多周期顺势回踩 | 日线/30 分钟同向状态中，1/5 分钟回踩 VWAP/EMA 后再启动 | point-in-time 日线与 30 分钟线 | **已实现** |
+| MACD + 量能 + EMA 偏离回归 | 慢 EMA 下方/上方达到 ATR 偏离后，MACD 柱收敛/穿零且近期量能确认 | 预热后的 1/5 分钟 OHLCV | **已实现；BUY/SELL 均线位置硬约束** |
 | opening gap continuation/fade | 相对昨收跳空后，区间突破或回补失败 | 昨收、当日集合竞价、开盘量、公司事件 | 第二阶段 |
 | OFI/队列不平衡 | bid 需求增强、ask 供给减弱，micro-price 上移 | Level-1/Level-2 bid/ask price/size 更新 | 高价值数据升级 |
 | 主动买卖流/CVD | 主动买量占优后回踩不破 | 逐笔成交、aggressor side 或可推断成交方向 | 高价值数据升级 |
@@ -347,11 +363,16 @@ confidence monotonicity
     "persistence_mode": "ephemeral"
   },
   "bars": [],
+  "indicator_sets": [
+    {"strategy": "macd_volume_momentum_v1", "parameters": {}, "points": []}
+  ],
   "signals": [],
   "signal_evaluation": {
     "evaluation_kind": "forward_event_study_v1",
     "summary": {},
     "by_horizon": [],
+    "by_strategy": [],
+    "by_strategy_side": [],
     "outcomes": []
   },
   "summary": {},
@@ -379,6 +400,8 @@ include_execution_simulation=true
 ```
 
 才运行 next-bar execution，并把结果放入 `execution_summary`。默认 `summary` 始终是信号事件评估，不是交易 PnL。
+
+`indicator_sets` 使用每个策略自己的参数生成，并与目标日 `bars` 一一对齐。前端可选择一个已运行策略，将 EMA、VWAP、Bollinger、成交量比、MACD 和 RSI 显示在同一时间轴；这些点和信号使用完全相同的因果特征帧。MACD 柱与 DIF/DEA 使用独立但都以零为中心的纵轴，正柱红色、负柱绿色。
 
 ## 7. 实时 5 秒点流模式
 
@@ -607,6 +630,8 @@ SinaRealtimeQuoteAdapter
 4. 修改 `bars[i+1:]`，确认 `<=i` 的 features/signals 不变；
 5. opening range 在区间完成前必须为 NULL；
 6. 信号模块不得 import evaluation/label 模块。
+7. MACD BUY 必须满足 `close < ema_slow` 和负向 ATR 偏离，SELL 必须镜像满足；候选过期后不得在错误均线一侧确认。
+8. 添加前序 warm-up bars 后，目标日第一根 EMA/MACD/RSI/ATR 必须有值，且 session VWAP 必须从当日第一根重新开始。
 
 ### 9.2 事件评估
 
@@ -631,12 +656,24 @@ SinaRealtimeQuoteAdapter
 
 ## 10. 已知限制
 
-- 当前代码的三个新增策略仅通过固定样本、因果性和契约测试，不代表在真实市场已获利；
+- 当前策略仅通过固定样本、因果性、契约测试和有限的单股事件研究，不代表在真实市场已获利；
 - AmazingData 的 `min1/min30/daily` 个股和 `min1/min5` 指数下载、存储与上下文装配已实现，但迁移需先应用且真实账号权限/覆盖范围仍需环境验收；
 - time-of-day 基线和宽基市场同步上下文已实现；行业分钟上下文因接口能力不明确而有意不做；
 - 新浪 adapter 可解析实时五档快照，但没有历史五档、逐笔成交、OFI 或 aggressor side，尚不能完成可重复的盘口策略历史评估；
 - 轮询只能看到离散报价，会漏掉两次采集之间的价格路径与极值；系统如实统计已观察点结果，不用合成 bar 掩盖该限制；
 - 事件评估从 decision close 起算，不等同于可成交收益；
-- 交替状态机可能抑制独立 BUY/SELL 候选；
+- `independent` 已消除交替配对对候选的抑制，但同一趋势中的重复候选仍依赖每侧冷却和上限控制；
 - 新浪接口未公开，授权、频率限制、可用性和字段变更均未形成生产 SLA；
 - 实时 scheduler、signal sink、checkpoint、腾讯/东财 adapter 和 EOD projection API 仍待实现。
+
+## 11. 2026-08 两阶段研究结论
+
+当前 `macd_volume_momentum_v1` 在生益科技样本外区间不具备稳定优势；单边下跌中的连续
+BUY 是状态识别缺失和对称均值回归假设造成的结构性问题。降低 `max_round_trips` 只能截断
+错误信号，不能改善第一个点位，因此不作为策略修复。
+
+后续研究冻结为两阶段：先识别趋势延续、市场共振和流动性冲击并决定 BUY/SELL 是否有
+资格参与，允许强下跌全天不发 BUY；再由相互独立的 BUY/SELL 模型预测 1/3/5/15 分钟
+MFE、MAE、target/stop first-touch 和到达时间。模型必须执行日期滚动样本外、跨股票留一和
+匹配随机时点检验。完整实验数据、数值结果、30 股扩样规则、文件型 Level-1 边界和停止
+条件见 [07_TWO_STAGE_INTRADAY_SIGNAL_RESEARCH_REPORT.md](07_TWO_STAGE_INTRADAY_SIGNAL_RESEARCH_REPORT.md)。

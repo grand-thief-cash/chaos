@@ -124,8 +124,11 @@ artemis/
     task_engine/download/zh/
       stock_zh_a_minute_parent.py
       stock_zh_a_minute_child.py
-      market_zh_a_kline_parent.py # registry-native 按需增量规划
-      market_zh_a_kline_child.py  # AmazingData adapter、时间语义和 upsert
+      stock_zh_a_kline_parent.py  # 股票 registry-native 按需增量规划
+      stock_zh_a_kline_child.py   # 股票 AmazingData task adapter
+      index_zh_a_kline_parent.py  # 指数 registry-native 按需增量规划
+      index_zh_a_kline_child.py   # 指数 AmazingData task adapter
+      _amazing_data_kline_*.py    # 两类任务复用的内部下载/时间语义/upsert 实现
   services/
     t_trading/
       __init__.py

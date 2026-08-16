@@ -72,7 +72,8 @@ def _macd_calculate(df, *, fast=12, slow=26, signal=9, **_kwargs):
     return {
         f"macd_{suffix}": _safe_to_list(macd.macd().round(4)),
         f"macd_signal_{suffix}": _safe_to_list(macd.macd_signal().round(4)),
-        f"macd_hist_{suffix}": _safe_to_list(macd.macd_diff().round(4)),
+        # A-share brokerage convention: histogram = 2 * (DIF - DEA).
+        f"macd_hist_{suffix}": _safe_to_list((2.0 * macd.macd_diff()).round(4)),
     }
 
 
@@ -186,7 +187,7 @@ INDICATOR_REGISTRY: Dict[str, IndicatorSpec] = {
         series_meta={
             "macd_{fast}_{slow}_{signal}": {"type": "line", "color": "#1890ff"},
             "macd_signal_{fast}_{slow}_{signal}": {"type": "line", "color": "#faad14"},
-            "macd_hist_{fast}_{slow}_{signal}": {"type": "bar", "color": ["#52c41a", "#ff4d4f"]},
+            "macd_hist_{fast}_{slow}_{signal}": {"type": "bar", "color": ["#f5222d", "#52c41a"]},
         },
     ),
     "bollinger": IndicatorSpec(

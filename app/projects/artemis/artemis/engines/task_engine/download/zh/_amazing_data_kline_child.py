@@ -30,8 +30,24 @@ def amazing_data_bar_available_at(value: Any, period: str) -> str:
     return timestamp.strftime("%Y-%m-%d")
 
 
-class MarketZhAKlineChild(WorkerUnit):
-    """Download one incremental symbol batch from AmazingData."""
+class AmazingDataKlineChild(WorkerUnit):
+    """Shared worker for asset-specific AmazingData K-line tasks."""
+
+    ASSET_TYPE = ""
+
+    def parameter_check(self, ctx: TaskContext) -> None:
+        asset_type = str((ctx.incoming_params or {}).get("asset_type", "")).strip()
+        if not self.ASSET_TYPE:
+            ctx.fail(
+                "asset-specific K-line task is missing ASSET_TYPE",
+                phase="parameter_check",
+            )
+        elif asset_type and asset_type != self.ASSET_TYPE:
+            ctx.fail(
+                f"{self.__class__.__name__} only accepts "
+                f"asset_type={self.ASSET_TYPE}",
+                phase="parameter_check",
+            )
 
     def before_execute(self, ctx: TaskContext) -> None:
         params = ctx.params or {}
@@ -150,7 +166,7 @@ class MarketZhAKlineChild(WorkerUnit):
         }
         ctx.logger.info(
             {
-                "event": "market_zh_a_kline_child_post_process",
+                "event": "zh_a_kline_child_post_process",
                 "run_id": ctx.run_id,
                 "bar_count": len(deduplicated),
                 "rejected_count": rejected,
@@ -164,7 +180,7 @@ class MarketZhAKlineChild(WorkerUnit):
         params = ctx.params or {}
         phoenix: PhoenixAClient = ctx.dept_http[DeptServices.PHOENIXA]
         ok = phoenix.upsert_bars(
-            asset_type=str(params["asset_type"]),
+            asset_type=self.ASSET_TYPE,
             market="zh_a",
             period=str(params["period"]),
             adjust="nf",

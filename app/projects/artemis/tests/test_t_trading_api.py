@@ -108,9 +108,68 @@ def test_config_advertises_ephemeral_as_only_mode():
         == "signal_at_bar_close_evaluate_subsequent_bars"
     )
     assert len(response.json()["strategies"]) == 7
+    assert response.json()["direction_modes"][0] == "independent"
     assert response.json()["excluded_strategies"][0]["value"] == (
         "industry_residual_reversal"
     )
+
+
+def test_market_data_indicators_use_prior_bars_as_warmup(monkeypatch):
+    target = _bars()[-5:]
+    warmup = []
+    for day_offset in (2, 1):
+        for bar in _bars():
+            item = dict(bar)
+            item["date"] = (
+                datetime.fromisoformat(bar["date"]) - timedelta(days=day_offset)
+            ).isoformat()
+            warmup.append(item)
+
+    def fake_market_data(**kwargs):
+        bars = target if kwargs["start_date"] == "2026-07-01" else [*warmup, *target]
+        return {"security_id": 1, "symbol": "600000", "bars": bars}
+
+    monkeypatch.setattr(
+        "artemis.services.workbench.get_market_bars", fake_market_data
+    )
+    response = _client().post(
+        "/workbench/indicators",
+        json={
+            "security_id": 1,
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-01",
+            "period": "min5",
+            "adjust": "nf",
+            "asset_type": "stock",
+            "market": "zh_a",
+            "indicators": [
+                {
+                    "name": "macd",
+                    "params": {"fast": 3, "slow": 6, "signal": 2},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["warmup_bar_count"] == len(warmup)
+    assert len(body["indicators"]["macd_3_6_2"]) == len(target)
+    assert body["indicators"]["macd_3_6_2"][0] is not None
+
+
+def test_no_minute_data_is_a_structured_not_found(monkeypatch):
+    def fake_market_data(**_kwargs):
+        return {"security_id": 1, "symbol": "600000", "bars": []}
+
+    monkeypatch.setattr(
+        "artemis.services.workbench.get_market_bars", fake_market_data
+    )
+    response = _client().post("/workbench/t-trading/replay", json=_payload())
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "NO_MINUTE_BARS"
+    assert response.json()["detail"]["trade_date"] == "2026-07-01"
 
 
 def test_batch_http_flow_returns_summary_only_and_isolates_payload(monkeypatch):

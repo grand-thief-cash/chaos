@@ -57,6 +57,8 @@ __pycache__/
 /app/projects/artemis/whl/AmazingData-1.0.28-cp311-none-any.whl
 /app/projects/artemis/whl/tgw-1.0.8.5-py3-none-any.whl
 /app/projects/artemis/cache/*
+/app/projects/artemis/runtime/artemis/level1_snapshot/*
+/app/projects/cache/*
 /app/projects/artemis/dist/*
 /app/projects/artemis/config/config-production.yaml
 /app/projects/artemis/config/config-home.yaml
@@ -82,3 +84,5 @@ go.sum
 
 /app/projects/phoenixA/bin/phoenixA
 /app/projects/artemis/config/task-prod.yaml
+
+app/tools/py/LLM_test

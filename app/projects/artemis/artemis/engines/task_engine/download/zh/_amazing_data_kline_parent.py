@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from artemis.consts import DeptServices, TaskCode
@@ -10,11 +10,24 @@ from artemis.core.clients.phoenixA_client import PhoenixAClient
 from artemis.engines.task_engine.orchestrator_unit import OrchestratorUnit
 
 
-class MarketZhAKlineParent(OrchestratorUnit):
-    """Plan incremental, registry-native AmazingData K-line downloads."""
+class AmazingDataKlineParent(OrchestratorUnit):
+    """Shared planner for asset-specific AmazingData K-line tasks."""
 
-    SUPPORTED_ASSET_TYPES = {"stock", "index"}
+    ASSET_TYPE = ""
+    CHILD_TASK_CODE: TaskCode
     SUPPORTED_PERIODS = {"min1", "min5", "min30", "daily"}
+
+    # AmazingData currently truncates large responses at roughly 30,000 rows,
+    # while Artemis child execution has a finite timeout. Keep each request
+    # comfortably below both boundaries and split long backfills by date.
+    ROWS_PER_TRADING_DAY = {
+        "min1": 240,
+        "min5": 48,
+        "min30": 8,
+        "daily": 1,
+    }
+    DEFAULT_MAX_ROWS_PER_CHILD = 12_000
+    MAX_CALENDAR_DAYS_PER_CHILD = 120
 
     @staticmethod
     def _values(value: Any) -> list[str]:
@@ -46,9 +59,10 @@ class MarketZhAKlineParent(OrchestratorUnit):
         params = ctx.incoming_params or {}
         asset_type = str(params.get("asset_type", "")).strip()
         period = str(params.get("period", "")).strip()
-        if asset_type and asset_type not in self.SUPPORTED_ASSET_TYPES:
+        if asset_type and asset_type != self.ASSET_TYPE:
             ctx.fail(
-                f"unsupported AmazingData asset_type: {asset_type}",
+                f"{self.__class__.__name__} only accepts "
+                f"asset_type={self.ASSET_TYPE}",
                 phase="parameter_check",
             )
         if period and period not in self.SUPPORTED_PERIODS:
@@ -59,12 +73,20 @@ class MarketZhAKlineParent(OrchestratorUnit):
 
     def load_dynamic_parameters(self, ctx: TaskContext) -> None:
         params = ctx.params or {}
-        asset_type = str(params.get("asset_type", "")).strip()
+        incoming_asset_type = str(params.get("asset_type", "")).strip()
+        asset_type = self.ASSET_TYPE
         period = str(params.get("period", "")).strip()
         adjust = str(params.get("adjust", "nf")).strip()
-        if asset_type not in self.SUPPORTED_ASSET_TYPES:
+        if not asset_type:
             ctx.fail(
-                f"asset_type must be one of {sorted(self.SUPPORTED_ASSET_TYPES)}",
+                "asset-specific K-line task is missing ASSET_TYPE",
+                phase="load_dynamic_parameters",
+            )
+            return
+        if incoming_asset_type and incoming_asset_type != asset_type:
+            ctx.fail(
+                f"{self.__class__.__name__} only accepts "
+                f"asset_type={asset_type}",
                 phase="load_dynamic_parameters",
             )
             return
@@ -191,9 +213,19 @@ class MarketZhAKlineParent(OrchestratorUnit):
             adjust="nf",
             security_ids=list(selected),
         )
+        replay_from_start = str(params.get("replay_from_start", False)).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         effective_starts: dict[int, str] = {}
         for security_id in selected:
-            watermark_day = self._watermark_day(last_updates.get(security_id))
+            watermark_day = (
+                None
+                if replay_from_start
+                else self._watermark_day(last_updates.get(security_id))
+            )
             effective_starts[security_id] = max(
                 start_date,
                 watermark_day or start_date,
@@ -206,12 +238,48 @@ class MarketZhAKlineParent(OrchestratorUnit):
         ctx.params["selected_securities"] = selected
         ctx.params["effective_start_dates"] = effective_starts
 
+    @classmethod
+    def _date_windows(
+        cls,
+        start_date: str,
+        end_date: str,
+        *,
+        period: str,
+        symbol_count: int,
+        max_rows: int,
+    ) -> list[tuple[str, str]]:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+        rows_per_day = cls.ROWS_PER_TRADING_DAY[period]
+        max_trading_days = max(
+            1,
+            max_rows // max(1, symbol_count * rows_per_day),
+        )
+        # Convert trading days to calendar days with a safety margin for the
+        # provider row cap. The hard cap also prevents very long daily calls.
+        calendar_days = max(1, int(max_trading_days * 7 / 5 * 0.9))
+        calendar_days = min(calendar_days, cls.MAX_CALENDAR_DAYS_PER_CHILD)
+        windows: list[tuple[str, str]] = []
+        cursor = start
+        while cursor <= end:
+            window_end = min(end, cursor + timedelta(days=calendar_days - 1))
+            windows.append((cursor.isoformat(), window_end.isoformat()))
+            cursor = window_end + timedelta(days=1)
+        return windows
+
     def plan(self, ctx: TaskContext) -> list[dict[str, Any]]:
         params = ctx.params or {}
         end_date = str(params["end_date"])
         selected = params.get("selected_securities", {}) or {}
         starts = params.get("effective_start_dates", {}) or {}
         batch_size = max(1, min(int(params.get("max_symbols_per_child", 50)), 200))
+        max_rows = max(
+            1_000,
+            min(
+                int(params.get("max_rows_per_child", self.DEFAULT_MAX_ROWS_PER_CHILD)),
+                25_000,
+            ),
+        )
 
         by_start: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
         for raw_security_id, info in selected.items():
@@ -231,27 +299,35 @@ class MarketZhAKlineParent(OrchestratorUnit):
                     }
                     for security_id, info in batch
                 }
-                specs.append(
-                    {
-                        "key": TaskCode.MARKET_ZH_A_KLINE_CHILD,
-                        "params": {
-                            "asset_type": params["asset_type"],
-                            "period": params["period"],
-                            "adjust": "nf",
-                            "start_date": start_date,
-                            "end_date": end_date,
-                            "securities": securities,
-                        },
-                    }
+                windows = self._date_windows(
+                    start_date,
+                    end_date,
+                    period=str(params["period"]),
+                    symbol_count=len(batch),
+                    max_rows=max_rows,
                 )
+                for window_start, window_end in windows:
+                    specs.append(
+                        {
+                            "key": self.CHILD_TASK_CODE,
+                            "params": {
+                                "period": params["period"],
+                                "adjust": "nf",
+                                "start_date": window_start,
+                                "end_date": window_end,
+                                "securities": securities,
+                            },
+                        }
+                    )
         ctx.logger.info(
             {
-                "event": "market_zh_a_kline_parent_plan_complete",
+                "event": "zh_a_kline_parent_plan_complete",
                 "run_id": ctx.run_id,
                 "asset_type": params.get("asset_type"),
                 "period": params.get("period"),
                 "security_count": len(selected),
                 "child_count": len(specs),
+                "max_rows_per_child": max_rows,
             }
         )
         return specs

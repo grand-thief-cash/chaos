@@ -27,6 +27,7 @@
 - [04_SIGNAL_REPLAY_AND_REPORT.md](04_SIGNAL_REPLAY_AND_REPORT.md)：策略研究、信号算法、前瞻事件评估、实时点流和统计报告。
 - [05_API_AND_CTHULHU_UI.md](05_API_AND_CTHULHU_UI.md)：HTTP API、前端页面、图表标记和交互设计。
 - [06_PHASED_DEVELOPMENT_AND_TEST_PLAN.md](06_PHASED_DEVELOPMENT_AND_TEST_PLAN.md)：逐 Phase 开发、测试、发布、回滚和后续迭代计划。
+- [07_TWO_STAGE_INTRADAY_SIGNAL_RESEARCH_REPORT.md](07_TWO_STAGE_INTRADAY_SIGNAL_RESEARCH_REPORT.md)：单股实验结论、数据扩样、文件型 Level-1 pilot，以及两阶段 BUY/SELL 独立点位模型研究协议。
 
 ## 3. 决策摘要
 
@@ -58,11 +59,13 @@
 - 已实现七类策略，包括同分钟历史量比、宽基市场残差反转、日线/30 分钟顺势回踩；行业残差因缺少明确行业指数分钟接口而有意排除。
 - 已实现 Cthulhu 日导航、1/5 分钟、多策略选择、每个策略的 BUY/SELL 分色标记、按策略信号效果和批量报告。
 - 已实现供应商无关实时 `QuotePoint`、直接消费报价点的在线 compact outcome tracker，以及从新浪网页实际响应解析交易所时间、累计量额和五档盘口的 adapter 核心；实时链路不合成 bar，原始轮询点不落历史行情表。
+- 已实现最多 10 只股票、31 个自然日的 AmazingData Level-1 历史快照文件任务：按 `security_id/trade_date` 原子写 ZSTD Parquet + manifest/SHA-256，不写 PhoenixA；真实单日 smoke test 已落 5,770 条快照。
+- 单股研究已否定当前对称 MACD/量能/EMA 规则的样本外优势。下一研究基线改为状态 gate + BUY/SELL 独立未来路径模型，并要求 walk-forward、跨股票留一和允许 `no_signal`；详见 07 报告。
 - 真实小样本：`security_id=3172`（600000）在 `2024-07-01` 下载并存储 48 根 min5 bars，随后通过真实 PhoenixA -> Artemis HTTP 链路完成信号事件回放；run meta 为 `persistence_mode=ephemeral`。成交模拟仅作显式 opt-in 诊断，不再作为默认评估。
 
 ## 6. 延后能力
 
-- AmazingData Level-1 历史/实时五档快照的权限和竞价阶段样本验证；
+- AmazingData Level-1 多股票、多日期的样本外增量验证，以及有证据后才讨论数据库契约；
 - 1 分钟全市场长期回填（当前仅支持显式按需，或明确 `all_registered=true`）；
 - 机器学习模型训练、模型注册和 champion/challenger；
 - 实时影子会话、heartbeat、断线恢复；

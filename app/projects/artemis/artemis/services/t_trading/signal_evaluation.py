@@ -242,6 +242,16 @@ def evaluate_signals(
         )
         for strategy in selected_strategies
     ]
+    by_strategy_side = [
+        aggregate_outcomes(
+            outcomes,
+            horizon=config.primary_horizon_bars,
+            strategy=strategy,
+            side=side,
+        )
+        for strategy in selected_strategies
+        for side in ("BUY", "SELL")
+    ]
     return {
         "evaluation_kind": "forward_event_study_v1",
         "price_basis": "decision_bar_close",
@@ -253,6 +263,7 @@ def evaluate_signals(
         ),
         "by_horizon": by_horizon,
         "by_strategy": by_strategy,
+        "by_strategy_side": by_strategy_side,
         "outcomes": outcomes,
     }
 

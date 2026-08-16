@@ -9,7 +9,9 @@ from artemis.engines.task_engine.base import BaseTaskUnit
 from artemis.engines.task_engine.download.zh import (
     StockZhAHistParent, StockZhAHistChild,
     StockZhAMinuteParent, StockZhAMinuteChild,
-    MarketZhAKlineParent, MarketZhAKlineChild,
+    StockZhAKlineParent, StockZhAKlineChild,
+    IndexZhAKlineParent, IndexZhAKlineChild,
+    StockZhALevel1File,
     StockZHAMktCategoryMairui, StockZHAMarketCategorySWHY,
     StockZHAIndustryWeightSWHY, StockZHAIndustryWeightSWHYChild,
     StockZHAIndustryDailySWHY, StockZHAIndustryDailySWHYChild,
@@ -92,15 +94,33 @@ registry.register(
 )
 
 registry.register(
-    TaskCode.MARKET_ZH_A_KLINE_PARENT,
-    module=MarketZhAKlineParent.__module__,
-    class_name=MarketZhAKlineParent.__name__,
+    TaskCode.STOCK_ZH_A_KLINE_PARENT,
+    module=StockZhAKlineParent.__module__,
+    class_name=StockZhAKlineParent.__name__,
 )
 
 registry.register(
-    TaskCode.MARKET_ZH_A_KLINE_CHILD,
-    module=MarketZhAKlineChild.__module__,
-    class_name=MarketZhAKlineChild.__name__,
+    TaskCode.STOCK_ZH_A_KLINE_CHILD,
+    module=StockZhAKlineChild.__module__,
+    class_name=StockZhAKlineChild.__name__,
+)
+
+registry.register(
+    TaskCode.INDEX_ZH_A_KLINE_PARENT,
+    module=IndexZhAKlineParent.__module__,
+    class_name=IndexZhAKlineParent.__name__,
+)
+
+registry.register(
+    TaskCode.INDEX_ZH_A_KLINE_CHILD,
+    module=IndexZhAKlineChild.__module__,
+    class_name=IndexZhAKlineChild.__name__,
+)
+
+registry.register(
+    TaskCode.STOCK_ZH_A_LEVEL1_FILE,
+    module=StockZhALevel1File.__module__,
+    class_name=StockZhALevel1File.__name__,
 )
 
 registry.register(
