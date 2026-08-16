@@ -13,6 +13,10 @@ import {
   TNearestTradeDateResponse,
   TReplayRequest,
   TReplayResponse,
+  ValuationAnalyzeRequest,
+  ValuationAnalyzeResponse,
+  ValuationHistoryRequest,
+  ValuationHistoryResponse,
 } from '../models/workbench.model';
 import { environment } from '../../../../environments/environment';
 
@@ -82,6 +86,20 @@ export class WorkbenchApiService {
     return this.http.get<TNearestTradeDateResponse>(
       `${this.API_BASE}/workbench/t-trading/nearest-trade-date`,
       { params },
+    );
+  }
+
+  analyzeValuation(req: ValuationAnalyzeRequest): Observable<ValuationAnalyzeResponse> {
+    return this.http.post<ValuationAnalyzeResponse>(
+      `${this.API_BASE}/workbench/valuation/analyze`,
+      req,
+    );
+  }
+
+  replayValuationHistory(req: ValuationHistoryRequest): Observable<ValuationHistoryResponse> {
+    return this.http.post<ValuationHistoryResponse>(
+      `${this.API_BASE}/workbench/valuation/history`,
+      req,
     );
   }
 }

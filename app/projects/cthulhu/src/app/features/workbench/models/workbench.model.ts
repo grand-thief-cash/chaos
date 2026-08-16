@@ -392,3 +392,198 @@ export interface TBatchReplayResponse {
   skipped: Array<{ security_id: number; trade_date: string; reason: string }>;
   failures: Array<{ security_id: number; trade_date: string; error_type: string; reason: string }>;
 }
+
+// ===== Point-in-time valuation matrix =====
+
+export type ValuationScenario = 'bear' | 'base' | 'bull';
+export type ValuationMethodCode = 'forward_pe' | 'pb_roe' | 'ev_ebitda' | 'dcf';
+export type ValuationMethodRole = 'primary' | 'cross_check' | 'guardrail' | 'blended';
+
+export interface ValuationAnalyzeRequest {
+  security_id: number;
+  valuation_date?: string;
+  horizon_years: number;
+  history_years: number;
+  methods: ValuationMethodCode[];
+  financial_source?: string;
+  statement_code?: string;
+}
+
+export interface ValuationMethodResult {
+  code: ValuationMethodCode;
+  label: string;
+  weight: number;
+  role: ValuationMethodRole;
+  included_in_headline: boolean;
+  prices: Partial<Record<ValuationScenario, number>>;
+  formula: string;
+  calculation_trace?: Partial<Record<ValuationScenario, Record<string, any>>>;
+  inputs: Record<string, any>;
+  provenance: Record<string, any>;
+}
+
+export interface ValuationAnalyzeResponse {
+  security: { security_id: number; symbol: string; name: string; exchange: string };
+  valuation_date: string;
+  price_as_of: string;
+  market_price: number;
+  horizon_years: number;
+  range: Partial<Record<ValuationScenario, number>> & {
+    upside_base: number;
+    market_position: 'below_range' | 'inside_range' | 'above_range';
+  };
+  matrix: {
+    scenarios: ValuationScenario[];
+    scenario_definitions: Record<ValuationScenario, {
+      label: string;
+      semantics: 'low_consensus' | 'base_consensus' | 'high_consensus';
+      tail_stress: boolean;
+      description: string;
+    }>;
+    methods: ValuationMethodResult[];
+    unavailable_methods: Array<{ code: ValuationMethodCode; reason: string }>;
+    combined: Partial<Record<ValuationScenario, number>>;
+    weights: Record<ValuationMethodCode, number>;
+    weight_profile: 'balanced' | 'high_growth';
+    weight_rationale: string;
+    aggregation: {
+      mode: 'primary_with_cross_checks' | 'weighted_blend' | 'single_method';
+      primary_method: ValuationMethodCode | null;
+      headline: Partial<Record<ValuationScenario, number>>;
+      blended_reference: Partial<Record<ValuationScenario, number>>;
+      method_roles: Partial<Record<ValuationMethodCode, ValuationMethodRole>>;
+      cross_check_methods: ValuationMethodCode[];
+      guardrail_methods: ValuationMethodCode[];
+      rationale: string;
+    };
+  };
+  forward_pe_sensitivity: {
+    eps: Partial<Record<ValuationScenario, number>>;
+    multiples: Partial<Record<ValuationScenario, number>>;
+    grid: Partial<Record<ValuationScenario, Partial<Record<ValuationScenario, number>>>>;
+    market_implied: {
+      market_price: number;
+      forward_pe_at_base_eps: number | null;
+      eps_at_base_multiple: number | null;
+      nearest_grid_cell: {
+        eps_scenario: ValuationScenario;
+        multiple_scenario: ValuationScenario;
+        price: number;
+        absolute_gap: number;
+        gap_percent: number;
+      };
+    };
+  } | null;
+  price_reference: {
+    framework: 'scenario_reference_not_target_price';
+    state: 'below_low_consensus' | 'between_low_and_base' | 'between_base_and_high' | 'above_high_consensus';
+    state_label: string;
+    interpretation: string;
+    anchors: {
+      low_consensus: number;
+      base_consensus: number;
+      high_consensus: number;
+      market_price: number;
+    };
+    market_implied: {
+      market_price: number;
+      forward_pe_at_base_eps: number | null;
+      eps_at_base_multiple: number | null;
+      nearest_grid_cell: {
+        eps_scenario: ValuationScenario;
+        multiple_scenario: ValuationScenario;
+        price: number;
+        absolute_gap: number;
+        gap_percent: number;
+      };
+    } | null;
+    tail_stress_available: boolean;
+    tail_stress_note: string;
+    usage_rules: string[];
+  } | null;
+  diagnostics: {
+    pe_pb_coherence: {
+      identity: string;
+      status: 'unavailable' | 'aligned' | 'divergent' | 'severely_divergent';
+      rows: Partial<Record<ValuationScenario, {
+        eps: number;
+        bvps: number;
+        implied_roe: number;
+        pe: number;
+        coherent_pb: number;
+        observed_pb_anchor: number;
+        pb_gap_ratio: number;
+      }>>;
+      base_gap_ratio: number | null;
+      interpretation: string;
+    } | null;
+  };
+  fundamentals: Record<string, any>;
+  confidence: {
+    score: number;
+    label: 'low' | 'medium' | 'high';
+    usage_status: 'provisional' | 'limited';
+    usage_label: string;
+    score_semantics: string;
+    decision_use: 'scenario_reference_only';
+    gates: Array<{ code: string; score_cap: number; reason: string }>;
+    dimensions: Array<{
+      code: string;
+      label: string;
+      status: 'high' | 'medium' | 'low' | 'provisional' | 'limited' | 'unavailable';
+      reason: string;
+    }>;
+    components: Array<{
+      code: string;
+      label: string;
+      score: number;
+      max_score: number;
+      reason: string;
+    }>;
+  };
+  warnings: Array<{ code: string; message: string }>;
+  point_in_time: {
+    information_as_of: string;
+    price_as_of: string;
+    price_source: string;
+    financial_available_at: string | null;
+    financial_reporting_period: string | null;
+      consensus_as_of: string | null;
+      consensus_source: string | null;
+      consensus_latest_report_date: string | null;
+      consensus_latest_report_age_days: number | null;
+      target_fiscal_year: number;
+    history_start: string | null;
+    rule: string;
+  };
+}
+
+export interface ValuationHistoryRequest {
+  security_id: number;
+  start_date: string;
+  end_date: string;
+  interval: 'month_end' | 'quarter_end';
+  history_years: number;
+}
+
+export interface ValuationHistoryPoint {
+  valuation_date: string;
+  price_as_of: string;
+  market_price: number;
+  bear: number | null;
+  base: number | null;
+  bull: number | null;
+  upside_base: number | null;
+  confidence: { score: number; label: string };
+  warning_codes: string[];
+}
+
+export interface ValuationHistoryResponse {
+  security: { security_id: number; symbol?: string; name?: string };
+  start_date: string;
+  end_date: string;
+  interval: string;
+  points: ValuationHistoryPoint[];
+  skipped: Array<{ valuation_date: string; reason: string }>;
+  point_in_time: boolean;
+}
