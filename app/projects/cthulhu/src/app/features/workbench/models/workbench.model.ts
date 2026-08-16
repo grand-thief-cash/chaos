@@ -98,9 +98,11 @@ export type TStrategyName =
   | 'market_residual_reversal_v1'
   | 'multi_timeframe_pullback_v1';
 
+export type TSignalMode = 'buy_first' | 'sell_first' | 'independent';
+
 export interface TStrategyConfig {
   strategy: TStrategyName;
-  direction: 'buy_first' | 'sell_first';
+  direction: TSignalMode;
   window: number;
   entry_z: number;
   exit_z: number;
@@ -113,6 +115,9 @@ export interface TStrategyConfig {
   ema_slow: number;
   macd_signal: number;
   min_volume_ratio: number;
+  ema_deviation_atr: number;
+  macd_turn_bars: number;
+  volume_confirmation_window: number;
   bollinger_z: number;
   reversal_wick_ratio: number;
   max_trend_strength_atr: number;
@@ -263,7 +268,33 @@ export interface TSignalEvaluation {
     by_side: { BUY: TSignalEvaluationSummary; SELL: TSignalEvaluationSummary };
   }>;
   by_strategy: Array<TSignalEvaluationSummary & { strategy: TStrategyName }>;
+  by_strategy_side: Array<TSignalEvaluationSummary & { strategy: TStrategyName }>;
   outcomes: TSignalOutcome[];
+}
+
+export interface SecuritiesSearchItem {
+  security_id: number;
+  exchange: string;
+  asset_type: string;
+  symbol: string;
+  market: string;
+  name: string;
+  status: string;
+}
+
+export interface SecuritiesSearchResponse {
+  items: SecuritiesSearchItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TNearestTradeDateResponse {
+  security_id: number;
+  requested_trade_date: string;
+  direction: 'prev' | 'next';
+  trade_date: string;
+  available_count: number;
 }
 
 export interface TReplayResponse {
@@ -280,6 +311,7 @@ export interface TReplayResponse {
     strategies: TStrategyName[];
   };
   bars: Bar[];
+  indicator_sets: TIndicatorSet[];
   signals: TSignal[];
   signal_evaluation: TSignalEvaluation;
   fills: TFill[];
@@ -303,6 +335,34 @@ export interface TReplayResponse {
     last_bar_time: string;
     strategy_context?: Record<string, unknown>;
   };
+}
+
+export interface TIndicatorPoint {
+  date: string;
+  ema_fast: number | null;
+  ema_slow: number | null;
+  macd: number | null;
+  macd_signal: number | null;
+  macd_hist: number | null;
+  macd_hist_delta: number | null;
+  macd_hist_rising_bars: number | null;
+  macd_hist_falling_bars: number | null;
+  ema_deviation_atr: number | null;
+  recent_volume_ratio_max: number | null;
+  vwap: number | null;
+  rsi: number | null;
+  volume_ratio: number | null;
+  relative_volume_tod: number | null;
+  bollinger_upper: number | null;
+  bollinger_lower: number | null;
+  opening_range_high: number | null;
+  opening_range_low: number | null;
+}
+
+export interface TIndicatorSet {
+  strategy: TStrategyName;
+  parameters: TStrategyConfig;
+  points: TIndicatorPoint[];
 }
 
 export interface TBatchReplayRequest {

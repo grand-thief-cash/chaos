@@ -1,7 +1,13 @@
 # VERSION
-- v0.26.1
+- v0.27.0
 
 # Changelog
+- v0.27.0
+    - **Business-facing T-trading input.** Replaced the numeric `security_id` control with the shared `security_registry` name/symbol typeahead; the selected internal identity is still passed to Artemis without maintaining a duplicate symbol mapping.
+    - **Independent reversal research and trading-day UX.** Added the neutral mode that finds BUY and SELL events independently, exposed the MACD/volume/EMA deviation parameters, removed the unsupported V-shape strategy, and made weekend/no-minute selections resolve to the nearest prior trading day with a friendly message instead of a raw API error.
+    - **Broker-style MACD diagnostics.** MACD histograms now use red positive and green negative bars, with a symmetric histogram axis independent from the DIF/DEA line axis so neither scale visually suppresses the other. Strategy charts remain aligned with the exact server-side parameters and warmed indicator values.
+    - **Market Data symbol and one-minute support.** Replaced its numeric `security_id` input with the shared name/symbol search and added `min1` to development and production data options. Generic indicator requests now receive warmed values from the first displayed bar.
+    - **Self-explanatory forward-event controls.** Constrained the primary evaluation horizon to the horizons actually sent to Artemis, preventing invalid 422 requests, and added compact `?` tooltips for target/risk path labels, volume ratio, ATR-normalized EMA deviation, recent-volume lookback, and MACD histogram convergence. The large ephemeral-review notice now sits below the workbench instead of consuming the primary control area.
 - v0.26.1
     - **Sampling Harness live timeline.** The development Atlas Sample Runs page now discovers and attaches to Sampling tasks already running when the page opens, then incrementally displays bounded in-memory Workflow, Document Parser and LLM provider events, including OCR escalation, chunk map/merge, provider failover/circuit state and field-review progress. Events are explicitly ephemeral, automatically scroll, and disappear normally after an Atlas restart.
 - v0.26.0

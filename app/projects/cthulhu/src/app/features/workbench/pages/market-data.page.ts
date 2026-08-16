@@ -14,6 +14,8 @@ import { NzDividerModule } from 'ng-zorro-antd/divider';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { ChartPanelComponent } from '../../../shared/ui/chart-panel';
+import { SecuritySearchInputComponent } from '../../../shared/ui/security-search-input.component';
+import { SecuritySearchItem } from '../../../core/services/security-lookup.service';
 import { ReturnDistributionChartComponent } from '../ui/return-distribution-chart.component';
 import { WorkbenchApiService } from '../services/workbench-api.service';
 import { WorkbenchStore } from '../state/workbench.store';
@@ -55,6 +57,7 @@ const COLOR_PALETTE = [
     NzDividerModule,
     NzIconModule,
     ChartPanelComponent,
+    SecuritySearchInputComponent,
     ReturnDistributionChartComponent,
   ],
   template: `
@@ -138,10 +141,13 @@ const COLOR_PALETTE = [
                 </nz-select>
               </div>
             }
-            <!-- Security ID -->
+            <!-- User-facing security identity; security_id remains internal. -->
             <div>
-              <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Security ID</label>
-              <input nz-input type="number" [(ngModel)]="securityId" placeholder="e.g. 1" style="width: 140px;" />
+              <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">股票代码 / 名称</label>
+              <app-security-search-input
+                placeholder="输入 600183 或生益科技"
+                (securitySelected)="onSecuritySelected($event)"
+              ></app-security-search-input>
             </div>
             <div>
               <label style="display:block; margin-bottom:2px; font-size:12px; color:#666;">Start</label>
@@ -304,6 +310,7 @@ export class MarketDataPageComponent implements OnInit {
   store = inject(WorkbenchStore);
 
   securityId: number | null = null;
+  selectedSecurity: SecuritySearchItem | null = null;
   displaySymbol = '';
   startDate = '2024-01-01';
   endDate = '2024-12-31';
@@ -380,6 +387,12 @@ export class MarketDataPageComponent implements OnInit {
 
   onSourceChange(source: string): void {
     this.store.selectSource(source);
+    this.clearData();
+  }
+
+  onSecuritySelected(item: SecuritySearchItem | null): void {
+    this.selectedSecurity = item;
+    this.securityId = item?.security_id ?? null;
     this.clearData();
   }
 

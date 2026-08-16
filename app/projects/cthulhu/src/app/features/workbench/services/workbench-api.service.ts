@@ -10,6 +10,7 @@ import {
   DataOptionsResponse,
   TBatchReplayRequest,
   TBatchReplayResponse,
+  TNearestTradeDateResponse,
   TReplayRequest,
   TReplayResponse,
 } from '../models/workbench.model';
@@ -67,5 +68,20 @@ export class WorkbenchApiService {
 
   batchReplayTTrading(req: TBatchReplayRequest): Observable<TBatchReplayResponse> {
     return this.http.post<TBatchReplayResponse>(`${this.API_BASE}/workbench/t-trading/batch`, req);
+  }
+
+  nearestTradeDate(
+    securityId: number,
+    tradeDate: string,
+    direction: 'prev' | 'next',
+  ): Observable<TNearestTradeDateResponse> {
+    const params = new HttpParams()
+      .set('security_id', securityId)
+      .set('trade_date', tradeDate)
+      .set('direction', direction);
+    return this.http.get<TNearestTradeDateResponse>(
+      `${this.API_BASE}/workbench/t-trading/nearest-trade-date`,
+      { params },
+    );
   }
 }

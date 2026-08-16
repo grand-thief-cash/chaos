@@ -109,6 +109,7 @@ export class ChartPanelComponent implements OnChanges {
     const xAxes: any[] = [];
     const yAxes: any[] = [];
     const xAxisIndices: number[] = [];
+    const subAxisIndices: Record<string, { line: number; bar: number }> = {};
 
     // 主图 grid（containLabel 将轴标签约束在 grid 内，防止溢出到相邻图表）
     grids.push({ left: '8%', right: '3%', top: curTop, height: this.mainHeight, containLabel: true });
@@ -137,7 +138,25 @@ export class ChartPanelComponent implements OnChanges {
       const gi = grids.length;
       grids.push({ left: '8%', right: '3%', top: curTop, height: this.subChartHeight, containLabel: true });
       xAxes.push({ type: 'category', data: dates, gridIndex: gi, show: idx === subGroupNames.length - 1 });
-      yAxes.push({ type: 'value', gridIndex: gi, scale: true, name: groupName });
+      const keys = subChartGroups[groupName];
+      const lineKeys = keys.filter((key) => this.indicatorMeta[key].type !== 'bar');
+      const barKeys = keys.filter((key) => this.indicatorMeta[key].type === 'bar');
+      const lineAxis = yAxes.length;
+      const lineConfig: any = { type: 'value', gridIndex: gi, scale: true, name: groupName };
+      if (lineKeys.length && barKeys.length) {
+        Object.assign(lineConfig, this.symmetricExtent(lineKeys));
+      }
+      yAxes.push(lineConfig);
+      let barAxis = lineAxis;
+      if (lineKeys.length && barKeys.length) {
+        barAxis = yAxes.length;
+        yAxes.push({
+          type: 'value', gridIndex: gi, position: 'right',
+          name: `${groupName} histogram`, splitLine: { show: false },
+          ...this.symmetricExtent(barKeys),
+        });
+      }
+      subAxisIndices[groupName] = { line: lineAxis, bar: barAxis };
       xAxisIndices.push(gi);
       curTop += this.subChartHeight + gap;
     });
@@ -179,6 +198,7 @@ export class ChartPanelComponent implements OnChanges {
     let subGridOffset = (this.showVolume ? 2 : 1);
     for (const groupName of subGroupNames) {
       const gi = subGridOffset;
+      const axes = subAxisIndices[groupName];
       for (const key of subChartGroups[groupName]) {
         const meta = this.indicatorMeta[key];
         const color = Array.isArray(meta.color) ? meta.color[0] : meta.color;
@@ -186,14 +206,15 @@ export class ChartPanelComponent implements OnChanges {
         if (meta.type === 'bar') {
           const barData = (this.indicators[key] || []).map((v) => ({
             value: v,
-            itemStyle: { color: v !== null && v >= 0 ? '#26a69a' : '#ef5350' },
+            // A-share convention: positive histogram is red, negative green.
+            itemStyle: { color: v !== null && v >= 0 ? '#ef5350' : '#26a69a' },
           }));
           allSeries.push({
-            name: key, type: 'bar', xAxisIndex: gi, yAxisIndex: gi, data: barData,
+            name: key, type: 'bar', xAxisIndex: gi, yAxisIndex: axes.bar, data: barData,
           });
         } else {
           allSeries.push({
-            name: key, type: 'line', xAxisIndex: gi, yAxisIndex: gi,
+            name: key, type: 'line', xAxisIndex: gi, yAxisIndex: axes.line,
             data: this.indicators[key],
             smooth: true, lineStyle: { width: 1.5, color }, symbol: 'none',
           });
@@ -214,5 +235,14 @@ export class ChartPanelComponent implements OnChanges {
       ],
       series: allSeries,
     };
+  }
+
+  private symmetricExtent(keys: string[]): { min: number; max: number } {
+    const values = keys.flatMap((key) => this.indicators[key] || [])
+      .filter((value): value is number => value !== null && Number.isFinite(value));
+    const magnitude = Math.max(
+      ...values.map((value) => Math.abs(value)), 1e-6,
+    ) * 1.1;
+    return { min: -magnitude, max: magnitude };
   }
 }
