@@ -222,6 +222,180 @@ def test_macd_reversion_signals_stay_on_the_correct_ema_side():
     assert prefix_signals[0]["side"] == first["side"]
 
 
+def test_regime_reversal_blocks_weak_buy_and_accepts_three_of_four():
+    config = TStrategyConfig(
+        strategy="macd_volume_regime_reversal_v1",
+        direction="independent",
+        window=5,
+        ema_fast=3,
+        ema_slow=6,
+        macd_signal=2,
+        atr_window=5,
+        ema_deviation_atr=0.35,
+        macd_turn_bars=1,
+        min_volume_ratio=0.5,
+        volume_confirmation_window=1,
+        confirmation_bars=1,
+        cooldown_bars=0,
+        max_round_trips=1,
+        deep_reversal_min_score=3,
+    )
+    base_time = datetime(2026, 7, 1, 9, 35, tzinfo=timezone.utc)
+    rows = [
+        {
+            "date": base_time,
+            "open": 9.0,
+            "close": 9.0,
+            "prev_close": None,
+            "rsi": 25.0,
+            "prev_rsi": None,
+            "macd_hist": -0.2,
+            "prev_macd_hist": -0.3,
+            "macd_hist_delta": 0.1,
+            "macd_hist_rising_bars": 1,
+            "macd_hist_falling_bars": 0,
+            "ema_slow": 10.0,
+            "vwap": 9.5,
+            "ema_deviation_atr": -1.0,
+            "recent_min_ema_deviation_atr": -1.0,
+            "recent_max_ema_deviation_atr": -0.5,
+            "recent_volume_ratio_max": 2.0,
+            "bearish_regime": 1.0,
+            "bullish_regime": 0.0,
+            "bullish_reversal_evidence_score": 2.0,
+            "bearish_reversal_evidence_score": 0.0,
+            "atr": 0.2,
+        },
+        {
+            "date": base_time + timedelta(minutes=1),
+            "open": 8.9,
+            "close": 9.0,
+            "prev_close": 8.8,
+            "rsi": 30.0,
+            "prev_rsi": 25.0,
+            "macd_hist": -0.1,
+            "prev_macd_hist": -0.2,
+            "macd_hist_delta": 0.1,
+            "macd_hist_rising_bars": 2,
+            "macd_hist_falling_bars": 0,
+            "ema_slow": 10.0,
+            "vwap": 9.5,
+            "ema_deviation_atr": -1.0,
+            "recent_min_ema_deviation_atr": -1.0,
+            "recent_max_ema_deviation_atr": -0.5,
+            "recent_volume_ratio_max": 2.0,
+            "bearish_regime": 1.0,
+            "bullish_regime": 0.0,
+            "bullish_reversal_evidence_score": 2.0,
+            "bearish_reversal_evidence_score": 0.0,
+            "atr": 0.2,
+        },
+    ]
+    weak = pd.DataFrame(rows)
+    assert generate_signals(weak, config) == []
+
+    strong = weak.copy()
+    strong.loc[1, "bullish_reversal_evidence_score"] = 3.0
+    signals = generate_signals(strong, config)
+
+    assert len(signals) == 1
+    assert signals[0]["side"] == "BUY"
+    assert "adverse_regime_reversal_gate_passed" in signals[0][
+        "reason_codes"
+    ]
+    assert "reversal_evidence_3_of_4" in signals[0]["reason_codes"]
+
+
+def test_regime_reversal_sell_uses_downtrend_rebound_not_buy_mirror():
+    config = TStrategyConfig(
+        strategy="macd_volume_regime_reversal_v1",
+        direction="independent",
+        min_volume_ratio=0.8,
+        macd_turn_bars=2,
+        rebound_ema_tolerance_atr=0.5,
+        minimum_recent_range=0.005,
+        confirmation_bars=1,
+        cooldown_bars=0,
+        max_round_trips=1,
+    )
+    base_time = datetime(2026, 7, 1, 10, 5, tzinfo=timezone.utc)
+    base = {
+        "date": base_time,
+        "open": 9.95,
+        "close": 9.95,
+        "prev_close": None,
+        "rsi": 45.0,
+        "prev_rsi": None,
+        "vwap": 10.1,
+        "ema_deviation_atr": 0.1,
+        "macd_hist": 0.05,
+        "macd_hist_delta": 0.01,
+        "prev_macd_hist_delta": 0.01,
+        "macd_hist_falling_bars": 0,
+        "recent_volume_ratio_max": 1.2,
+        "medium_return_fast": -0.006,
+        "medium_return_slow": -0.012,
+        "medium_recent_range": 0.008,
+        "atr": 0.1,
+    }
+    rollover = {
+        **base,
+        "date": base_time + timedelta(minutes=1),
+        "open": 9.96,
+        "close": 9.93,
+        "prev_close": 9.95,
+        "rsi": 43.0,
+        "prev_rsi": 45.0,
+        "macd_hist": 0.04,
+        "macd_hist_delta": -0.01,
+        "prev_macd_hist_delta": 0.01,
+    }
+
+    signals = generate_signals(pd.DataFrame([base, rollover]), config)
+
+    assert len(signals) == 1
+    assert signals[0]["side"] == "SELL"
+    assert "medium_downtrend_15_30" in signals[0]["reason_codes"]
+    assert "macd_rebound_rolled_over" in signals[0]["reason_codes"]
+
+    quiet = rollover.copy()
+    quiet["medium_recent_range"] = 0.004
+    assert generate_signals(pd.DataFrame([base, quiet]), config) == []
+
+
+def test_intraday_reversal_features_are_prefix_invariant():
+    bars = _bars()
+    kwargs = {
+        "panic_window_bars": 4,
+        "panic_return_threshold": 0.01,
+        "panic_volume_ratio": 1.2,
+        "macd_divergence_lookback": 6,
+        "rebound_confirmation_bars": 2,
+        "rebound_recovery_ratio": 0.5,
+        "regime_slope_bars": 3,
+    }
+    full = build_causal_features(bars, 5, **kwargs)
+    prefix = build_causal_features(bars[:20], 5, **kwargs)
+    fields = (
+        "recent_bearish_shock",
+        "recent_panic_volume_ratio_max",
+        "bullish_divergence_recent",
+        "bullish_rebound_structure",
+        "bullish_reversal_evidence_score",
+        "bearish_regime",
+        "medium_return_fast",
+        "medium_return_slow",
+        "medium_recent_range",
+    )
+    for field in fields:
+        full_value = full.iloc[19][field]
+        prefix_value = prefix.iloc[-1][field]
+        if pd.isna(full_value):
+            assert pd.isna(prefix_value)
+        else:
+            assert prefix_value == full_value
+
+
 def test_signal_engine_does_not_drop_last_bar_for_execution_convenience():
     config = TStrategyConfig(window=5, confirmation_bars=1)
     frame = pd.DataFrame(

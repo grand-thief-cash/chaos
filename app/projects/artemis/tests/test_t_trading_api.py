@@ -107,7 +107,10 @@ def test_config_advertises_ephemeral_as_only_mode():
         response.json()["signal_semantics"]
         == "signal_at_bar_close_evaluate_subsequent_bars"
     )
-    assert len(response.json()["strategies"]) == 7
+    assert len(response.json()["strategies"]) == 8
+    assert response.json()["strategies"][2]["value"] == (
+        "macd_volume_regime_reversal_v1"
+    )
     assert response.json()["direction_modes"][0] == "independent"
     assert response.json()["excluded_strategies"][0]["value"] == (
         "industry_residual_reversal"

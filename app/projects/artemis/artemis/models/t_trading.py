@@ -12,6 +12,7 @@ class TStrategyConfig(BaseModel):
     strategy: Literal[
         "causal_mean_reversion_v1",
         "macd_volume_momentum_v1",
+        "macd_volume_regime_reversal_v1",
         "vwap_bollinger_reversion_v1",
         "opening_range_breakout_v1",
         "time_of_day_volume_momentum_v1",
@@ -34,6 +35,20 @@ class TStrategyConfig(BaseModel):
     ema_deviation_atr: float = Field(default=0.35, ge=0.0, le=5.0)
     macd_turn_bars: int = Field(default=2, ge=1, le=6)
     volume_confirmation_window: int = Field(default=3, ge=1, le=20)
+    panic_window_bars: int = Field(default=5, ge=2, le=30)
+    panic_return_threshold: float = Field(default=0.02, ge=0.001, le=0.2)
+    panic_volume_ratio: float = Field(default=3.0, ge=0.1, le=20.0)
+    macd_divergence_lookback: int = Field(default=20, ge=5, le=120)
+    rebound_confirmation_bars: int = Field(default=3, ge=1, le=10)
+    rebound_recovery_ratio: float = Field(default=0.5, ge=0.0, le=2.0)
+    deep_reversal_min_score: int = Field(default=3, ge=1, le=4)
+    regime_slope_bars: int = Field(default=5, ge=1, le=30)
+    medium_trend_fast_bars: int = Field(default=15, ge=3, le=60)
+    medium_trend_slow_bars: int = Field(default=30, ge=5, le=120)
+    rebound_ema_tolerance_atr: float = Field(
+        default=0.5, ge=0.0, le=5.0
+    )
+    minimum_recent_range: float = Field(default=0.005, ge=0.0, le=0.2)
     bollinger_z: float = Field(default=1.5, ge=0.25, le=5.0)
     reversal_wick_ratio: float = Field(default=0.25, ge=0.0, le=1.0)
     max_trend_strength_atr: float = Field(default=0.8, ge=0.0, le=10.0)
@@ -56,6 +71,10 @@ class TStrategyConfig(BaseModel):
             raise ValueError("ema_fast must be < ema_slow")
         if self.higher_ema_fast >= self.higher_ema_slow:
             raise ValueError("higher_ema_fast must be < higher_ema_slow")
+        if self.medium_trend_fast_bars >= self.medium_trend_slow_bars:
+            raise ValueError(
+                "medium_trend_fast_bars must be < medium_trend_slow_bars"
+            )
         return self
 
 

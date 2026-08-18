@@ -67,9 +67,13 @@ def _indicator_set(frame, strategy) -> dict[str, Any]:
         "opening_range_low",
         "ema_deviation_atr",
         "macd_hist_delta",
+        "prev_macd_hist_delta",
         "macd_hist_rising_bars",
         "macd_hist_falling_bars",
         "recent_volume_ratio_max",
+        "medium_return_fast",
+        "medium_return_slow",
+        "medium_recent_range",
     )
     points = []
     for _, row in frame.iterrows():
@@ -149,6 +153,19 @@ def run_replay_from_bars(
             volume_confirmation_window=(
                 strategy.volume_confirmation_window
             ),
+            panic_window_bars=strategy.panic_window_bars,
+            panic_return_threshold=strategy.panic_return_threshold,
+            panic_volume_ratio=strategy.panic_volume_ratio,
+            macd_divergence_lookback=(
+                strategy.macd_divergence_lookback
+            ),
+            rebound_confirmation_bars=(
+                strategy.rebound_confirmation_bars
+            ),
+            rebound_recovery_ratio=strategy.rebound_recovery_ratio,
+            regime_slope_bars=strategy.regime_slope_bars,
+            medium_trend_fast_bars=strategy.medium_trend_fast_bars,
+            medium_trend_slow_bars=strategy.medium_trend_slow_bars,
         )
         full_strategy_frame = attach_strategy_context(
             full_strategy_frame,

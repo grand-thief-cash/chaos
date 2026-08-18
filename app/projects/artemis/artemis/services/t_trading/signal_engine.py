@@ -110,6 +110,117 @@ def _macd_volume_exit(
     return _macd_volume_entry(row, side, config)
 
 
+def _macd_volume_regime_reversal_entry(
+    row: pd.Series, side: str, config: TStrategyConfig
+) -> bool:
+    """Use independent BUY reversal and SELL downtrend-rebound rules.
+
+    In a bearish intraday regime a BUY is allowed only after the ordinary
+    MACD/volume/EMA setup is accompanied by enough independent reversal
+    evidence.  SELL is deliberately not its mirror: it looks for a rebound
+    rollover inside an established medium-horizon downtrend.  Outside an
+    adverse BUY regime the BUY side remains the original mean-reversion rule.
+    """
+    if side == "SELL":
+        return _downtrend_rebound_sell_entry(row, config)
+
+    if not _present(
+        row,
+        "macd_hist",
+        "prev_macd_hist",
+        "ema_slow",
+        "vwap",
+        "macd_hist_rising_bars",
+        "macd_hist_falling_bars",
+        "recent_min_ema_deviation_atr",
+        "recent_max_ema_deviation_atr",
+        "recent_volume_ratio_max",
+        "bearish_regime",
+        "bullish_reversal_evidence_score",
+    ):
+        return False
+
+    volume_ok = row["recent_volume_ratio_max"] >= config.min_volume_ratio
+    if side == "BUY":
+        macd_turn = (
+            (
+                row["macd_hist"] <= 0
+                and row["macd_hist_rising_bars"]
+                >= config.macd_turn_bars
+            )
+            or (
+                row["prev_macd_hist"] <= 0
+                and row["macd_hist"] > 0
+            )
+        )
+        if row["bearish_regime"] > 0:
+            return bool(
+                row["recent_min_ema_deviation_atr"]
+                <= -config.ema_deviation_atr
+                and row["close"] < row["vwap"]
+                and macd_turn
+                and volume_ok
+                and row["bullish_reversal_evidence_score"]
+                >= config.deep_reversal_min_score
+            )
+        return _macd_volume_entry(row, side, config)
+
+    raise AssertionError("unreachable side")
+
+
+def _downtrend_rebound_sell_entry(
+    row: pd.Series, config: TStrategyConfig
+) -> bool:
+    """Sell a failed rebound in a causal medium-horizon downtrend.
+
+    This is an independent point rule for a reverse-T candidate, not a BUY
+    rule multiplied by -1.  The range gate lets quiet sessions abstain when
+    the observed intraday space is too small to justify another timing call.
+    """
+    if not _present(
+        row,
+        "vwap",
+        "ema_deviation_atr",
+        "macd_hist",
+        "macd_hist_delta",
+        "prev_macd_hist_delta",
+        "macd_hist_falling_bars",
+        "recent_volume_ratio_max",
+        "medium_return_fast",
+        "medium_return_slow",
+        "medium_recent_range",
+        "prev_close",
+    ):
+        return False
+    macd_rollover = (
+        row["prev_macd_hist_delta"] >= 0
+        and row["macd_hist_delta"] < 0
+    ) or (
+        row["macd_hist"] >= 0
+        and row["macd_hist_falling_bars"] >= config.macd_turn_bars
+    )
+    return bool(
+        row["medium_return_fast"] < 0
+        and row["medium_return_slow"] < 0
+        and row["medium_recent_range"] >= config.minimum_recent_range
+        and row["close"] < row["vwap"]
+        and abs(row["ema_deviation_atr"])
+        <= config.rebound_ema_tolerance_atr
+        and row["recent_volume_ratio_max"] >= config.min_volume_ratio
+        and row["close"] < row["open"]
+        and row["close"] < row["prev_close"]
+        and macd_rollover
+    )
+
+
+def _macd_volume_regime_reversal_exit(
+    row: pd.Series, side: str, config: TStrategyConfig
+) -> bool:
+    # The adverse-regime gate controls opening risk.  Requiring another rare
+    # reversal to close a paired T would unnecessarily trap the first leg.
+    return _macd_volume_entry(row, side, config)
+
+
 def _bollinger_reversion_entry(
     row: pd.Series, side: str, config: TStrategyConfig
 ) -> bool:
@@ -356,6 +467,10 @@ def _candidate(
             _macd_volume_entry,
             _macd_volume_exit,
         ),
+        "macd_volume_regime_reversal_v1": (
+            _macd_volume_regime_reversal_entry,
+            _macd_volume_regime_reversal_exit,
+        ),
         "vwap_bollinger_reversion_v1": (
             _bollinger_reversion_entry,
             _bollinger_reversion_exit,
@@ -395,7 +510,10 @@ def _confirmed(
         return False
     # A stale candidate must never turn into a MACD BUY above the EMA (or a
     # SELL below it) merely because the generic confirmation window is open.
-    if config.strategy == "macd_volume_momentum_v1" and not candidate_now:
+    if config.strategy in {
+        "macd_volume_momentum_v1",
+        "macd_volume_regime_reversal_v1",
+    } and not candidate_now:
         return False
     if side == "BUY":
         return bool(
@@ -422,12 +540,54 @@ def _confidence(
     is_entry: bool,
     config: TStrategyConfig,
 ) -> float:
-    if config.strategy == "macd_volume_momentum_v1":
+    if config.strategy in {
+        "macd_volume_momentum_v1",
+        "macd_volume_regime_reversal_v1",
+    }:
         atr = max(float(row["atr"]), 1e-9) if _present(row, "atr") else 1.0
         turn = _bounded(abs(float(row["macd_hist_delta"])) / (atr * 0.1))
         volume = _bounded(float(row["recent_volume_ratio_max"]) / max(config.min_volume_ratio * 2, 0.01))
-        deviation = _bounded(abs(float(row["ema_deviation_atr"])) / max(config.ema_deviation_atr * 2, 0.01))
+        deviation_field = "ema_deviation_atr"
+        if config.strategy == "macd_volume_regime_reversal_v1":
+            if side == "SELL":
+                trend = _bounded(
+                    min(
+                        -float(row["medium_return_fast"]),
+                        -float(row["medium_return_slow"]),
+                    )
+                    / 0.01
+                )
+                opportunity = _bounded(
+                    float(row["medium_recent_range"])
+                    / max(config.minimum_recent_range * 2, 0.0001)
+                )
+                proximity = 1.0 - _bounded(
+                    abs(float(row["ema_deviation_atr"]))
+                    / max(config.rebound_ema_tolerance_atr, 0.01)
+                )
+                score = (
+                    0.3 * turn
+                    + 0.2 * volume
+                    + 0.3 * trend
+                    + 0.1 * opportunity
+                    + 0.1 * proximity
+                )
+                return round(_bounded(score), 4)
+            deviation_field = (
+                "recent_min_ema_deviation_atr"
+                if side == "BUY"
+                else "recent_max_ema_deviation_atr"
+            )
+        deviation = _bounded(abs(float(row[deviation_field])) / max(config.ema_deviation_atr * 2, 0.01))
         score = 0.35 * turn + 0.25 * volume + 0.4 * deviation
+        if config.strategy == "macd_volume_regime_reversal_v1":
+            evidence_field = (
+                "bullish_reversal_evidence_score"
+                if side == "BUY"
+                else "bearish_reversal_evidence_score"
+            )
+            evidence = _bounded(float(row[evidence_field]) / 4.0)
+            score = 0.6 * score + 0.4 * evidence
     elif config.strategy == "time_of_day_volume_momentum_v1":
         relative_volume = _bounded(
             float(row["relative_volume_tod"])
@@ -483,6 +643,62 @@ def _confidence(
     return round(_bounded(score), 4)
 
 
+def _reason_codes(
+    row: pd.Series,
+    side: str,
+    phase: str,
+    config: TStrategyConfig,
+) -> list[str]:
+    codes = [
+        f"{config.strategy}_{phase}_confirmed",
+        "price_direction_confirmed",
+    ]
+    if config.strategy != "macd_volume_regime_reversal_v1":
+        return codes
+
+    if side == "BUY":
+        regime_field = "bearish_regime"
+        score_field = "bullish_reversal_evidence_score"
+        evidence_fields = (
+            ("recent_bearish_shock", "panic_drop"),
+            ("recent_panic_volume_ratio_max", "panic_volume"),
+            ("bullish_divergence_recent", "macd_bullish_divergence"),
+            ("bullish_rebound_structure", "bullish_rebound_structure"),
+        )
+    else:
+        return codes + [
+            "medium_downtrend_15_30",
+            "below_session_vwap",
+            "rebound_near_slow_ema",
+            "recent_range_eligible",
+            "macd_rebound_rolled_over",
+        ]
+
+    adverse_regime = bool(row.get(regime_field, 0) > 0)
+    codes.append(
+        "adverse_regime_reversal_gate_passed"
+        if adverse_regime
+        else "no_adverse_regime_gate"
+    )
+    score = int(row.get(score_field, 0))
+    codes.append(f"reversal_evidence_{score}_of_4")
+    for field, code in evidence_fields:
+        value = row.get(field)
+        if pd.isna(value):
+            continue
+        if field == "recent_bearish_shock":
+            active = value <= -config.panic_return_threshold
+        elif field == "recent_bullish_shock":
+            active = value >= config.panic_return_threshold
+        elif field == "recent_panic_volume_ratio_max":
+            active = value >= config.panic_volume_ratio
+        else:
+            active = value > 0
+        if active:
+            codes.append(code)
+    return codes
+
+
 def _generate_independent_signals(
     frame: pd.DataFrame, config: TStrategyConfig
 ) -> list[dict[str, Any]]:
@@ -521,10 +737,9 @@ def _generate_independent_signals(
                     "strategy": config.strategy,
                     "confidence": _confidence(row, side, True, config),
                     "confidence_kind": "rule_score_v2",
-                    "reason_codes": [
-                        f"{config.strategy}_independent_confirmed",
-                        "price_direction_confirmed",
-                    ],
+                    "reason_codes": _reason_codes(
+                        row, side, "independent", config
+                    ),
                     "features": feature_snapshot(row),
                 }
             )
@@ -583,10 +798,9 @@ def generate_signals(
                     row, expected_side, is_entry, config
                 ),
                 "confidence_kind": "rule_score_v2",
-                "reason_codes": [
-                    f"{config.strategy}_{phase}_confirmed",
-                    "price_direction_confirmed",
-                ],
+                "reason_codes": _reason_codes(
+                    row, expected_side, phase, config
+                ),
                 "features": feature_snapshot(row),
             }
         )

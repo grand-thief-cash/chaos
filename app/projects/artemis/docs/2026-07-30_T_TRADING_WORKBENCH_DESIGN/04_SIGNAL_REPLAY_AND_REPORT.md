@@ -57,6 +57,7 @@ execution_simulation_default = false
 strategy:
   causal_mean_reversion_v1
   macd_volume_momentum_v1
+  macd_volume_regime_reversal_v1
   vwap_bollinger_reversion_v1
   opening_range_breakout_v1
   time_of_day_volume_momentum_v1
@@ -138,6 +139,51 @@ SELL 完全镜像：价格必须仍位于慢 EMA 上方并达到正向 ATR 偏�
 候选在确认窗口内失去上述均线位置时立即失效，因此 BUY 不会在慢 EMA 上方落点，SELL 不会在慢 EMA 下方落点。MACD 柱采用 A 股终端常见的 `2 * (DIF - DEA)` 口径；倍数不改变转折/穿零时刻，只统一图表尺度。阈值必须在 walk-forward 中做扰动检验，不能在同一回测集上挑最优值。
 
 当前页面默认实验参数为 `ema_deviation_atr=0.35`、`macd_turn_bars=2`、`min_volume_ratio=0.8`、`volume_confirmation_window=3`、`cooldown_bars=5`。在生益科技 2026-07-15 至 2026-08-14 的 23 个交易日上，前 17 日用于参数比较、最后 6 日留出：全段 89 个信号的 5 分钟方向正确率为 53.93%、平均方向收益为 +0.1629%；留出 24 个信号为 54.17%、+0.1320%，错误均线一侧信号为 0。该结果只证明规则方向较原实现合理，不能外推为其他股票或未来区间的稳定 alpha。
+
+### 3.3.1 `macd_volume_regime_reversal_v1`
+
+定位：保留上一节的 EMA 深偏离、MACD 转折和基础量能候选，但在不利单边状态中先执行
+eligibility veto，解决“越跌越连续 BUY”的结构性错误。它不是事后识别 V 形的函数，也不
+承诺捕捉最低点。
+
+当 `close < session_vwap`，并且过去 `regime_slope_bars` 的慢 EMA 与 VWAP 斜率都为负时，
+当前 bar 被标记为 BUY 的不利单边状态。此时只有四项因果证据至少满足
+`deep_reversal_min_score` 项，BUY 才有资格继续进入原 MACD/价格方向确认：
+
+1. 最近窗口出现 `panic_window_bars` 首尾跌幅不小于 `panic_return_threshold` 的急跌；
+2. 当前量相对**此前** N 根平均量达到 `panic_volume_ratio`，并在证据窗口内仍有效；
+3. 当日价格新低，但 MACD histogram 或 DIF 未同步新低；
+4. 连续 `rebound_confirmation_bars` 根阳线，并收复近期最大阴线实体至少
+   `rebound_recovery_ratio`。
+
+SELL 不再使用 BUY 的镜像规则，而是独立寻找单边下跌中的反弹失败点：过去
+`medium_trend_fast_bars/medium_trend_slow_bars`（默认 15/30）收益必须同时为负，价格仍低于
+session VWAP，但已反弹到慢 EMA 上下 `rebound_ema_tolerance_atr`（默认 0.5 ATR）以内；近期
+量能通过、当前 bar 与前收均转弱且 MACD 反弹动能开始 rollover 后才发 SELL。最近快窗口的
+high/low 振幅还必须达到 `minimum_recent_range`（默认 0.5%），否则认为没有足够的日内机会并
+abstain。15/30 分钟收益和振幅都在当日 session 内滚动，不把前一日收盘混入状态。
+
+BUY 的极值仍只和当前 bar 之前、同一交易日的 bar 比较；急跌、量能、背离可在短证据窗口
+内保留，反弹结构必须在当前 bar 成立。信号审计分别返回 BUY 的四维证据，或 SELL 的
+`medium_downtrend_15_30`、`below_session_vwap`、`rebound_near_slow_ema`、
+`recent_range_eligible`、`macd_rebound_rolled_over`。这已经是规则层面的 BUY/SELL 不对称，
+但仍不是训练完成的两阶段概率模型。
+
+默认值忠实保留严格研究假设：`5 bars / 2% / 3x volume / 20-bar divergence / 3 bars /
+50% recovery / 3-of-4`。`20 分钟时间止损` 属于成交/持仓管理，不能用来给 decision-time
+信号贴标签，因此未混入本策略。
+
+2026-07-15 至 08-14 的两股探索性回放包含生益科技和长江电力各 23 个交易日。BUY gate 在
+两股上都把不利下跌状态中的旧候选由负均值过滤为稀疏正均值；生益科技 BUY 5 分钟为
+`n=29 / 55.17% / +0.3059%`，长江电力为 `n=26 / 61.54% / +0.0567%`。新的独立 SELL 在
+生益科技 5/15 分钟分别为 `n=54 / 62.96% / +0.1090%` 和
+`n=52 / 71.15% / +0.2773%`；长江电力被 0.5% 机会门槛压到 12 个，5 分钟为
+`75.00% / +0.1393%`，但 15 分钟中位数仍为 `-0.0524%`。
+
+这些数字不是正式样本外证明：同一区间参与了候选设计，长江电力的绝对毛空间很小，且生益
+科技 8 月 13 日的三个 SELL 在未来 5 分钟全部错误。把 MACD rollover 加严为连续两根只对
+生益科技有效，却令长江电力转负，因此未采用该单股调参。当前实现只作为不对称、可审计的
+rule baseline，不能称为可交易 alpha。
 
 ### 3.4 `vwap_bollinger_reversion_v1`
 
@@ -630,7 +676,7 @@ SinaRealtimeQuoteAdapter
 4. 修改 `bars[i+1:]`，确认 `<=i` 的 features/signals 不变；
 5. opening range 在区间完成前必须为 NULL；
 6. 信号模块不得 import evaluation/label 模块。
-7. MACD BUY 必须满足 `close < ema_slow` 和负向 ATR 偏离，SELL 必须镜像满足；候选过期后不得在错误均线一侧确认。
+7. 基础 MACD 策略的 BUY 必须满足 `close < ema_slow` 和负向 ATR 偏离，SELL 必须镜像满足；不对称单边策略的 SELL 改验 15/30 分钟下行、VWAP 压制、EMA 附近反弹失败和机会振幅。
 8. 添加前序 warm-up bars 后，目标日第一根 EMA/MACD/RSI/ATR 必须有值，且 session VWAP 必须从当日第一根重新开始。
 
 ### 9.2 事件评估
@@ -671,6 +717,12 @@ SinaRealtimeQuoteAdapter
 当前 `macd_volume_momentum_v1` 在生益科技样本外区间不具备稳定优势；单边下跌中的连续
 BUY 是状态识别缺失和对称均值回归假设造成的结构性问题。降低 `max_round_trips` 只能截断
 错误信号，不能改善第一个点位，因此不作为策略修复。
+
+已把 `macd_volume_regime_reversal_v1` 更新为第一阶段的不对称透明规则基线：在慢 EMA 与
+VWAP 共同向下且价格受 VWAP 压制时，严格的 3/4 反转证据不足就不发 BUY；SELL 独立寻找
+15/30 分钟下行中的 EMA 附近反弹失败，并用 0.5% 近期振幅过滤缺少空间的时点。两股 46 个
+股票日探索中 BUY veto 和生益科技 SELL 均明显优于对称旧规则，但长江电力 15 分钟经济性、
+生益科技 8 月 13 日失败样本和未冻结 holdout 都不允许把它升级为有效 alpha。
 
 后续研究冻结为两阶段：先识别趋势延续、市场共振和流动性冲击并决定 BUY/SELL 是否有
 资格参与，允许强下跌全天不发 BUY；再由相互独立的 BUY/SELL 模型预测 1/3/5/15 分钟

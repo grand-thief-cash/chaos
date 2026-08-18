@@ -106,6 +106,11 @@ async def get_t_trading_config():
                 "data_tier": "min1_or_min5_ohlcv",
             },
             {
+                "value": "macd_volume_regime_reversal_v1",
+                "label": "MACD + 量能 + EMA + 不对称单边门控",
+                "data_tier": "min1_or_min5_ohlcv",
+            },
+            {
                 "value": "vwap_bollinger_reversion_v1",
                 "label": "VWAP + Bollinger + 拒绝影线",
                 "data_tier": "min1_or_min5_ohlcv",
