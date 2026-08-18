@@ -1,7 +1,10 @@
 # VERSION
-v0.28.0
+v0.29.0
 
 # Changelog
+- v0.29.0
+    - **Selectable asymmetric gate for T-trading review.** Added `MACD + volume + EMA + asymmetric adverse-regime gate` alongside the existing symmetric baseline, with a distinct chart marker identity and complete request typing. BUY abstains inside insufficiently evidenced downtrends; SELL independently looks for a failed rebound in a 15/30-minute downtrend instead of mirroring BUY.
+    - **Both sides are inspectable instead of implicit.** The strategy panel retains compact `?` explanations for the BUY regime, shock, volume, divergence and recovery evidence, and adds explanations for SELL fast/slow trend windows, EMA rebound tolerance and the minimum recent high/low opportunity range. The remote `development-home` Angular build passes.
 - v0.28.0
     - **A price-reference workflow replaces target-price ambiguity.** Summary and matrix labels now use low/base/high consensus, the page explains current market position and market-implied EPS/PE, and a user-adjustable 0%–50% margin-of-safety observation price makes the chosen discount explicit. Low consensus is visibly not a tail-stress or automatic buy price.
     - **Assumptions and cross-model conflict are visible at decision time.** Forward PE/PB cells show four-decimal operands, EV/DCF cells show growth plus multiple/WACC, every method carries its proxy/configuration tag, and a PE/PB identity table shows whether earnings valuation and book-value valuation tell a coherent story.

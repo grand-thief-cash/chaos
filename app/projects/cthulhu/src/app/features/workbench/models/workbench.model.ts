@@ -92,6 +92,7 @@ export interface IndicatorSeriesMeta {
 export type TStrategyName =
   | 'causal_mean_reversion_v1'
   | 'macd_volume_momentum_v1'
+  | 'macd_volume_regime_reversal_v1'
   | 'vwap_bollinger_reversion_v1'
   | 'opening_range_breakout_v1'
   | 'time_of_day_volume_momentum_v1'
@@ -118,6 +119,18 @@ export interface TStrategyConfig {
   ema_deviation_atr: number;
   macd_turn_bars: number;
   volume_confirmation_window: number;
+  panic_window_bars: number;
+  panic_return_threshold: number;
+  panic_volume_ratio: number;
+  macd_divergence_lookback: number;
+  rebound_confirmation_bars: number;
+  rebound_recovery_ratio: number;
+  deep_reversal_min_score: number;
+  regime_slope_bars: number;
+  medium_trend_fast_bars: number;
+  medium_trend_slow_bars: number;
+  rebound_ema_tolerance_atr: number;
+  minimum_recent_range: number;
   bollinger_z: number;
   reversal_wick_ratio: number;
   max_trend_strength_atr: number;

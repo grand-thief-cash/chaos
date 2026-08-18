@@ -20,6 +20,7 @@ const STRATEGY_VISUALS: Record<TStrategyName, {
 }> = {
   causal_mean_reversion_v1: { label: '均值反转', buy: '#cf1322', sell: '#820014' },
   macd_volume_momentum_v1: { label: 'MACD 量价回归', buy: '#f5222d', sell: '#52c41a' },
+  macd_volume_regime_reversal_v1: { label: 'MACD 不对称单边门控', buy: '#fa541c', sell: '#389e0d' },
   vwap_bollinger_reversion_v1: { label: 'VWAP/Bollinger', buy: '#722ed1', sell: '#391085' },
   opening_range_breakout_v1: { label: '开盘区间', buy: '#fa8c16', sell: '#ad4e00' },
   time_of_day_volume_momentum_v1: { label: '同分钟量比', buy: '#13c2c2', sell: '#006d75' },
