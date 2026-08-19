@@ -1,7 +1,9 @@
 # VERSION
-v0.53.0
+v0.53.1
 
 # Changelog
+- v0.53.1
+    - Added doc of INVESTMENT OPPORTUNITY DISCOVERY.md
 - v0.53.0
     - **Asymmetric adverse-regime rules for MACD/volume/EMA signals.** Added `macd_volume_regime_reversal_v1` without replacing the symmetric baseline. A BUY below a falling session VWAP and falling slow EMA requires at least three independently auditable signals among a trailing price shock, volume relative to preceding bars, same-session MACD bullish divergence, and multi-bar recovery. SELL is no longer a sign-mirrored BUY: it finds a failed rebound near the slow EMA while 15/30-minute session-local returns are both negative, price remains below session VWAP, MACD rebound momentum rolls over, and the recent high/low range is large enough to make another timing decision eligible.
     - **Causal and auditable opportunity gates.** Medium-horizon returns and the default 0.5% recent-range gate reset by trading session, so prior-session warm-up cannot leak yesterday's close into the intraday state. Frozen signals expose raw trend, range, EMA, VWAP, MACD and volume features plus side-specific reason codes. Divergence/recovery features remain session-local; the optional 20-minute time stop remains position management outside point labeling. Prefix invariance, weak-versus-3/4 BUY gating, asymmetric SELL behavior, API registration and the replay suite pass (22 focused tests).
